@@ -1,8 +1,8 @@
 import os
 import pandas as pd
-import yfinance as yf
 from stock_screener.classes.db import DatabaseManager
 from stock_screener.classes.position_sizer import PositionSizer
+from stock_screener.classes.kite_client import KiteClient
 from stock_screener.config import CONFIG
 from stock_screener.logger import setup_logger
 
@@ -25,28 +25,19 @@ def main():
 
     logger.info(f"Calculating position sizes for {len(tickers)} tickers...")
     
+    # Initialize Kite Client
+    kite_client = KiteClient(CONFIG, db_manager, logger)
+    market_data = kite_client.fetch_data(tickers)
+    
     results = []
     
-    for ticker in tickers:
+    for ticker, df in market_data.items():
         try:
-            # Try to load from DB first
-            df = db_manager.load_market_data(ticker)
-            
-            # If missing or stale (logic for stale could be improved), fetch from yfinance
-            if df.empty:
-                logger.info(f"Data for {ticker} not found in DB. Fetching from yfinance...")
-                df = yf.download(ticker, period="1y", interval="1d", auto_adjust=True, progress=False, threads=False)
-                if isinstance(df.columns, pd.MultiIndex):
-                     df.columns = df.columns.get_level_values(0)
-            
-            if not df.empty:
-                 plan = position_sizer.calculate_position_size(ticker, df)
-                 if plan:
-                     results.append(plan)
-                 else:
-                     logger.warning(f"Could not calculate position size for {ticker} (insufficient data?)")
-            else:
-                 logger.warning(f"Could not fetch data for {ticker}")
+             plan = position_sizer.calculate_position_size(ticker, df)
+             if plan:
+                 results.append(plan)
+             else:
+                 logger.warning(f"Could not calculate position size for {ticker} (insufficient data?)")
 
         except Exception as e:
             logger.error(f"Error processing {ticker}: {e}")

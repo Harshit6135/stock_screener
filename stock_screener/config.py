@@ -37,5 +37,10 @@ CONFIG = {
         "risk_per_trade": 0.01,   # Risking 1% ($1,000) per trade
         "atr_multiplier": 2.0,    # Stop Loss distance (2x ATR)
         "atr_period": 14          # Standard lookback for volatility
+    },
+    "kite": {
+        "api_key": "fwes6m5ghrny6yaf",
+        "api_secret": "bzj72ly2weezz1f2pggl4c2k1drqhoa7",
+        "redirect_url": "http://127.0.0.1"
     }
 }

@@ -1,5 +1,5 @@
 from stock_screener.classes.nse_client import NSEDataSource
-from stock_screener.classes.yahoo_client import YahooFinanceClient
+from stock_screener.classes.kite_client import KiteClient
 from stock_screener.classes.analyzer import StockAnalyzer
 from stock_screener.classes.strategy import ScreenerStrategy
 from stock_screener.classes.report_generator import ReportGenerator
@@ -7,13 +7,14 @@ from stock_screener.classes.ranker import Ranker
 from stock_screener.classes.ranker import Ranker
 from stock_screener.classes.db import DatabaseManager
 from stock_screener.logger import setup_logger
+from stock_screener.config import CONFIG
 
 class StockScreener:
     def __init__(self):
         self.logger = setup_logger()
         self.db_manager = DatabaseManager()
         self.nse_data_source = NSEDataSource()
-        self.yahoo_finance_client = YahooFinanceClient(self.db_manager, self.logger)
+        self.market_data_client = KiteClient(CONFIG, self.db_manager, self.logger)
         self.strategy = ScreenerStrategy()
         self.ranker = Ranker()
 
@@ -22,10 +23,10 @@ class StockScreener:
         
         # 1. Load tickers
         self.logger.info("Loading Nifty 500 tickers...")
-        tickers = self.nse_data_source.get_nifty500_tickers()
+        tickers = self.nse_data_source.get_nifty500_tickers()[:3]
 
         # 2. Fetch data
-        market_data = self.yahoo_finance_client.fetch_data(tickers)
+        market_data = self.market_data_client.fetch_data(tickers)
 
         # 3. Analyze stocks
         self.logger.info("Analyzing stocks...")

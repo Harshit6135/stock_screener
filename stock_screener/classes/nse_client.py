@@ -24,7 +24,7 @@ class NSEDataSource:
 
             if response.status_code == 200:
                 df_nifty = pd.read_csv(io.StringIO(response.text))
-                tickers = [symbol + ".NS" for symbol in df_nifty['Symbol']]
+                tickers = [symbol for symbol in df_nifty['Symbol']]
                 print(f"Success! Downloaded {len(tickers)} stocks.")
                 print(f"Sample: {tickers[:5]}")
                 return tickers

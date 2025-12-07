@@ -53,10 +53,10 @@ Ensure you have the following installed on your system:
 Install the necessary Python dependencies:
 
 ```bash
-pip install pandas yfinance requests
+pip install pandas requests kiteconnect
 ```
 
-*(Note: `sqlite3` and `logging` are standard Python libraries and do not need installation.)*
+*(Note: `yfinance` has been replaced by `kiteconnect`.)*
 
 ## 🛠️ Implementation Overview
 
@@ -67,7 +67,7 @@ The project is structured for modularity and scalability:
     - **`screener.py`**: Orchestrates the screening process.
     - **`classes/`**:
         - `nse_client.py`: Fetches the list of Nifty 500 tickers.
-        - `yahoo_client.py`: Downloads historical market data using `yfinance`.
+        - `kite_client.py`: Downloads historical market data using Zerodha's Kite Connect API.
         - `analyzer.py`: Calculates proper technical indicators (RSI, Bollinger Bands, MACD, etc.).
         - `strategy.py`: Applies the filtering logic based on the calculated indicators.
         - `ranker.py`: Scores and ranks the "winning" stocks.
