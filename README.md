@@ -30,6 +30,17 @@ The screener applies a robust set of technical checks defined in `stock_screener
 ### 5. Volume
 - **Volume Analysis**: Compares short-term (5-day) vs long-term (20-day) Volume EMAs to detect institutional accumulation or distribution.
 
+### 6. Risk Management (Position Sizing)
+> **Standalone Tool**: Position calibration is now a separate step, allowing you to focus on specific stocks.
+
+- **How to Use**:
+    1. Add tickers to `position_input.txt`.
+    2. Run `python calculate_position_size.py`.
+- **Features**:
+    - **ATR-Based Stops**: Calculates volatility (14-day ATR) to set dynamic stop losses.
+    - **Position Sizing**: Automatically sizes positions based on a fixed risk account percentage (e.g., 1%).
+    - **Capital Protection**: Ensures a trade's size is proportional to the stop distance, normalizing risk across different stocks.
+
 ## 📋 Pre-requisites
 
 Ensure you have the following installed on your system:
@@ -60,6 +71,7 @@ The project is structured for modularity and scalability:
         - `analyzer.py`: Calculates proper technical indicators (RSI, Bollinger Bands, MACD, etc.).
         - `strategy.py`: Applies the filtering logic based on the calculated indicators.
         - `ranker.py`: Scores and ranks the "winning" stocks.
+        - `position_sizer.py`: Calculator for entry, stop, and position size based on risk parameters.
         - `db.py`: Manages the SQLite database (`stocks.db`) for caching data and storing results.
         - `report_generator.py`: Handles CSV export and console output.
     - **`config.py`**: Central configuration file for tweaking strategy parameters (SMA periods, RSI thresholds, etc.).
@@ -80,7 +92,8 @@ The project is structured for modularity and scalability:
 
 3.  **View Results**:
     -   **Console**: The script will print the process, winners, and the top 5 ranked stocks.
-    -   **CSV**: A full report of the winning stocks is saved to `results.csv`.
+    -   **CSV**: A full report is saved to `results/results.csv`.
+    -   **Charts**: Generated charts are saved in the `charts/` directory.
     -   **Database**: All calculated indicators are stored in `stock_screener/stocks.db` for further analysis.
 
 ## 📊 Feature Highlights

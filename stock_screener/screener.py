@@ -4,6 +4,7 @@ from stock_screener.classes.analyzer import StockAnalyzer
 from stock_screener.classes.strategy import ScreenerStrategy
 from stock_screener.classes.report_generator import ReportGenerator
 from stock_screener.classes.ranker import Ranker
+from stock_screener.classes.ranker import Ranker
 from stock_screener.classes.db import DatabaseManager
 from stock_screener.logger import setup_logger
 

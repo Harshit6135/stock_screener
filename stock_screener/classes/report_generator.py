@@ -1,5 +1,6 @@
 import pandas as pd
 import matplotlib.pyplot as plt
+import os
 
 class ChartGenerator:
     def __init__(self, market_data):
@@ -32,7 +33,12 @@ class ChartGenerator:
         axes[2].legend()
 
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-        plt.savefig(f'{ticker}_chart.png')
+        
+        # Create charts directory if it doesn't exist
+        if not os.path.exists('charts'):
+            os.makedirs('charts')
+            
+        plt.savefig(f'charts/{ticker}_chart.png')
         plt.close()
         print(f"Chart saved for {ticker}")
 
@@ -83,5 +89,9 @@ class ReportGenerator:
     
     def save_to_csv(self, winners):
         if not winners.empty:
-            winners.to_csv('results.csv', index=False)
-            print("\nResults saved to results.csv")
+            # Create results directory if it doesn't exist
+            if not os.path.exists('results'):
+                os.makedirs('results')
+                
+            winners.to_csv('results/results.csv', index=False)
+            print("\nResults saved to results/results.csv")

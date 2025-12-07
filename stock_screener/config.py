@@ -31,5 +31,11 @@ CONFIG = {
     "volume": {
         "short_ema": 5,   # Weekly Interest
         "long_ema": 20    # Monthly Interest
+    },
+    "risk": {
+        "account_size": 100000,   # Example: $100,000 Portfolio
+        "risk_per_trade": 0.01,   # Risking 1% ($1,000) per trade
+        "atr_multiplier": 2.0,    # Stop Loss distance (2x ATR)
+        "atr_period": 14          # Standard lookback for volatility
     }
 }
