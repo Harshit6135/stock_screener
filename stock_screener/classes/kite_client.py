@@ -134,8 +134,25 @@ class KiteClient:
             instruments = self.kite.instruments()
             df = pd.DataFrame(instruments)
             df.to_csv(inst_file, index=False)
+
+            # Filters for working instruments
+            df = df[(df['segment'].isin(['NSE', 'BSE'])) & (df['lot_size'] == 1)]
+            df = df[df['name'].notna()]
+            
+            # Exclude names containing certain keywords
+            exclude_keywords = ['LOAN', 'ETF', 'BONDS', 'MUTUAL', '%', 
+                                'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 
+                                'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+            
+            pattern = '|'.join(exclude_keywords)
+            df = df[~df['name'].str.contains(pattern, case=False)]
+
+            working_file = "working_instruments.csv"
+            df.to_csv(working_file, index=False)
+            self.logger.info(f"Filtered instruments saved to {working_file}")
+
         except Exception as e:
-            self.logger.error(f"Could not fetch instruments: {e}")
+            self.logger.error(f"Could not fetch or process instruments: {e}")
             return
 
         self.instrument_map = dict(zip(df['tradingsymbol'], df['instrument_token']))

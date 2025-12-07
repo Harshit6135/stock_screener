@@ -1,0 +1,21 @@
+[project]
+name = "stock-screener"
+version = "0.1.0"
+description = "Identify and filter stocks from NSE / BSE to invest in"
+authors = [
+    {name = "Yash Bhargava",email = "yashbhargava.code@gmail.com"},
+    {name = "Harshit Garg",email = "harshitgarg.0196@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "kiteconnect (>=5.0.1,<6.0.0)",
+    "pandas (>=2.3.3,<3.0.0)",
+    "openpyxl (>=3.1.5,<4.0.0)",
+    "requests (>=2.32.5,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
