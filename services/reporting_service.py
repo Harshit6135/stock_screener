@@ -42,7 +42,7 @@ class ChartGenerator:
         plt.close()
         print(f"Chart saved for {ticker}")
 
-class ReportGenerator:
+class ReportingService:
     def __init__(self, results):
         self.results = results
         self.df = pd.DataFrame(results)

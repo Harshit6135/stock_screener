@@ -2,7 +2,7 @@ import numpy as np
 import math
 import pandas as pd
 
-class PositionSizer:
+class PositionSizingService:
     def __init__(self, config):
         self.config = config
 

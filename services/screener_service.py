@@ -1,20 +1,21 @@
-from stock_screener.classes.kite_client import KiteClient
-from stock_screener.classes.analyzer import StockAnalyzer
-from stock_screener.classes.strategy import ScreenerStrategy
-from stock_screener.classes.report_generator import ReportGenerator
-from stock_screener.classes.ranker import Ranker
-from stock_screener.classes.ranker import Ranker
-from stock_screener.classes.db import DatabaseManager
-from stock_screener.logger import setup_logger
-from stock_screener.config import CONFIG
+from services.kite_service import KiteService
+from services.market_data_service import MarketDataService
+from services.analysis_service import AnalysisService
+from services.strategy_service import StrategyService
+from services.reporting_service import ReportingService
+from services.ranking_service import RankingService
+from database.sqlite_manager import SQLiteManager
+from utils.logger import setup_logger
+from config.app_config import CONFIG
 
-class StockScreener:
+class ScreenerService:
     def __init__(self):
         self.logger = setup_logger()
-        self.db_manager = DatabaseManager()
-        self.market_data_client = KiteClient(CONFIG, self.db_manager, self.logger)
-        self.strategy = ScreenerStrategy()
-        self.ranker = Ranker()
+        self.db_manager = SQLiteManager()
+        self.market_data_client = KiteService(CONFIG, self.db_manager, self.logger)
+        self.data_extractor = MarketDataService(self.market_data_client, self.db_manager, self.logger)
+        self.strategy = StrategyService()
+        self.ranker = RankingService()
 
     def run(self):
         self.logger.info("Starting Stock Screener Application")
@@ -25,12 +26,12 @@ class StockScreener:
 
         # 2. Fetch data
         
-        working_instruments = self.market_data_client.load_instruments()
+        working_instruments = self.data_extractor.load_instruments()
         print(working_instruments)
         instrument_tokens = working_instruments['instrument_token'].to_list()[:10]
 
         self.logger.info(f"Using {len(instrument_tokens)} working instruments from KiteClient for data fetching.")
-        market_data = self.market_data_client.fetch_data(instrument_tokens)
+        market_data = self.data_extractor.fetch_data(instrument_tokens)
 
         # 3. Analyze stocks
         self.logger.info("Analyzing stocks...")

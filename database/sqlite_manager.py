@@ -4,8 +4,8 @@ import pandas as pd
 import os
 from datetime import datetime
 
-class DatabaseManager:
-    def __init__(self, db_name="stocks.db", db_dir="stock_screener"):
+class SQLiteManager:
+    def __init__(self, db_name="stocks.db", db_dir="data"):
         self.db_path = os.path.join(db_dir, db_name)
         os.makedirs(db_dir, exist_ok=True)
         self._init_db()

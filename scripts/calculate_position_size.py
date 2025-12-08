@@ -1,17 +1,22 @@
 import os
+import sys
+
+# Add parent directory to path to allow imports from root
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import pandas as pd
-from stock_screener.classes.db import DatabaseManager
-from stock_screener.classes.position_sizer import PositionSizer
-from stock_screener.classes.kite_client import KiteClient
-from stock_screener.config import CONFIG
-from stock_screener.logger import setup_logger
+from database.sqlite_manager import SQLiteManager
+from services.position_sizing_service import PositionSizingService
+from services.kite_service import KiteService
+from config.app_config import CONFIG
+from utils.logger import setup_logger
 
 def main():
     logger = setup_logger(name="PositionSizer")
-    db_manager = DatabaseManager()
-    position_sizer = PositionSizer(CONFIG)
+    db_manager = SQLiteManager()
+    position_sizer = PositionSizingService(CONFIG)
     
-    input_file = "position_input.txt"
+    input_file = "data/position_input.txt"
     if not os.path.exists(input_file):
         logger.error(f"Input file {input_file} not found.")
         return
@@ -26,7 +31,7 @@ def main():
     logger.info(f"Calculating position sizes for {len(tickers)} tickers...")
     
     # Initialize Kite Client
-    kite_client = KiteClient(CONFIG, db_manager, logger)
+    kite_client = KiteService(CONFIG, db_manager, logger)
     market_data = kite_client.fetch_data(tickers)
     
     results = []

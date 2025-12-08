@@ -1,6 +1,6 @@
-from stock_screener.config import CONFIG
+from config.app_config import CONFIG
 
-class ScreenerStrategy:
+class StrategyService:
     def apply(self, data):
         if not data.get('Data_Found'):
             data['Status'] = "NO DATA"

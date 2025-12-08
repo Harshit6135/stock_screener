@@ -7,3 +7,6 @@
 *.sqlite3
 *.log
 *.sqlite
+local_secrets.py
+access_token.txt
+logs/*

@@ -1,7 +1,7 @@
 import pandas as pd
-from stock_screener.config import CONFIG
+from config.app_config import CONFIG
 
-class StockAnalyzer:
+class AnalysisService:
     def __init__(self, market_data, db_manager):
         self.market_data = market_data
         self.db_manager = db_manager

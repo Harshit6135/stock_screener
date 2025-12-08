@@ -1,6 +1,6 @@
 import pandas as pd
 
-class Ranker:
+class RankingService:
     def rank_stocks(self, results):
         df = pd.DataFrame(results)
         
