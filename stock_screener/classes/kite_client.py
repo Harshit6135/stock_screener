@@ -140,12 +140,17 @@ class KiteClient:
             df = df[df['name'].notna()]
             
             # Exclude names containing certain keywords
-            exclude_keywords = ['LOAN', 'ETF', 'BONDS', 'MUTUAL', '%', 
-                                'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 
-                                'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
-            
-            pattern = '|'.join(exclude_keywords)
-            df = df[~df['name'].str.contains(pattern, case=False)]
+            exclude_keywords = ['LOAN', 'ETF', 'BONDS', 'MUTUAL', '%']
+            keyword_pattern = '|'.join(exclude_keywords)
+            df = df[~df['name'].str.contains(keyword_pattern, case=False, na=False)]
+
+            # Exclude names with month-year pattern like JAN24 for derivatives
+            month_pattern = r'(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}'
+            df = df[~df['name'].str.contains(month_pattern, case=True, na=False)]
+
+            # Exclude Treasury Bill patterns like 364TB...
+            tb_pattern = r'\d+TB\d+'
+            df = df[~df['name'].str.contains(tb_pattern, case=True, na=False)]
 
             working_file = "working_instruments.csv"
             df.to_csv(working_file, index=False)
