@@ -1,4 +1,3 @@
-from stock_screener.classes.nse_client import NSEDataSource
 from stock_screener.classes.kite_client import KiteClient
 from stock_screener.classes.analyzer import StockAnalyzer
 from stock_screener.classes.strategy import ScreenerStrategy
@@ -13,7 +12,6 @@ class StockScreener:
     def __init__(self):
         self.logger = setup_logger()
         self.db_manager = DatabaseManager()
-        self.nse_data_source = NSEDataSource()
         self.market_data_client = KiteClient(CONFIG, self.db_manager, self.logger)
         self.strategy = ScreenerStrategy()
         self.ranker = Ranker()
@@ -23,10 +21,16 @@ class StockScreener:
         
         # 1. Load tickers
         self.logger.info("Loading Nifty 500 tickers...")
-        tickers = self.nse_data_source.get_nifty500_tickers()[:3]
+        tickers = self.nse_data_source.get_nifty500_tickers()[:10]
 
         # 2. Fetch data
-        market_data = self.market_data_client.fetch_data(tickers)
+        
+        working_instruments = self.market_data_client.load_instruments()
+        print(working_instruments)
+        instrument_tokens = working_instruments['instrument_token'].to_list()[:10]
+
+        self.logger.info(f"Using {len(instrument_tokens)} working instruments from KiteClient for data fetching.")
+        market_data = self.market_data_client.fetch_data(instrument_tokens)
 
         # 3. Analyze stocks
         self.logger.info("Analyzing stocks...")

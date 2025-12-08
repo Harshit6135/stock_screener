@@ -79,7 +79,7 @@ class DatabaseManager:
         # Ensure index is date
         data_to_save = df.reset_index()
         # Standardize columns
-        data_to_save = data_to_save[['Date', 'Open', 'High', 'Low', 'Close', 'Volume']]
+        data_to_save = data_to_save[['date', 'Open', 'High', 'Low', 'Close', 'Volume']]
         data_to_save.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
         data_to_save['ticker'] = ticker
         
@@ -106,7 +106,7 @@ class DatabaseManager:
         if not df.empty:
             df['date'] = pd.to_datetime(df['date'])
             df.set_index('date', inplace=True)
-            df.index.name = "Date"
+            df.index.name = "date"
             # Renaming columns back to Capitalized for compatibility
             df.rename(columns={'open':'Open', 'high':'High', 'low':'Low', 'close':'Close', 'volume':'Volume'}, inplace=True)
         return df

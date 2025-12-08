@@ -32,7 +32,6 @@ class KiteClient:
             self.logger.info("Kite Connect initialized.")
             
             # Fetch instruments to build a map (Symbol -> Token)
-            self._load_instruments()
             
         except Exception as e:
             self.logger.error(f"Failed to initialize Kite Client: {e}")
@@ -123,8 +122,8 @@ class KiteClient:
             self.logger.error("Login timed out or failed to receive token.")
             raise TimeoutError("Login timed out")
 
-    def _load_instruments(self):
-        inst_file = "instruments.csv"
+    def load_instruments(self):
+        inst_file = "instruments1.csv"
         # if os.path.exists(inst_file):
         #     self.logger.info("Loading instruments from local cache...")
         #     df = pd.read_csv(inst_file)
@@ -140,32 +139,54 @@ class KiteClient:
             df = df[df['name'].notna()]
             
             # Exclude names containing certain keywords
-            exclude_keywords = ['LOAN', 'ETF', 'BONDS', 'MUTUAL', '%']
+            exclude_keywords = ['LOAN', 'ETF', 'BONDS', 'MUTUAL', '%', 'AMC - ', "GOI", "GOLD BOND"]
             keyword_pattern = '|'.join(exclude_keywords)
             df = df[~df['name'].str.contains(keyword_pattern, case=False, na=False)]
 
+            df = df[~df['name'].str.startswith('INAV', na=False)]
+            df = df[df['name'] != '']
+
+            # Exclude trading symbols with specific suffixes indicating special types (e.g., BE, BZ, derivatives)
+            suffix_pattern = r'(?:-BE|-BZ|-E\d+|-RE\d+|-W\d+|-X\d+|-P\d+|-IV|-RR)$'
+            df = df[~df['tradingsymbol'].str.contains(suffix_pattern, regex=True, na=False)]
+
             # Exclude names with month-year pattern like JAN24 for derivatives
-            month_pattern = r'(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}'
-            df = df[~df['name'].str.contains(month_pattern, case=True, na=False)]
+            month_pattern = r'(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}'
+            df = df[~df['name'].str.contains(month_pattern, regex=True, na=False)]
 
-            # Exclude Treasury Bill patterns like 364TB...
-            tb_pattern = r'\d+TB\d+'
-            df = df[~df['name'].str.contains(tb_pattern, case=True, na=False)]
+            # Exclude names with month-year pattern like SGB(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}'
+            # month_pattern = r'SGB(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}'
+            # df = df[~df['tradingsymbol'].str.startswith(month_pattern, case=True, regex=True, na=False)]
 
-            working_file = "working_instruments.csv"
+            # # Exclude Treasury Bill patterns like 364TB...
+            # tb_pattern = r'\d+TB\d+'
+            # df = df[~df['tradingsymbol'].str.contains(tb_pattern, case=True, regex=True, na=False)]
+
+            # # Exclude Treasury Bill patterns like 364TB...
+            # tb_pattern = r'\d{3}T\d+'
+            # df = df[~df['tradingsymbol'].str.contains(tb_pattern, case=True, regex=True, na=False)]
+
+            # Exclude Government Securities (e.g., 738GS2027, GS2027, 05GS2028)
+            # Matches 'GS' followed by digits anywhere in the symbol
+            # df = df[~df['tradingsymbol'].str.contains(r'GS\d+', case=True, regex=True, na=False)]
+            df = df[~df['tradingsymbol'].str.contains(r'\d+[A-Za-z]+\d+', case=True, regex=True, na=False)]
+            df = df[~df['tradingsymbol'].str.startswith(r'SGB')]
+            df = df[~df['name'].str.contains(r'\d+[A-Za-z]+\d+', case=True, regex=True, na=False)]
+
+            # Deduplicate: Keep NSE if both exist.
+            # Sorting by segment descending puts 'NSE' before 'BSE' ('N' > 'B').
+            df = df.sort_values(by=['tradingsymbol', 'segment'], ascending=[True, False])
+            df = df.drop_duplicates(subset=['tradingsymbol'], keep='first')
+
+            working_file = "working_instruments1.csv"
             df.to_csv(working_file, index=False)
             self.logger.info(f"Filtered instruments saved to {working_file}")
-
+            return df
         except Exception as e:
             self.logger.error(f"Could not fetch or process instruments: {e}")
             return
+        
 
-        self.instrument_map = dict(zip(df['tradingsymbol'], df['instrument_token']))
-        self.logger.info(f"Loaded {len(self.instrument_map)} instruments.")
-
-    def get_token(self, symbol):
-        clean_symbol = symbol.replace('.NS', '').replace('.BO', '')
-        return self.instrument_map.get(clean_symbol)
 
     def fetch_data(self, tickers):
         self.logger.info("Initializing Kite data fetch process...")
@@ -177,50 +198,65 @@ class KiteClient:
 
         today = pd.Timestamp.now().normalize()
 
-        for ticker in tickers:
+        for token in tickers:
             try:
-                last_date = self.db_manager.get_latest_date(ticker)
+                last_date = self.db_manager.get_latest_date(token)
                 
                 if last_date:
                      start_date = last_date + pd.Timedelta(days=1)
                      # Standardize timezone to avoid comparison errors
                      if pd.to_datetime(start_date).tz_localize(None) > pd.to_datetime(today).tz_localize(None):
-                         market_data[ticker] = self.db_manager.load_market_data(ticker)
+                         market_data[token] = self.db_manager.load_market_data(token)
                          continue
                 else:
                     start_date = today - pd.Timedelta(days=365)
 
-                token = self.get_token(ticker)
-                if not token:
-                    self.logger.warning(f"Could not find token for {ticker}")
-                    continue
 
-                self.logger.info(f"Fetching data for {ticker} (Token: {token}) from {start_date.date()}...")
+                self.logger.info(f"Fetching data for {token} (Token: {token}) from {start_date.date()}...")
                 
-                records = self.kite.historical_data(token, start_date, today, "day")
-                with open(f"{ticker}.txt", 'w') as f:
-                    f.write(str(records))
-                if not records:
-                    self.logger.warning(f"No data returned for {ticker}")
-                    continue
-                    
-                df_new = pd.DataFrame(records)
-                df_new.set_index('date', inplace=True)
-                df_new.index = pd.to_datetime(df_new.index).tz_localize(None) 
-                
-                rename_map = {
-                    'open': 'Open', 'high': 'High', 'low': 'Low', 
-                    'close': 'Close', 'volume': 'Volume'
-                }
-                df_new.rename(columns=rename_map, inplace=True)
-                df_new = df_new[rename_map.values()] 
-                
-                self.db_manager.save_market_data(ticker, df_new)
-                full_df = self.db_manager.load_market_data(ticker)
-                market_data[ticker] = full_df
+                df_new = self._fetch_single_instrument_data(token, start_date, today)
+                print(df_new)
+                if df_new is not None:
+                     self.db_manager.save_market_data(token, df_new)
+                     full_df = self.db_manager.load_market_data(token)
+                     market_data[token] = full_df
+
+                # Rate limiting: 3 requests per second => ~0.34s per request
+                time.sleep(0.34)
                 
             except Exception as e:
-                self.logger.error(f"Error fetching data for {ticker}: {e}")
+                self.logger.error(f"Error fetching data for {token}: {e}")
 
         self.logger.info(f"Loaded {len(market_data)} tickers for analysis.")
         return market_data
+
+    def _fetch_single_instrument_data(self, token, start_date, end_date):
+        """
+        Fetches data for a single instrument from Kite Connect check.
+        Returns a processed DataFrame or None if no data.
+        """
+        try:
+            records = self.kite.historical_data(token, start_date, end_date, "day")
+            with open(f"{token}.txt", 'w') as f:
+                f.write(str(records))
+
+            if not records:
+                self.logger.warning(f"No data returned for {token}")
+                return None
+            
+            df_new = pd.DataFrame(records)
+            df_new['date'] = pd.to_datetime(df_new['date']).dt.normalize()
+            df_new.set_index('date', inplace=True)
+
+            
+            rename_map = {
+                'open': 'Open', 'high': 'High', 'low': 'Low', 
+                'close': 'Close', 'volume': 'Volume'
+            }
+            df_new.rename(columns=rename_map, inplace=True)
+            df_new = df_new[rename_map.values()] 
+            return df_new
+
+        except Exception as e:
+            self.logger.error(f"Failed to fetch/process data for {token} (Token: {token}): {e}")
+            return None
