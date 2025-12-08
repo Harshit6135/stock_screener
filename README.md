@@ -4,105 +4,101 @@ A powerful, Python-based technical analysis tool designed to screen Nifty 500 st
 
 ## 🚀 Introduction
 
-Stocks Screener V3 is built to help traders finding potential momentum and trend-following setups without manually scanning hundreds of charts. It leverages the `yfinance` API for market data and uses a local SQLite database for efficiency. The core philosophy uses a combination of Trend, Momentum, Volatility, and Volume analysis to grade and rank stocks.
+Stocks Screener V3 is built to help traders find potential momentum and trend-following setups without manually scanning hundreds of charts. It leverages the **Zerodha Kite Connect API** for market data and uses a local SQLite database for efficiency. The core philosophy uses a combination of Trend, Momentum, Volatility, and Volume analysis to grade and rank stocks.
 
-## 🧠 Strategy & Technical Indicators
+## 📂 Project Structure
 
-The screener applies a robust set of technical checks defined in `stock_screener/config.py`:
+The project follows a modular Service-Oriented Architecture (SOA):
 
-### 1. Trend Analysis
-- **Primary Trend**: Checks if the price is above the **200-day Simple Moving Average (SMA)** ("The Sandbox Floor").
-- **Intermediate Trend**: Analyzes the **50-day SMA** to gauge medium-term direction.
-
-### 2. Momentum
-- **RSI (Relative Strength Index)**: Looks for stocks with RSI > 48 (configurable), indicating bullish momentum but not necessarily overbought.
-- **ROC (Rate of Change)**: Measures the velocity of price changes over a 10-day period.
-- **Stochastic Oscillator**: Uses %K (14) and %D (3) to identify overbought (>80) and oversold (<20) conditions.
-
-### 3. Volatility (The Squeeze)
-- **Bollinger Bands**: Uses a 20-period SMA with 2 standard deviations.
-- **Bandwidth**: Calculates the width of the bands to identify "Squeezes" (periods of low volatility often followed by explosive moves).
-- **Consolidation**: Filters for stocks within a specific bandwidth threshold (e.g., 15-20%) over a lookback period (~6 months).
-
-### 4. GPS (Trend Confirmation)
-- **MACD (Moving Average Convergence Divergence)**: Standard 12/26/9 setting to confirm trend direction and momentum.
-
-### 5. Volume
-- **Volume Analysis**: Compares short-term (5-day) vs long-term (20-day) Volume EMAs to detect institutional accumulation or distribution.
-
-### 6. Risk Management (Position Sizing)
-> **Standalone Tool**: Position calibration is now a separate step, allowing you to focus on specific stocks.
-
-- **How to Use**:
-    1. Add tickers to `position_input.txt`.
-    2. Run `python calculate_position_size.py`.
-- **Features**:
-    - **ATR-Based Stops**: Calculates volatility (14-day ATR) to set dynamic stop losses.
-    - **Position Sizing**: Automatically sizes positions based on a fixed risk account percentage (e.g., 1%).
-    - **Capital Protection**: Ensures a trade's size is proportional to the stop distance, normalizing risk across different stocks.
+- **`services/`**: Core business logic and services.
+    - `screener_service.py`: Main orchestration service.
+    - `kite_service.py`: Handles Kite Connect authentication and session.
+    - `market_data_service.py`: Manages data fetching and caching.
+    - `analysis_service.py`: Computes technical indicators (RSI, MACD, etc.).
+    - `strategy_service.py`: Applies filtration rules.
+    - `reporting_service.py`: Generates reports and charts.
+    - `ranking_service.py`: Ranks the best picks.
+    - `position_sizing_service.py`: Calculates risk and position sizes.
+- **`config/`**: Configuration files.
+    - `app_config.py`: Central strategy parameters.
+- **`database/`**: Database interaction.
+    - `sqlite_manager.py`: SQLite handler.
+- **`utils/`**: Shared utilities.
+    - `logger.py`: Application logging.
+- **`data/`**: Data storage.
+    - `stocks.db`: SQLite database.
+    - `working_instruments.csv`: List of instruments to scan.
+    - `position_input.txt` / `charts_input.txt`: Input files for scripts.
+- **`scripts/`**: Standalone tools.
+    - `generate_charts.py`: Generate health card charts for specific tickers.
+    - `calculate_position_size.py`: Calculate position sizes for tickers.
 
 ## 📋 Pre-requisites
 
-Ensure you have the following installed on your system:
+1.  **Python 3.13+**
+2.  **Kite Connect API Key & Secret** (from [Zerodha Developers](https://kite.trade/))
 
-- **Python 3.8+**
-- **pip** (Python package installer)
+### Dependencies
 
-### Required Libraries
-
-Install the necessary Python dependencies:
+Install the required packages:
 
 ```bash
-pip install pandas requests kiteconnect
+pip install pandas requests kiteconnect matplotlib openpyxl
 ```
 
-*(Note: `yfinance` has been replaced by `kiteconnect`.)*
+## 🔐 Setup & Configuration
 
-## 🛠️ Implementation Overview
+**CRITICAL STEP**: Security configuration.
 
-The project is structured for modularity and scalability:
+1.  Create a file named `local_secrets.py` in the **root directory** of the project.
+2.  Add your Kite Connect API credentials to this file:
 
-- **`main.py`**: The entry point of the application.
-- **`stock_screener/`**:
-    - **`screener.py`**: Orchestrates the screening process.
-    - **`classes/`**:
-        - `nse_client.py`: Fetches the list of Nifty 500 tickers.
-        - `kite_client.py`: Downloads historical market data using Zerodha's Kite Connect API.
-        - `analyzer.py`: Calculates proper technical indicators (RSI, Bollinger Bands, MACD, etc.).
-        - `strategy.py`: Applies the filtering logic based on the calculated indicators.
-        - `ranker.py`: Scores and ranks the "winning" stocks.
-        - `position_sizer.py`: Calculator for entry, stop, and position size based on risk parameters.
-        - `db.py`: Manages the SQLite database (`stocks.db`) for caching data and storing results.
-        - `report_generator.py`: Handles CSV export and console output.
-    - **`config.py`**: Central configuration file for tweaking strategy parameters (SMA periods, RSI thresholds, etc.).
+    ```python
+    # local_secrets.py
+    KITE_API_KEY = "your_api_key_here"
+    KITE_API_SECRET = "your_api_secret_here"
+    ```
+
+    *Note: `local_secrets.py` is ignored by git to keep your credentials safe.*
+
+3.  (Optional) Adjust strategy parameters in `config/app_config.py`.
 
 ## 🏃‍♂️ How to Run
 
-1.  **Clone the repository** (if you haven't already):
+### 1. Run the Main Screener
+This will fetch data, analyze stocks, and print winners to the console.
+
+```bash
+python main.py
+```
+
+Results are saved to `results/results.csv`.
+
+### 2. Generate Charts
+To generate technical "Health Card" charts for specific stocks:
+1.  Add stock symbols (e.g., `RELIANCE`, `TCS`) to `data/charts_input.txt`.
+2.  Run the script:
+
     ```bash
-    git clone <repository_url>
-    cd stocks_screener_v3
+    python scripts/generate_charts.py
     ```
 
-2.  **Run the Screener**:
-    Execute the main script from the root directory:
+### 3. Calculate Position Sizes
+To calculate risk-managed position sizes:
+1.  Add stock symbols to `data/position_input.txt`.
+2.  Run the script:
+
     ```bash
-    python main.py
+    python scripts/calculate_position_size.py
     ```
 
-3.  **View Results**:
-    -   **Console**: The script will print the process, winners, and the top 5 ranked stocks.
-    -   **CSV**: A full report is saved to `results/results.csv`.
-    -   **Charts**: Generated charts are saved in the `charts/` directory.
-    -   **Database**: All calculated indicators are stored in `stock_screener/stocks.db` for further analysis.
+## 📊 Strategy Highlights
 
-## 📊 Feature Highlights
-
--   **Automated Nifty 500 fetching**: Always screens the current index constituents.
--   **Intelligent Caching**: Saves data to SQLite to avoid hitting API limits and valid redundant fetches.
--   **Customizable Strategy**: Easily tweak parameters in `config.py` to fit your trading style.
--   **Ranking System**: Doesn't just filter; checks for the *best* setups based on a momentum score.
--   **Ranking Logic**: Winners are ranked based on a composite score of RSI, ROC, and other momentum factors.
+-   **Trend**: 50 SMA > 200 SMA.
+-   **Momentum**: RSI > 48, Positive ROC, Rising Stochastic.
+-   **Volatility**: Bollinger Band Squeezes (Bandwidth < 15-20%).
+-   **Confirmation**: MACD Bullish Crossover.
+-   **Volume**: Rising Volume Trend (Short EMA > Long EMA).
 
 ---
 
