@@ -18,7 +18,7 @@ class SQLiteManager:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS market_data (
                 ticker TEXT,
-                date TIMESTAMP,
+                date DATE,
                 open REAL,
                 high REAL,
                 low REAL,
@@ -35,7 +35,7 @@ class SQLiteManager:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS indicators (
                 ticker TEXT,
-                date TIMESTAMP,
+                date DATE,
                 rsi REAL,
                 roc REAL,
                 macd REAL,
@@ -45,6 +45,24 @@ class SQLiteManager:
                 short_ma REAL,
                 long_ma REAL,
                 PRIMARY KEY (ticker, date)
+            )
+        ''')
+
+        # Instruments Table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS instruments (
+                instrument_token INTEGER PRIMARY KEY,
+                exchange_token INTEGER,
+                tradingsymbol TEXT,
+                name TEXT,
+                last_price REAL,
+                expiry TEXT,
+                strike REAL,
+                tick_size REAL,
+                lot_size INTEGER,
+                instrument_type TEXT,
+                segment TEXT,
+                exchange TEXT
             )
         ''')
         
@@ -81,6 +99,10 @@ class SQLiteManager:
         # Standardize columns
         data_to_save = data_to_save[['date', 'Open', 'High', 'Low', 'Close', 'Volume']]
         data_to_save.columns = ['date', 'open', 'high', 'low', 'close', 'volume']
+        
+        # Convert date to string YYYY-MM-DD
+        data_to_save['date'] = data_to_save['date'].dt.strftime('%Y-%m-%d')
+        
         data_to_save['ticker'] = ticker
         
         try:
@@ -133,7 +155,7 @@ class SQLiteManager:
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 ticker, 
-                latest_date.isoformat(),
+                latest_date.strftime('%Y-%m-%d'),
                 data_dict.get('RSI'),
                 data_dict.get('ROC'),
                 data_dict.get('MACD'),
@@ -156,3 +178,34 @@ class SQLiteManager:
         cursor.execute("DELETE FROM indicators WHERE ticker = ?", (ticker,))
         conn.commit()
         conn.close()
+
+    def save_instruments(self, df):
+        """
+        Saves the instruments DataFrame to the database.
+        Replaces the existing table content.
+        """
+        if df.empty:
+            return
+
+        conn = self.get_connection()
+        try:
+            # We want to replace the list of instruments with the new valid list
+            df.to_sql('instruments', conn, if_exists='replace', index=False)
+        except Exception as e:
+            print(f"Error saving instruments: {e}")
+        finally:
+            conn.close()
+
+    def get_active_instruments(self):
+        """
+        Retrieves the list of active instruments as a DataFrame.
+        """
+        conn = self.get_connection()
+        try:
+            df = pd.read_sql("SELECT * FROM instruments", conn)
+        except Exception as e:
+            print(f"Error loading instruments: {e}")
+            df = pd.DataFrame()
+        finally:
+            conn.close()
+        return df
