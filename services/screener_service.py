@@ -78,7 +78,7 @@ class ScreenerService:
 
         # 4. Generate report (Simplified)
         df_results = pd.DataFrame(all_results)
-        
+        df_results.to_csv("filters.csv")
         winners = pd.DataFrame()
         if not df_results.empty and 'Selected' in df_results.columns:
             winners = df_results[df_results['Selected'] == True]
