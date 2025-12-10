@@ -167,3 +167,82 @@ class MarketDataService:
 
         self.logger.info(f"Loaded {len(market_data)} tickers for analysis.")
         return market_data
+
+    def fetch_long_term_history(self, ticker, start_date=None):
+        """
+        Fetches long-term history for a ticker, handling the 2000-day API limit.
+        OPTIMIZATION: Fetches backwards (Latest -> Oldest) to stop early if stock didn't exist.
+        Default start_date is Jan 1, 2015.
+        """
+        if start_date is None:
+            # User requested specific start from 2015-01-01
+            target_start_date = pd.Timestamp("2015-01-01")
+        else:
+            target_start_date = pd.to_datetime(start_date)
+
+        self.logger.info(f"Starting long-term history fetch for {ticker} (Target Start: {target_start_date.date()})...")
+        
+        all_records = []
+        
+        # We start from NOW and go backwards
+        current_end = pd.Timestamp.now().normalize()
+        # chunk_days optimized: 1900 calendar days (Safe under 2000 day API limit)
+        # This allows spanning 10 years (3652 days) in just 2 calls (1900 * 2 = 3800).
+        chunk_days = 1900 
+        
+        try:
+            while current_end > target_start_date:
+                # Calculate start for this chunk
+                current_start = current_end - pd.Timedelta(days=chunk_days)
+                
+                # Clamp to target start
+                if current_start < target_start_date:
+                    current_start = target_start_date
+                
+                self.logger.info(f"Fetching chunk: {current_start.date()} to {current_end.date()}")
+                records = self.kite.historical_data(ticker, current_start, current_end, "day")
+                
+                if records:
+                    # We got data, add it to our list
+                    # Note: records come sorted by date usually. 
+                    all_records.extend(records)
+                else:
+                    # Optimization: If we get NO data for this chunk, and we are moving backwards,
+                    # it means we have likely reached before the stock's listing date.
+                    self.logger.info("No data in this chunk, assuming reached start of history. Stopping fetch.")
+                    break
+                
+                # Prepare for next backward chunk
+                current_end = current_start - pd.Timedelta(days=1)
+                
+                if current_end < target_start_date:
+                    break
+
+                time.sleep(0.4) # Rate limiting
+            
+            if not all_records:
+                self.logger.warning(f"No long-term data found for {ticker}")
+                return None
+
+            df_new = pd.DataFrame(all_records)
+            df_new['date'] = pd.to_datetime(df_new['date']).dt.normalize()
+            df_new.set_index('date', inplace=True)
+            df_new.sort_index(inplace=True) # Ensure final order is correct
+            
+            # Remove potential duplicates
+            df_new = df_new[~df_new.index.duplicated(keep='first')]
+
+            rename_map = {
+                'open': 'Open', 'high': 'High', 'low': 'Low', 
+                'close': 'Close', 'volume': 'Volume'
+            }
+            df_new.rename(columns=rename_map, inplace=True, errors='ignore')
+            cols_to_keep = [c for c in rename_map.values() if c in df_new.columns]
+            df_new = df_new[cols_to_keep] 
+            
+            self.logger.info(f"Fetched {len(df_new)} rows for {ticker}")
+            return df_new
+
+        except Exception as e:
+            self.logger.error(f"Failed to fetch long-term history for {ticker}: {e}")
+            return None
