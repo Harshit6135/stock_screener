@@ -52,17 +52,11 @@ class SQLiteManager:
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS instruments (
                 instrument_token INTEGER PRIMARY KEY,
+                isin TEXT,
                 exchange_token INTEGER,
+                exchange TEXT,
                 tradingsymbol TEXT,
-                name TEXT,
-                last_price REAL,
-                expiry TEXT,
-                strike REAL,
-                tick_size REAL,
-                lot_size INTEGER,
-                instrument_type TEXT,
-                segment TEXT,
-                exchange TEXT
+                name TEXT
             )
         ''')
         

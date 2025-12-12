@@ -24,7 +24,7 @@ CONFIG = {
     "momentum": {
         "rsi_period": 14,
         "rsi_threshold": 48,
-        "rsi_smooth": 9,      # NEW: To calculate RSI Trend (Signal line)
+        "rsi_smooth": 3,      # NEW: To calculate RSI Trend (Signal line)
         "roc_period": 10      # NEW: Velocity check
     },
     "stochastic": {           # NEW SECTION

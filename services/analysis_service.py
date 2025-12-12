@@ -1,4 +1,5 @@
 import pandas as pd
+import pandas_ta as ta
 from config.app_config import CONFIG
 
 class AnalysisService:
@@ -17,48 +18,66 @@ class AnalysisService:
                     "Issue": "Insufficient Data"
                 }
 
+
             # EMAs
             short_ma = CONFIG["trend"]["short_ma"]
             long_ma = CONFIG["trend"]["long_ma"]
-            df['Short_MA'] = df['Close'].ewm(span=short_ma, adjust=False).mean()
-            df['Long_MA'] = df['Close'].ewm(span=long_ma, adjust=False).mean()
+            df['Short_MA'] = df.ta.ema(close='Close', length=short_ma)
+            df['Long_MA'] = df.ta.ema(close='Close', length=long_ma)
 
             # RSI
             rsi_n = CONFIG["momentum"]["rsi_period"]
-            delta = df['Close'].diff()
-            gain = (delta.where(delta > 0, 0)).rolling(window=rsi_n).mean()
-            loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_n).mean()
-            rs = gain / loss
-            df['RSI'] = 100 - (100 / (1 + rs))
-            df['RSI_Signal'] = df['RSI'].rolling(window=CONFIG['momentum']['rsi_smooth']).mean()
+            df['RSI'] = df.ta.rsi(close='Close', length=rsi_n)
+            # RSI Signal is not a standard output of ta.rsi, so we calculate it manually or using ma
+            # User Change: RSI Smoothened over 3 day EMA
+            rsi_smooth = CONFIG['momentum']['rsi_smooth']
+            df['RSI_Signal'] = df.ta.ema(close='RSI', length=rsi_smooth)
 
             # ROC
             n = CONFIG['momentum']['roc_period']
-            df['ROC'] = df['Close'].pct_change(periods=n) * 100
+            df['ROC'] = df.ta.roc(close='Close', length=n)
 
             # Stochastics
-            low_min = df['Low'].rolling(window=CONFIG['stochastic']['k_period']).min()
-            high_max = df['High'].rolling(window=CONFIG['stochastic']['k_period']).max()
-            df['Stoch_K'] = 100 * ((df['Close'] - low_min) / (high_max - low_min))
-            df['Stoch_D'] = df['Stoch_K'].rolling(window=CONFIG['stochastic']['d_period']).mean()
+            k_period = CONFIG['stochastic']['k_period']
+            d_period = CONFIG['stochastic']['d_period']
+            # pandas_tastoch returns a DataFrame with columns like STOCHk_14_3_3, STOCHd_14_3_3
+            stoch = df.ta.stoch(high='High', low='Low', close='Close', k=k_period, d=d_period)
+            # We need to map dynamic column names or access by index/suffix
+            # Assuming standard naming convention from pandas_ta
+            # Usually column names are formatted: STOCHk_{k}_{d}_{smooth_k}, STOCHd_{k}_{d}_{smooth_k}
+            # To be safe, we can inspect columns or just assign by order if deterministic, but safer to use simple column mapping
+            # Let's try to match the columns by looking for 'STOCHk' and 'STOCHd'
+            df['Stoch_K'] = stoch[stoch.columns[0]] 
+            df['Stoch_D'] = stoch[stoch.columns[1]]
 
             # MACD
             fast = CONFIG["gps"]["fast"]
             slow = CONFIG["gps"]["slow"]
             sig = CONFIG["gps"]["signal"]
-            df['EMA_Fast'] = df['Close'].ewm(span=fast, adjust=False).mean()
-            df['EMA_Slow'] = df['Close'].ewm(span=slow, adjust=False).mean()
-            df['MACD'] = df['EMA_Fast'] - df['EMA_Slow']
-            df['Signal_Line'] = df['MACD'].ewm(span=sig, adjust=False).mean()
+            macd = df.ta.macd(close='Close', fast=fast, slow=slow, signal=sig)
+            # MACD returns MACD, MACDh (histogram), MACDs (signal)
+            # Column names like MACD_12_26_9, MACDh_..., MACDs_...
+            # The order in returning DF is MACD line, Histogram, Signal line
+            df['MACD'] = macd[macd.columns[0]]
+            df['Signal_Line'] = macd[macd.columns[2]] # Index 2 is signal line usually (check docs or verify)
+            # Actually pandas_ta returns: MACD, MACDh, MACDs. 
+            # 0: MACD line
+            # 1: Histogram
+            # 2: Signal line
 
             # Bollinger Bands
             bb_n = CONFIG["squeeze"]["bb_window"]
             bb_std = CONFIG["squeeze"]["bb_std"]
-            df['SMA_BB'] = df['Close'].rolling(window=bb_n).mean()
-            df['Std_Dev'] = df['Close'].rolling(window=bb_n).std()
-            df['BB_Upper'] = df['SMA_BB'] + (df['Std_Dev'] * bb_std)
-            df['BB_Lower'] = df['SMA_BB'] - (df['Std_Dev'] * bb_std)
-            df['Bandwidth'] = ((df['BB_Upper'] - df['BB_Lower']) / df['SMA_BB']) * 100
+            bbands = df.ta.bbands(close='Close', length=bb_n, std=bb_std)
+            # Returns BBL, BBM, BBU, BBB, BBP
+            # BBL: Lower, BBM: Middle, BBU: Upper
+            df['BB_Upper'] = bbands[bbands.columns[2]] # BBU
+            df['BB_Lower'] = bbands[bbands.columns[0]] # BBL
+            df['SMA_BB'] = bbands[bbands.columns[1]]   # BBM
+            
+            # Bandwidth: ((Upper - Lower) / Middle) * 100
+            # pandas_ta calculates BBB which is Bandwidth
+            df['Bandwidth'] = bbands[bbands.columns[3]]
 
             lookback = CONFIG["squeeze"]["lookback_days"]
             df['Hist_Low_BW'] = df['Bandwidth'].rolling(window=lookback).min()
@@ -66,8 +85,8 @@ class AnalysisService:
             # Volume Indicators
             v_short = CONFIG["volume"]["short_ema"]
             v_long = CONFIG["volume"]["long_ema"]
-            df['Vol_Short'] = df['Volume'].ewm(span=v_short, adjust=False).mean()
-            df['Vol_Long'] = df['Volume'].ewm(span=v_long, adjust=False).mean()
+            df['Vol_Short'] = df.ta.ema(close='Volume', length=v_short)
+            df['Vol_Long'] = df.ta.ema(close='Volume', length=v_long)
 
             latest = df.iloc[-1]
             

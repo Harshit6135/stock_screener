@@ -2,7 +2,7 @@ import argparse
 from services.screener_service import ScreenerService
 from config.app_config import CONFIG
 from database.sqlite_manager import SQLiteManager
-from services.kite_service import KiteService
+from utils.kite import KiteService
 from services.market_data_service import MarketDataService
 from utils.logger import setup_logger
 

@@ -1,10 +1,10 @@
 from config.app_config import CONFIG
 from utils.logger import setup_logger
 
-from services.kite_service import KiteService
+from utils.kite import KiteService
 from database.sqlite_manager import SQLiteManager
 from services.strategy_service import StrategyService
-from services.ranking_service import RankingService
+from scripts.ranking_service import RankingService
 from services.market_data_service import MarketDataService
 from services.analysis_service import AnalysisService
 import pandas as pd
@@ -33,7 +33,6 @@ class ScreenerService:
         
         if day0:
             self.initialize_instruments()
-        
         # 1. Load tickers from DB
         self.logger.info("Loading active instruments from database...")
         active_instruments = self.db_manager.get_active_instruments()
