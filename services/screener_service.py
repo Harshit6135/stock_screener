@@ -6,7 +6,7 @@ from database.sqlite_manager import SQLiteManager
 from services.strategy_service import StrategyService
 from scripts.ranking_service import RankingService
 from services.market_data_service import MarketDataService
-from services.analysis_service import AnalysisService
+from services.indicators_service import AnalysisService
 import pandas as pd
 
 class ScreenerService:

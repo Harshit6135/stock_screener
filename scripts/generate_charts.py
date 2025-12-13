@@ -11,7 +11,7 @@ from services.reporting_service import ReportingService # ChartGenerator is insi
 # Let's check ReportingService file again. It had ChartGenerator class and ReportingService class.
 # I will import ChartGenerator specifically if needed or use from services.reporting_service import ChartGenerator
 from services.reporting_service import ChartGenerator
-from services.analysis_service import AnalysisService
+from services.indicators_service import AnalysisService
 from utils.kite import KiteService
 from config.app_config import CONFIG
 from utils.logger import setup_logger

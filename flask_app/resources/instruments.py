@@ -30,6 +30,17 @@ class InstrumentList(MethodView):
             abort(500, message=str(e))
         return instrument_data
 
+    @blp.response(200, {"message": "All instruments deleted."})
+    def delete(self):
+        """Delete all instruments"""
+        try:
+            num_rows_deleted = db.session.query(InstrumentModel).delete()
+            db.session.commit()
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            abort(500, message=str(e))
+        return {"message": f"Deleted {num_rows_deleted} instruments."}
+
 
 @blp.route("/instruments/<int:instrument_token>")
 class Instrument(MethodView):

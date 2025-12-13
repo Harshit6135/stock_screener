@@ -7,41 +7,92 @@ class IndicatorsService:
         self.market_data = market_data
         self.db_manager = db_manager
 
-    def ema(self, ticker, length, column_name="close"):
-        df = self.market_data[ticker]
+    def ema(self, df, length, column_name="close"):
         return df.ta.ema(close=column_name, length=length)
 
-    def rsi(self, ticker, length, smooth_length, column_name='Close'):
-        df = self.market_data[ticker]
+    def rsi(self, df, inp, column_name='Close'):
+        length, smooth_length = inp
         rsi = df.ta.rsi(close=column_name, length=length)
-        rsi_smooth = self.ema(ticker, smooth_length, column_name='RSI')
-        return rsi, rsi_smooth
+        rsi_signal = self.ema(df, smooth_length, column_name='RSI')
 
-    def roc(self, ticker, length, column_name="close"):
-        df = self.market_data[ticker]
+        return {
+            "": rsi, "rsi_signal": rsi_signal
+        }
+
+    def roc(self, df, length, column_name="close"):
         return df.ta.roc(close=column_name, length=length)
 
-    def stoch(self, ticker, k_period, d_period, column_names=("High", "Low", "Close")):
-        df = self.market_data[ticker]
+    def stoch(self, df, inp, column_names=("High", "Low", "Close")):
+        k_period, d_period = inp
         stoch = df.ta.stoch(high=column_names[0], low=column_names[1], close=column_names[2], k=k_period, d=d_period)
-        return stoch[stoch.columns[0]], stoch[stoch.columns[1]]
+        return {
+            "k": stoch[stoch.columns[0]],
+            "d": stoch[stoch.columns[1]]
+        }
 
-    def macd(self, ticker, fast, slow, signal, column_name="close"):
-        df = self.market_data[ticker]
+    def macd(self, df, inp, column_name="close"):
+        fast, slow, signal = inp
         macd = df.ta.macd(close=column_name, fast=fast, slow=slow, signal=signal)
-        return macd[macd.columns[0]], macd[macd.columns[2]]
+        return {
+            "": macd[macd.columns[0]],
+            "signal": macd[macd.columns[2]]
+        }
 
-    def bollinger_bands(self, ticker, window, std, column_name="close"):
-        df = self.market_data[ticker]
+    def bollinger_bands(self, df, inp, column_name="close", hist_low=0):
+        window, std = inp
         bbands = df.ta.bbands(close=column_name, length=window, std=std)
-        return (bbands[bbands.columns[0]],
-                bbands[bbands.columns[2]],
-                bbands[bbands.columns[1]],
-                bbands[bbands.columns[3]]
-        )
+        if hist_low:
+            hist_low_bbw = self.min_lookback(bbands[bbands.columns[3]], hist_low)
+        else:
+            hist_low_bbw = pd.DataFrame()
+        return {
+            "lower": bbands[bbands.columns[0]],
+            "upper": bbands[bbands.columns[2]],
+            "sma": bbands[bbands.columns[1]],
+            "bbw": bbands[bbands.columns[3]],
+            "hist_low": hist_low_bbw
+        }
 
     def min_lookback(self, df, lookback_days):
         return df.rolling(window=lookback_days).min()
 
     def max_lookback(self, df, lookback_days):
         return df.rolling(window=lookback_days).max()
+
+    def update_indicators_to_db(self, instr_token, exchange, symbol, indicators_config):
+
+        indicators_map = {
+            'ema': self.ema,
+            'rsi': self.rsi,
+            'roc': self.roc,
+            'stoch': self.stoch,
+            'macd': self.macd,
+            'bbands': self.bollinger_bands
+        }
+        indicators_output = {
+            "instr_token": instr_token,
+            "exchange": exchange,
+            "symbol": symbol
+        }
+
+        df = self.market_data[instr_token]
+
+        for indicator_name, config in indicators_config.items():
+            for inp in config:
+                col_name = f"{indicator_name}_{"_".join(inp)}"
+                if indicator_name in indicators_map:
+                    values = indicators_map[indicator_name](df, inp)
+                    if isinstance(values, dict):
+                        for key, value in values.items():
+                            if key:
+                                indic_name = f"{col_name}_{key}"
+                                indicators_output[indic_name] = value
+                    else:
+                        indicators_output[col_name] = values
+                elif indicator_name == "volume":
+                    values = self.ema(df, inp, "volume")
+                    indicators_output[col_name] = values
+        return indicators_output
+
+    def consolidate_indicators(self):
+        return ""

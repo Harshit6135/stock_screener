@@ -2,11 +2,11 @@ from flask import jsonify, request
 from flask_smorest import Blueprint, abort
 from flask.views import MethodView
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, func
 
 from db import db
 from models import MarketDataModel
-from schemas import MarketDataSchema, MarketDataQuerySchema
+from schemas import MarketDataSchema, MarketDataQuerySchema, MaxDateSchema
 
 blp = Blueprint("market_data", __name__, description="Operations on market data")
 
@@ -26,15 +26,15 @@ class MarketData(MethodView):
 
 @blp.route("/market_data/query")
 class MarketDataQuery(MethodView):
-    @blp.arguments(MarketDataQuerySchema, location="query")
+    @blp.arguments(MarketDataQuerySchema, location="json")
     @blp.response(200, MarketDataSchema(many=True))
     def get(self, filter_data):
-        """Fetch market data by instrument_token or ticker within a date range"""
+        """Fetch market data by instrument_id or ticker within a date range"""
         query = MarketDataModel.query
 
         instrument_filter = []
-        if "instrument_token" in filter_data:
-            instrument_filter.append(MarketDataModel.instrument_id == filter_data["instrument_token"])
+        if "instrument_id" in filter_data:
+            instrument_filter.append(MarketDataModel.instrument_id == filter_data["instrument_id"])
         if "ticker" in filter_data:
             instrument_filter.append(MarketDataModel.ticker == filter_data["ticker"])
 
@@ -49,3 +49,27 @@ class MarketDataQuery(MethodView):
         )
 
         return query.all()
+
+@blp.route("/market_data/max_date")
+class MaxDate(MethodView):
+    @blp.response(200, MaxDateSchema(many=True))
+    def get(self):
+        """Fetch the max date for each instrument"""
+        query = db.session.query(
+            MarketDataModel.instrument_id,
+            MarketDataModel.ticker,
+            func.max(MarketDataModel.date).label("max_date")
+        ).group_by(MarketDataModel.instrument_id)
+
+        return query.all()
+
+@blp.route("/market_data/latest/<string:ticker>")
+class LatestMarketData(MethodView):
+    @blp.response(200, MarketDataSchema)
+    def get(self, ticker):
+        """Fetch the latest market data for a ticker"""
+        query = MarketDataModel.query.filter(
+            MarketDataModel.ticker == ticker
+        )
+
+        return query.order_by(MarketDataModel.date.desc()).first()

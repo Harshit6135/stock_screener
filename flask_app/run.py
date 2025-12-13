@@ -24,5 +24,10 @@ with app.app_context():
 api.register_blueprint(InstrumentsBlueprint)
 api.register_blueprint(MarketDataBlueprint)
 
+app.route("/home")
+def home():
+    
+
+
 if __name__ == "__main__":
     app.run(debug=True)

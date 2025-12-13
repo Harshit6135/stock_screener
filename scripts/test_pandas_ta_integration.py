@@ -8,7 +8,7 @@ import numpy as np
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from services.analysis_service import AnalysisService
+from services.indicators_service import AnalysisService
 from config.app_config import CONFIG
 
 # Mock DB Manager
