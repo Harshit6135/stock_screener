@@ -1,4 +1,4 @@
-from marshmallow_sqlalchemy import Schema, fields
+from marshmallow import Schema, fields
 
 class MomentumStrategySchema(Schema):
     ticker = fields.Str(required=True)

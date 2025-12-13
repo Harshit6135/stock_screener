@@ -22,7 +22,7 @@ def orchestrator():
 
  # Initialize Kite Service
     # We pass None for db_manager as DB operations are via API
-    kite_service = KiteService(CONFIG, None, logger)
+    kite_service = KiteService(CONFIG, logger)
     
     # Initialize Market Data Service (for Kite fetching only)
     md_service = MarketDataService(kite_service, None, logger)
