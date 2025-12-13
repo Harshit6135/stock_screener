@@ -10,13 +10,10 @@ import os
 
 
 class MarketDataService:
-    def __init__(self, kite_client, db_manager, logger):
+    def __init__(self, kite_client, logger):
         self.kite = kite_client.kite  # Access the underlying KiteConnect instance
         self.kite_client = kite_client # Keep reference to wrapper if needed
-        self.db_manager = db_manager
         self.logger = logger
-
-    
 
     def fetch_history(self, ticker):
         """

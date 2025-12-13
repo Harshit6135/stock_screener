@@ -10,7 +10,7 @@ class MarketDataModel(db.Model):
     )
 
     # denormalized for fast access
-    ticker = db.Column(db.String, nullable=False)
+    tradingsymbol = db.Column(db.String, nullable=False)
 
     exchange = db.Column(db.String, nullable=False)
     date = db.Column(db.Date, nullable=False)
@@ -26,8 +26,8 @@ class MarketDataModel(db.Model):
         PrimaryKeyConstraint("instrument_token", "date"),
 
         # 🚀 fast lookup by ticker + date
-        Index("idx_marketdata_ticker_date", "ticker", "date"),
+        Index("idx_marketdata_tradingsymbol_date", "tradingsymbol", "date"),
     )
 
     def __repr__(self):
-        return f"<MarketData {self.ticker} {self.date}>"
+        return f"<MarketData {self.tradingsymbol} {self.date}>"

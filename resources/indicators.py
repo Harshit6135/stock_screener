@@ -30,17 +30,17 @@ class IndicatorsQuery(MethodView):
     @blp.arguments(IndicatorsSchema, location="json")
     @blp.response(200, IndicatorsSchema(many=True))
     def get(self, filter_data):
-        """Fetch indicators by instrument_token or ticker within a date range"""
+        """Fetch indicators by instrument_token or tradingsymbol within a date range"""
         query = IndicatorsModel.query
 
 
-@blp.route("/indicators/latest/<string:ticker>")
+@blp.route("/indicators/latest/<string:tradingsymbol>")
 class LatestMarketData(MethodView):
     @blp.response(200, IndicatorsSchema)
-    def get(self, ticker):
-        """Fetch the latest market data for a ticker"""
+    def get(self, tradingsymbol):
+        """Fetch the latest market data for a tradingsymbol"""
         query = IndicatorsModel.query.filter(
-            IndicatorsModel.ticker == ticker
+            IndicatorsModel.tradingsymbol == tradingsymbol
         )
 
         return query.order_by(IndicatorsModel.date.desc()).first()

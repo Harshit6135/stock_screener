@@ -29,14 +29,14 @@ class MarketDataQuery(MethodView):
     @blp.arguments(MarketDataQuerySchema, location="json")
     @blp.response(200, MarketDataSchema(many=True))
     def get(self, filter_data):
-        """Fetch market data by instrument_token or ticker within a date range"""
+        """Fetch market data by instrument_token or tradingsymbol within a date range"""
         query = MarketDataModel.query
 
         instrument_filter = []
         if "instrument_token" in filter_data:
             instrument_filter.append(MarketDataModel.instrument_token == filter_data["instrument_token"])
-        if "ticker" in filter_data:
-            instrument_filter.append(MarketDataModel.ticker == filter_data["ticker"])
+        if "tradingsymbol" in filter_data:
+            instrument_filter.append(MarketDataModel.tradingsymbol == filter_data["tradingsymbol"])
 
         if instrument_filter:
             query = query.filter(or_(*instrument_filter))
@@ -57,19 +57,19 @@ class MaxDate(MethodView):
         """Fetch the max date for each instrument"""
         query = db.session.query(
             MarketDataModel.instrument_token,
-            MarketDataModel.ticker,
+            MarketDataModel.tradingsymbol,
             func.max(MarketDataModel.date).label("max_date")
         ).group_by(MarketDataModel.instrument_token)
 
         return query.all()
 
-@blp.route("/market_data/latest/<string:ticker>")
+@blp.route("/market_data/latest/<string:tradingsymbol>")
 class LatestMarketData(MethodView):
     @blp.response(200, MarketDataSchema)
-    def get(self, ticker):
-        """Fetch the latest market data for a ticker"""
+    def get(self, tradingsymbol):
+        """Fetch the latest market data for a tradingsymbol"""
         query = MarketDataModel.query.filter(
-            MarketDataModel.ticker == ticker
+            MarketDataModel.tradingsymbol == tradingsymbol
         )
 
         return query.order_by(MarketDataModel.date.desc()).first()

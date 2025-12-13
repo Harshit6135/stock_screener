@@ -35,8 +35,8 @@ class IndicatorsService:
             "signal": macd[macd.columns[2]]
         }
 
-    def bollinger_bands(self, df, inp, column_name="close", hist_low=0):
-        window, std = inp
+    def bollinger_bands(self, df, inp, column_name="close"):
+        window, std, hist_low = inp
         bbands = df.ta.bbands(close=column_name, length=window, std=std)
         if hist_low:
             hist_low_bbw = self.min_lookback(bbands[bbands.columns[3]], hist_low)
@@ -67,12 +67,11 @@ class IndicatorsService:
             'bbands': self.bollinger_bands
         }
         indicators_output = {
-            "instr_token": instr_token,
+            "instrument_token": instr_token,
             "exchange": exchange,
-            "symbol": symbol
+            "tradingsymbol": symbol
         }
 
-        
         for indicator_name, config in indicators_config.items():
             for inp in config:
                 col_name = f"{indicator_name}_{"_".join(inp)}"

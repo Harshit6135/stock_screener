@@ -5,8 +5,9 @@ from config.flask_config import Config
 from db import db
 
 from resources import InstrumentsBlueprint, MarketDataBlueprint, StrategyBlueprint, IndicatorsBlueprint
-from router.main_router import orchestrator
+from router.kite_router import get_latest_data
 from router.day0_router import init_db
+from router.indicators_router import calculate_indicators
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -29,7 +30,7 @@ api.register_blueprint(IndicatorsBlueprint)
 
 @app.route("/home")
 def home():
-    orchestrator()
+    get_latest_data()
     return "Orchestrator completed."
 
 @app.route("/day0")
@@ -37,6 +38,10 @@ def day0():
     init_db()
     return "Day 0 completed."
 
+@app.route("/update_indicators")
+def calc_indicators():
+    calculate_indicators()
+    return "Calculation of Indicators completed."
 
 if __name__ == "__main__":
     app.run(debug=True)
