@@ -1,11 +1,11 @@
 from flask import Flask
 from flask_smorest import Api
-from flask_migrate import Migrate
-from config import Config
+# from flask_migrate import Migrate
+from config.flask_config import Config
 from db import db
 
 from resources import InstrumentsBlueprint, MarketDataBlueprint
-
+from router.main_router import orchestrator
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -14,7 +14,7 @@ def create_app(config_class=Config):
 
 app = create_app()
 db.init_app(app)
-migrate = Migrate(app, db)
+# migrate = Migrate(app, db)
 api = Api(app)
 
 # Create all database tables
@@ -26,7 +26,8 @@ api.register_blueprint(MarketDataBlueprint)
 
 app.route("/home")
 def home():
-    
+    orchestrator()
+    return "Orchestrator completed."
 
 
 if __name__ == "__main__":

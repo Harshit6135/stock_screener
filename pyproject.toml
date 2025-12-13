@@ -17,7 +17,8 @@ dependencies = [
     "flask (>=3.1.2,<4.0.0)",
     "flask-smorest (>=0.46.2,<0.47.0)",
     "flask-sqlalchemy (>=3.1.1,<4.0.0)",
-    "flask-migrate (>=4.1.0,<5.0.0)"
+    "flask-migrate (>=4.1.0,<5.0.0)",
+    "marshmallow-sqlalchemy (>=1.4.2,<2.0.0)"
 ]
 
 

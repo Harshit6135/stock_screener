@@ -3,9 +3,6 @@ import pandas_ta as ta
 from config.app_config import CONFIG
 
 class IndicatorsService:
-    def __init__(self, market_data, db_manager):
-        self.market_data = market_data
-        self.db_manager = db_manager
 
     def ema(self, df, length, column_name="close"):
         return df.ta.ema(close=column_name, length=length)

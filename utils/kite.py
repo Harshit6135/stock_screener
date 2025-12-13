@@ -8,9 +8,8 @@ import urllib.parse
 import time
 
 class KiteService:
-    def __init__(self, config, db_manager, logger):
+    def __init__(self, config, logger):
         self.config = config
-        self.db_manager = db_manager
         self.logger = logger
         self.kite = None
         self.instrument_map = {}
