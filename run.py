@@ -6,6 +6,7 @@ from db import db
 
 from resources import InstrumentsBlueprint, MarketDataBlueprint, StrategyBlueprint, IndicatorsBlueprint
 from router.main_router import orchestrator
+from router.day0_router import init_db
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -30,6 +31,11 @@ api.register_blueprint(IndicatorsBlueprint)
 def home():
     orchestrator()
     return "Orchestrator completed."
+
+@app.route("/day0")
+def day0():
+    init_db()
+    return "Day 0 completed."
 
 
 if __name__ == "__main__":

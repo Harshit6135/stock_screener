@@ -175,76 +175,30 @@ def orchestrator():
         df_for_ind.set_index('date', inplace=True)
         df_for_ind.sort_index(inplace=True)
         
-        ind_conf_map = {}
-        if "trend" in CONFIG:
-            emas = []
-            if "short_ma" in CONFIG["trend"]: emas.append(CONFIG["trend"]["short_ma"])
-            if "long_ma" in CONFIG["trend"]: emas.append(CONFIG["trend"]["long_ma"])
-            ind_conf_map['ema'] = emas
-        
-        if "momentum" in CONFIG:
-            rsi_period = CONFIG["momentum"].get("rsi_period", 14)
-            rsi_smooth = CONFIG["momentum"].get("rsi_smooth", 3)
-            ind_conf_map['rsi'] = [(rsi_period, rsi_smooth)]
-            if "roc_period" in CONFIG["momentum"]:
-                ind_conf_map['roc'] = [CONFIG["momentum"]["roc_period"]]
-
-        if "gps" in CONFIG:
-            fast = CONFIG["gps"].get("fast", 12)
-            slow = CONFIG["gps"].get("slow", 26)
-            signal = CONFIG["gps"].get("signal", 9)
-            ind_conf_map['macd'] = [(fast, slow, signal)]
-
-        
         logger.info("Calculating indicators...")
-        output_dict = ind_service.update_indicators_to_db(token, exchange, ticker, ind_conf_map)
-        
-        series_data = {k:v for k,v in output_dict.items() if isinstance(v, pd.Series)}
-        if not series_data:
-             continue
-             
-        df_ind = pd.DataFrame(series_data)
-        df_ind_filtered = df_ind[df_ind.index >= calc_start_date]
-        
-        if df_ind_filtered.empty:
-            continue
-            
-        logger.info(f"Posting {len(df_ind_filtered)} indicator records...")
-        
-        for idx, row in df_ind_filtered.iterrows():
-            ema_50 = row.get("ema_50")
-            ema_200 = row.get("ema_200")
-            
-            rsi_p = CONFIG["momentum"].get("rsi_period", 14)
-            rsi_s = CONFIG["momentum"].get("rsi_smooth", 3)
-            rsi_val = row.get(f"rsi_{rsi_p}_{rsi_s}")
-            
-            gps_conf = CONFIG.get("gps", {})
-            fast = gps_conf.get("fast", 12)
-            slow = gps_conf.get("slow", 26)
-            sig = gps_conf.get("signal", 9)
-            macd_val = row.get(f"macd_{fast}_{slow}_{sig}")
-            
-            payload = {
-                "instrument_token": token, # Schema expects instrument_token
-                "ticker": ticker,
-                "date": str(idx.date()),
-                "exchange": exchange,
-                "ema_50": ema_50 if pd.notna(ema_50) else None,
-                "ema_200": ema_200 if pd.notna(ema_200) else None,
-                "rsi_14": rsi_val if pd.notna(rsi_val) else None,
-                "macd": macd_val if pd.notna(macd_val) else None
-            }
-            
-            # POST /indicators
-            try:
-                # API expects single object
-                i_resp = requests.post(f"{BASE_URL}/indicators", json=payload)
-                if i_resp.status_code != 201:
-                    logger.error(f"Failed to post indicator: {i_resp.text}")
-            except Exception as e:
-                logger.error(f"Error posting indicator: {e}")
-                
+        ema_50 = ind_service.ema(df_for_ind, 50)
+        ema_200 = ind_service.ema(df_for_ind, 200)
+        rsi_14 = ind_service.rsi(df_for_ind, (14, 3))[""]
+        macd = ind_service.macd(df_for_ind, (12, 26, 9))[""]
+        ind_df = pd.DataFrame({
+            "ema_50": ema_50,
+            "ema_200": ema_200,
+            "rsi_14": rsi_14,
+            "macd": macd
+        })
+        ind_df.reset_index(inplace=True)
+        ind_df['instrument_token'] = token
+        ind_df['ticker'] = ticker
+        ind_df['exchange'] = exchange
+        ind_json = json.loads(ind_df.to_json(orient='records', indent=4))
+
+        try:
+            # API expects single object
+            resp = requests.post(f"{BASE_URL}/indicators", json=ind_json)
+            if resp.status_code != 201:
+                logger.error(f"Failed to post indicator: {resp.text}")
+        except Exception as e:
+            logger.error(f"Error posting indicator: {e}")
         time.sleep(0.34)
 
     logger.info("Orchestration Complete.")

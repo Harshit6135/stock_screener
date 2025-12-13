@@ -4,9 +4,8 @@ from db import db
 class IndicatorsModel(db.Model):
     __tablename__ = "indicators"
 
-    instrument_id = db.Column(
+    instrument_token = db.Column(
         db.Integer,
-        ForeignKey("instruments.instrument_token"),
         nullable=False
     )
     date = db.Column(db.Date, nullable=False)
@@ -22,15 +21,10 @@ class IndicatorsModel(db.Model):
 
     __table_args__ = (
         # composite primary key
-        PrimaryKeyConstraint("instrument_id", "date"),
+        PrimaryKeyConstraint("instrument_token", "date"),
 
         # fast lookup by ticker + date
         Index("idx_indicator_ticker_date", "ticker", "date"),
-    )
-
-    instrument = db.relationship(
-        "InstrumentModel",
-        backref=db.backref("indicators", lazy="dynamic")
     )
 
     def __repr__(self):

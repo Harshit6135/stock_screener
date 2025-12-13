@@ -56,7 +56,7 @@ class IndicatorsService:
     def max_lookback(self, df, lookback_days):
         return df.rolling(window=lookback_days).max()
 
-    def update_indicators_to_db(self, instr_token, exchange, symbol, indicators_config):
+    def update_indicators_to_db(self, df, instr_token, exchange, symbol, indicators_config):
 
         indicators_map = {
             'ema': self.ema,
@@ -72,8 +72,7 @@ class IndicatorsService:
             "symbol": symbol
         }
 
-        df = self.market_data[instr_token]
-
+        
         for indicator_name, config in indicators_config.items():
             for inp in config:
                 col_name = f"{indicator_name}_{"_".join(inp)}"

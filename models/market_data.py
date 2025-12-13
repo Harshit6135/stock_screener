@@ -31,7 +31,7 @@ class MarketDataModel(db.Model):
     )
 
     instrument = db.relationship(
-        "Instrument",
+        "InstrumentModel",
         backref=db.backref("market_data", lazy="dynamic")
     )
 
