@@ -8,7 +8,7 @@ import pandas as pd
 from database.sqlite_manager import SQLiteManager
 from services.position_sizing_service import PositionSizingService
 from utils.kite import KiteService
-from config.app_config import CONFIG
+from config.kite_config import CONFIG
 from utils.logger import setup_logger
 
 def main():

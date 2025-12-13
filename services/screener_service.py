@@ -1,4 +1,4 @@
-from config.app_config import CONFIG
+from config.kite_config import CONFIG
 from utils.logger import setup_logger
 
 from utils.kite import KiteService

@@ -6,7 +6,7 @@ import pandas as pd
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from config.app_config import CONFIG
+from config.kite_config import CONFIG
 from database.sqlite_manager import SQLiteManager
 from utils.kite import KiteService
 from services.market_data_service import MarketDataService

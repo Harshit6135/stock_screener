@@ -13,7 +13,7 @@ from services.reporting_service import ReportingService # ChartGenerator is insi
 from services.reporting_service import ChartGenerator
 from services.indicators_service import AnalysisService
 from utils.kite import KiteService
-from config.app_config import CONFIG
+from config.kite_config import CONFIG
 from utils.logger import setup_logger
 import pandas as pd
 

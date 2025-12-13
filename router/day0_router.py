@@ -3,7 +3,7 @@ import pandas as pd
 import logging
 import requests
 import json
-from config.app_config import CONFIG
+from config.kite_config import KITE_CONFIG
 
 from utils.kite import KiteService
 
@@ -89,7 +89,7 @@ def load_instruments():
     """
     try:
         logger.info("Loading instruments...")
-        kite_client = KiteService(CONFIG, logger)
+        kite_client = KiteService(KITE_CONFIG, logger)
         kite = kite_client.kite
         # 1. Get Valid Stock List (The "Master" List)
         valid_stocks = get_merged_stock_list()

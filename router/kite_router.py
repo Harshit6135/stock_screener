@@ -1,11 +1,12 @@
 import requests
 import pandas as pd
+import time
 
 from datetime import timedelta
 
 from utils.kite import KiteService
 from utils.logger import setup_logger
-from config.app_config import CONFIG
+from config.kite_config import KITE_CONFIG
 from services.market_data_service import MarketDataService
 
 BASE_URL = "http://127.0.0.1:5000"
@@ -16,7 +17,7 @@ def get_latest_data():
 
     # Initialize Kite Service
     # We pass None for db_manager as DB operations are via API
-    kite_service = KiteService(CONFIG, logger)
+    kite_service = KiteService(KITE_CONFIG, logger)
     md_service = MarketDataService(kite_service, logger)
 
     logger.info("Fetching Instruments via Kite API...")
@@ -59,7 +60,8 @@ def get_latest_data():
         md_updated = False
         if start_date <= today:
             logger.info(f"Fetching from Kite for {log_symb}) starting {start_date.date()}...")
-            # Use Service directly for Kite Call
+            
+            start_time = time.time()
             new_data_df = md_service.load_data(instr_token, start_date, today)
             
             if new_data_df is not None and not new_data_df.empty:
@@ -80,10 +82,10 @@ def get_latest_data():
                 
                 try:
                     p_resp = requests.post(f"{BASE_URL}/market_data", json=records)
-                    if p_resp.status_code in [200, 201]:
-                        md_updated = True
-                    else:
+                    if p_resp.status_code not in [200, 201]:
                         logger.error(f"Failed to post market data for {log_symb}: {p_resp.text}")
                 except Exception as e:
                     logger.error(f"Error posting market data: {e}")
+        time.sleep(0.34-time.time()+start_time)
+
     logger.info("Price Update Complete.")

@@ -1,18 +1,14 @@
 
 import pandas as pd
 from datetime import timedelta
-import time
 import requests
 import json
 
 # Config and Utils
-from config.app_config import CONFIG
-from utils.kite import KiteService
 from utils.logger import setup_logger
 from strategy.strategy_1 import MOMENTUM
 
 # Services
-from services.market_data_service import MarketDataService
 from services.indicators_service import IndicatorsService
 
 BASE_URL = "http://127.0.0.1:5000"
@@ -39,13 +35,25 @@ def calculate_indicators():
     logger.info("Calculating Indicators for Instruments...")
     today = pd.Timestamp.now().normalize()
     
-    for instr in instruments[:5]:
+    for instr in instruments:
         tradingsymbol = instr.get("tradingsymbol")
         instr_token = instr.get("instrument_token")
         exchange = instr.get("exchange")
         log_symb = f"{tradingsymbol} ({instr_token})"
 
         logger.info(f"Processing {log_symb})...")
+
+        last_data_date = None
+        try:
+            resp = requests.get(f"{BASE_URL}/market_data/latest/{tradingsymbol}")
+            if resp.status_code == 200:
+                data = resp.json()
+                if data:
+                    last_data_date = data.get("date")
+                    last_data_date = pd.to_datetime(last_data_date)
+        except Exception as e:
+            logger.error(f"Error fetching latest market data for {log_symb}: {e}")
+
 
         last_ind_date = None
         try:
@@ -55,17 +63,19 @@ def calculate_indicators():
                 ind_data = resp.json()
                 if ind_data:
                     last_ind_date = ind_data.get("date")
+                    last_ind_date =  pd.to_datetime(last_ind_date)
         except Exception:
             pass # Ignore if not found
             
-        if last_ind_date:
-            calc_start_date = pd.to_datetime(last_ind_date) - timedelta(days=200)
+        if last_ind_date and last_ind_date == last_data_date:
+            continue
+        elif last_ind_date:
+            calc_start_date = pd.to_datetime(last_ind_date) - timedelta(days=365)
+            if last_ind_date >= today:
+                logger.info(f"Indicators up to date for {log_symb}.")
+                continue
         else:
             calc_start_date = pd.to_datetime("2000-01-01")
-             
-        if last_ind_date >= today.date:
-            logger.info(f"Indicators up to date for {log_symb}.")
-            continue
             
         query_payload = {
             "tradingsymbol": tradingsymbol,
@@ -84,7 +94,8 @@ def calculate_indicators():
              continue
         
         if not md_list:
-             continue
+            logger.info(f"No new data to calculate indicators for {log_symb}")
+            continue
 
         df_for_ind = pd.DataFrame(md_list)
         df_for_ind['date'] = pd.to_datetime(df_for_ind['date'])
@@ -93,35 +104,31 @@ def calculate_indicators():
         
         logger.info("Calculating indicators...")
 
-        ind_output = ind_service.update_indicators_to_db(df_for_ind, instr_token, exchange, tradingsymbol, MOMENTUM)
-        print(ind_output)
-        #
-        # ema_50 = ind_service.ema(df_for_ind, 50)
-        # ema_200 = ind_service.ema(df_for_ind, 200)
-        # rsi_14 = ind_service.rsi(df_for_ind, (14, 3))[""]
-        # macd = ind_service.macd(df_for_ind, (12, 26, 9))[""]
-        # ind_df = pd.DataFrame({
-        #     "ema_50": ema_50,
-        #     "ema_200": ema_200,
-        #     "rsi_14": rsi_14,
-        #     "macd": macd
-        # })
-        # ind_df.reset_index(inplace=True)
-        # ind_df['date'] = ind_df['date'].dt.strftime('%Y-%m-%d')
-        #
-        # ind_df['instrument_token'] = token
-        # ind_df['ticker'] = ticker
-        # ind_df['exchange'] = exchange
-        # ind_json = json.loads(ind_df.to_json(orient='records', indent=4))
-        # ind_df.to_json("data/indicators.json", orient='records', indent=4)
-        # try:
-        #     # API expects single object
-        #     resp = requests.post(f"{BASE_URL}/indicators", json=ind_json)
-        #     if resp.status_code != 201:
-        #         logger.error(f"Failed to post indicator: {resp.text}")
-        # except Exception as e:
-        #     logger.error(f"Error posting indicator: {e}")
-        #     break
-        time.sleep(0.34)
+        ind_output = ind_service.update_indicators_to_db(df_for_ind, MOMENTUM)
+        ind_df = pd.DataFrame(ind_output)
 
-    logger.info("Orchestration Complete.")
+        ind_df.reset_index(inplace=True)
+        ind_df['instrument_token'] = instr_token
+        ind_df['tradingsymbol'] = tradingsymbol
+        ind_df['exchange'] = exchange
+
+        if last_ind_date:
+            next_day = last_ind_date + timedelta(days=1)
+            ind_df_filtered = ind_df[ind_df['date'] >= next_day]
+        else:
+            ind_df_filtered = ind_df
+        if ind_df_filtered.empty:
+            logger.info(f"No new data to calculate indicators for {log_symb}")
+            continue
+        
+        ind_df_filtered['date'] = ind_df_filtered['date'].dt.strftime('%Y-%m-%d')        
+        ind_json = json.loads(ind_df_filtered.to_json(orient='records', indent=4))
+        try:
+            # API expects single object
+            resp = requests.post(f"{BASE_URL}/indicators", json=ind_json)
+            if resp.status_code != 201:
+                logger.error(f"Failed to post indicator: {resp.text}")
+        except Exception as e:
+            logger.error(f"Error posting indicator: {e}")
+
+    # logger.info("Orchestration Complete.")

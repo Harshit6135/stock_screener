@@ -1,4 +1,4 @@
-from config.app_config import CONFIG
+from config.kite_config import CONFIG
 
 class StrategyService:
     def strategy_momentum_and_squeeze(self, market_data, indicator_data):

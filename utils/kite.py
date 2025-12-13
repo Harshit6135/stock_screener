@@ -9,7 +9,9 @@ import time
 
 class KiteService:
     def __init__(self, config, logger):
-        self.config = config
+        self.api_key = config['api_key']
+        self.api_secret = config['api_secret']
+        self.redirect_url = config['redirect_url']
         self.logger = logger
         self.kite = None
         self.instrument_map = {}
@@ -19,13 +21,11 @@ class KiteService:
 
     def _initialize_kite(self):
         try:
-            api_key = self.config['kite']['api_key']
-            
-            if api_key == "YOUR_API_KEY":
+            if self.api_key == "YOUR_API_KEY":
                 self.logger.warning("Kite API Key not set in config.")
                 return
 
-            self.kite = KiteConnect(api_key=api_key)
+            self.kite = KiteConnect(api_key=self.api_key)
             self._ensure_session()
             self.logger.info("Kite Connect initialized.")            
         except Exception as e:
@@ -55,8 +55,7 @@ class KiteService:
         self.logger.info("Starting automated login flow...")
         
         # 1. Parse Redirect URL to find port
-        redirect_url = self.config['kite'].get('redirect_url', 'http://127.0.0.1')
-        parsed_url = urllib.parse.urlparse(redirect_url)
+        parsed_url = urllib.parse.urlparse(self.redirect_url)
         port = parsed_url.port if parsed_url.port else 80
         host = parsed_url.hostname
         
@@ -102,8 +101,7 @@ class KiteService:
         if self.request_token:
             self.logger.info("Request Token received via callback.")
             try:
-                api_secret = self.config['kite']['api_secret']
-                data = self.kite.generate_session(self.request_token, api_secret=api_secret)
+                data = self.kite.generate_session(self.request_token, api_secret=self.api_secret)
                 access_token = data["access_token"]
                 self.kite.set_access_token(access_token)
                 

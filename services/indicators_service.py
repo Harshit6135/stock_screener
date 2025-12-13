@@ -1,6 +1,5 @@
 import pandas as pd
 import pandas_ta as ta
-from config.app_config import CONFIG
 
 class IndicatorsService:
 
@@ -10,10 +9,11 @@ class IndicatorsService:
     def rsi(self, df, inp, column_name='Close'):
         length, smooth_length = inp
         rsi = df.ta.rsi(close=column_name, length=length)
-        rsi_signal = self.ema(df, smooth_length, column_name='RSI')
+        rsi_df = pd.DataFrame(rsi)
+        rsi_signal = self.ema(rsi_df, smooth_length, rsi_df.columns[-1])
 
         return {
-            "": rsi, "rsi_signal": rsi_signal
+            "": rsi, "signal": rsi_signal
         }
 
     def roc(self, df, length, column_name="close"):
@@ -56,7 +56,7 @@ class IndicatorsService:
     def max_lookback(self, df, lookback_days):
         return df.rolling(window=lookback_days).max()
 
-    def update_indicators_to_db(self, df, instr_token, exchange, symbol, indicators_config):
+    def update_indicators_to_db(self, df, indicators_config):
 
         indicators_map = {
             'ema': self.ema,
@@ -67,14 +67,11 @@ class IndicatorsService:
             'bbands': self.bollinger_bands
         }
         indicators_output = {
-            "instrument_token": instr_token,
-            "exchange": exchange,
-            "tradingsymbol": symbol
         }
 
         for indicator_name, config in indicators_config.items():
             for inp in config:
-                col_name = f"{indicator_name}_{"_".join(inp)}"
+                col_name = f"{indicator_name}_{"_".join(map(str, inp)) if isinstance(inp, tuple) else inp}"
                 if indicator_name in indicators_map:
                     values = indicators_map[indicator_name](df, inp)
                     if isinstance(values, dict):
@@ -82,6 +79,8 @@ class IndicatorsService:
                             if key:
                                 indic_name = f"{col_name}_{key}"
                                 indicators_output[indic_name] = value
+                            else:
+                                indicators_output[col_name] = value
                     else:
                         indicators_output[col_name] = values
                 elif indicator_name == "volume":

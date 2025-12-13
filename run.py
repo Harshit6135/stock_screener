@@ -1,6 +1,6 @@
 from flask import Flask
 from flask_smorest import Api
-# from flask_migrate import Migrate
+from flask_migrate import Migrate
 from config.flask_config import Config
 from db import db
 
@@ -16,7 +16,7 @@ def create_app(config_class=Config):
 
 app = create_app()
 db.init_app(app)
-# migrate = Migrate(app, db)
+migrate = Migrate(app, db)
 api = Api(app)
 
 # Create all database tables

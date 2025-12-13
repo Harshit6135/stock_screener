@@ -9,7 +9,7 @@ import numpy as np
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from services.indicators_service import AnalysisService
-from config.app_config import CONFIG
+from config.kite_config import CONFIG
 
 # Mock DB Manager
 class MockDBManager:
