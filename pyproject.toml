@@ -13,7 +13,11 @@ dependencies = [
     "pandas (>=2.3.3,<3.0.0)",
     "openpyxl (>=3.1.5,<4.0.0)",
     "requests (>=2.32.5,<3.0.0)",
-    "pandas_ta (>=0.3.14b)"
+    "pandas_ta (>=0.3.14b)",
+    "flask (>=3.1.2,<4.0.0)",
+    "flask-smorest (>=0.46.2,<0.47.0)",
+    "flask-sqlalchemy (>=3.1.1,<4.0.0)",
+    "flask-migrate (>=4.1.0,<5.0.0)"
 ]
 
 
