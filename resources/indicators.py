@@ -13,24 +13,24 @@ blp = Blueprint("indicators", __name__, description="Operations on indicators")
 
 @blp.route("/indicators")
 class Indicators(MethodView):
-    @blp.arguments(IndicatorsSchema)
+    @blp.arguments(IndicatorsSchema(many=True))
     @blp.response(201, IndicatorsSchema)
-    def post(self, indicator):
+    def post(self, indicator_data):
         """Add an indicator entry"""
         try:
-            db.session.add(indicator)
+            db.session.bulk_insert_mappings(IndicatorsModel, indicator_data, return_defaults=True)
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
             abort(500, message=str(e))
-        return indicator
+        return indicator_data
 
 @blp.route("/indicators/query")
 class IndicatorsQuery(MethodView):
     @blp.arguments(IndicatorsSchema, location="json")
     @blp.response(200, IndicatorsSchema(many=True))
     def get(self, filter_data):
-        """Fetch indicators by instrument_id or ticker within a date range"""
+        """Fetch indicators by instrument_token or ticker within a date range"""
         query = IndicatorsModel.query
 
 

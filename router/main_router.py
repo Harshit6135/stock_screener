@@ -83,7 +83,7 @@ def orchestrator():
                 records = []
                 for idx, row in new_data_df.iterrows():
                     records.append({
-                        "instrument_id": token,
+                        "instrument_token": token,
                         "ticker": ticker,
                         "exchange": exchange if exchange else "NSE",
                         "date": str(idx.date()), # JSON requires string dates
@@ -187,11 +187,13 @@ def orchestrator():
             "macd": macd
         })
         ind_df.reset_index(inplace=True)
+        ind_df['date'] = ind_df['date'].dt.strftime('%Y-%m-%d')
+
         ind_df['instrument_token'] = token
         ind_df['ticker'] = ticker
         ind_df['exchange'] = exchange
         ind_json = json.loads(ind_df.to_json(orient='records', indent=4))
-
+        ind_df.to_json("data/indicators.json", orient='records', indent=4)
         try:
             # API expects single object
             resp = requests.post(f"{BASE_URL}/indicators", json=ind_json)
@@ -199,6 +201,7 @@ def orchestrator():
                 logger.error(f"Failed to post indicator: {resp.text}")
         except Exception as e:
             logger.error(f"Error posting indicator: {e}")
+            break
         time.sleep(0.34)
 
     logger.info("Orchestration Complete.")

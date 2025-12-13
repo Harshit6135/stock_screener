@@ -29,12 +29,12 @@ class MarketDataQuery(MethodView):
     @blp.arguments(MarketDataQuerySchema, location="json")
     @blp.response(200, MarketDataSchema(many=True))
     def get(self, filter_data):
-        """Fetch market data by instrument_id or ticker within a date range"""
+        """Fetch market data by instrument_token or ticker within a date range"""
         query = MarketDataModel.query
 
         instrument_filter = []
-        if "instrument_id" in filter_data:
-            instrument_filter.append(MarketDataModel.instrument_id == filter_data["instrument_id"])
+        if "instrument_token" in filter_data:
+            instrument_filter.append(MarketDataModel.instrument_token == filter_data["instrument_token"])
         if "ticker" in filter_data:
             instrument_filter.append(MarketDataModel.ticker == filter_data["ticker"])
 
@@ -56,10 +56,10 @@ class MaxDate(MethodView):
     def get(self):
         """Fetch the max date for each instrument"""
         query = db.session.query(
-            MarketDataModel.instrument_id,
+            MarketDataModel.instrument_token,
             MarketDataModel.ticker,
             func.max(MarketDataModel.date).label("max_date")
-        ).group_by(MarketDataModel.instrument_id)
+        ).group_by(MarketDataModel.instrument_token)
 
         return query.all()
 
