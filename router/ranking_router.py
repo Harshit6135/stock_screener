@@ -93,7 +93,7 @@ def calculate_score():
     # We pass empty dict for stock_data as we only have latest 1-row data, 
     # and fetching full history for all stocks for penalty box was not requested/is expensive here.
     # The user specifically asked for "latest price and indicator data".
-    ranker = StockRankingScorecard(stock_data=stocks_df, metrics_data=metrics_df)
+    ranker = StockRankingScorecard(stocks_df, metrics_df)
     
     ranked_df = ranker.calculate_composite_score()
     

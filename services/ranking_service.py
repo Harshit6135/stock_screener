@@ -20,9 +20,9 @@ class StockRankingScorecard:
     Based on quantitative equity ranking framework
     """
     
-    def __init__(self, stock_data, metrics_data, weights: Optional[IndicatorWeights] = None):
-        self.stock_data = stock_data
-        self.metrics_data = metrics_data
+    def __init__(self, stock_df, metrics_df, weights: Optional[IndicatorWeights] = None):
+        self.stock_df = stock_df
+        self.metrics_df = metrics_df
         self.weights = weights or IndicatorWeights()
 
     # Apply Goldilocks penalty for overextension (Z > 2.5)
@@ -52,7 +52,7 @@ class StockRankingScorecard:
     def _calculate_percentile_ranks(self) -> pd.DataFrame:
         """Calculate percentile ranks across the universe"""
         
-        ranked = self.metrics_data.copy()
+        ranked = self.metrics_df.copy()
         
         # Define metrics to rank
         rank_cols = {
@@ -61,7 +61,7 @@ class StockRankingScorecard:
             'ppoh_12_26_9': 'momentum_ppoh_rank',
             'risk_adj_return': 'efficiency_rank',
             'rvol': 'rvolume_rank',
-            'price_vol_corr': 'vol_price_corr_rank',
+            'price_vol_correlation': 'price_vol_corr_rank',
             'bbb_20_2_2': 'structure_rank'
         }
         
@@ -70,21 +70,19 @@ class StockRankingScorecard:
                 ranked[rank_name] = percentile_rank(ranked[col])
         
         # Use pre-scored metrics
-        if 'rsi_regime_score' in ranked.columns:
-            ranked['momentum_rsi_rank'] = score_rsi_regime(ranked['rsi_14'])
+        ranked['momentum_rsi_rank'] = score_rsi_regime(ranked['rsi_14'])
         
-        if 'trend_extension_score' in ranked.columns:
-            # ranked['trend_extension_rank'] = score_trend_extension(ranked['distance_from_ema_200'])
-            # ranked['trend_extension_rank'] = z_score_normalize(ranked['distance_from_ema_200'])
-            dist_score = ranked['distance_from_ema_200'].apply(self.goldilocks_dist)
-            dist_score = ranked.apply(lambda row: self.goldilocks_penalty(
-                z_score_normalize(pd.Series([row['distance_from_ema_200']])).iloc[0] 
-                if not pd.isna(row['distance_from_ema_200']) else 0,
-                row['distance_from_ema_200']
-            ), axis=1)
-            ranked['trend_extension_rank'] = dist_score
-        if 'percent_b_score' in ranked.columns:
-            ranked['structure_bb_rank'] = score_percent_b(ranked['percent_b'])
+        # ranked['trend_extension_rank'] = score_trend_extension(ranked['distance_from_ema_200'])
+        # ranked['trend_extension_rank'] = z_score_normalize(ranked['distance_from_ema_200'])
+        dist_score = ranked['distance_from_ema_200'].apply(self.goldilocks_dist)
+        dist_score = ranked.apply(lambda row: self.goldilocks_penalty(
+            z_score_normalize(pd.Series([row['distance_from_ema_200']])).iloc[0] 
+            if not pd.isna(row['distance_from_ema_200']) else 0,
+            row['distance_from_ema_200']
+        ), axis=1)
+        ranked['trend_extension_rank'] = dist_score
+        # if 'percent_b_score' in ranked.columns:
+        ranked['structure_bb_rank'] = score_percent_b(ranked['percent_b'])
         
         return ranked
 
@@ -113,7 +111,7 @@ class StockRankingScorecard:
             result['final_momentum_score'] = 0
         
         result['vol_score'] = (result["rvolume_rank"] * 0.7 + 
-                                                result["price_vol_corr"] * 0.3)
+                                                result["price_vol_corr_rank"] * 0.3)
 
         # Calculate composite score
         result['composite_score'] = (
@@ -133,8 +131,8 @@ class StockRankingScorecard:
         
         for idx, row in result.iterrows():
             symbol = row['symbol']
-            if symbol in self.stock_data:
-                df = self.stock_data[symbol]
+            if symbol in self.stock_df:
+                df = self.stock_df[symbol]
                 penalized_score = self.apply_penalty_box(
                     df, 
                     pd.Series([row['composite_score']])
@@ -144,8 +142,8 @@ class StockRankingScorecard:
         return result
     
     # ============= COMPOSITE SCORECARD =============
-    def calculate_composite_score(self, 
-                                 metrics_df: pd.DataFrame) -> pd.DataFrame:
+    def calculate_composite_score(self 
+                                 ) -> pd.DataFrame:
         """
         Calculate composite score for multiple stocks
         
@@ -157,7 +155,7 @@ class StockRankingScorecard:
         """
         
         # Calculate percentile ranks across universe
-        ranked_df = self._calculate_percentile_ranks(metrics_df)
+        ranked_df = self._calculate_percentile_ranks()
         
         # Calculate composite scores
         ranked_df = self._calculate_weighted_composite(ranked_df)
