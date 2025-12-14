@@ -4,10 +4,11 @@ from flask_migrate import Migrate
 from config.flask_config import Config
 from db import db
 
-from resources import InstrumentsBlueprint, MarketDataBlueprint, StrategyBlueprint, IndicatorsBlueprint
+from resources import InstrumentsBlueprint, MarketDataBlueprint, IndicatorsBlueprint
 from router.kite_router import get_latest_data
 from router.day0_router import init_db
 from router.indicators_router import calculate_indicators
+from router.ranking_router import calculate_score
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -25,7 +26,6 @@ with app.app_context():
 
 api.register_blueprint(InstrumentsBlueprint)
 api.register_blueprint(MarketDataBlueprint)
-api.register_blueprint(StrategyBlueprint)
 api.register_blueprint(IndicatorsBlueprint)
 
 @app.route("/home")
@@ -42,6 +42,11 @@ def day0():
 def calc_indicators():
     calculate_indicators()
     return "Calculation of Indicators completed."
+
+@app.route("/latest_rank")
+def generate_ranking():
+    calculate_score()
+    return "All completed."
 
 if __name__ == "__main__":
     app.run(debug=True)

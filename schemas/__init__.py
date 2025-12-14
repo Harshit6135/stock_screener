@@ -1,4 +1,3 @@
 from schemas.instruments import InstrumentSchema
 from schemas.market_data import MarketDataSchema, MarketDataQuerySchema, MaxDateSchema, LatestMarketDataQuerySchema
 from schemas.indicators import IndicatorsSchema
-from schemas.strategy import MomentumStrategySchema

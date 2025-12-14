@@ -1,9 +1,10 @@
 import pandas as pd
-from utils.normalize_mthds import percentile_rank, z_score_to_scale
+from typing import Optional
+from utils.normalize_mthds import percentile_rank, z_score_normalize
 from utils.scoring_methods import score_rsi_regime, score_trend_extension, score_percent_b
 from utils.penalty_box import apply_penalty_box
 
-@dataclass
+
 class IndicatorWeights:
     """Configuration for factor weights in composite score"""
     trend_strength: float = 0.30
@@ -19,7 +20,7 @@ class StockRankingScorecard:
     Based on quantitative equity ranking framework
     """
     
-    def __init__(self, stock_data, metrics_data, weights: Optional[ScorecardWeights] = None):
+    def __init__(self, stock_data, metrics_data, weights: Optional[IndicatorWeights] = None):
         self.stock_data = stock_data
         self.metrics_data = metrics_data
         self.weights = weights or IndicatorWeights()
@@ -74,10 +75,10 @@ class StockRankingScorecard:
         
         if 'trend_extension_score' in ranked.columns:
             # ranked['trend_extension_rank'] = score_trend_extension(ranked['distance_from_ema_200'])
-            # ranked['trend_extension_rank'] = z_score_to_scale(ranked['distance_from_ema_200'])
+            # ranked['trend_extension_rank'] = z_score_normalize(ranked['distance_from_ema_200'])
             dist_score = ranked['distance_from_ema_200'].apply(self.goldilocks_dist)
             dist_score = ranked.apply(lambda row: self.goldilocks_penalty(
-                z_score_to_scale(pd.Series([row['distance_from_ema_200']])).iloc[0] 
+                z_score_normalize(pd.Series([row['distance_from_ema_200']])).iloc[0] 
                 if not pd.isna(row['distance_from_ema_200']) else 0,
                 row['distance_from_ema_200']
             ), axis=1)
