@@ -53,7 +53,7 @@ def get_latest_data():
         except Exception as e:
             logger.error(f"Error fetching latest market data for {log_symb}: {e}")
 
-        start_date = today - timedelta(days=365) # Default 1 year
+        start_date = today - timedelta(days=900) # Default 1 year
         if last_date:
             start_date = pd.to_datetime(last_date) + timedelta(days=1)
             
