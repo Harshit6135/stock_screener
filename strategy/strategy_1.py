@@ -4,6 +4,7 @@ import pandas_ta as ta
 momentum_strategy = ta.Study(
     name="Momentum Strategy",
     description="Combines trend, momentum, and volatility indicators",
+    cores=0,
     ta=[
         {"kind": "ema", "length": 50},
         {"kind": "ema", "length": 200},
@@ -22,6 +23,7 @@ momentum_strategy = ta.Study(
 derived_strategy = ta.Study(
     name="Derived Strategy",
     description="Combines trend, momentum, and volatility indicators",
+    cores=0,
     ta=[
         {"kind": "ema", "length": 3, "close": "RSI_14", "prefix": "RSI_SIGNAL"},
         {"kind": "sma", "length": 20, "close":"volume", "prefix": "VOLUME"},

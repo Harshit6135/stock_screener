@@ -13,7 +13,7 @@ except ImportError:
     # Fallback or empty if file not found (e.g. in CI/CD without secrets)
     KITE_API_KEY = "YOUR_API_KEY"
     KITE_API_SECRET = "YOUR_API_SECRET"
-    print("WARNING: local_secrets.py not found. Using placeholder API keys.")
+    #print("WARNING: local_secrets.py not found. Using placeholder API keys.")
 
 KITE_CONFIG = {
     "api_key": KITE_API_KEY,

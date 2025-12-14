@@ -21,7 +21,7 @@ class MarketDataService:
         """
         self.logger.info(f"Full refresh triggered for {ticker}")
         end_date = pd.Timestamp.now().normalize()
-        start_date = end_date - pd.Timedelta(days=365) # Default to 1 year for full history
+        start_date = end_date - pd.Timedelta(days=900) # Default to 1 year for full history
         return self.load_data(ticker, start_date, end_date)
 
     def load_data(self, ticker, start_date, end_date):
@@ -76,7 +76,7 @@ class MarketDataService:
                 last_date = self.db_manager.get_latest_date(token)
                 
                 # Default start date if no data exists
-                start_date = today - pd.Timedelta(days=365)
+                start_date = today - pd.Timedelta(days=900)
                 full_refresh_needed = False
 
                 if last_date:
