@@ -36,7 +36,9 @@ def calculate_score():
     # 2. Fetch Data for each instrument
     # Optimization: In a real scenario, this should be a bulk API or parallelized.
     # For now, looping as per instructions.
-    
+    # test_symbols = ['ASIANPAINT']
+    # instruments = [i for i in instruments if i['tradingsymbol'] in test_symbols]
+
     total = len(instruments)
     for i, instr in enumerate(instruments):
         symbol = instr.get("tradingsymbol")

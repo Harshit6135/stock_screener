@@ -4,13 +4,9 @@ from db import db
 class IndicatorsModel(db.Model):
     __tablename__ = "indicators"
 
-    instrument_token = db.Column(
-        db.Integer,
-        nullable=False
-    )
+    instrument_token = db.Column(db.Integer, nullable=False)
     date = db.Column(db.Date, nullable=False)
 
-    # denormalized for fast access
     tradingsymbol = db.Column(db.String, nullable=False)
     exchange = db.Column(db.String, nullable=False)
 

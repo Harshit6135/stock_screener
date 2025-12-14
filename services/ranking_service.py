@@ -71,12 +71,20 @@ class StockRankingScorecard:
         
         # Use pre-scored metrics
         ranked['momentum_rsi_rank'] = score_rsi_regime(ranked['rsi_14'])
-        
+
+        # dist = ranked['distance_from_ema_200']
+        # dist_z = z_score_normalize(dist)
+        #
+        # ranked['trend_extension_rank'] = [
+        #     self.goldilocks_penalty(z, d) if not pd.isna(d) else 0
+        #     for z, d in zip(dist_z, dist)
+        # ]
+
         # ranked['trend_extension_rank'] = score_trend_extension(ranked['distance_from_ema_200'])
         # ranked['trend_extension_rank'] = z_score_normalize(ranked['distance_from_ema_200'])
         dist_score = ranked['distance_from_ema_200'].apply(self.goldilocks_dist)
         dist_score = ranked.apply(lambda row: self.goldilocks_penalty(
-            z_score_normalize(pd.Series([row['distance_from_ema_200']])).iloc[0] 
+            z_score_normalize(pd.Series([row['distance_from_ema_200']])).iloc[0]
             if not pd.isna(row['distance_from_ema_200']) else 0,
             row['distance_from_ema_200']
         ), axis=1)
@@ -90,16 +98,15 @@ class StockRankingScorecard:
         """Calculate weighted composite score"""
         
         result =  ranked_df.copy()
-        
         # Aggregate trend (combine EMA slope and extension)
         if 'trend_rank' in result.columns and 'trend_extension_rank' in result.columns:
             result['final_trend_score'] = (
-                result['trend_rank'] * 0.6 + 
-                result['trend_extension_rank'] * 0.4
+                result['trend_rank'].fillna(0) * 0.6 +
+                result['trend_extension_rank'].fillna(0) * 0.4
             )
         else:
             result['final_trend_score'] = result.get('trend_rank', 0)
-        
+
         # Aggregate momentum (RSI + PPO)
         momentum_cols = [c for c in ['momentum_rsi_rank', 'momentum_ppo_rank', 'momentum_ppoh_rank'] 
                         if c in result.columns]
@@ -142,28 +149,24 @@ class StockRankingScorecard:
         return result
     
     # ============= COMPOSITE SCORECARD =============
-    def calculate_composite_score(self 
-                                 ) -> pd.DataFrame:
+    def calculate_composite_score(self) -> pd.DataFrame:
         """
         Calculate composite score for multiple stocks
-        
         Args:
             metrics_df: DataFrame with OHLCV data
-            
         Returns:
             DataFrame with stocks and their factor scores + composite score
         """
-        
         # Calculate percentile ranks across universe
         ranked_df = self._calculate_percentile_ranks()
-        
+
         # Calculate composite scores
         ranked_df = self._calculate_weighted_composite(ranked_df)
-        
+
         # Apply penalty box
         ranked_df = self._apply_universe_penalties(ranked_df)
-        
+
         # Sort by composite score
         ranked_df = ranked_df.sort_values('composite_score', ascending=False)
-        
+
         return ranked_df
