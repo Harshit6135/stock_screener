@@ -86,6 +86,6 @@ def get_latest_data():
                         logger.error(f"Failed to post market data for {log_symb}: {p_resp.text}")
                 except Exception as e:
                     logger.error(f"Error posting market data: {e}")
-        time.sleep(0.34-time.time()+start_time)
+        time.sleep(max(0,0.34-time.time()+start_time))
 
     logger.info("Price Update Complete.")
