@@ -52,6 +52,8 @@ def calculate_score():
             if p_resp.status_code == 200:
                 p_data = p_resp.json()
                 if p_data:
+                    if p_data['close'] < 75 or p_data['close']*p_data['volume'] <10000000:
+                        continue
                     # Enrich with symbol if missing in response (though it should be there)
                     price_data_list.append(p_data)
         except Exception as e:

@@ -52,5 +52,4 @@ class IndicatorsService:
 
         df.columns = df.columns.str.lower().str.replace(".0", "")
         df = df.drop(columns=['open', 'high', 'low', 'close', 'volume'], errors='ignore')
-        df.to_csv("data/indicators.csv", index=False)
         return df
