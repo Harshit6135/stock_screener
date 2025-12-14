@@ -6,7 +6,6 @@ import json
 
 # Config and Utils
 from utils.logger import setup_logger
-from strategy.strategy_1 import MOMENTUM
 
 # Services
 from services.indicators_service import IndicatorsService
@@ -104,7 +103,7 @@ def calculate_indicators():
         
         logger.info("Calculating indicators...")
 
-        ind_output = ind_service.update_indicators_to_db(df_for_ind, MOMENTUM)
+        ind_output = ind_service.calculate_indicators(df_for_ind)
         ind_df = pd.DataFrame(ind_output)
 
         ind_df.reset_index(inplace=True)
