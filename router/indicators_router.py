@@ -85,6 +85,9 @@ def calculate_indicators():
             m_resp = requests.get(f"{BASE_URL}/market_data/query", json=query_payload)
             if m_resp.status_code == 200:
                 md_list = m_resp.json()
+                if len(md_list)<200:
+                    logger.error(f"Less than 200 days data")
+                    continue
             else:
                 logger.error(f"Failed to query market data: {m_resp.text}")
                 continue
