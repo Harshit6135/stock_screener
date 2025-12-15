@@ -44,10 +44,10 @@ class IndicatorsService:
         df.ta.study(momentum_strategy)
         df.ta.study(derived_strategy)
         df['price_vol_correlation'] = self.calculate_volume_price_correlation(df['close'], df['volume'], additional_parameters['vol_price_lookback'])
-        df['percent_b'] = self.calculate_percent_b(df['close'], df['BBU_20_2.0_2.0'], df['BBL_20_2.0_2.0'])
+                df['percent_b'] = self.calculate_percent_b(df['close'], df['BBU_20_2.0_2.0'], df['BBL_20_2.0_2.0'])
         df['ema_50_slope'] = self.calculate_ema_slope(df['EMA_50'], additional_parameters['ema_slope_lookback'])
         df['distance_from_ema_200'] = self.calculate_distance_from_ema(df['close'], df['EMA_200'])
-        df['risk_adjusted_return'] = df["ROC_20"]/(df['ATRr_14']/df['close'])
+        df['risk_adjusted_return'] = df["ROC_20"]/(df['ATR_14']/df['close'])
         df['rvol'] = df['volume']/df['VOLUME_SMA_20']
 
         df.columns = df.columns.str.lower().str.replace(".0", "")

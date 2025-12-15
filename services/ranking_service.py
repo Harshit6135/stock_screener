@@ -1,7 +1,7 @@
 import pandas as pd
 from typing import Optional
 from utils.penalty_box import apply_penalty_box
-from utils.normalize_mthds import percentile_rank
+from utils.normalize_mthds import percentile_rank, z_score_normalize
 from utils.scoring_methods import score_rsi_regime, score_trend_extension, score_percent_b
 
 
@@ -27,14 +27,7 @@ class StockRankingScorecard:
         self.weights = weights or IndicatorWeights()
 
     # Apply Goldilocks penalty for overextension (Z > 2.5)
-    @staticmethod
-    def goldilocks_penalty(z_score, dist):
-        if pd.isna(dist) or dist < 0:
-            return 0
-        # Penalize Z-scores > 2.5 (overextended per PDF Section 3.2.2)
-        if z_score > 75:  # Equivalent to Z > 2.5
-            return z_score * 0.6  # 40% penalty
-        return z_score
+
 
     def _calculate_percentile_ranks(self) -> pd.DataFrame:
         """Calculate percentile ranks across the universe"""
@@ -46,7 +39,7 @@ class StockRankingScorecard:
             'ema_50_slope': 'trend_rank',
             'ppo_12_26_9': 'momentum_ppo_rank',
             'ppoh_12_26_9': 'momentum_ppoh_rank',
-            'risk_adj_return': 'efficiency_rank',
+            'risk_adjusted_return': 'efficiency_rank',
             'rvol': 'rvolume_rank',
             'price_vol_correlation': 'price_vol_corr_rank',
             'bbb_20_2_2': 'structure_rank'
@@ -54,11 +47,14 @@ class StockRankingScorecard:
         
         for col, rank_name in rank_cols.items():
             if col in ranked.columns:
-                ranked[rank_name] = percentile_rank(ranked[col])
+                # Use Z-score for BB Width, percentile for others (per report appendix)
+                if col == 'bbb_20_2_2':
+                    ranked[rank_name] = z_score_normalize(ranked[col])
+                else:
+                    ranked[rank_name] = percentile_rank(ranked[col])
         
-        # Use pre-scored metrics
-        ranked['momentum_rsi_rank'] = score_rsi_regime(ranked['rsi_14'])
-
+        # Use pre-scored metrics with smoothed RSI (3-day EMA per report Section 3.4.1)
+        ranked['momentum_rsi_rank'] = score_rsi_regime(ranked['rsi_signal_ema_3'])
         ranked['trend_extension_rank'] = score_trend_extension(ranked['distance_from_ema_200'])
         ranked['structure_bb_rank'] = score_percent_b(ranked['percent_b'])
         
@@ -81,14 +77,21 @@ class StockRankingScorecard:
         momentum_cols = [c for c in ['momentum_rsi_rank', 'momentum_ppo_rank', 'momentum_ppoh_rank'] 
                         if c in result.columns]
         if momentum_cols:
-            result['final_momentum_score'] = (result["momentum_rsi_rank"] * 0.5 + 
-                                                result["momentum_ppo_rank"] * 0.3 + 
-                                                result["momentum_ppoh_rank"] * 0.2)
+            # Weights adjusted per report appendix: RSI 60%, PPO 25%, PPOH 15%
+            result['final_momentum_score'] = (result["momentum_rsi_rank"] * 0.6 + 
+                                              result["momentum_ppo_rank"] * 0.25 + 
+                                              result["momentum_ppoh_rank"] * 0.15)
         else:
             result['final_momentum_score'] = 0
         
         result['vol_score'] = (result["rvolume_rank"] * 0.7 + 
-                                                result["price_vol_corr_rank"] * 0.3)
+                               result["price_vol_corr_rank"] * 0.3)
+
+        # Combine BB Width and %B for structure (as per report Section 4.1)
+        result['final_structure_score'] = (
+            result.get('structure_rank', 0) * 0.5 +
+            result.get('structure_bb_rank', 0) * 0.5
+        )
 
         # Calculate composite score
         result['composite_score'] = (
@@ -96,7 +99,7 @@ class StockRankingScorecard:
             self.weights.momentum_velocity * result.get('final_momentum_score', 0) +
             self.weights.risk_efficiency * result.get('efficiency_rank', 0) +
             self.weights.conviction * result.get('vol_score', 0) +
-            self.weights.structure * result.get('structure_rank', 0)
+            self.weights.structure * result.get('final_structure_score', 0)
         )
         
         return result
@@ -159,9 +162,10 @@ class StockRankingScorecard:
             'rvolume_rank',
             'price_vol_corr_rank',
             'vol_score',
-            # 'efficiency_rank',
+            'efficiency_rank',
             'structure_bb_rank',
-            'structure_rank', 
+            'structure_rank',
+            'final_structure_score',
             'composite_score'
         ]
         return ranked_df[req_cols]
