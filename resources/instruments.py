@@ -6,7 +6,7 @@ from sqlalchemy import and_, func, desc, or_
 
 from db import db
 from models import InstrumentModel
-from schemas import InstrumentSchema
+from schemas import InstrumentSchema, MessageSchema
 
 blp = Blueprint("instruments", __name__, description="Operations on instruments")
 
@@ -30,7 +30,7 @@ class InstrumentList(MethodView):
             abort(500, message=str(e))
         return instrument_data
 
-    @blp.response(200, {"message": "All instruments deleted."})
+    @blp.response(200, MessageSchema)
     def delete(self):
         """Delete all instruments"""
         try:
