@@ -1,12 +1,11 @@
-from flask import jsonify, request
-from flask_smorest import Blueprint, abort
-from flask.views import MethodView
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import and_, or_, func
-
 from db import db
+from sqlalchemy import and_, or_
 from models import MarketDataModel
+from flask.views import MethodView
+from flask_smorest import Blueprint, abort
+from sqlalchemy.exc import SQLAlchemyError
 from schemas import MarketDataSchema, MarketDataQuerySchema, MaxDateSchema
+
 
 blp = Blueprint("market_data", __name__, description="Operations on market data")
 

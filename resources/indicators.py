@@ -1,13 +1,10 @@
-from flask import jsonify, request
-from flask_smorest import Blueprint, abort
-from flask.views import MethodView
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import and_, or_
-
 from db import db
-
 from models import IndicatorsModel
+from flask.views import MethodView
 from schemas import IndicatorsSchema
+from flask_smorest import Blueprint, abort
+from sqlalchemy.exc import SQLAlchemyError
+
 
 blp = Blueprint("indicators", __name__, description="Operations on indicators")
 

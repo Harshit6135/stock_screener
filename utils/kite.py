@@ -1,11 +1,11 @@
-import pandas as pd
-from kiteconnect import KiteConnect
 import os
-import webbrowser
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import webbrowser
 import urllib.parse
-import time
+
+from kiteconnect import KiteConnect
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
 
 class KiteService:
     def __init__(self, config, logger):

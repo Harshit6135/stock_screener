@@ -1,5 +1,6 @@
-from sqlalchemy import ForeignKey, PrimaryKeyConstraint, Index
 from db import db
+from sqlalchemy import PrimaryKeyConstraint, Index
+
 
 class IndicatorsModel(db.Model):
     __tablename__ = "indicators"
@@ -39,7 +40,6 @@ class IndicatorsModel(db.Model):
     distance_from_ema_200 = db.Column(db.Float, nullable=True)
     risk_adjusted_return = db.Column(db.Float, nullable=True)
     rvol = db.Column(db.Float, nullable=True)
-    volume_20 = db.Column(db.Float, nullable=True)
 
     __table_args__ = (
         # composite primary key

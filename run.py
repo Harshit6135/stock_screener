@@ -1,14 +1,15 @@
+from db import db
 from flask import Flask
 from flask_smorest import Api
 from flask_migrate import Migrate
 from config.flask_config import Config
-from db import db
 
-from resources import InstrumentsBlueprint, MarketDataBlueprint, IndicatorsBlueprint
-from router.kite_router import get_latest_data
 from router.day0_router import init_db
-from router.indicators_router import calculate_indicators
+from router.kite_router import get_latest_data
 from router.ranking_router import calculate_score
+from router.indicators_router import calculate_indicators
+from resources import InstrumentsBlueprint, MarketDataBlueprint, IndicatorsBlueprint
+
 
 def create_app(config_class=Config):
     app = Flask(__name__)

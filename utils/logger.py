@@ -1,7 +1,9 @@
 
-import logging
 import os
+import logging
+
 from datetime import datetime
+
 
 def setup_logger(name="StockScreener", log_dir="logs"):
     os.makedirs(log_dir, exist_ok=True)

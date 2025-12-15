@@ -1,12 +1,10 @@
-from flask import jsonify, request
-from flask_smorest import Blueprint, abort
-from flask.views import MethodView
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy import and_, func, desc, or_
-
 from db import db
+from flask.views import MethodView
 from models import InstrumentModel
+from flask_smorest import Blueprint, abort
+from sqlalchemy.exc import SQLAlchemyError
 from schemas import InstrumentSchema, MessageSchema
+
 
 blp = Blueprint("instruments", __name__, description="Operations on instruments")
 

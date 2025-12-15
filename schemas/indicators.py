@@ -35,4 +35,3 @@ class IndicatorsSchema(Schema):
     distance_from_ema_200 = fields.Float(allow_none=True)
     risk_adjusted_return = fields.Float(allow_none=True)
     rvol = fields.Float(allow_none=True)
-    volume_20 = fields.Float(allow_none=True)

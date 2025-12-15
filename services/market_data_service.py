@@ -1,18 +1,13 @@
-import pandas as pd
+import os
 import time
-from datetime import timedelta
-import os
-
-
 
 import pandas as pd
-import os
 
 
 class MarketDataService:
     def __init__(self, kite_client, logger):
-        self.kite = kite_client.kite  # Access the underlying KiteConnect instance
-        self.kite_client = kite_client # Keep reference to wrapper if needed
+        self.kite = kite_client.kite
+        self.kite_client = kite_client
         self.logger = logger
 
     def fetch_history(self, ticker):
@@ -96,33 +91,17 @@ class MarketDataService:
                 if df_new is not None and not df_new.empty:
                     # CHECK FOR 20% GAP if we had previous data
                     if not full_refresh_needed and last_date:
-                        # Get last close from DB (simulated here by loading, or we could have optimized db_manager to return it)
-                        # For now, let's load current DB data to check.
-                        # Optimization: pass last_close from db_manager.get_latest_date if possible, 
-                         # but existing current method only returns date.
-                         # We'll load the last row specifically if possible, or just load all.
-                         # Loading all is safe for now given local DB size context usually.
                          existing_df = self.db_manager.load_market_data(token)
                          if existing_df is not None and not existing_df.empty:
                              last_close = existing_df.iloc[-1]['Close']
                              next_open = df_new.iloc[0]['Open']
                              
                              if next_open > (last_close * 1.20) or next_open < (last_close * 0.80):
-                                 # 20% gap detected (up or down, user said "greater than ... by more than 20%", usually implies gap up, 
-                                 # but let's cover gap logic safely. User specifically said "refresh whole data")
                                  self.logger.warning(f"Gap detected for {token} (>20%). Triggering full refresh.")
                                  full_refresh_needed = True
 
                     if full_refresh_needed:
                         df_new = self.fetch_history(token)
-                        # When full refresh, we overwrite/save freshly.
-                        # db_manager.save_market_data usually appends or replaces? 
-                        # We need to make sure we replace if full refresh.
-                        # Assuming save_market_data handles it or we might need `if_exists='replace'` logic.
-                        # Standard pattern: if we pass full history, we might want to plain overwrite.
-                        # Let's check db_manager implementation later. For now, we assume save handles it 
-                        # but we might need to clear old data first if it's an append-only system.
-                        # If existing system was "append new", a full refresh = delete old + insert new.
                         self.db_manager.clear_ticker_data(token) # Heuristic: add a clear method or rely on overwrite.
                         self.db_manager.save_market_data(token, df_new)
                     else:
@@ -158,8 +137,6 @@ class MarketDataService:
         
         # We start from NOW and go backwards
         current_end = pd.Timestamp.now().normalize()
-        # chunk_days optimized: 1900 calendar days (Safe under 2000 day API limit)
-        # This allows spanning 10 years (3652 days) in just 2 calls (1900 * 2 = 3800).
         chunk_days = 1900 
         
         try:

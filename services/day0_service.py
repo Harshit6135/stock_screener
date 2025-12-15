@@ -1,22 +1,22 @@
-import pandas as pd
-import yfinance as yf
+import os
 import json
 import time
-import os
-from sqlalchemy.orm import Session
-from models import MasterModel, InstrumentModel
-from utils.kite import KiteService
-from db import db
-import logging
 import requests
+
+import pandas as pd
+import yfinance as yf
+
+from db import db
+
+from models import MasterModel
 from utils.logger import setup_logger
+
 
 logger = setup_logger(name="Orchestrator")
 BASE_URL = "http://127.0.0.1:5000"
 
 class Day0Service:
-    def __init__(self, kite_service: KiteService):
-        self.kite_service = kite_service
+    def __init__(self):
         self.nse_path = "data/imports/EQUITY_L.csv"
         self.bse_path = "data/imports/Equity.csv"
         self.dump_path = "data/exports/yfinance_dump.csv"
@@ -111,7 +111,6 @@ class Day0Service:
         # Cleanup columns
         # NSE_SYMBOL, BSE_SECURITY_CODE (as string), BSE_SECURITY_ID (as alphanumeric)
         # Prioritize NSE Symbol
-        
         df_consolidated['NSE_SYMBOL'] = df_consolidated['NSE_SYMBOL'].fillna('')
         df_consolidated['BSE_SYMBOL'] = df_consolidated['BSE_SYMBOL'].fillna('')
         df_consolidated['BSE_SECURITY_CODE'] = df_consolidated['BSE_SECURITY_CODE'].fillna(0).astype(int).astype(str)
@@ -204,10 +203,7 @@ class Day0Service:
         # Mcap is usually in bytes in yfinance? Let's check. Yes, usually full number.
         # "500cr" = 500 * 10,000,000 = 5,000,000,000
         mcap_threshold = 500 * 10000000
-        
-        # Keep if marketCap is NaN or >= threshold
-        # "dont remove stocks with blank values"
-        
+
         # Ensure numeric
         df['marketCap'] = pd.to_numeric(df['marketCap'], errors='coerce')
         df['previousClose'] = pd.to_numeric(df['previousClose'], errors='coerce')
@@ -260,11 +256,6 @@ class Day0Service:
             objs.append(obj)
             
         try:
-            # Bulk insert/upsert
-            # For simplicity, deleting existing and re-inserting or using merge provided by session?
-            # Lets try truncate and load for Master Table as it is Day 0?
-            # Or merge.
-            
             db.session.query(MasterModel).delete() # Full refresh for Day 0
             db.session.bulk_save_objects(objs)
             db.session.commit()
@@ -306,8 +297,6 @@ class Day0Service:
 
             instruments_json = json.loads(final_instruments.to_json(orient='records', indent=4))
             logger.info(f"Syncing {len(final_instruments)} instruments to Kite")
-            logger.info(f"Syncing {len(kite_nse)} NSE instruments to Kite")
-            logger.info(f"Syncing {len(kite_bse)} BSE instruments to Kite")
             final_instruments.to_json("data/exports/instruments.json", orient='records', indent=4)
             resp = requests.delete(f"{BASE_URL}/instruments")
             resp = requests.post(f"{BASE_URL}/instruments", json=instruments_json)

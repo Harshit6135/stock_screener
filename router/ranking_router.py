@@ -1,12 +1,13 @@
 import requests
 import pandas as pd
-import logging
+
 from services.ranking_service import StockRankingScorecard
+from utils.logger import setup_logger
 
-# Configure logging
-logger = logging.getLogger(__name__)
 
+logger = setup_logger(name="Orchestrator")
 BASE_URL = "http://127.0.0.1:5000"
+
 
 def calculate_score():
     """

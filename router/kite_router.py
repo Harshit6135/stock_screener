@@ -1,6 +1,6 @@
+import time
 import requests
 import pandas as pd
-import time
 
 from datetime import timedelta
 
@@ -10,9 +10,10 @@ from config.kite_config import KITE_CONFIG
 from services.market_data_service import MarketDataService
 
 BASE_URL = "http://127.0.0.1:5000"
+logger = setup_logger(name="Orchestrator")
+
 
 def get_latest_data():
-    logger = setup_logger(name="Orchestrator")
     logger.info("Starting Update Price Data (API Mode)...")
 
     # Initialize Kite Service
@@ -86,6 +87,6 @@ def get_latest_data():
                         logger.error(f"Failed to post market data for {log_symb}: {p_resp.text}")
                 except Exception as e:
                     logger.error(f"Error posting market data: {e}")
-        time.sleep(max(0,0.34-time.time()+start_time))
+            time.sleep(max(0,0.34-time.time()+start_time))
 
     logger.info("Price Update Complete.")

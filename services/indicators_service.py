@@ -1,7 +1,7 @@
 import pandas as pd
 import pandas_ta as ta
 
-from strategy.strategy_1 import momentum_strategy, derived_strategy, additional_parameters
+from strategy.momentum_strategytrategy import momentum_strategy, derived_strategy, additional_parameters
 
 class IndicatorsService:
 

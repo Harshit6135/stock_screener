@@ -1,8 +1,9 @@
 import pandas as pd
 from typing import Optional
-from utils.normalize_mthds import percentile_rank, z_score_normalize
-from utils.scoring_methods import score_rsi_regime, score_trend_extension, score_percent_b
 from utils.penalty_box import apply_penalty_box
+from utils.normalize_mthds import percentile_rank
+from utils.scoring_methods import score_rsi_regime, score_trend_extension, score_percent_b
+
 
 
 class IndicatorWeights:
@@ -22,7 +23,7 @@ class StockRankingScorecard:
     
     def __init__(self, stock_df, metrics_df, weights: Optional[IndicatorWeights] = None):
         self.stock_df = stock_df
-        self.metrics_df = metrics_df
+        self.metrics_df = metrics_df[metrics_df["ema_50"] >= metrics_df["ema_200"]]
         self.weights = weights or IndicatorWeights()
 
     # Apply Goldilocks penalty for overextension (Z > 2.5)
@@ -34,20 +35,6 @@ class StockRankingScorecard:
         if z_score > 75:  # Equivalent to Z > 2.5
             return z_score * 0.6  # 40% penalty
         return z_score
-
-    # Non-linear scoring for distance (Goldilocks zone)
-    @staticmethod
-    def goldilocks_dist(dist):
-        if pd.isna(dist) or dist < 0:
-            return 0
-        elif dist < 0.10:
-            return 70
-        elif dist < 0.40:
-            return 100
-        elif dist < 0.50:
-            return 80
-        else:
-            return 40  
 
     def _calculate_percentile_ranks(self) -> pd.DataFrame:
         """Calculate percentile ranks across the universe"""
@@ -72,24 +59,7 @@ class StockRankingScorecard:
         # Use pre-scored metrics
         ranked['momentum_rsi_rank'] = score_rsi_regime(ranked['rsi_14'])
 
-        # dist = ranked['distance_from_ema_200']
-        # dist_z = z_score_normalize(dist)
-        #
-        # ranked['trend_extension_rank'] = [
-        #     self.goldilocks_penalty(z, d) if not pd.isna(d) else 0
-        #     for z, d in zip(dist_z, dist)
-        # ]
-
-        # ranked['trend_extension_rank'] = score_trend_extension(ranked['distance_from_ema_200'])
-        # ranked['trend_extension_rank'] = z_score_normalize(ranked['distance_from_ema_200'])
-        dist_score = ranked['distance_from_ema_200'].apply(self.goldilocks_dist)
-        dist_score = ranked.apply(lambda row: self.goldilocks_penalty(
-            z_score_normalize(pd.Series([row['distance_from_ema_200']])).iloc[0]
-            if not pd.isna(row['distance_from_ema_200']) else 0,
-            row['distance_from_ema_200']
-        ), axis=1)
-        ranked['trend_extension_rank'] = dist_score
-        # if 'percent_b_score' in ranked.columns:
+        ranked['trend_extension_rank'] = score_trend_extension(ranked['distance_from_ema_200'])
         ranked['structure_bb_rank'] = score_percent_b(ranked['percent_b'])
         
         return ranked
@@ -140,7 +110,7 @@ class StockRankingScorecard:
             symbol = row['symbol']
             if symbol in self.stock_df:
                 df = self.stock_df[symbol]
-                penalized_score = self.apply_penalty_box(
+                penalized_score = apply_penalty_box(
                     df, 
                     pd.Series([row['composite_score']])
                 )
@@ -168,5 +138,30 @@ class StockRankingScorecard:
 
         # Sort by composite score
         ranked_df = ranked_df.sort_values('composite_score', ascending=False)
-
-        return ranked_df
+        req_cols = [
+            'symbol',
+            'ema_50_slope',
+            'ppo_12_26_9',
+            'ppoh_12_26_9',
+            # 'risk_adj_return',
+            'rvol',
+            'price_vol_correlation',
+            'bbb_20_2_2',
+            'percent_b',
+            'distance_from_ema_200',
+            'trend_rank',
+            'trend_extension_rank',
+            'final_trend_score',
+            'momentum_rsi_rank',
+            'momentum_ppo_rank',
+            'momentum_ppoh_rank',
+            'final_momentum_score',
+            'rvolume_rank',
+            'price_vol_corr_rank',
+            'vol_score',
+            # 'efficiency_rank',
+            'structure_bb_rank',
+            'structure_rank', 
+            'composite_score'
+        ]
+        return ranked_df[req_cols]

@@ -1,19 +1,19 @@
 
-import pandas as pd
-from datetime import timedelta
-import requests
 import json
+import requests
+import pandas as pd
 
-# Config and Utils
+from datetime import timedelta
+
 from utils.logger import setup_logger
-
-# Services
 from services.indicators_service import IndicatorsService
 
+
+logger = setup_logger(name="Orchestrator")
 BASE_URL = "http://127.0.0.1:5000"
 
+
 def calculate_indicators():
-    logger = setup_logger(name="Orchestrator")
     logger.info("Starting OUpdate Indicators (API Mode)...")
 
     ind_service = IndicatorsService()
