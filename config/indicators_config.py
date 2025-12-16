@@ -1,5 +1,14 @@
 import pandas_ta as ta
 
+ema_strategy = ta.Study(
+    name="EMA Strategy",
+    description="Combines trend, momentum, and volatility indicators",
+    cores=0,
+    ta=[
+        {"kind": "ema", "length": 200},
+    ]
+)
+
 # Create a custom strategy
 momentum_strategy = ta.Study(
     name="Momentum Strategy",
@@ -7,7 +16,6 @@ momentum_strategy = ta.Study(
     cores=0,
     ta=[
         {"kind": "ema", "length": 50},
-        {"kind": "ema", "length": 200},
         {"kind": "rsi", "length": 14},
         {"kind": "roc", "length": 10},
         {"kind": "roc", "length": 20},
