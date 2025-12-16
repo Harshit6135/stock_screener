@@ -28,6 +28,8 @@ class InstrumentList(MethodView):
             abort(500, message=str(e))
         return instrument_data
 
+
+
     @blp.response(200, MessageSchema)
     def delete(self):
         """Delete all instruments"""
