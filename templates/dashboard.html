@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Screener Dashboard</title>
+    <style>
+        :root {
+            --primary: #667eea;
+            --success: #38ef7d;
+            --info: #6dd5ed;
+            --bg: #0f0f1a;
+            --card: rgba(22, 33, 62, 0.8);
+            --accent: #00d9ff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+            color: #eee;
+            min-height: 100vh;
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #00d9ff, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 2.5rem;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 30px;
+            font-size: 0.9rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: var(--card);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .btn-card {
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            border: none;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .btn-card:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-card .icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .btn-card .label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: #fff;
+        }
+
+        .btn-info {
+            background: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%);
+            color: #fff;
+        }
+
+        .progress-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.3);
+            width: 0%;
+            transition: width 0.3s;
+        }
+
+        .progress-bar.active {
+            animation: progress 3s linear forwards;
+            background: rgba(255, 255, 255, 0.8);
+        }
+
+        @keyframes progress {
+            0% { width: 0%; }
+            100% { width: 100%; }
+        }
+
+        .status {
+            padding: 15px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            background: var(--card);
+            border-left: 4px solid var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status.hidden { display: none; }
+        .status.error { border-left-color: #e74c3c; }
+        .status.success { border-left-color: #38ef7d; }
+
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid #333;
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #888;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+        }
+
+        .tab:hover { background: rgba(255, 255, 255, 0.1); }
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+        }
+
+        .filter-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .filter-row label {
+            color: #aaa;
+            font-size: 13px;
+        }
+
+        .filter-row input {
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.3);
+            color: #eee;
+            font-size: 14px;
+        }
+
+        .filter-row input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .load-btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            background: var(--accent);
+            color: #000;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .load-btn:hover { background: #fff; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th, td {
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        th {
+            background: rgba(0, 0, 0, 0.3);
+            color: var(--accent);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+            position: sticky;
+            top: 0;
+        }
+
+        tr:hover { background: rgba(255, 255, 255, 0.03); }
+
+        .table-container {
+            overflow-x: auto;
+            max-height: 500px;
+            border-radius: 10px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        .badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-buy { background: rgba(56, 239, 125, 0.2); color: #38ef7d; }
+        .badge-sell { background: rgba(231, 76, 60, 0.2); color: #e74c3c; }
+        .badge-swap { background: rgba(102, 126, 234, 0.2); color: #667eea; }
+
+        .score { font-weight: 700; color: var(--accent); }
+        .hidden { display: none; }
+        .empty { text-align: center; padding: 40px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Stock Screener</h1>
+        <p class="subtitle">Multi-factor momentum screening dashboard</p>
+
+        <div class="card">
+            <div class="btn-grid">
+                <button class="btn-card btn-primary" id="btn-day0" onclick="runAction('/day0', 'GET', this)">
+                    <span class="icon">🔧</span>Init Database<span class="label">Day 0 Setup</span>
+                    <div class="progress-bar"></div>
+                </button>
+                <button class="btn-card btn-primary" id="btn-market" onclick="runAction('/update_market_data', 'GET', this)">
+                    <span class="icon">📈</span>Market Data<span class="label">Fetch Latest</span>
+                    <div class="progress-bar"></div>
+                </button>
+                <button class="btn-card btn-primary" id="btn-indicators" onclick="runAction('/update_indicators', 'GET', this)">
+                    <span class="icon">📊</span>Indicators<span class="label">Calculate All</span>
+                    <div class="progress-bar"></div>
+                </button>
+                <button class="btn-card btn-success" id="btn-rank" onclick="runAction('/latest_rank', 'GET', this)">
+                    <span class="icon">🏆</span>Rankings<span class="label">Generate Scores</span>
+                    <div class="progress-bar"></div>
+                </button>
+                <button class="btn-card btn-success" id="btn-actions" onclick="runAction('/actions/generate', 'POST', this, {})">
+                    <span class="icon">⚡</span>Actions<span class="label">Generate Trades</span>
+                    <div class="progress-bar"></div>
+                </button>
+                <button class="btn-card btn-info" onclick="loadTop20()">
+                    <span class="icon">🔝</span>Top 20<span class="label">View Rankings</span>
+                    <div class="progress-bar"></div>
+                </button>
+            </div>
+        </div>
+
+        <div id="status" class="status hidden">
+            <div class="spinner"></div>
+            <span id="status-text"></span>
+        </div>
+
+        <div class="card">
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('investments', this)">💼 Investments</button>
+                <button class="tab" onclick="showTab('actions', this)">📋 Actions</button>
+            </div>
+
+            <div id="investments-tab">
+                <div class="filter-row">
+                    <button class="load-btn" onclick="loadInvestments()">🔄 Load Current Investments</button>
+                </div>
+                <div id="investments-table" class="table-container"></div>
+            </div>
+
+            <div id="actions-tab" class="hidden">
+                <div class="filter-row">
+                    <label>Filter by Date:</label>
+                    <input type="date" id="action-date" />
+                    <button class="load-btn" onclick="loadActions()">🔄 Load Actions</button>
+                </div>
+                <div id="actions-table" class="table-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showStatus(msg, type = 'info') {
+            const el = document.getElementById('status');
+            const txt = document.getElementById('status-text');
+            txt.textContent = msg;
+            el.className = 'status ' + type;
+            el.querySelector('.spinner').style.display = type === 'info' ? 'block' : 'none';
+        }
+
+        function hideStatus() {
+            document.getElementById('status').classList.add('hidden');
+        }
+
+        async function runAction(url, method, btn, body = null) {
+            const bar = btn.querySelector('.progress-bar');
+            bar.classList.add('active');
+            btn.disabled = true;
+            showStatus('Processing... This may take a while.');
+            try {
+                const opts = { method };
+                if (body) {
+                    opts.headers = { 'Content-Type': 'application/json' };
+                    opts.body = JSON.stringify(body);
+                }
+                const res = await fetch(url, opts);
+                const text = await res.text();
+                showStatus(res.ok ? '✅ ' + text : '❌ ' + text, res.ok ? 'success' : 'error');
+            } catch (e) {
+                showStatus('❌ ' + e.message, 'error');
+            }
+            bar.classList.remove('active');
+            bar.style.width = '0%';
+            btn.disabled = false;
+        }
+
+        function showTab(tab, btn) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('investments-tab').classList.toggle('hidden', tab !== 'investments');
+            document.getElementById('actions-tab').classList.toggle('hidden', tab !== 'actions');
+        }
+
+        async function loadInvestments() {
+            try {
+                const res = await fetch('/invested');
+                const data = await res.json();
+                if (!data.length) {
+                    document.getElementById('investments-table').innerHTML = '<p class="empty">No investments found.</p>';
+                    return;
+                }
+                let html = '<table><tr><th>Symbol</th><th>Buy Price</th><th>Shares</th><th>Buy Date</th><th>Stop Loss</th></tr>';
+                data.forEach(r => {
+                    html += `<tr>
+                        <td><strong>${r.tradingsymbol}</strong></td>
+                        <td>₹${r.buy_price?.toFixed(2) || '-'}</td>
+                        <td>${r.num_shares}</td>
+                        <td>${r.buy_date || '-'}</td>
+                        <td>₹${r.current_stop_loss?.toFixed(2) || '-'}</td>
+                    </tr>`;
+                });
+                document.getElementById('investments-table').innerHTML = html + '</table>';
+            } catch (e) {
+                document.getElementById('investments-table').innerHTML = '<p class="empty">Error loading data.</p>';
+            }
+        }
+
+        async function loadActions() {
+            try {
+                let url = '/api/actions';
+                const dt = document.getElementById('action-date').value;
+                if (dt) url += '?date=' + dt;
+                const res = await fetch(url);
+                const data = await res.json();
+                if (!data.length) {
+                    document.getElementById('actions-table').innerHTML = '<p class="empty">No actions found.</p>';
+                    return;
+                }
+                let html = '<table><tr><th>Date</th><th>Type</th><th>Symbol</th><th>Score</th><th>Units</th><th>Price</th><th>Amount</th><th>Swap From</th><th>Status</th></tr>';
+                data.forEach(r => {
+                    const badge = r.action_type === 'BUY' ? 'buy' : r.action_type === 'SELL' ? 'sell' : 'swap';
+                    const swapInfo = r.action_type === 'SWAP'
+                        ? `${r.swap_from_symbol || '-'} (${r.swap_from_units || 0} @ ₹${r.swap_from_price?.toFixed(2) || '-'})`
+                        : '-';
+                    html += `<tr>
+                        <td>${r.action_date}</td>
+                        <td><span class="badge badge-${badge}">${r.action_type}</span></td>
+                        <td><strong>${r.tradingsymbol}</strong></td>
+                        <td class="score">${r.composite_score?.toFixed(2) || '-'}</td>
+                        <td>${r.units}</td>
+                        <td>₹${r.expected_price?.toFixed(2) || '-'}</td>
+                        <td>₹${r.amount?.toFixed(2) || '-'}</td>
+                        <td>${swapInfo}</td>
+                        <td>${r.status}</td>
+                    </tr>`;
+                });
+                document.getElementById('actions-table').innerHTML = html + '</table>';
+            } catch (e) {
+                document.getElementById('actions-table').innerHTML = '<p class="empty">Error loading data.</p>';
+            }
+        }
+
+        async function loadTop20() {
+            showStatus('Loading Top 20 rankings...');
+            try {
+                const res = await fetch('/ranking/top20');
+                const data = await res.json();
+                if (!data.length) {
+                    showStatus('No rankings found.', 'error');
+                    return;
+                }
+                let html = '<table><tr><th>#</th><th>Symbol</th><th>Score</th><th>Invested</th></tr>';
+                data.forEach(r => {
+                    html += `<tr>
+                        <td>${r.rank_position}</td>
+                        <td><strong>${r.tradingsymbol}</strong></td>
+                        <td class="score">${r.composite_score?.toFixed(2)}</td>
+                        <td>${r.is_invested ? '✅' : '-'}</td>
+                    </tr>`;
+                });
+                document.getElementById('investments-table').innerHTML = html + '</table>';
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelector('.tab').classList.add('active');
+                document.getElementById('investments-tab').classList.remove('hidden');
+                document.getElementById('actions-tab').classList.add('hidden');
+                showStatus('Top 20 loaded successfully', 'success');
+            } catch (e) {
+                showStatus('Error: ' + e.message, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

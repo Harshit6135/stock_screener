@@ -1,12 +1,55 @@
-*__pycache__*
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
 .venv/
-.env
+venv/
+ENV/
+
+# IDE
 .idea/
 .vscode/
+*.swp
+*.swo
+
+# Database
 *.db
 *.sqlite3
-*.log
 *.sqlite
+instance/
+
+# Logs
+*.log
+logs/*
+!logs/.gitkeep
+
+# Secrets (NEVER commit these)
 local_secrets.py
 access_token.txt
-logs/*
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Data files (large/generated)
+data/*.csv
+!data/.gitkeep
+
+# Cache
+.cache/

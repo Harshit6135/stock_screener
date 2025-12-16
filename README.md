@@ -1,105 +1,166 @@
-# Stocks Screener V3
+# Stock Screener V3
 
-A powerful, Python-based technical analysis tool designed to screen Nifty 500 stocks. This application automates the process of fetching market data, calculating complex technical indicators, and filtering stocks based on a multi-factor strategy to identify high-probability trading candidates.
+A multi-factor momentum screening and portfolio management system for Indian stocks (NSE/BSE). Built with Flask, SQLAlchemy, and Kite Connect API.
 
-## 🚀 Introduction
+## 🌟 Features
 
-Stocks Screener V3 is built to help traders find potential momentum and trend-following setups without manually scanning hundreds of charts. It leverages the **Zerodha Kite Connect API** for market data and uses a local SQLite database for efficiency. The core philosophy uses a combination of Trend, Momentum, Volatility, and Volume analysis to grade and rank stocks.
-
-## 📂 Project Structure
-
-The project follows a modular Service-Oriented Architecture (SOA):
-
-- **`services/`**: Core business logic and services.
-    - `screener_service.py`: Main orchestration service.
-    - `kite_service.py`: Handles Kite Connect authentication and session.
-    - `market_data_service.py`: Manages data fetching and caching.
-    - `analysis_service.py`: Computes technical indicators (RSI, MACD, etc.).
-    - `strategy_service.py`: Applies filtration rules.
-    - `reporting_service.py`: Generates reports and charts.
-    - `ranking_service.py`: Ranks the best picks.
-    - `position_sizing_service.py`: Calculates risk and position sizes.
-- **`config/`**: Configuration files.
-    - `app_config.py`: Central strategy parameters.
-- **`database/`**: Database interaction.
-    - `sqlite_manager.py`: SQLite handler.
-- **`utils/`**: Shared utilities.
-    - `logger.py`: Application logging.
-- **`data/`**: Data storage.
-    - `stocks.db`: SQLite database.
-    - `working_instruments.csv`: List of instruments to scan.
-    - `position_input.txt` / `charts_input.txt`: Input files for scripts.
-- **`scripts/`**: Standalone tools.
-    - `generate_charts.py`: Generate health card charts for specific tickers.
-    - `calculate_position_size.py`: Calculate position sizes for tickers.
-
-## 📋 Pre-requisites
-
-1.  **Python 3.13+**
-2.  **Kite Connect API Key & Secret** (from [Zerodha Developers](https://kite.trade/))
-
-### Dependencies
-
-Install the required packages:
-
-```bash
-pip install pandas requests kiteconnect matplotlib openpyxl
-```
-
-## 🔐 Setup & Configuration
-
-**CRITICAL STEP**: Security configuration.
-
-1.  Create a file named `local_secrets.py` in the **root directory** of the project.
-2.  Add your Kite Connect API credentials to this file:
-
-    ```python
-    # local_secrets.py
-    KITE_API_KEY = "your_api_key_here"
-    KITE_API_SECRET = "your_api_secret_here"
-    ```
-
-    *Note: `local_secrets.py` is ignored by git to keep your credentials safe.*
-
-3.  (Optional) Adjust strategy parameters in `config/app_config.py`.
-
-## 🏃‍♂️ How to Run
-
-### 1. Run the Main Screener
-This will fetch data, analyze stocks, and print winners to the console.
-
-```bash
-python main.py
-```
-
-Results are saved to `results/results.csv`.
-
-### 2. Generate Charts
-To generate technical "Health Card" charts for specific stocks:
-1.  Add stock symbols (e.g., `RELIANCE`, `TCS`) to `data/charts_input.txt`.
-2.  Run the script:
-
-    ```bash
-    python scripts/generate_charts.py
-    ```
-
-### 3. Calculate Position Sizes
-To calculate risk-managed position sizes:
-1.  Add stock symbols to `data/position_input.txt`.
-2.  Run the script:
-
-    ```bash
-    python scripts/calculate_position_size.py
-    ```
-
-## 📊 Strategy Highlights
-
--   **Trend**: 50 SMA > 200 SMA.
--   **Momentum**: RSI > 48, Positive ROC, Rising Stochastic.
--   **Volatility**: Bollinger Band Squeezes (Bandwidth < 15-20%).
--   **Confirmation**: MACD Bullish Crossover.
--   **Volume**: Rising Volume Trend (Short EMA > Long EMA).
+- **Multi-Factor Scoring**: Trend, Momentum, Volume, Structure factors
+- **Portfolio Management**: Champion vs Challenger rotation, ATR-based position sizing
+- **Dual Stop-Loss**: ATR trailing + Hard trailing system
+- **Action Generation**: Automated BUY/SELL/SWAP recommendations
+- **REST API**: Full Flask-Smorest API with Swagger docs
 
 ---
 
-**Disclaimer**: *This tool is for educational and research purposes only. Do not use it as the sole basis for investment decisions.*
+## 📋 Quick Start
+
+```bash
+# Clone and setup
+git clone <repo-url>
+cd stocks_screener_v3
+
+# Install with Poetry
+poetry install
+
+# Setup secrets
+cp local_secrets.example.py local_secrets.py
+# Edit local_secrets.py with your Kite API credentials
+
+# Initialize database
+make db-init
+
+# Run server
+make run
+```
+
+---
+
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Setup Guide](docs/SETUP.md) | Detailed installation instructions |
+| [API Reference](docs/API.md) | All API endpoints |
+| [Day 0 Setup](docs/DAY0.md) | Initial data loading process |
+| [Strategy Guide](docs/STRATEGY.md) | Scoring methodology |
+
+---
+
+## 🔧 Makefile Commands
+
+```bash
+make install      # Install dependencies
+make run          # Start Flask server
+make db-init      # Initialize DB migrations
+make db-migrate   # Create migration
+make db-upgrade   # Apply migrations
+make test         # Run tests with coverage report
+make clean        # Remove cache files
+```
+
+---
+
+## 📁 Project Structure
+
+```
+stocks_screener_v3/
+├── config/            # Flask, app configuration, and indicators
+├── data/              # CSV files, instrument lists
+├── models/            # SQLAlchemy models
+├── schemas/           # Marshmallow schemas
+├── resources/         # Flask-Smorest API endpoints
+├── router/            # Route handlers (main_router, day0, kite, etc.)
+├── services/          # Core services (ranking, portfolio, indicators)
+├── templates/         # HTML templates (dashboard.html)
+├── utils/             # Helper functions
+├── migrations/        # Alembic migrations
+├── docs/              # Documentation
+└── run.py             # Application entry point
+```
+
+---
+
+## 🔗 Data Sources
+
+### Day 0 Stock Lists
+
+| Exchange | URL | Notes |
+|----------|-----|-------|
+| **NSE** | [Securities Available for Trading](https://www.nseindia.com/static/market-data/securities-available-for-trading) | Download EQUITY_L.csv |
+| **BSE** | [List of Scrips](https://www.bseindia.com/corporates/List_Scrips.html) | Select Segment = T |
+
+---
+
+## 🔐 Configuration
+
+Create `local_secrets.py` in root:
+
+```python
+KITE_API_KEY = "your_api_key"
+KITE_API_SECRET = "your_api_secret"
+```
+
+---
+
+## 🌐 Web Dashboard
+
+Access the dashboard at `http://127.0.0.1:5000/` after starting the server.
+
+**Features:**
+- Action buttons for all screener operations (Day 0, Market Data, Indicators, Rankings, Generate Actions)
+- Current Investments table view
+- Actions table with date filter
+- Top 20 rankings view
+
+---
+
+## 📊 Key Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/latest_rank` | GET | Generate rankings for today |
+| `/risk_config` | GET/PUT | Portfolio risk settings |
+| `/invested` | GET/POST | Manage positions |
+| `/ranking/top20` | GET | Top 20 ranked stocks |
+| `/actions/generate` | POST | Generate trade actions |
+
+See [API Reference](docs/API.md) for complete documentation.
+
+---
+
+## ⚙️ Risk Configuration
+
+Default settings (configurable via API):
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `initial_capital` | ₹1,00,000 | Starting capital |
+| `risk_per_trade` | ₹1,000 | Max loss per trade |
+| `max_positions` | 15 | Maximum stocks |
+| `buffer_percent` | 25% | Swap hysteresis |
+| `exit_threshold` | 40 | Score for exit |
+
+---
+
+## 🛠️ Development
+
+```bash
+# Install dev dependencies
+poetry install --with dev
+
+# Run with reload
+make dev
+
+# Format code
+make format
+```
+
+---
+
+## 📄 License
+
+MIT License - See LICENSE file.
+
+---
+
+**Disclaimer**: This tool is for educational purposes only. Not investment advice.

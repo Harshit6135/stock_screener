@@ -1,6 +1,9 @@
 import requests
 import pandas as pd
+from datetime import date
 
+from db import db
+from models import RankingModel
 from services.ranking_service import StockRankingScorecard
 from utils.logger import setup_logger
 
@@ -16,6 +19,7 @@ def calculate_score():
     2. Fetch latest price and indicator data for each instrument
     3. Construct DataFrames
     4. Calculate composite scores
+    5. Save to ranking table with date
     """
     logger.info("Starting Ranking Calculation...")
 
@@ -35,11 +39,6 @@ def calculate_score():
     indicators_data_list = []
 
     # 2. Fetch Data for each instrument
-    # Optimization: In a real scenario, this should be a bulk API or parallelized.
-    # For now, looping as per instructions.
-    # test_symbols = ['ASIANPAINT']
-    # instruments = [i for i in instruments if i['tradingsymbol'] in test_symbols]
-
     total = len(instruments)
     for i, instr in enumerate(instruments):
         symbol = instr.get("tradingsymbol")
@@ -55,9 +54,8 @@ def calculate_score():
             if p_resp.status_code == 200:
                 p_data = p_resp.json()
                 if p_data:
-                    if p_data['close'] < 75 or p_data['close']*p_data['volume'] <10000000:
+                    if p_data['close'] < 75 or p_data['close']*p_data['volume'] < 10000000:
                         continue
-                    # Enrich with symbol if missing in response (though it should be there)
                     price_data_list.append(p_data)
         except Exception as e:
             logger.error(f"Error fetching price for {symbol}: {e}")
@@ -82,12 +80,6 @@ def calculate_score():
     stocks_df = pd.DataFrame(price_data_list)
     metrics_df = pd.DataFrame(indicators_data_list)
 
-    # Ensure metrics_df has 'symbol' column. 
-    # API /indicators/schema might name it 'tradingsymbol' or 'symbol'. 
-    # Let's check schemas or assume 'tradingsymbol' from DB model.
-    # ranking_service uses 'symbol' in _apply_universe_penalties. 
-    # I should rename if necessary.
-    
     if 'tradingsymbol' in metrics_df.columns and 'symbol' not in metrics_df.columns:
         metrics_df.rename(columns={'tradingsymbol': 'symbol'}, inplace=True)
     
@@ -95,17 +87,38 @@ def calculate_score():
         stocks_df.rename(columns={'tradingsymbol': 'symbol'}, inplace=True)
 
     # 4. Calculate Score
-    # We pass empty dict for stock_data as we only have latest 1-row data, 
-    # and fetching full history for all stocks for penalty box was not requested/is expensive here.
-    # The user specifically asked for "latest price and indicator data".
     ranker = StockRankingScorecard(stocks_df, metrics_df)
-    
     ranked_df = ranker.calculate_composite_score()
     
-    # 5. Output / Store
-    # For now, we'll log the top 10 and maybe return it or save to CSV?
-    # User didn't specify where to save. I will print head.
-    logger.info("Ranking Complete. Top 10 Stocks:")
-    print(ranked_df[['symbol', 'composite_score']].head(10))
+    # Add ranking date and position
+    ranking_date = date.today()
+    ranked_df['ranking_date'] = ranking_date
+    ranked_df['rank_position'] = range(1, len(ranked_df) + 1)
+    
+    # Rename symbol back to tradingsymbol for DB
+    if 'symbol' in ranked_df.columns:
+        ranked_df.rename(columns={'symbol': 'tradingsymbol'}, inplace=True)
+    
+    # 5. Save to database
+    logger.info("Saving rankings to database...")
+    
+    # Delete existing rankings for today (if re-running)
+    from run import app
+    with app.app_context():
+        RankingModel.query.filter(RankingModel.ranking_date == ranking_date).delete()
+        db.session.commit()
+        
+        # Insert new rankings
+        ranking_records = ranked_df.to_dict('records')
+        db.session.bulk_insert_mappings(RankingModel, ranking_records)
+        db.session.commit()
+    
+    logger.info(f"Saved {len(ranked_df)} rankings to database for {ranking_date}")
+    
+    # Also save to CSV for backup
     ranked_df.to_csv("data/ranked.csv", index=False)
+    
+    logger.info("Ranking Complete. Top 10 Stocks:")
+    print(ranked_df[['tradingsymbol', 'composite_score']].head(10))
+    
     return ranked_df

@@ -1,29 +1,65 @@
 [project]
 name = "stock-screener"
-version = "0.1.0"
-description = "Identify and filter stocks from NSE / BSE to invest in"
+version = "3.0.0"
+description = "Multi-factor momentum screening and portfolio management for NSE/BSE stocks"
 authors = [
-    {name = "Yash Bhargava",email = "yashbhargava.code@gmail.com"},
-    {name = "Harshit Garg",email = "harshitgarg.0196@gmail.com"}
+    {name = "Yash Bhargava", email = "yashbhargava.code@gmail.com"},
+    {name = "Harshit Garg", email = "harshitgarg.0196@gmail.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = [
-    "kiteconnect (>=5.0.1,<6.0.0)",
-    "pandas (>=2.3.3,<3.0.0)",
-    "openpyxl (>=3.1.5,<4.0.0)",
-    "requests (>=2.32.5,<3.0.0)",
-    "pandas_ta (>=0.3.14b)",
-    "flask (>=3.1.2,<4.0.0)",
-    "flask-smorest (>=0.46.2,<0.47.0)",
-    "flask-sqlalchemy (>=3.1.1,<4.0.0)",
-    "flask-migrate (>=4.1.0,<5.0.0)",
-    "scipy (>=1.16.3,<2.0.0)",
-    "yfinance (>=0.2.40,<1.0.0)"
 
+dependencies = [
+    "kiteconnect~=5.0",
+    "pandas~=2.2",
+    "openpyxl~=3.1",
+    "requests~=2.32",
+    "pandas_ta>=0.3.14b",
+    "flask~=3.1",
+    "flask-smorest~=0.46",
+    "flask-sqlalchemy~=3.1",
+    "flask-migrate~=4.1",
+    "scipy~=1.14",
+    "yfinance~=0.2",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "black>=24.0.0",
+    "isort>=5.13.0",
+    "flake8>=7.0.0",
+]
+
+[project.scripts]
+screener = "run:app"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+packages = [{include = "."}]
+
+[tool.black]
+line-length = 100
+target-version = ['py313']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | migrations
+  | __pycache__
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip = [".git", ".venv", "migrations"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
