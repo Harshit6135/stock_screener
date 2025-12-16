@@ -69,7 +69,7 @@ def calculate_indicators():
         if last_ind_date and last_ind_date == last_data_date:
             continue
         elif last_ind_date:
-            calc_start_date = pd.to_datetime(last_ind_date) - timedelta(days=365)
+            calc_start_date = pd.to_datetime(last_ind_date) - timedelta(days=900)
             if last_ind_date >= today:
                 logger.info(f"Indicators up to date for {log_symb}.")
                 continue
@@ -106,7 +106,7 @@ def calculate_indicators():
         
         logger.info("Calculating indicators...")
 
-        ind_output = ind_service.calculate_indicators(df_for_ind)
+        ind_output = ind_service.calculate_indicators(df_for_ind, last_ind_date)
         ind_df = pd.DataFrame(ind_output)
 
         ind_df.reset_index(inplace=True)
