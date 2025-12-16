@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -132,8 +133,13 @@
         }
 
         @keyframes progress {
-            0% { width: 0%; }
-            100% { width: 100%; }
+            0% {
+                width: 0%;
+            }
+
+            100% {
+                width: 100%;
+            }
         }
 
         .status {
@@ -147,9 +153,17 @@
             gap: 12px;
         }
 
-        .status.hidden { display: none; }
-        .status.error { border-left-color: #e74c3c; }
-        .status.success { border-left-color: #38ef7d; }
+        .status.hidden {
+            display: none;
+        }
+
+        .status.error {
+            border-left-color: #e74c3c;
+        }
+
+        .status.success {
+            border-left-color: #38ef7d;
+        }
 
         .spinner {
             width: 18px;
@@ -161,7 +175,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .tabs {
@@ -181,7 +197,10 @@
             font-weight: 500;
         }
 
-        .tab:hover { background: rgba(255, 255, 255, 0.1); }
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
         .tab.active {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: #fff;
@@ -225,7 +244,9 @@
             transition: all 0.3s;
         }
 
-        .load-btn:hover { background: #fff; }
+        .load-btn:hover {
+            background: #fff;
+        }
 
         table {
             width: 100%;
@@ -233,7 +254,8 @@
             font-size: 13px;
         }
 
-        th, td {
+        th,
+        td {
             padding: 14px 16px;
             text-align: left;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -250,7 +272,9 @@
             top: 0;
         }
 
-        tr:hover { background: rgba(255, 255, 255, 0.03); }
+        tr:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
 
         .table-container {
             overflow-x: auto;
@@ -266,15 +290,45 @@
             font-weight: 600;
         }
 
-        .badge-buy { background: rgba(56, 239, 125, 0.2); color: #38ef7d; }
-        .badge-sell { background: rgba(231, 76, 60, 0.2); color: #e74c3c; }
-        .badge-swap { background: rgba(102, 126, 234, 0.2); color: #667eea; }
-        .badge-pending { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
-        .badge-executed { background: rgba(56, 239, 125, 0.2); color: #38ef7d; }
+        .badge-buy {
+            background: rgba(56, 239, 125, 0.2);
+            color: #38ef7d;
+        }
 
-        .score { font-weight: 700; color: var(--accent); }
-        .hidden { display: none; }
-        .empty { text-align: center; padding: 40px; color: #666; }
+        .badge-sell {
+            background: rgba(231, 76, 60, 0.2);
+            color: #e74c3c;
+        }
+
+        .badge-swap {
+            background: rgba(102, 126, 234, 0.2);
+            color: #667eea;
+        }
+
+        .badge-pending {
+            background: rgba(255, 193, 7, 0.2);
+            color: #ffc107;
+        }
+
+        .badge-executed {
+            background: rgba(56, 239, 125, 0.2);
+            color: #38ef7d;
+        }
+
+        .score {
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .empty {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
 
         .btn-execute {
             padding: 6px 12px;
@@ -287,8 +341,15 @@
             font-size: 11px;
             transition: all 0.3s;
         }
-        .btn-execute:hover { transform: scale(1.05); }
-        .btn-execute:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-execute:hover {
+            transform: scale(1.05);
+        }
+
+        .btn-execute:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
 
         /* Modal Styles */
         .modal {
@@ -303,7 +364,11 @@
             justify-content: center;
             align-items: center;
         }
-        .modal.active { display: flex; }
+
+        .modal.active {
+            display: flex;
+        }
+
         .modal-content {
             background: var(--card);
             border-radius: 16px;
@@ -312,21 +377,26 @@
             width: 90%;
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
+
         .modal-title {
             font-size: 1.3rem;
             margin-bottom: 20px;
             color: var(--accent);
         }
+
         .form-group {
             margin-bottom: 15px;
         }
+
         .form-group label {
             display: block;
             margin-bottom: 5px;
             color: #aaa;
             font-size: 13px;
         }
-        .form-group input, .form-group select {
+
+        .form-group input,
+        .form-group select {
             width: 100%;
             padding: 12px;
             border-radius: 8px;
@@ -335,24 +405,29 @@
             color: #eee;
             font-size: 14px;
         }
+
         .form-group input:focus {
             outline: none;
             border-color: var(--accent);
         }
+
         .checkbox-group {
             display: flex;
             align-items: center;
             gap: 10px;
         }
+
         .checkbox-group input[type="checkbox"] {
             width: 18px;
             height: 18px;
         }
+
         .modal-actions {
             display: flex;
             gap: 10px;
             margin-top: 20px;
         }
+
         .modal-btn {
             flex: 1;
             padding: 12px;
@@ -362,15 +437,21 @@
             cursor: pointer;
             transition: all 0.3s;
         }
+
         .modal-btn-primary {
             background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
             color: #000;
         }
+
         .modal-btn-cancel {
             background: rgba(255, 255, 255, 0.1);
             color: #aaa;
         }
-        .modal-btn:hover { transform: scale(1.02); }
+
+        .modal-btn:hover {
+            transform: scale(1.02);
+        }
+
         .info-row {
             display: flex;
             justify-content: space-between;
@@ -378,14 +459,45 @@
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             font-size: 13px;
         }
-        .info-label { color: #888; }
-        .info-value { color: #eee; font-weight: 600; }
+
+        .info-label {
+            color: #888;
+        }
+
+        .info-value {
+            color: #eee;
+            font-weight: 600;
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <h1>📊 Stock Screener</h1>
         <p class="subtitle">Multi-factor momentum screening dashboard</p>
+
+        <div class="card" style="display: flex; justify-content: space-around; padding: 20px;">
+            <div style="text-align: center;">
+                <div style="color: #888; margin-bottom: 5px;">Total Investment</div>
+                <div id="summary-investment" style="font-size: 1.5rem; font-weight: bold; color: var(--success);">₹0.00
+                </div>
+            </div>
+            <div style="text-align: center;">
+                <div style="color: #888; margin-bottom: 5px;">Current Value</div>
+                <div id="summary-current-value" style="font-size: 1.5rem; font-weight: bold; color: #fff;">₹0.00</div>
+            </div>
+            <div style="text-align: center;">
+                <div style="color: #888; margin-bottom: 5px;">Capital Left</div>
+                <div id="summary-capital" style="font-size: 1.5rem; font-weight: bold; color: var(--accent);">₹0.00
+                </div>
+            </div>
+            <div style="text-align: center; cursor: pointer;" onclick="toggleReturns()">
+                <div style="color: #888; margin-bottom: 5px;">Returns <span style="font-size: 0.8rem;">(Click to
+                        Toggle)</span></div>
+                <div id="summary-returns" style="font-size: 1.5rem; font-weight: bold; color: var(--info);">0.00%</div>
+                <div id="returns-label" style="font-size: 0.8rem; color: #666;">XIRR</div>
+            </div>
+        </div>
 
         <div class="card">
             <div class="btn-grid">
@@ -393,11 +505,13 @@
                     <span class="icon">🔧</span>Init Database<span class="label">Day 0 Setup</span>
                     <div class="progress-bar"></div>
                 </button>
-                <button class="btn-card btn-primary" id="btn-market" onclick="runAction('/update_market_data', 'GET', this)">
+                <button class="btn-card btn-primary" id="btn-market"
+                    onclick="runAction('/update_market_data', 'GET', this)">
                     <span class="icon">📈</span>Market Data<span class="label">Fetch Latest</span>
                     <div class="progress-bar"></div>
                 </button>
-                <button class="btn-card btn-primary" id="btn-indicators" onclick="runAction('/update_indicators', 'GET', this)">
+                <button class="btn-card btn-primary" id="btn-indicators"
+                    onclick="runAction('/update_indicators', 'GET', this)">
                     <span class="icon">📊</span>Indicators<span class="label">Calculate All</span>
                     <div class="progress-bar"></div>
                 </button>
@@ -405,7 +519,8 @@
                     <span class="icon">🏆</span>Rankings<span class="label">Generate Scores</span>
                     <div class="progress-bar"></div>
                 </button>
-                <button class="btn-card btn-success" id="btn-actions" onclick="runAction('/actions/generate', 'POST', this, {})">
+                <button class="btn-card btn-success" id="btn-actions"
+                    onclick="runAction('/actions/generate', 'POST', this, {})">
                     <span class="icon">⚡</span>Actions<span class="label">Generate Trades</span>
                     <div class="progress-bar"></div>
                 </button>
@@ -430,7 +545,9 @@
             <div id="investments-tab">
                 <div class="filter-row">
                     <button class="load-btn" onclick="loadInvestments()">🔄 Load Investments</button>
-                    <button class="load-btn" onclick="openInvestDialog()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff;">➕ New Investment</button>
+                    <button class="load-btn" onclick="openInvestDialog()"
+                        style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff;">➕ New
+                        Investment</button>
                 </div>
                 <div id="investments-table" class="table-container"></div>
             </div>
@@ -478,7 +595,8 @@
             <div class="form-group">
                 <div class="checkbox-group">
                     <input type="checkbox" id="invest-strategy" checked />
-                    <label for="invest-strategy" style="margin: 0;">Include in Strategy (uncheck for manual management)</label>
+                    <label for="invest-strategy" style="margin: 0;">Include in Strategy (uncheck for manual
+                        management)</label>
                 </div>
             </div>
             <div class="modal-actions">
@@ -490,6 +608,52 @@
 
     <script>
         let currentAction = null;
+        let portfolioData = {};
+        let showXirr = true;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchPortfolioSummary();
+        });
+
+        async function fetchPortfolioSummary() {
+            try {
+                const res = await fetch('/summary');
+                if (res.ok) {
+                    portfolioData = await res.json();
+                    updateSummaryDisplay();
+                }
+            } catch (e) {
+                console.error("Failed to fetch summary", e);
+            }
+        }
+
+        function updateSummaryDisplay() {
+            if (!portfolioData) return;
+
+            document.getElementById('summary-investment').innerText = '₹' + (portfolioData.total_investment || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('summary-current-value').innerText = '₹' + (portfolioData.current_value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('summary-capital').innerText = '₹' + (portfolioData.capital_left || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            const returnsEl = document.getElementById('summary-returns');
+            const labelEl = document.getElementById('returns-label');
+
+            if (showXirr) {
+                const xirr = portfolioData.xirr || 0;
+                returnsEl.innerText = xirr.toFixed(2) + '%';
+                returnsEl.style.color = xirr >= 0 ? '#38ef7d' : '#e74c3c';
+                labelEl.innerText = 'XIRR';
+            } else {
+                const absRet = portfolioData.absolute_return || 0;
+                returnsEl.innerText = '₹' + absRet.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                returnsEl.style.color = absRet >= 0 ? '#38ef7d' : '#e74c3c';
+                labelEl.innerText = 'Absolute';
+            }
+        }
+
+        function toggleReturns() {
+            showXirr = !showXirr;
+            updateSummaryDisplay();
+        }
 
         function showStatus(msg, type = 'info') {
             const el = document.getElementById('status');
@@ -542,8 +706,8 @@
                 }
                 let html = '<table><tr><th>Symbol</th><th>Buy Price</th><th>Shares</th><th>Buy Date</th><th>Stop Loss</th><th>Strategy</th></tr>';
                 data.forEach(r => {
-                    const strategyBadge = r.include_in_strategy 
-                        ? '<span class="badge badge-executed">Yes</span>' 
+                    const strategyBadge = r.include_in_strategy
+                        ? '<span class="badge badge-executed">Yes</span>'
                         : '<span class="badge badge-pending">Manual</span>';
                     html += `<tr>
                         <td><strong>${r.tradingsymbol}</strong></td>
@@ -571,17 +735,18 @@
                     document.getElementById('actions-table').innerHTML = '<p class="empty">No actions found.</p>';
                     return;
                 }
-                let html = '<table><tr><th>Date</th><th>Type</th><th>Symbol</th><th>Score</th><th>Units</th><th>Price</th><th>Amount</th><th>Swap From</th><th>Status</th><th>Action</th></tr>';
+                let html = '<table><tr><th>Id</th><th>Date</th><th>Type</th><th>Symbol</th><th>Score</th><th>Units</th><th>Price</th><th>Amount</th><th>Swap From</th><th>Status</th><th>Action</th></tr>';
                 data.forEach(r => {
                     const badge = r.action_type === 'BUY' ? 'buy' : r.action_type === 'SELL' ? 'sell' : 'swap';
                     const statusBadge = r.status === 'PENDING' ? 'pending' : 'executed';
                     const swapInfo = r.action_type === 'SWAP'
                         ? `${r.swap_from_symbol || '-'} (${r.swap_from_units || 0} @ ₹${r.swap_from_price?.toFixed(2) || '-'})`
                         : '-';
-                    const executeBtn = r.status === 'PENDING' 
+                    const executeBtn = r.status === 'PENDING'
                         ? `<button class="btn-execute" onclick='openExecuteDialog(${JSON.stringify(r)})'>✓ Execute</button>`
                         : '<span style="color: #38ef7d;">Done</span>';
                     html += `<tr>
+                        <td>${r.id}</td>
                         <td>${r.action_date}</td>
                         <td><span class="badge badge-${badge}">${r.action_type}</span></td>
                         <td><strong>${r.tradingsymbol}</strong></td>
@@ -647,9 +812,9 @@
                 <div class="info-row"><span class="info-label">Expected Units</span><span class="info-value">${action.units}</span></div>
                 <div class="info-row"><span class="info-label">Expected Price</span><span class="info-value">₹${action.expected_price?.toFixed(2) || '-'}</span></div>
             `;
-            
+
             let fieldsHtml = '';
-            
+
             if (action.action_type === 'BUY') {
                 fieldsHtml = `
                     <div class="form-group">
@@ -688,7 +853,7 @@
                     </div>
                 `;
             }
-            
+
             document.getElementById('execute-info').innerHTML = infoHtml;
             document.getElementById('execute-fields').innerHTML = fieldsHtml;
             openModal('execute-modal');
@@ -696,27 +861,28 @@
 
         async function submitExecute() {
             if (!currentAction) return;
-            
+
             const payload = {};
             const buyPriceEl = document.getElementById('exec-buy-price');
             const sellPriceEl = document.getElementById('exec-sell-price');
             const unitsEl = document.getElementById('exec-units');
-            
+
             if (buyPriceEl) payload.actual_buy_price = parseFloat(buyPriceEl.value);
             if (sellPriceEl) payload.actual_sell_price = parseFloat(sellPriceEl.value);
             if (unitsEl) payload.actual_units = parseInt(unitsEl.value);
-            
+            console.log(currentAction)
             try {
                 const res = await fetch(`/actions/${currentAction.id}/execute`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                
+
                 if (res.ok) {
                     showStatus('✅ Trade executed successfully!', 'success');
                     closeModal('execute-modal');
                     loadActions();
+                    fetchPortfolioSummary();
                 } else {
                     const err = await res.json();
                     showStatus('❌ ' + (err.message || 'Execution failed'), 'error');
@@ -739,12 +905,12 @@
             const price = parseFloat(document.getElementById('invest-price').value);
             const units = parseInt(document.getElementById('invest-units').value);
             const includeInStrategy = document.getElementById('invest-strategy').checked;
-            
+
             if (!symbol || !price || !units) {
                 showStatus('❌ Please fill all fields', 'error');
                 return;
             }
-            
+
             try {
                 const res = await fetch('/invested', {
                     method: 'POST',
@@ -756,11 +922,12 @@
                         include_in_strategy: includeInStrategy
                     })
                 });
-                
+
                 if (res.ok) {
                     showStatus('✅ Investment added successfully!', 'success');
                     closeModal('invest-modal');
                     loadInvestments();
+                    fetchPortfolioSummary();
                 } else {
                     const err = await res.json();
                     showStatus('❌ ' + (err.message || 'Failed to add investment'), 'error');
@@ -771,4 +938,5 @@
         }
     </script>
 </body>
+
 </html>

@@ -56,6 +56,7 @@ def get_actions():
         query = query.filter(ActionsModel.action_date == date_filter)
     actions = query.order_by(ActionsModel.composite_score.desc().nullslast()).all()
     return jsonify([{
+        'id': a.id,
         'action_date': str(a.action_date),
         'action_type': a.action_type,
         'tradingsymbol': a.tradingsymbol,
