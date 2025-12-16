@@ -5,7 +5,8 @@
 
 # Python and Poetry
 PYTHON = poetry run python
-FLASK = poetry run flask
+# Use 'python -m flask' instead of 'flask' to avoid Windows launcher issues
+FLASK = poetry run python -m flask
 
 # Default target
 help:
@@ -42,6 +43,9 @@ install-dev:
 	poetry install --with dev
 
 # ==================== DATABASE ====================
+
+# Note: FLASK_APP must be set for flask-migrate commands
+export FLASK_APP=run.py
 
 db-init:
 	$(FLASK) db init

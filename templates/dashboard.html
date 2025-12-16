@@ -269,10 +269,117 @@
         .badge-buy { background: rgba(56, 239, 125, 0.2); color: #38ef7d; }
         .badge-sell { background: rgba(231, 76, 60, 0.2); color: #e74c3c; }
         .badge-swap { background: rgba(102, 126, 234, 0.2); color: #667eea; }
+        .badge-pending { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
+        .badge-executed { background: rgba(56, 239, 125, 0.2); color: #38ef7d; }
 
         .score { font-weight: 700; color: var(--accent); }
         .hidden { display: none; }
         .empty { text-align: center; padding: 40px; color: #666; }
+
+        .btn-execute {
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: none;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: #000;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 11px;
+            transition: all 0.3s;
+        }
+        .btn-execute:hover { transform: scale(1.05); }
+        .btn-execute:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .modal.active { display: flex; }
+        .modal-content {
+            background: var(--card);
+            border-radius: 16px;
+            padding: 30px;
+            max-width: 450px;
+            width: 90%;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .modal-title {
+            font-size: 1.3rem;
+            margin-bottom: 20px;
+            color: var(--accent);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #aaa;
+            font-size: 13px;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.3);
+            color: #eee;
+            font-size: 14px;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .modal-btn {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .modal-btn-primary {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: #000;
+        }
+        .modal-btn-cancel {
+            background: rgba(255, 255, 255, 0.1);
+            color: #aaa;
+        }
+        .modal-btn:hover { transform: scale(1.02); }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 13px;
+        }
+        .info-label { color: #888; }
+        .info-value { color: #eee; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -322,7 +429,8 @@
 
             <div id="investments-tab">
                 <div class="filter-row">
-                    <button class="load-btn" onclick="loadInvestments()">🔄 Load Current Investments</button>
+                    <button class="load-btn" onclick="loadInvestments()">🔄 Load Investments</button>
+                    <button class="load-btn" onclick="openInvestDialog()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff;">➕ New Investment</button>
                 </div>
                 <div id="investments-table" class="table-container"></div>
             </div>
@@ -338,7 +446,51 @@
         </div>
     </div>
 
+    <!-- Execute Action Modal -->
+    <div id="execute-modal" class="modal">
+        <div class="modal-content">
+            <h3 class="modal-title">✓ Execute Action</h3>
+            <div id="execute-info"></div>
+            <div id="execute-fields"></div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-cancel" onclick="closeModal('execute-modal')">Cancel</button>
+                <button class="modal-btn modal-btn-primary" onclick="submitExecute()">Execute Trade</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Investment Modal -->
+    <div id="invest-modal" class="modal">
+        <div class="modal-content">
+            <h3 class="modal-title">➕ Add Investment</h3>
+            <div class="form-group">
+                <label>Trading Symbol</label>
+                <input type="text" id="invest-symbol" placeholder="e.g., RELIANCE" />
+            </div>
+            <div class="form-group">
+                <label>Buy Price (₹)</label>
+                <input type="number" id="invest-price" step="0.01" placeholder="e.g., 2500.00" />
+            </div>
+            <div class="form-group">
+                <label>Number of Shares</label>
+                <input type="number" id="invest-units" placeholder="e.g., 10" />
+            </div>
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="invest-strategy" checked />
+                    <label for="invest-strategy" style="margin: 0;">Include in Strategy (uncheck for manual management)</label>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-cancel" onclick="closeModal('invest-modal')">Cancel</button>
+                <button class="modal-btn modal-btn-primary" onclick="submitInvest()">Add Investment</button>
+            </div>
+        </div>
+    </div>
+
     <script>
+        let currentAction = null;
+
         function showStatus(msg, type = 'info') {
             const el = document.getElementById('status');
             const txt = document.getElementById('status-text');
@@ -388,14 +540,18 @@
                     document.getElementById('investments-table').innerHTML = '<p class="empty">No investments found.</p>';
                     return;
                 }
-                let html = '<table><tr><th>Symbol</th><th>Buy Price</th><th>Shares</th><th>Buy Date</th><th>Stop Loss</th></tr>';
+                let html = '<table><tr><th>Symbol</th><th>Buy Price</th><th>Shares</th><th>Buy Date</th><th>Stop Loss</th><th>Strategy</th></tr>';
                 data.forEach(r => {
+                    const strategyBadge = r.include_in_strategy 
+                        ? '<span class="badge badge-executed">Yes</span>' 
+                        : '<span class="badge badge-pending">Manual</span>';
                     html += `<tr>
                         <td><strong>${r.tradingsymbol}</strong></td>
                         <td>₹${r.buy_price?.toFixed(2) || '-'}</td>
                         <td>${r.num_shares}</td>
                         <td>${r.buy_date || '-'}</td>
                         <td>₹${r.current_stop_loss?.toFixed(2) || '-'}</td>
+                        <td>${strategyBadge}</td>
                     </tr>`;
                 });
                 document.getElementById('investments-table').innerHTML = html + '</table>';
@@ -415,12 +571,16 @@
                     document.getElementById('actions-table').innerHTML = '<p class="empty">No actions found.</p>';
                     return;
                 }
-                let html = '<table><tr><th>Date</th><th>Type</th><th>Symbol</th><th>Score</th><th>Units</th><th>Price</th><th>Amount</th><th>Swap From</th><th>Status</th></tr>';
+                let html = '<table><tr><th>Date</th><th>Type</th><th>Symbol</th><th>Score</th><th>Units</th><th>Price</th><th>Amount</th><th>Swap From</th><th>Status</th><th>Action</th></tr>';
                 data.forEach(r => {
                     const badge = r.action_type === 'BUY' ? 'buy' : r.action_type === 'SELL' ? 'sell' : 'swap';
+                    const statusBadge = r.status === 'PENDING' ? 'pending' : 'executed';
                     const swapInfo = r.action_type === 'SWAP'
                         ? `${r.swap_from_symbol || '-'} (${r.swap_from_units || 0} @ ₹${r.swap_from_price?.toFixed(2) || '-'})`
                         : '-';
+                    const executeBtn = r.status === 'PENDING' 
+                        ? `<button class="btn-execute" onclick='openExecuteDialog(${JSON.stringify(r)})'>✓ Execute</button>`
+                        : '<span style="color: #38ef7d;">Done</span>';
                     html += `<tr>
                         <td>${r.action_date}</td>
                         <td><span class="badge badge-${badge}">${r.action_type}</span></td>
@@ -430,7 +590,8 @@
                         <td>₹${r.expected_price?.toFixed(2) || '-'}</td>
                         <td>₹${r.amount?.toFixed(2) || '-'}</td>
                         <td>${swapInfo}</td>
-                        <td>${r.status}</td>
+                        <td><span class="badge badge-${statusBadge}">${r.status}</span></td>
+                        <td>${executeBtn}</td>
                     </tr>`;
                 });
                 document.getElementById('actions-table').innerHTML = html + '</table>';
@@ -465,6 +626,147 @@
                 showStatus('Top 20 loaded successfully', 'success');
             } catch (e) {
                 showStatus('Error: ' + e.message, 'error');
+            }
+        }
+
+        // Modal functions
+        function openModal(id) {
+            document.getElementById(id).classList.add('active');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.remove('active');
+            currentAction = null;
+        }
+
+        function openExecuteDialog(action) {
+            currentAction = action;
+            let infoHtml = `
+                <div class="info-row"><span class="info-label">Type</span><span class="info-value">${action.action_type}</span></div>
+                <div class="info-row"><span class="info-label">Symbol</span><span class="info-value">${action.tradingsymbol}</span></div>
+                <div class="info-row"><span class="info-label">Expected Units</span><span class="info-value">${action.units}</span></div>
+                <div class="info-row"><span class="info-label">Expected Price</span><span class="info-value">₹${action.expected_price?.toFixed(2) || '-'}</span></div>
+            `;
+            
+            let fieldsHtml = '';
+            
+            if (action.action_type === 'BUY') {
+                fieldsHtml = `
+                    <div class="form-group">
+                        <label>Actual Buy Price (₹)</label>
+                        <input type="number" id="exec-buy-price" step="0.01" value="${action.expected_price || ''}" />
+                    </div>
+                    <div class="form-group">
+                        <label>Actual Units</label>
+                        <input type="number" id="exec-units" value="${action.units}" />
+                    </div>
+                `;
+            } else if (action.action_type === 'SELL') {
+                fieldsHtml = `
+                    <div class="form-group">
+                        <label>Actual Sell Price (₹)</label>
+                        <input type="number" id="exec-sell-price" step="0.01" value="${action.expected_price || ''}" />
+                    </div>
+                `;
+            } else if (action.action_type === 'SWAP') {
+                infoHtml += `
+                    <div class="info-row"><span class="info-label">Sell Symbol</span><span class="info-value">${action.swap_from_symbol}</span></div>
+                    <div class="info-row"><span class="info-label">Sell Units</span><span class="info-value">${action.swap_from_units}</span></div>
+                `;
+                fieldsHtml = `
+                    <div class="form-group">
+                        <label>Actual Sell Price for ${action.swap_from_symbol} (₹)</label>
+                        <input type="number" id="exec-sell-price" step="0.01" value="${action.swap_from_price || ''}" />
+                    </div>
+                    <div class="form-group">
+                        <label>Actual Buy Price for ${action.tradingsymbol} (₹)</label>
+                        <input type="number" id="exec-buy-price" step="0.01" value="${action.expected_price || ''}" />
+                    </div>
+                    <div class="form-group">
+                        <label>Actual Units for ${action.tradingsymbol}</label>
+                        <input type="number" id="exec-units" value="${action.units}" />
+                    </div>
+                `;
+            }
+            
+            document.getElementById('execute-info').innerHTML = infoHtml;
+            document.getElementById('execute-fields').innerHTML = fieldsHtml;
+            openModal('execute-modal');
+        }
+
+        async function submitExecute() {
+            if (!currentAction) return;
+            
+            const payload = {};
+            const buyPriceEl = document.getElementById('exec-buy-price');
+            const sellPriceEl = document.getElementById('exec-sell-price');
+            const unitsEl = document.getElementById('exec-units');
+            
+            if (buyPriceEl) payload.actual_buy_price = parseFloat(buyPriceEl.value);
+            if (sellPriceEl) payload.actual_sell_price = parseFloat(sellPriceEl.value);
+            if (unitsEl) payload.actual_units = parseInt(unitsEl.value);
+            
+            try {
+                const res = await fetch(`/actions/${currentAction.id}/execute`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (res.ok) {
+                    showStatus('✅ Trade executed successfully!', 'success');
+                    closeModal('execute-modal');
+                    loadActions();
+                } else {
+                    const err = await res.json();
+                    showStatus('❌ ' + (err.message || 'Execution failed'), 'error');
+                }
+            } catch (e) {
+                showStatus('❌ ' + e.message, 'error');
+            }
+        }
+
+        function openInvestDialog() {
+            document.getElementById('invest-symbol').value = '';
+            document.getElementById('invest-price').value = '';
+            document.getElementById('invest-units').value = '';
+            document.getElementById('invest-strategy').checked = true;
+            openModal('invest-modal');
+        }
+
+        async function submitInvest() {
+            const symbol = document.getElementById('invest-symbol').value.trim().toUpperCase();
+            const price = parseFloat(document.getElementById('invest-price').value);
+            const units = parseInt(document.getElementById('invest-units').value);
+            const includeInStrategy = document.getElementById('invest-strategy').checked;
+            
+            if (!symbol || !price || !units) {
+                showStatus('❌ Please fill all fields', 'error');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/invested', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tradingsymbol: symbol,
+                        buy_price: price,
+                        num_shares: units,
+                        include_in_strategy: includeInStrategy
+                    })
+                });
+                
+                if (res.ok) {
+                    showStatus('✅ Investment added successfully!', 'success');
+                    closeModal('invest-modal');
+                    loadInvestments();
+                } else {
+                    const err = await res.json();
+                    showStatus('❌ ' + (err.message || 'Failed to add investment'), 'error');
+                }
+            } catch (e) {
+                showStatus('❌ ' + e.message, 'error');
             }
         }
     </script>

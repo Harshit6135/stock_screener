@@ -30,3 +30,10 @@ class ActionsSchema(Schema):
 class GenerateActionsInputSchema(Schema):
     """Schema for triggering action generation"""
     ranking_date = fields.Date(required=False, load_default=None)
+
+
+class ExecuteActionInputSchema(Schema):
+    """Schema for executing an action with actual prices"""
+    actual_buy_price = fields.Float(allow_none=True)
+    actual_units = fields.Int(allow_none=True)
+    actual_sell_price = fields.Float(allow_none=True)

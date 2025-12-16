@@ -25,6 +25,9 @@ class InvestedModel(db.Model):
     current_score = db.Column(db.Float, nullable=True)
     last_updated = db.Column(db.DateTime, server_default=db.func.now(), onupdate=db.func.now())
     
+    # Strategy inclusion - if False, this position is managed manually
+    include_in_strategy = db.Column(db.Boolean, nullable=False, default=True)
+    
     __table_args__ = (
         Index("idx_invested_symbol", "tradingsymbol"),
     )

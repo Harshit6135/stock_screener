@@ -20,7 +20,7 @@ from schemas import (
     RiskConfigSchema, 
     InvestedSchema, InvestedInputSchema,
     RankingSchema, Top20Schema,
-    ActionsSchema, GenerateActionsInputSchema
+    ActionsSchema, GenerateActionsInputSchema, ExecuteActionInputSchema
 )
 from services.portfolio_service import PortfolioService
 from utils.stop_loss import calculate_initial_stop_loss
@@ -119,7 +119,8 @@ class InvestedList(MethodView):
             buy_date=date.today(),
             atr_at_entry=atr,
             initial_stop_loss=round(initial_stop, 2),
-            current_stop_loss=round(initial_stop, 2)
+            current_stop_loss=round(initial_stop, 2),
+            include_in_strategy=invest_data.get('include_in_strategy', True)
         )
         
         try:
@@ -259,7 +260,8 @@ class GenerateActions(MethodView):
                 'buy_price': i.buy_price,
                 'num_shares': i.num_shares,
                 'initial_stop_loss': i.initial_stop_loss,
-                'current_stop_loss': i.current_stop_loss
+                'current_stop_loss': i.current_stop_loss,
+                'include_in_strategy': i.include_in_strategy
             }
             for i in invested
         ]
@@ -340,9 +342,10 @@ class GenerateActions(MethodView):
 
 @blp.route("/actions/<int:action_id>/execute")
 class ExecuteAction(MethodView):
+    @blp.arguments(ExecuteActionInputSchema, location="json")
     @blp.response(200, ActionsSchema)
-    def post(self, action_id):
-        """Mark an action as executed and update capital"""
+    def post(self, exec_data, action_id):
+        """Mark an action as executed with actual prices and update capital"""
         action = ActionsModel.query.get(action_id)
         if not action:
             abort(404, message="Action not found")
@@ -352,25 +355,53 @@ class ExecuteAction(MethodView):
         
         config = RiskConfigModel.query.first()
         
+        # Use actual prices if provided, otherwise fall back to expected
+        actual_buy_price = exec_data.get('actual_buy_price') or action.expected_price
+        actual_units = exec_data.get('actual_units') or action.units
+        actual_sell_price = exec_data.get('actual_sell_price') or action.expected_price
+        
         # Update capital based on action type
         if action.action_type == 'BUY':
-            trade_value = action.units * action.expected_price
+            trade_value = actual_units * actual_buy_price
             config.current_capital -= trade_value
+            
+            # Get ATR for stop-loss calculation
+            atr = None
+            try:
+                resp = requests.get(f"{BASE_URL}/indicators/latest/{action.tradingsymbol}")
+                if resp.status_code == 200:
+                    atr = resp.json().get('atrr_14')
+            except Exception:
+                pass
+            
+            stop_multiplier = config.stop_loss_multiplier if config else 2.0
+            initial_stop = calculate_initial_stop_loss(actual_buy_price, atr or (actual_buy_price * 0.03), stop_multiplier)
             
             # Add to invested
             invested = InvestedModel(
                 tradingsymbol=action.tradingsymbol,
-                buy_price=action.expected_price,
-                num_shares=action.units,
+                buy_price=actual_buy_price,
+                num_shares=actual_units,
                 buy_date=action.action_date,
-                initial_stop_loss=action.expected_price * 0.94,  # Temporary
-                current_stop_loss=action.expected_price * 0.94
+                atr_at_entry=atr,
+                initial_stop_loss=round(initial_stop, 2),
+                current_stop_loss=round(initial_stop, 2),
+                include_in_strategy=True
             )
             db.session.add(invested)
             
+            # Update action with actual values
+            action.expected_price = actual_buy_price
+            action.units = actual_units
+            action.amount = actual_units * actual_buy_price
+            
         elif action.action_type == 'SELL':
-            trade_value = action.units * action.expected_price
+            trade_value = action.units * actual_sell_price
             config.current_capital += trade_value
+            
+            # Update action with actual values
+            action.expected_price = actual_sell_price
+            action.amount = action.units * actual_sell_price
             
             # Remove from invested
             invested = InvestedModel.query.filter_by(tradingsymbol=action.tradingsymbol).first()
@@ -379,8 +410,9 @@ class ExecuteAction(MethodView):
                 
         elif action.action_type == 'SWAP':
             # Sell old
-            sell_value = action.swap_from_units * action.swap_from_price
+            sell_value = action.swap_from_units * actual_sell_price
             config.current_capital += sell_value
+            action.swap_from_price = actual_sell_price
             
             # Remove old invested
             old_invested = InvestedModel.query.filter_by(tradingsymbol=action.swap_from_symbol).first()
@@ -388,22 +420,41 @@ class ExecuteAction(MethodView):
                 db.session.delete(old_invested)
             
             # Buy new
-            buy_value = action.units * action.expected_price
+            buy_value = actual_units * actual_buy_price
             config.current_capital -= buy_value
+            
+            # Get ATR for stop-loss calculation
+            atr = None
+            try:
+                resp = requests.get(f"{BASE_URL}/indicators/latest/{action.tradingsymbol}")
+                if resp.status_code == 200:
+                    atr = resp.json().get('atrr_14')
+            except Exception:
+                pass
+            
+            stop_multiplier = config.stop_loss_multiplier if config else 2.0
+            initial_stop = calculate_initial_stop_loss(actual_buy_price, atr or (actual_buy_price * 0.03), stop_multiplier)
             
             # Add new invested
             new_invested = InvestedModel(
                 tradingsymbol=action.tradingsymbol,
-                buy_price=action.expected_price,
-                num_shares=action.units,
+                buy_price=actual_buy_price,
+                num_shares=actual_units,
                 buy_date=action.action_date,
-                initial_stop_loss=action.expected_price * 0.94,
-                current_stop_loss=action.expected_price * 0.94
+                atr_at_entry=atr,
+                initial_stop_loss=round(initial_stop, 2),
+                current_stop_loss=round(initial_stop, 2),
+                include_in_strategy=True
             )
             db.session.add(new_invested)
+            
+            # Update action with actual values
+            action.expected_price = actual_buy_price
+            action.units = actual_units
+            action.amount = actual_units * actual_buy_price
         
         action.executed = True
-        action.status = 'INVESTED'
+        action.status = 'EXECUTED'
         action.executed_at = db.func.now()
         
         try:

@@ -145,11 +145,19 @@ class PortfolioService:
         vacancies = self.max_positions - len(invested_stocks)
         sell_symbols = set()
         
+        # Separate strategy vs non-strategy stocks
+        strategy_stocks = [s for s in invested_stocks if s.get('include_in_strategy', True)]
+        non_strategy_stocks = [s for s in invested_stocks if not s.get('include_in_strategy', True)]
+        
+        # Non-strategy stocks don't count toward max_positions
+        vacancies = self.max_positions - len(strategy_stocks)
+        
         for position in invested_stocks:
             symbol = position['tradingsymbol']
             current_price = current_prices.get(symbol, 0)
             current_atr = current_atrs.get(symbol, 0)
             current_score = score_lookup.get(symbol, 0)
+            is_strategy = position.get('include_in_strategy', True)
             
             # Update stop-loss levels
             stops = calculate_effective_stop(
@@ -161,7 +169,7 @@ class PortfolioService:
                 multiplier=self.stop_multiplier
             )
             
-            # Check stop-loss trigger
+            # Check stop-loss trigger (applies to ALL stocks)
             if should_trigger_stop_loss(current_price, stops['effective_stop']):
                 actions.append({
                     'action_date': action_date,
@@ -170,14 +178,15 @@ class PortfolioService:
                     'units': position['num_shares'],
                     'expected_price': current_price,
                     'composite_score': current_score,
-                    'reason': f"Stop-loss triggered at {stops['effective_stop']}"
+                    'reason': f"Stop-loss triggered at {stops['effective_stop']}" + (" (manual)" if not is_strategy else "")
                 })
-                vacancies += 1
+                if is_strategy:
+                    vacancies += 1
                 sell_symbols.add(symbol)
                 continue
             
-            # Check score degradation
-            if self.should_exit(current_score):
+            # Check score degradation (only for strategy stocks)
+            if is_strategy and self.should_exit(current_score):
                 actions.append({
                     'action_date': action_date,
                     'action_type': 'SELL',
@@ -192,15 +201,16 @@ class PortfolioService:
         
         # Update invested symbols after sells
         invested_symbols = invested_symbols - sell_symbols
+        strategy_symbols = {s['tradingsymbol'] for s in strategy_stocks} - sell_symbols
         
-        # ========== PHASE 2: SWAP Actions ==========
+        # ========== PHASE 2: SWAP Actions (only for strategy stocks) ==========
         # Get top challengers not in portfolio
         challengers = ranked_stocks[~ranked_stocks['symbol'].isin(invested_symbols)].copy()
         
-        # Check each incumbent against top challenger
-        for position in invested_stocks:
+        # Check each STRATEGY incumbent against top challenger
+        for position in strategy_stocks:
             symbol = position['tradingsymbol']
-            if symbol not in invested_symbols:  # Already sold
+            if symbol not in strategy_symbols:  # Already sold
                 continue
             
             incumbent_score = score_lookup.get(symbol, 0)

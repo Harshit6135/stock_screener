@@ -19,6 +19,7 @@ class InvestedSchema(Schema):
     last_updated = fields.DateTime(dump_only=True)
     
     investment_value = fields.Float(dump_only=True)
+    include_in_strategy = fields.Bool(load_default=True)
 
 
 class InvestedInputSchema(Schema):
@@ -26,3 +27,4 @@ class InvestedInputSchema(Schema):
     tradingsymbol = fields.Str(required=True)
     buy_price = fields.Float(required=True)
     num_shares = fields.Int(required=True)
+    include_in_strategy = fields.Bool(load_default=True)
