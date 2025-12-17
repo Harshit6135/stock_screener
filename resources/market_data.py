@@ -1,5 +1,5 @@
 from db import db
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, func
 from models import MarketDataModel
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
@@ -72,3 +72,20 @@ class LatestMarketData(MethodView):
         )
 
         return query.order_by(MarketDataModel.date.desc()).first()
+
+@blp.route("/market_data/<string:tradingsymbol>/<string:date>")
+class MarketDataBySymbolAndDate(MethodView):
+    @blp.response(200, MarketDataSchema)
+    def get(self, tradingsymbol, date):
+
+        """Fetch market data for a specific symbol and date"""
+        print(f"Fetching market data for {tradingsymbol} on {date}")
+        market_data = MarketDataModel.query.filter(
+            and_(
+                MarketDataModel.tradingsymbol == tradingsymbol,
+                MarketDataModel.date == date
+            )
+        ).first()
+        if market_data:
+            return market_data
+        abort(404, message="Market data not found for the given symbol and date.")

@@ -43,8 +43,10 @@ class IndicatorsService:
 
     def calculate_indicators(self, df, last_ind_date):
         df.ta.study(ema_strategy)
-        date_truncate = last_ind_date - timedelta(days=365)
-        df = df[df.index >= date_truncate]
+        if last_ind_date is not None:
+            date_truncate = last_ind_date - timedelta(days=365)
+            df = df[df.index >= date_truncate]
+
         df.ta.study(momentum_strategy)
         df.ta.study(derived_strategy)
         df['price_vol_correlation'] = self.calculate_volume_price_correlation(df['close'], df['volume'], additional_parameters['vol_price_lookback'])

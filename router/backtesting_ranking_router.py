@@ -12,7 +12,7 @@ logger = setup_logger(name="Orchestrator")
 BASE_URL = "http://127.0.0.1:5000"
 
 
-def calculate_score():
+def backtest_calculate_score(end_date):
     """
     Orchestrates the ranking process:
     1. Fetch instruments
@@ -50,7 +50,7 @@ def calculate_score():
 
         # Get Latest Price
         try:
-            p_resp = requests.get(f"{BASE_URL}/market_data/latest/{symbol}")
+            p_resp = requests.get(f"{BASE_URL}/market_data/{symbol}/{end_date}")
             if p_resp.status_code == 200:
                 p_data = p_resp.json()
                 if p_data:
@@ -62,7 +62,7 @@ def calculate_score():
 
         # Get Latest Indicators
         try:
-            i_resp = requests.get(f"{BASE_URL}/indicators/latest/{symbol}")
+            i_resp = requests.get(f"{BASE_URL}/indicators/{symbol}/{end_date}")
             if i_resp.status_code == 200:
                 i_data = i_resp.json()
                 if i_data:
@@ -91,7 +91,7 @@ def calculate_score():
     ranked_df = ranker.calculate_composite_score()
     
     # Add ranking date and position
-    ranking_date = date.today()
+    ranking_date = date.fromisoformat(end_date)
     ranked_df['ranking_date'] = ranking_date
     ranked_df['rank_position'] = range(1, len(ranked_df) + 1)
     
