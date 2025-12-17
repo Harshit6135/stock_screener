@@ -28,3 +28,13 @@ class InvestedInputSchema(Schema):
     buy_price = fields.Float(required=True)
     num_shares = fields.Int(required=True)
     include_in_strategy = fields.Bool(load_default=True)
+
+
+class PortfolioSummarySchema(Schema):
+    """Schema for portfolio summary statistics"""
+    total_investment = fields.Float(dump_only=True)
+    total_stocks = fields.Int(dump_only=True)
+    capital_left = fields.Float(dump_only=True)
+    current_value = fields.Float(dump_only=True)
+    absolute_return = fields.Float(dump_only=True)
+    xirr = fields.Float(dump_only=True)

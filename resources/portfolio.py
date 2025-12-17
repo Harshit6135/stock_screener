@@ -15,15 +15,17 @@ from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 from sqlalchemy.exc import SQLAlchemyError
 
-from models import RiskConfigModel, InvestedModel, RankingModel, ActionsModel
+from models import RiskConfigModel, InvestedModel, RankingModel, ActionsModel, MarketDataModel
 from schemas import (
     RiskConfigSchema, 
     InvestedSchema, InvestedInputSchema,
     RankingSchema, Top20Schema,
-    ActionsSchema, GenerateActionsInputSchema, ExecuteActionInputSchema
+    ActionsSchema, GenerateActionsInputSchema, ExecuteActionInputSchema,
+    PortfolioSummarySchema
 )
 from services.portfolio_service import PortfolioService
 from utils.stop_loss import calculate_initial_stop_loss
+from utils.finance import calculate_xirr
 
 
 blp = Blueprint("portfolio", __name__, description="Portfolio management operations")
@@ -71,6 +73,77 @@ class RiskConfig(MethodView):
             db.session.rollback()
             abort(500, message=str(e))
         return config
+
+# ==================== PORTFOLIO SUMMARY ====================
+
+@blp.route("/summary")
+class PortfolioSummary(MethodView):
+    @blp.response(200, PortfolioSummarySchema)
+    def get(self):
+        """Get portfolio summary statistics"""
+        invested = InvestedModel.query.all()
+        config = RiskConfigModel.query.first()
+        
+        total_investment = 0.0
+        current_value = 0.0
+        cash_flows = []
+        
+        # Initial Capital Flow (Assumption: RiskConfig created_at is start)
+        # Note: If we don't have a reliable start date, XIRR might be skewed.
+        # But here we calculate XIRR of CURRENT OPEN POSITIONS + Cash Left?
+        # A better approach for "Portfolio XIRR":
+        # Cash Flow 0: -(Initial Capital) on Creation Date
+        # Cash Flow N: (Current Capital + Current Holdings Value) on Today
+        
+        # However, to capture intermediate trades, we need full transaction history.
+        # If we lack that, we can't accurately calc XIRR if money was withdrawn/deposited.
+        # Assuming NO external deposits/withdrawals other than initial.
+        
+        for i in invested:
+            investment_amount = i.buy_price * i.num_shares
+            total_investment += investment_amount
+            
+            # Get latest price
+            latest_data = MarketDataModel.query.filter_by(
+                tradingsymbol=i.tradingsymbol
+            ).order_by(MarketDataModel.date.desc()).first()
+            
+            price = latest_data.close if latest_data else i.buy_price
+            current_value += price * i.num_shares
+        
+        capital_left = config.current_capital if config else 0.0
+        
+        # Portfolio XIRR Calculation
+        # We assume initial capital was put in at risk_config.created_at
+        xirr = 0.0
+        if config and config.created_at:
+            # Inputs:
+            # 1. Initial Investment: -Initial Capital
+            # 2. Current Liquidation Value: Capital Left + Stock Value
+            
+            start_date = config.created_at.date()
+            today = date.today()
+            
+            if start_date < today:
+                flows = [
+                    (-config.initial_capital, start_date),
+                    (capital_left + current_value, today)
+                ]
+                try:
+                    xirr = calculate_xirr(flows) * 100 # Convert to percentage
+                except Exception:
+                    xirr = 0.0
+
+        absolute_return = (current_value + capital_left) - (config.initial_capital if config else 0)
+        
+        return {
+            "total_investment": round(total_investment, 2),
+            "total_stocks": len(invested),
+            "capital_left": round(capital_left, 2),
+            "current_value": round(current_value, 2),
+            "absolute_return": round(absolute_return, 2),
+            "xirr": round(xirr, 2)
+        }
 
 
 # ==================== INVESTED STOCKS ====================
