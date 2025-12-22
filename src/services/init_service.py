@@ -1,0 +1,276 @@
+import os
+import json
+import time
+
+import pandas as pd
+
+from adaptors import YFinanceAdaptor
+from config import setup_logger, MCAP_THRESHOLD, PRICE_THRESHOLD
+from repositories import MasterRepository, InstrumentsRepository
+
+
+yf = YFinanceAdaptor()
+master_repo = MasterRepository()
+instr_repo = InstrumentsRepository()
+logger = setup_logger(name="Orchestrator")
+
+
+class InitService:
+    def __init__(self):
+        self.nse_path = "data/imports/EQUITY_L.csv"
+        self.bse_path = "data/imports/Equity.csv"
+        self.dump_path = "data/exports/yfinance_dump.csv"
+
+    def initialize_app(self):
+        logger.info("Starting Day 0 Process...")
+        
+        # 1. Fetch and Merge CSVs
+        df, nse_tickers, bse_tickers, merged_tickers = self.fetch_and_merge_csvs()
+        logger.info(f"Merged DataFrame shape: {df.shape}")
+
+        # 2. Fetch yfinance data
+        df['yfinance_tickers'] = df.apply(self.generate_yfinance_tickers, axis=1)
+        df = self.fetch_yfinance_data(df)
+        
+        # 3. Save raw output to CSV
+        df.to_csv(self.dump_path, index=False)
+        logger.info(f"Saved yfinance data to {self.dump_path}")
+
+        # 4. Push to Master Table
+        self.push_to_master(df)
+
+        # 5. Filter stocks (Mcap < 500cr, Price < 75)
+        df_filtered = self.filter_stocks(df)
+        logger.info(f"Filtered DataFrame shape: {df_filtered.shape}")
+
+        # 6. Sync with Kite Instruments
+        instruments_df = self.get_instruments()
+        response_code, final_count = self.sync_with_kite(df_filtered, instruments_df)
+        logger.info("Day 0 Process Completed Successfully.")
+        response = {
+            "nse_count": nse_tickers,
+            "bse_count": bse_tickers,
+            "merged_count": merged_tickers,
+            "final_count": final_count
+        }
+        return response_code, response
+
+    def fetch_and_merge_csvs(self):
+        # Load NSE
+        if not os.path.exists(self.nse_path):
+             raise FileNotFoundError(f"NSE file not found at {self.nse_path}")
+        
+        df_nse = pd.read_csv(self.nse_path)
+        df_nse = df_nse.rename(columns=lambda x: 'NSE_' + x.strip().replace(" ", "_"))
+        
+        # Load BSE
+        if not os.path.exists(self.bse_path):
+             raise FileNotFoundError(f"BSE file not found at {self.bse_path}")
+
+        df_bse = pd.read_csv(self.bse_path)
+        df_bse.reset_index(inplace=True)
+        rename_map = {
+            "level_0":	"bse_Security Code",
+            "level_1": "bse_Issuer Name",
+            "level_2":	"bse_Symbol",
+            "level_3":	"bse_Security Name",
+            "level_4":	"bse_Status",
+            "Security Code": "bse_Group",
+            "Issuer Name":	"bse_Face Value",
+            "Security Id":	"bse_ISIN No",
+            "Security Name":	"bse_Instrument"
+        }
+        df_bse = df_bse.rename(columns=rename_map)
+        df_bse = df_bse[[
+            "bse_Face Value",
+            "bse_Issuer Name",
+            "bse_ISIN No",
+            "bse_Instrument",
+            "bse_Security Code",
+            "bse_Symbol",
+            "bse_Security Name",
+            "bse_Status"
+        ]]
+        df_bse = df_bse.rename(columns=lambda x: x.strip().replace(" ", "_").upper())
+        df_bse = df_bse[df_bse['BSE_STATUS'] == 'Active']
+
+        # Merge
+        df_nse['ISIN'] = df_nse['NSE_ISIN_NUMBER']
+        df_bse['ISIN'] = df_bse['BSE_ISIN_NO']
+        df_consolidated = pd.merge(df_nse, df_bse, on='ISIN', how='outer')
+        
+        # Filter Logic (Mutual Funds, ISIN prefix)
+        # 1. ISIN starts with IN
+        df_consolidated = df_consolidated[df_consolidated['ISIN'].astype(str).str.startswith('IN', na=False)]
+        
+        # 2. Remove Mutual Funds
+        # Check BSE_ISSUER_NAME (originally 'Issuer Name')
+        if 'BSE_ISSUER_NAME' in df_consolidated.columns:
+             df_consolidated = df_consolidated[~df_consolidated['BSE_ISSUER_NAME'].astype(str).str.contains('Mutual Fund', case=False, na=False)]
+
+        # 3. Remove Asset Management & ETF
+        if 'BSE_ISSUER_NAME' in df_consolidated.columns and 'BSE_SECURITY_NAME' in df_consolidated.columns:
+            df_consolidated = df_consolidated[~
+                (df_consolidated['BSE_ISSUER_NAME'].astype(str).str.contains('asset management', case=False, na=False) &
+                 df_consolidated['BSE_SECURITY_NAME'].astype(str).str.contains('etf', case=False, na=False))
+            ]
+
+        # Cleanup columns
+        # NSE_SYMBOL, BSE_SECURITY_CODE (as string), BSE_SECURITY_ID (as alphanumeric)
+        # Prioritize NSE Symbol
+        df_consolidated['NSE_SYMBOL'] = df_consolidated['NSE_SYMBOL'].fillna('')
+        df_consolidated['BSE_SYMBOL'] = df_consolidated['BSE_SYMBOL'].fillna('')
+        df_consolidated['BSE_SECURITY_CODE'] = df_consolidated['BSE_SECURITY_CODE'].fillna(0).astype(int).astype(str)
+        df_consolidated['NAME_OF_COMPANY'] = df_consolidated['NSE_NAME_OF_COMPANY'].fillna(df_consolidated['BSE_ISSUER_NAME'])
+        unwanted_cols = [
+            'NSE_ISIN_NUMBER',
+            'BSE_ISIN_NO',
+            'NSE_NAME_OF_COMPANY',
+            'NSE_SERIES',
+            'NSE_DATE_OF_LISTING',
+            'NSE_PAID_UP_VALUE',
+            'NSE_MARKET_LOT',
+            'NSE_FACE_VALUE',
+            'BSE_FACE_VALUE',
+            'BSE_ISSUER_NAME',
+            'BSE_INSTRUMENT',
+            'BSE_STATUS'
+        ]
+        df_consolidated = df_consolidated.drop(columns=unwanted_cols, errors='ignore')
+        df_consolidated = df_consolidated[['ISIN', 'NSE_SYMBOL', 'BSE_SYMBOL', 'BSE_SECURITY_CODE', 'NAME_OF_COMPANY']]
+
+        return df_consolidated, len(df_nse), len(df_bse), len(df_consolidated)
+
+    @staticmethod
+    def generate_yfinance_tickers(row):
+        tickers = []
+        # Priority 1: NSE symbol
+        if pd.notna(row['NSE_SYMBOL']) and row['NSE_SYMBOL'] != '':
+            tickers.append(f"{row['NSE_SYMBOL']}.NS")
+        # Priority 2: BSE alphanumeric symbol
+        if pd.notna(row['BSE_SYMBOL']) and row['BSE_SYMBOL'] != '':
+            tickers.append(f"{row['BSE_SYMBOL']}.BO")
+        # Priority 3: BSE numeric security code
+        if pd.notna(row['BSE_SECURITY_CODE']) and row['BSE_SECURITY_CODE'] != '0': # '0' after conversion from NaN
+            tickers.append(f"{row['BSE_SECURITY_CODE']}.BO")
+        return tickers
+
+    @staticmethod
+    def fetch_yfinance_data(df):
+        try:
+            desired_columns = [
+                'industry', 'sector', 'marketCap', 'regularMarketPrice',
+                'allTimeHigh', 'allTimeLow', 'floatShares', 'sharesOutstanding',
+                'heldPercentInsiders', 'heldPercentInstitutions'
+            ]
+            for col in desired_columns:
+                df[col] = None
+
+            total = len(df)
+            logger.info(f"Fetching yfinance data for {total} stocks...")
+            
+            successful_downloads = 0
+            failed_downloads = 0
+
+            for index, row in df.iterrows():
+                if index % 50 == 0:
+                    time.sleep(5)
+
+                yfinance_info, yfinance_ticker_used, yfinance_status = yf.get_stock_info(df.at[index, 'yfinance_tickers'])
+                df.at[index, 'yfinance_info'] = json.dumps(yfinance_info)
+                df.at[index, 'yfinance_ticker_used'] = yfinance_ticker_used
+                df.at[index, 'yfinance_status'] = yfinance_status
+                if yfinance_status != 'Failed':
+                    successful_downloads += 1
+                    for col in desired_columns:
+                        df.at[index, col] = yfinance_info.get(col, None)
+                else:
+                    failed_downloads += 1
+                logger.info(f"\nStatus - Successful - {successful_downloads}, Failed - {failed_downloads}\n")
+        except Exception as e:
+            logger.error(f"Failed to fetch yfinance data: {str(e)}")
+        return df
+
+    @staticmethod
+    def push_to_master(df):
+        try:
+            df.fillna('', inplace=True)
+            req_cols = [
+                'ISIN', 'NSE_SYMBOL', 'BSE_SYMBOL', 'BSE_SECURITY_CODE', 
+                'NAME_OF_COMPANY', 'industry', 'sector', 'marketCap', 'regularMarketPrice',
+                'allTimeHigh', 'allTimeLow', 'sharesOutstanding', 
+                'floatShares', 'heldPercentInsiders', 'heldPercentInstitutions'
+            ]
+            df = df[req_cols]
+            df.columns = df.columns.str.lower()
+            master_data = json.loads(df.to_json(orient='records', indent=4))
+            master_repo.delete_all()
+            master_repo.bulk_insert(master_data)
+        except Exception as e:
+            logger.error(f"Failed to push to master: {str(e)}")
+
+    @staticmethod
+    def filter_stocks(df):
+        # Request: Remove mcap < 500cr
+        # Mcap is usually in bytes in yfinance? Let's check. Yes, usually full number.
+        # "500cr" = 500 * 10,000,000 = 5,000,000,000
+        mcap_threshold = MCAP_THRESHOLD * 10000000
+
+        # Ensure numeric
+        df['marketCap'] = pd.to_numeric(df['marketCap'], errors='coerce')
+        df['regularMarketPrice'] = pd.to_numeric(df['regularMarketPrice'], errors='coerce')
+        
+        # Filter Mcap
+        # Logic: Keep if NaN OR >= 500cr
+        df_filtered = df[df['marketCap'] >= mcap_threshold]
+        logger.info(f"Dropped {len(df) - len(df_filtered)} stocks due to Mcap < 500cr")
+        
+        # Filter Price < 75
+        # Logic: Keep if NaN OR >= 75
+        current_len = len(df_filtered)
+        df_filtered = df_filtered[df_filtered['regularMarketPrice'] >= PRICE_THRESHOLD]
+        logger.info(f"Dropped {current_len - len(df_filtered)} stocks due to Price < {PRICE_THRESHOLD}")
+        
+        return df_filtered
+
+    @staticmethod
+    def get_instruments():
+        url = "https://api.kite.trade/instruments"
+        instruments_df = pd.read_csv(url)
+        logger.info(f"Fetched {len(instruments_df)} instruments from Kite")
+        return instruments_df
+
+    @staticmethod
+    def sync_with_kite(df, instruments_df):
+        try:
+            valid_symbols_nse = set(df[df['NSE_SYMBOL'] != '']['NSE_SYMBOL'])
+            kite_nse = instruments_df[
+                (instruments_df['exchange'] == 'NSE') & 
+                (instruments_df['tradingsymbol'].isin(valid_symbols_nse))
+            ]
+
+            valid_symbols_bse = set(df[(df['BSE_SYMBOL'] != '') & (df['NSE_SYMBOL'] == '')]['BSE_SYMBOL'])
+            kite_bse = instruments_df[
+                (instruments_df['exchange'] == 'BSE') & 
+                (instruments_df['tradingsymbol'].isin(valid_symbols_bse))
+            ]
+
+            final_instruments = pd.concat([kite_nse, kite_bse])
+
+            req_columns = ['instrument_token', 'exchange_token', 'tradingsymbol', 'name', 'exchange']
+            final_instruments = final_instruments[req_columns]
+            final_instruments['exchange_token'] = final_instruments['exchange_token'].astype(str)
+
+            instruments_json = json.loads(final_instruments.to_json(orient='records', indent=4))
+            logger.info(f"Syncing {len(final_instruments)} instruments to Kite")
+            final_instruments.to_json("data/exports/instruments.json", orient='records', indent=4)
+            response = instr_repo.delete_all()
+            if response == -1:
+                return 500, 0
+            response = instr_repo.bulk_insert(instruments_json)
+            if response is None:
+                return 500, 0
+            return 200, len(final_instruments)
+        except Exception as e:
+            logger.error(f"Error syncing with Kite: {e}")
+            return 500, 0
