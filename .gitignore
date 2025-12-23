@@ -38,6 +38,7 @@ access_token.txt
 .env.local
 
 # OS
+.DS_Store
 Thumbs.db
 
 # Testing
