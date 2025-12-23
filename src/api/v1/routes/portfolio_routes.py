@@ -14,7 +14,7 @@ from repositories import ConfigRepository, PortfolioRepository
 
 config_repo = ConfigRepository()
 portfolio_repo = PortfolioRepository()
-blp = Blueprint("portfolio", __name__, url_prefix="/portfolio",
+blp = Blueprint("portfolio", __name__, url_prefix="/api/v1/portfolio",
                 description="Portfolio management operations")
 
 
@@ -52,14 +52,16 @@ class PortfolioSummary(MethodView):
 class InvestedList(MethodView):
     @blp.response(200, InvestedSchema(many=True))
     def get(self):
-        """Get all invested stocks"""
-        return portfolio_repo.get_invested()
+        """Get all invested stocks with current rank"""
+        portfolio_service = PortfolioService()
+        return portfolio_service.get_invested_stocks()
 
     @blp.arguments(InvestedInputSchema)
     @blp.response(201, InvestedSchema)
     def post(self, invest_data):
         """Add a new invested stock with calculated stop-loss"""
-        invested = portfolio_repo.buy_stock(invest_data)
+        portfolio_service = PortfolioService()
+        invested = portfolio_service.add_new_stock(invest_data)
         return invested
 
     @blp.response(200, MessageSchema)

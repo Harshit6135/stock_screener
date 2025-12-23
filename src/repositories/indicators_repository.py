@@ -91,11 +91,14 @@ class IndicatorsRepository:
             return -1
 
     @staticmethod
-    def get_indicator_by_tradingsymbol(indicator, tradingsymbol: str):
-        """Fetch the latest market data for a tradingsymbol"""
+    def get_indicator_by_tradingsymbol(indicator, tradingsymbol: str, date=None):
+        """Fetch the latest market data for a tradingsymbol, optionally before a specific date"""
         query = IndicatorsModel.query.filter(
             IndicatorsModel.tradingsymbol == tradingsymbol
         )
+        if date:
+            query = query.filter(IndicatorsModel.date <= date)
+            
         query = query.with_entities(getattr(IndicatorsModel, indicator))
         result = query.order_by(IndicatorsModel.date.desc()).first()
         if result:

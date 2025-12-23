@@ -4,7 +4,6 @@ import pandas as pd
 from scipy import stats
 
 
-
 def percentile_rank(series: pd.Series) -> pd.Series:
     """
     Calculate percentile rank (0-100) for a series

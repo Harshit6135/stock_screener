@@ -9,7 +9,7 @@ from repositories import ActionsRepository
 from schemas import ActionsSchema, GenerateActionsInputSchema, ExecuteActionInputSchema
 
 
-blp = Blueprint("actions", __name__, url_prefix="/actions", description="Action management operations")
+blp = Blueprint("actions", __name__, url_prefix="/api/v1/actions", description="Action management operations")
 actions_repo = ActionsRepository()
 
 

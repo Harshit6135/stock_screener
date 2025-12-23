@@ -54,6 +54,13 @@ class RankingRepository:
         ).order_by(RankingModel.composite_score.desc()).all()
 
     @staticmethod
+    def get_latest_rank_by_symbol(symbol):
+        """Get the latest available ranking record for a symbol"""
+        return RankingModel.query.filter(
+            RankingModel.tradingsymbol == symbol
+        ).order_by(RankingModel.ranking_date.desc()).first()
+
+    @staticmethod
     def get_rankings_by_date_and_symbol(ranking_date, symbol):
         return RankingModel.query.filter(
             RankingModel.ranking_date == ranking_date,

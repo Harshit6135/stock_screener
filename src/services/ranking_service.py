@@ -38,10 +38,11 @@ class RankingService:
         for col, rank_name in rank_cols.items():
             if col in metrics_df.columns:
                 # Use Z-score for BB Width, percentile for others (per report appendix)
-                if col == 'bbb_20_2_2':
-                    metrics_df[rank_name] = z_score_normalize(metrics_df[col])
-                else:
-                    metrics_df[rank_name] = percentile_rank(metrics_df[col])
+                # if col == 'bbb_20_2_2':
+                #     metrics_df[rank_name] = z_score_normalize(metrics_df[col])
+                # else:
+                #     metrics_df[rank_name] = percentile_rank(metrics_df[col])
+                metrics_df[rank_name] = percentile_rank(metrics_df[col])
         
         metrics_df['momentum_rsi_rank'] = score_rsi_regime(metrics_df['rsi_signal_ema_3'])
         metrics_df['trend_extension_rank'] = score_trend_extension(metrics_df['distance_from_ema_200'])
@@ -71,7 +72,7 @@ class RankingService:
         else:
             metrics_df['final_momentum_score'] = 0
         
-        metrics_df['vol_score'] = (metrics_df["rvolume_rank"] * self.strategy_params.rvolume_rank_weight + 
+        metrics_df['final_vol_score'] = (metrics_df["rvolume_rank"] * self.strategy_params.rvolume_rank_weight + 
                                metrics_df["price_vol_corr_rank"] * self.strategy_params.price_vol_corr_rank_weight)
 
         # Combine BB Width and %B for structure (as per report Section 4.1)
@@ -85,7 +86,7 @@ class RankingService:
             self.strategy_params.trend_strength_weight * metrics_df.get('final_trend_score', 0) +
             self.strategy_params.momentum_velocity_weight * metrics_df.get('final_momentum_score', 0) +
             self.strategy_params.risk_efficiency_weight * metrics_df.get('efficiency_rank', 0) +
-            self.strategy_params.conviction_weight * metrics_df.get('vol_score', 0) +
+            self.strategy_params.conviction_weight * metrics_df.get('final_vol_score', 0) +
             self.strategy_params.structure_weight * metrics_df.get('final_structure_score', 0)
         )
         
@@ -93,9 +94,9 @@ class RankingService:
 
     def _apply_universe_penalties(self, metrics_df) -> pd.DataFrame:
         """Apply penalty box rules across universe"""
-        metrics_df[metrics_df['ema_200'] < metrics_df['close'], 'composite_score'] = 0
-        metrics_df[metrics_df['atr'] / metrics_df['atr'].shift(2) > self.strategy_params.atr_threshold, 'composite_score'] = 0
-        metrics_df[metrics_df['volume']*metrics_df['close'] < self.strategy_params.turnover_threshold * 10000000, 'composite_score'] = 0
+        metrics_df.loc[metrics_df['ema_200'] > metrics_df['close'], 'composite_score'] = 0
+        metrics_df.loc[metrics_df['atrr_14'] / metrics_df['atrr_14'].shift(2) > self.strategy_params.atr_threshold, 'composite_score'] = 0
+        metrics_df.loc[metrics_df['volume']*metrics_df['close'] < self.strategy_params.turnover_threshold * 10000000, 'composite_score'] = 0
         return metrics_df
 
     # ============= COMPOSITE SCORECARD =============
@@ -118,33 +119,41 @@ class RankingService:
         # Sort by composite score
         metrics_df = metrics_df.sort_values('composite_score', ascending=False)
         req_cols = [
-            'symbol',
+            'tradingsymbol',
             'ema_50_slope',
-            'ppo_12_26_9',
-            'ppoh_12_26_9',
-            # 'risk_adj_return',
-            'rvol',
-            'price_vol_correlation',
-            'bbb_20_2_2',
-            'percent_b',
-            'distance_from_ema_200',
             'trend_rank',
+            'distance_from_ema_200',
             'trend_extension_rank',
             'final_trend_score',
+            'rsi_signal_ema_3',
             'momentum_rsi_rank',
+            'ppo_12_26_9',
             'momentum_ppo_rank',
+            'ppoh_12_26_9',
             'momentum_ppoh_rank',
             'final_momentum_score',
-            'rvolume_rank',
-            'price_vol_corr_rank',
-            'vol_score',
+            'risk_adjusted_return',
             'efficiency_rank',
-            'structure_bb_rank',
+            'rvol',
+            'rvolume_rank',
+            'price_vol_correlation',
+            'price_vol_corr_rank',
+            'final_vol_score',
+            'bbb_20_2_2',
             'structure_rank',
+            'percent_b',
+            'structure_bb_rank',
             'final_structure_score',
             'composite_score'
         ]
         return metrics_df[req_cols]
+
+    @staticmethod
+    def query_to_dict(results):
+        return [
+            {c.name: getattr(row, c.name) for c in row.__table__.columns}
+            for row in results
+        ]
 
     def generate_score(self, date=None):
         """
@@ -168,30 +177,23 @@ class RankingService:
                 "end_date": date
             }
 
-        price_data_list = marketdata_repo.get_prices_for_all_stocks(date_range)
-        indicators_data_list = indicators_repo.get_indicators_for_all_stocks(date_range)
+        print(date_range)
+
+        price_data_list = self.query_to_dict(marketdata_repo.get_prices_for_all_stocks(date_range))
+        indicators_data_list = self.query_to_dict(indicators_repo.get_indicators_for_all_stocks(date_range))
 
         # 3. Create DataFrames
         stocks_df = pd.DataFrame(price_data_list)
         metrics_df = pd.DataFrame(indicators_data_list)
 
-        if 'tradingsymbol' in metrics_df.columns and 'symbol' not in metrics_df.columns:
-            metrics_df.rename(columns={'tradingsymbol': 'symbol'}, inplace=True)
-        
-        if 'tradingsymbol' in stocks_df.columns and 'symbol' not in stocks_df.columns:
-            stocks_df.rename(columns={'tradingsymbol': 'symbol'}, inplace=True)
-
-        metrics_df = metrics_df.join(stocks_df, on='symbol', how='inner')
+        metrics_df = pd.merge(metrics_df, stocks_df, on='tradingsymbol', how='inner')
         ranked_df = self.calculate_composite_score(metrics_df)
         
         # Add ranking date and position
-        ranking_date = date.today()
+        ranking_date = date if date else max_date
         ranked_df['ranking_date'] = ranking_date
-        ranked_df['rank_position'] = range(1, len(ranked_df) + 1)
-        
-        # Rename symbol back to tradingsymbol for DB
-        if 'symbol' in ranked_df.columns:
-            ranked_df.rename(columns={'symbol': 'tradingsymbol'}, inplace=True)
+        ranked_df = ranked_df.sort_values('composite_score', ascending=False)
+        ranked_df['rank'] = range(1, len(ranked_df) + 1)
         
         # 5. Save to database
         logger.info("Saving rankings to database...")

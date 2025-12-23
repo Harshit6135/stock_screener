@@ -84,6 +84,13 @@
         "exchange":"NSE"
     },
     {
+        "instrument_token":34817,
+        "exchange_token":"136",
+        "tradingsymbol":"ANDHRSUGAR",
+        "name":"ANDHRA SUGARS",
+        "exchange":"NSE"
+    },
+    {
         "instrument_token":36865,
         "exchange_token":"144",
         "tradingsymbol":"GODREJAGRO",
@@ -648,6 +655,13 @@
         "exchange_token":"926",
         "tradingsymbol":"ORCHPHARMA",
         "name":"ORCHID PHARMA",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":237569,
+        "exchange_token":"928",
+        "tradingsymbol":"ELECTCAST",
+        "name":"ELECTROSTEEL CASTINGS",
         "exchange":"NSE"
     },
     {
@@ -1502,6 +1516,13 @@
         "exchange_token":"2320",
         "tradingsymbol":"SMCGLOBAL",
         "name":"SMC GLOBAL SECURITIES",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":596737,
+        "exchange_token":"2331",
+        "tradingsymbol":"JAYNECOIND",
+        "name":"JAYASWAL NECO INDUSTR",
         "exchange":"NSE"
     },
     {
@@ -2720,6 +2741,13 @@
         "exchange_token":"4907",
         "tradingsymbol":"ENGINERSIN",
         "name":"ENGINEERS INDIA",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":1257217,
+        "exchange_token":"4911",
+        "tradingsymbol":"MADRASFERT",
+        "name":"MADRAS FERTILISERS",
         "exchange":"NSE"
     },
     {
@@ -3994,6 +4022,13 @@
         "exchange_token":"10310",
         "tradingsymbol":"AURUM",
         "name":"AURUM PROPTECH",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":2647809,
+        "exchange_token":"10343",
+        "tradingsymbol":"RADHIKAJWE",
+        "name":"RADHIKA JEWELTECH",
         "exchange":"NSE"
     },
     {
@@ -5943,6 +5978,13 @@
         "exchange":"NSE"
     },
     {
+        "instrument_token":3802369,
+        "exchange_token":"14853",
+        "tradingsymbol":"OMAXE",
+        "name":"OMAXE",
+        "exchange":"NSE"
+    },
+    {
         "instrument_token":3816449,
         "exchange_token":"14908",
         "tradingsymbol":"KDDL",
@@ -6003,13 +6045,6 @@
         "exchange_token":"14982",
         "tradingsymbol":"CENTUM",
         "name":"CENTUM ELECTRONICS",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":3844353,
-        "exchange_token":"15017",
-        "tradingsymbol":"MAANALU",
-        "name":"MAAN ALUMINIUM",
         "exchange":"NSE"
     },
     {
@@ -7014,6 +7049,13 @@
         "exchange":"NSE"
     },
     {
+        "instrument_token":4834049,
+        "exchange_token":"18883",
+        "tradingsymbol":"SJVN",
+        "name":"SJVN",
+        "exchange":"NSE"
+    },
+    {
         "instrument_token":4835585,
         "exchange_token":"18889",
         "tradingsymbol":"KSL",
@@ -7214,6 +7256,13 @@
         "exchange_token":"19686",
         "tradingsymbol":"BLUEJET",
         "name":"BLUE JET HEALTHCARE",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":5040897,
+        "exchange_token":"19691",
+        "tradingsymbol":"JITFINFRA",
+        "name":"JITF INFRALOGISTICS",
         "exchange":"NSE"
     },
     {
@@ -7448,13 +7497,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":5228801,
-        "exchange_token":"20425",
-        "tradingsymbol":"NACLIND",
-        "name":"NACL INDUSTRIES",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":5255937,
         "exchange_token":"20531",
         "tradingsymbol":"BAJEL",
@@ -7508,6 +7550,13 @@
         "exchange_token":"20698",
         "tradingsymbol":"SCHAND",
         "name":"S CHAND AND COMPANY",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":5314561,
+        "exchange_token":"20760",
+        "tradingsymbol":"RPPINFRA",
+        "name":"R.P.P INFRA PROJECTS",
         "exchange":"NSE"
     },
     {
@@ -7970,6 +8019,13 @@
         "exchange_token":"23489",
         "tradingsymbol":"BHARTIHEXA",
         "name":"BHARTI HEXACOM",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":6019073,
+        "exchange_token":"23512",
+        "tradingsymbol":"TARACHAND",
+        "name":"TARA CHAND INFRA SOLN",
         "exchange":"NSE"
     },
     {
@@ -8495,6 +8551,13 @@
         "exchange_token":"25907",
         "tradingsymbol":"WAAREEENER",
         "name":"WAAREE ENERGIES",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":6635009,
+        "exchange_token":"25918",
+        "tradingsymbol":"OCCLLTD",
+        "name":"OCCL",
         "exchange":"NSE"
     },
     {
@@ -9681,6 +9744,13 @@
         "exchange":"NSE"
     },
     {
+        "instrument_token":194585857,
+        "exchange_token":"760101",
+        "tradingsymbol":"SKFINDUS",
+        "name":"SKF IND (INDUSTRIAL)",
+        "exchange":"NSE"
+    },
+    {
         "instrument_token":194592001,
         "exchange_token":"760125",
         "tradingsymbol":"FABTECH",
@@ -10143,6 +10213,13 @@
         "exchange":"BSE"
     },
     {
+        "instrument_token":131877636,
+        "exchange_token":"515147",
+        "tradingsymbol":"HALDYNGL",
+        "name":"HALDYN GLASS",
+        "exchange":"BSE"
+    },
+    {
         "instrument_token":132105732,
         "exchange_token":"516038",
         "tradingsymbol":"SOMAPPR",
@@ -10290,6 +10367,13 @@
         "exchange":"BSE"
     },
     {
+        "instrument_token":134277124,
+        "exchange_token":"524520",
+        "tradingsymbol":"KMCSHIL",
+        "name":"KMC SPECIALITY HOSPITALS (INDI",
+        "exchange":"BSE"
+    },
+    {
         "instrument_token":134327556,
         "exchange_token":"524717",
         "tradingsymbol":"TITANBIO",
@@ -10308,6 +10392,13 @@
         "exchange_token":"526433",
         "tradingsymbol":"ASMTEC",
         "name":"ASM TECHNOLOGIES",
+        "exchange":"BSE"
+    },
+    {
+        "instrument_token":134791684,
+        "exchange_token":"526530",
+        "tradingsymbol":"IIRM",
+        "name":"IIRM HOLDINGS INDIA",
         "exchange":"BSE"
     },
     {
@@ -10451,13 +10542,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":136194820,
-        "exchange_token":"532011",
-        "tradingsymbol":"POOJAENT",
-        "name":"VASHU BHAGNANI INDUSTRIES LIMI",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":136209156,
         "exchange_token":"532067",
         "tradingsymbol":"3BBLACKBIO",
@@ -10497,6 +10581,13 @@
         "exchange_token":"534535",
         "tradingsymbol":"META",
         "name":"STRING METAVERSE",
+        "exchange":"BSE"
+    },
+    {
+        "instrument_token":137130756,
+        "exchange_token":"535667",
+        "tradingsymbol":"IFINSEC",
+        "name":"INDIA FINSEC",
         "exchange":"BSE"
     },
     {
@@ -10850,6 +10941,13 @@
         "exchange":"BSE"
     },
     {
+        "instrument_token":139354628,
+        "exchange_token":"544354",
+        "tradingsymbol":"SOLARIUM",
+        "name":"SOLARIUM GREEN ENERGY",
+        "exchange":"BSE"
+    },
+    {
         "instrument_token":139367940,
         "exchange_token":"544406",
         "tradingsymbol":"UNIFIED",
@@ -10896,6 +10994,13 @@
         "exchange_token":"544563",
         "tradingsymbol":"ZELIO",
         "name":"ZELIO E MOBILITY ",
+        "exchange":"BSE"
+    },
+    {
+        "instrument_token":139420164,
+        "exchange_token":"544610",
+        "tradingsymbol":"WORKMATES",
+        "name":"WORKMATES CORE2CLOUD SOLUTION",
         "exchange":"BSE"
     },
     {

@@ -186,7 +186,7 @@ class InitService:
                         df.at[index, col] = yfinance_info.get(col, None)
                 else:
                     failed_downloads += 1
-                logger.info(f"\nStatus - Successful - {successful_downloads}, Failed - {failed_downloads}\n")
+                logger.info(f"Status - Successful - {successful_downloads}, Failed - {failed_downloads}, Total - {total}")
         except Exception as e:
             logger.error(f"Failed to fetch yfinance data: {str(e)}")
         return df

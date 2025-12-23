@@ -1,12 +1,13 @@
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
-from repositories import RankingRepository
+from repositories import RankingRepository, PortfolioRepository
 from schemas import RankingSchema, TopNSchema, MessageSchema, RankingAllSchema
 from services import RankingService
 
 
 blp = Blueprint("ranking", __name__, url_prefix="/api/v1/ranking", description="Operations on Ranking")
 ranking_repository = RankingRepository()
+portfolio_repository = PortfolioRepository()
 
 @blp.route("/")
 class RankingList(MethodView):
@@ -28,14 +29,16 @@ class TopRanking(MethodView):
         if ranking_repository.get_max_ranking_date() is None:
             return []
 
-        rankings, invested_symbols = ranking_repository.get_top_n_rankings_by_date(top)
+        rankings = ranking_repository.get_top_n_rankings_by_date(top)
+        invested_symbols = portfolio_repository.get_invested()
+        invested_symbols = [i.tradingsymbol for i in invested_symbols]
 
         result = []
         for i, r in enumerate(rankings, 1):
             result.append({
                 'tradingsymbol': r.tradingsymbol,
                 'composite_score': r.composite_score,
-                'rank_position': i,
+                'rank': i,
                 'is_invested': r.tradingsymbol in invested_symbols,
                 'ranking_date': r.ranking_date
             })

@@ -59,3 +59,12 @@ class PortfolioRepository:
         except SQLAlchemyError as e:
             db.session.rollback()
             return None
+
+    @staticmethod
+    def update_stock(invested_model):
+        try:
+            db.session.commit()
+            return invested_model
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return None

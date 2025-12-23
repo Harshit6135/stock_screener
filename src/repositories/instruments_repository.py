@@ -40,6 +40,10 @@ class InstrumentsRepository:
         return None
 
     @staticmethod
+    def get_by_symbol(tradingsymbol):
+        return InstrumentModel.query.filter_by(tradingsymbol=tradingsymbol).first()
+
+    @staticmethod
     def update_instrument(instrument_token, instrument_data):
         instrument = InstrumentModel.query.get(instrument_token)
         if instrument:

@@ -1,4 +1,5 @@
 from marshmallow import Schema, fields
+from datetime import date
 
 
 class InvestedSchema(Schema):
@@ -20,6 +21,7 @@ class InvestedSchema(Schema):
     
     investment_value = fields.Float(dump_only=True)
     include_in_strategy = fields.Bool(load_default=True)
+    rank = fields.Int(dump_only=True)
 
 
 class InvestedInputSchema(Schema):
@@ -27,6 +29,7 @@ class InvestedInputSchema(Schema):
     tradingsymbol = fields.Str(required=True)
     buy_price = fields.Float(required=True)
     num_shares = fields.Int(required=True)
+    buy_date = fields.Date(load_default=date.today)
     include_in_strategy = fields.Bool(load_default=True)
 
 

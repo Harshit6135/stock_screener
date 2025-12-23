@@ -575,7 +575,7 @@ Get top 20 ranked stocks with investment status.
   {
     "tradingsymbol": "SMCGLOBAL",
     "composite_score": 97.54,
-    "rank_position": 1,
+    "rank": 1,
     "is_invested": false,
     "ranking_date": "2025-12-16"
   }
@@ -595,7 +595,7 @@ Bulk insert ranking data.
     "tradingsymbol": "SMCGLOBAL",
     "ranking_date": "2025-12-16",
     "composite_score": 97.54,
-    "rank_position": 1,
+    "rank": 1,
     "trend_rank": 95.0,
     "final_trend_score": 92.5,
     "final_momentum_score": 88.0,

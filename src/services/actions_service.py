@@ -21,9 +21,10 @@ class ActionsService:
     """Service for portfolio management and action generation"""
     
     def __init__(self):
-        self.config = config_repo.get_config()
-        if not self.config:
+        config_result = config_repo.get_config()
+        if not config_result:
             raise Exception("Risk config not set up. POST to /risk_config first.")
+        self.config = {c.name: getattr(config_result, c.name) for c in config_result.__table__.columns}
         self.buffer = self.config.get('buffer_percent', 0.25)
         self.exit_threshold = self.config.get('exit_threshold', 40.0)
         self.stop_multiplier = self.config.get('stop_loss_multiplier', 2.0)
@@ -31,6 +32,15 @@ class ActionsService:
         self.max_positions = self.config.get('max_positions', 15)
         self.current_capital = self.config.get('current_capital', 100000.0)
         self.sl_step_percent = self.config.get('sl_step_percent', 0.1)
+
+
+    @staticmethod
+    def query_to_dict(results):
+        return [
+            {c.name: getattr(row, c.name) for c in row.__table__.columns}
+            for row in results
+        ]
+
 
     @staticmethod
     def should_trigger_stop_loss(current_price: float, effective_stop: float) -> bool:
@@ -144,11 +154,12 @@ class ActionsService:
             action_date = date.today()
 
         rankings, invested_list, current_prices, current_atrs = self.get_input_to_generate_actions(action_date)
+        rankings = self.query_to_dict(rankings)
+        rankings = pd.DataFrame(rankings)
 
         actions = []
         invested_symbols = {s['tradingsymbol'] for s in invested_list}
-        
-        score_lookup = dict(zip(rankings['symbol'], rankings['composite_score']))
+        score_lookup = dict(zip(rankings['tradingsymbol'], rankings['composite_score']))
         
         # ========== PHASE 1: SELL Actions (Stop-Loss & Degradation) ==========
         vacancies = self.max_positions - len(invested_list)
@@ -207,7 +218,7 @@ class ActionsService:
         
         # ========== PHASE 2: SWAP Actions (only for strategy stocks) ==========
         # Get top challengers not in portfolio
-        challengers = rankings[~rankings['symbol'].isin(invested_symbols)].copy()
+        challengers = rankings[~rankings['tradingsymbol'].isin(invested_symbols)].copy()
         
         # Check each STRATEGY incumbent against top challenger
         for position in invested_list:
@@ -257,10 +268,10 @@ class ActionsService:
         if vacancies > 0:
             # Get available stocks not in portfolio
             ranked_stocks = pd.DataFrame(rankings)
-            available = ranked_stocks[~ranked_stocks['symbol'].isin(invested_symbols)]
+            available = ranked_stocks[~ranked_stocks['tradingsymbol'].isin(invested_symbols)]
             
             for _, stock in available.head(vacancies).iterrows():
-                symbol = stock['symbol']
+                symbol = stock['tradingsymbol']
                 score = stock['composite_score']
                 price = current_prices.get(symbol, 0)
                 atr = current_atrs.get(symbol, 0)

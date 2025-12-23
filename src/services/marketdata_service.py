@@ -23,12 +23,13 @@ class MarketDataService:
         Fetches data for a ticker from start_date to end_date.
         """
         try:
+            start_time = time()
             records = self.kite_client.fetch_ticker_data(token, start_date, end_date)
             
             if not records:
                 self.logger.warning(f"No data returned for {token}")
                 return None
-            return records
+            return records, start_time
 
         except Exception as e:
             self.logger.error(f"Failed to fetch/process data for {token}: {e}")
@@ -42,13 +43,13 @@ class MarketDataService:
         instruments = instr_repository.get_all_instruments()
 
         logger.info("Fetching Historical Data for instruments via Kite API...")
-        today = pd.Timestamp.now().normalize()
-        for instr in instruments:
+        yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
+        for i, instr in enumerate(instruments):
             tradingsymbol = instr.tradingsymbol
             instr_token = instr.instrument_token
             exchange = instr.exchange
             log_symb = f"{tradingsymbol} ({instr_token})"
-            logger.info(f"Processing {log_symb})...")
+            logger.info(f"Processing {i+1}/{len(instruments)} {log_symb})...")
             
             if not historical:
                 last_date = None
@@ -57,14 +58,14 @@ class MarketDataService:
                     last_date = last_data_date.date
                     start_date = pd.to_datetime(last_date)
                 else:
-                    start_date = today - timedelta(days=HISTORY_LOOKBACK) # Default 1 year
+                    start_date = yesterday - timedelta(days=HISTORY_LOOKBACK) # Default 1 year
 
-                if start_date > today:
+                if start_date > yesterday:
                     logger.info(f"No data to fetch for {log_symb} as last data date is {last_date}")
                     continue
                 else:
                     logger.info(f"Fetching from Kite for {log_symb}) starting {start_date.date()}...")
-                records = self.get_latest_data_by_token(instr_token, start_date)
+                records, start_time = self.get_latest_data_by_token(instr_token, start_date, yesterday)
             else:
                 logger.info(f"Fetching Historical data from Kite for {log_symb}) starting {historical_start_date}...")
                 records, start_time = self.get_historical_data(instr_token, historical_start_date)
@@ -73,7 +74,7 @@ class MarketDataService:
                 logger.warning(f"No data returned for {log_symb}")
                 continue
 
-            if not historical and last_data_date:
+            if not historical and last_data_date and len(records) > 1:
                 last_close = records[0]['close']
                 next_open = records[1]['open']
                 records = records[1:]
@@ -82,7 +83,7 @@ class MarketDataService:
                     marketdata_repository.delete_by_tradingsymbol(tradingsymbol)
                     sleep(max(0, 0.34 - (time() + start_time)))
                     start_date = today - timedelta(days=HISTORY_LOOKBACK)
-                    records = self.get_latest_data_by_token(instr_token, start_date)
+                    records, start_time = self.get_latest_data_by_token(instr_token, start_date)
 
             records_df = pd.DataFrame(records)
             records_df.reset_index(inplace=True)
@@ -104,7 +105,7 @@ class MarketDataService:
         all_records = []
         
         # We start from NOW and go backwards
-        current_end = pd.Timestamp.now().normalize()
+        current_end = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
         chunk_days = 1900 
         
         try:

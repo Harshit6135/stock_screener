@@ -501,26 +501,27 @@
 
         <div class="card">
             <div class="btn-grid">
-                <button class="btn-card btn-primary" id="btn-day0" onclick="runAction('/day0', 'GET', this)">
-                    <span class="icon">🔧</span>Init Database<span class="label">Day 0 Setup</span>
+                <button class="btn-card btn-primary" id="btn-init" onclick="runAction('/api/v1/init', 'GET', this)">
+                    <span class="icon">🔧</span>Init App<span class="label">Day 0 Setup</span>
                     <div class="progress-bar"></div>
                 </button>
                 <button class="btn-card btn-primary" id="btn-market"
-                    onclick="runAction('/update_market_data', 'GET', this)">
+                    onclick="runAction('/api/v1/marketdata/update_all', 'GET', this)">
                     <span class="icon">📈</span>Market Data<span class="label">Fetch Latest</span>
                     <div class="progress-bar"></div>
                 </button>
                 <button class="btn-card btn-primary" id="btn-indicators"
-                    onclick="runAction('/update_indicators', 'GET', this)">
+                    onclick="runAction('/api/v1/indicators/update_all', 'GET', this)">
                     <span class="icon">📊</span>Indicators<span class="label">Calculate All</span>
                     <div class="progress-bar"></div>
                 </button>
-                <button class="btn-card btn-success" id="btn-rank" onclick="runAction('/latest_rank', 'GET', this)">
-                    <span class="icon">🏆</span>Rankings<span class="label">Generate Scores</span>
+                <button class="btn-card btn-success" id="btn-rank"
+                    onclick="runAction('/api/v1/ranking/update', 'GET', this)">
+                    <span class="icon">🏆</span>Rankings<span class="label">Generate Rankings</span>
                     <div class="progress-bar"></div>
                 </button>
                 <button class="btn-card btn-success" id="btn-actions"
-                    onclick="runAction('/actions/generate', 'POST', this, {})">
+                    onclick="runAction('/api/v1/actions/generate', 'POST', this, {})">
                     <span class="icon">⚡</span>Actions<span class="label">Generate Trades</span>
                     <div class="progress-bar"></div>
                 </button>
@@ -593,6 +594,10 @@
                 <input type="number" id="invest-units" placeholder="e.g., 10" />
             </div>
             <div class="form-group">
+                <label>Buy Date</label>
+                <input type="date" id="invest-date" />
+            </div>
+            <div class="form-group">
                 <div class="checkbox-group">
                     <input type="checkbox" id="invest-strategy" checked />
                     <label for="invest-strategy" style="margin: 0;">Include in Strategy (uncheck for manual
@@ -617,7 +622,7 @@
 
         async function fetchPortfolioSummary() {
             try {
-                const res = await fetch('/summary');
+                const res = await fetch('/api/v1/portfolio/summary');
                 if (res.ok) {
                     portfolioData = await res.json();
                     updateSummaryDisplay();
@@ -698,19 +703,21 @@
 
         async function loadInvestments() {
             try {
-                const res = await fetch('/invested');
+                const res = await fetch('/api/v1/portfolio/invested');
                 const data = await res.json();
                 if (!data.length) {
                     document.getElementById('investments-table').innerHTML = '<p class="empty">No investments found.</p>';
                     return;
                 }
-                let html = '<table><tr><th>Symbol</th><th>Buy Price</th><th>Shares</th><th>Buy Date</th><th>Stop Loss</th><th>Strategy</th></tr>';
+                let html = '<table><tr><th>Rank</th><th>Symbol</th><th>Score</th><th>Buy Price</th><th>Shares</th><th>Buy Date</th><th>Stop Loss</th><th>Strategy</th></tr>';
                 data.forEach(r => {
                     const strategyBadge = r.include_in_strategy
                         ? '<span class="badge badge-executed">Yes</span>'
                         : '<span class="badge badge-pending">Manual</span>';
                     html += `<tr>
+                        <td><strong>${r.rank !== null && r.rank !== undefined ? '#' + r.rank : '-'}</strong></td>
                         <td><strong>${r.tradingsymbol}</strong></td>
+                        <td class="score">${r.current_score?.toFixed(2) || '-'}</td>
                         <td>₹${r.buy_price?.toFixed(2) || '-'}</td>
                         <td>${r.num_shares}</td>
                         <td>${r.buy_date || '-'}</td>
@@ -768,7 +775,7 @@
         async function loadTop20() {
             showStatus('Loading Top 20 rankings...');
             try {
-                const res = await fetch('/ranking/top20');
+                const res = await fetch('/api/v1/ranking/top/20');
                 const data = await res.json();
                 if (!data.length) {
                     showStatus('No rankings found.', 'error');
@@ -777,7 +784,7 @@
                 let html = '<table><tr><th>#</th><th>Symbol</th><th>Score</th><th>Invested</th></tr>';
                 data.forEach(r => {
                     html += `<tr>
-                        <td>${r.rank_position}</td>
+                        <td>${r.rank}</td>
                         <td><strong>${r.tradingsymbol}</strong></td>
                         <td class="score">${r.composite_score?.toFixed(2)}</td>
                         <td>${r.is_invested ? '✅' : '-'}</td>
@@ -872,7 +879,7 @@
             if (unitsEl) payload.actual_units = parseInt(unitsEl.value);
             console.log(currentAction)
             try {
-                const res = await fetch(`/actions/${currentAction.id}/execute`, {
+                const res = await fetch(`/api/v1/actions/${currentAction.id}/execute`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -896,6 +903,7 @@
             document.getElementById('invest-symbol').value = '';
             document.getElementById('invest-price').value = '';
             document.getElementById('invest-units').value = '';
+            document.getElementById('invest-date').value = new Date().toISOString().split('T')[0]; // Default to today
             document.getElementById('invest-strategy').checked = true;
             openModal('invest-modal');
         }
@@ -912,13 +920,14 @@
             }
 
             try {
-                const res = await fetch('/invested', {
+                const res = await fetch('/api/v1/portfolio/invested', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         tradingsymbol: symbol,
                         buy_price: price,
                         num_shares: units,
+                        buy_date: document.getElementById('invest-date').value || undefined,
                         include_in_strategy: includeInStrategy
                     })
                 });

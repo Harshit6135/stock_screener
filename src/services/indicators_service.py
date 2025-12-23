@@ -75,14 +75,14 @@ class IndicatorsService:
         instruments = instr_repo.get_all_instruments()
 
         logger.info("Calculating Indicators for Instruments...")
-        today = pd.Timestamp.now().normalize()
+        yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
         
-        for instr in instruments:
+        for i, instr in enumerate(instruments):
             tradingsymbol = instr.tradingsymbol
             instr_token = instr.instrument_token
             exchange = instr.exchange
             log_symb = f"{tradingsymbol} ({instr_token})"
-            logger.info(f"Processing {log_symb})...")
+            logger.info(f"Processing {i+1}/{len(instruments)} {log_symb})...")
 
             last_data_date = marketdata_repo.get_latest_date_by_symbol(tradingsymbol)
             if last_data_date:
@@ -105,7 +105,7 @@ class IndicatorsService:
             query_payload = {
                 "tradingsymbol": tradingsymbol,
                 "start_date": str(calc_start_date.date()),
-                "end_date": str(today.date())
+                "end_date": str(yesterday.date())
             }
             md_output = marketdata_repo.query(query_payload)
             md_list = [{column.name:getattr(row, column.name) for column in row.__table__.columns} for row in md_output]
@@ -139,8 +139,8 @@ class IndicatorsService:
                 logger.info(f"No new data to calculate indicators for {log_symb}")
                 continue
             
-            ind_df_filtered['date'] = ind_df_filtered['date'].dt.strftime('%Y-%m-%d')        
-            ind_json = json.loads(ind_df_filtered.to_json(orient='records', indent=4))
+            ind_df_filtered['date'] = ind_df_filtered['date'].dt.date   
+            ind_json = ind_df_filtered.to_dict(orient='records')
             indicators_repo.bulk_insert(ind_json)
 
         logger.info("Indicators updated successfully.")
