@@ -3,7 +3,7 @@ from flask_smorest import Blueprint, abort
 
 from schemas import (
     RiskConfigSchema, 
-    InvestedSchema, InvestedInputSchema,
+    InvestedSchema, InvestedInputSchema, SellInputSchema,
     PortfolioSummarySchema,
     MessageSchema
 )
@@ -92,3 +92,14 @@ class InvestedItem(MethodView):
             abort(404, message=f"Not invested in {tradingsymbol}")
 
         return invested
+
+
+@blp.route("/sell")
+class SellStock(MethodView):
+    @blp.arguments(SellInputSchema)
+    @blp.response(200, MessageSchema)
+    def post(self, sell_data):
+        """Sell stock (partial or full)"""
+        portfolio_service = PortfolioService()
+        result = portfolio_service.sell_stock(sell_data)
+        return result

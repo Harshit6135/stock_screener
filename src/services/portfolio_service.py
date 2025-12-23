@@ -36,7 +36,7 @@ class PortfolioService:
             price = latest_data.close if latest_data else i.buy_price
             current_value += price * i.num_shares
 
-        capital_left = self.config.current_capital if self.config else 0.0
+        capital_left = (self.config.current_capital - total_investment) if self.config else 0.0
         absolute_return = current_value - total_investment
 
         return {
@@ -118,11 +118,13 @@ class PortfolioService:
             
             invested = portfolio_repo.update_stock(existing)
             
-            # Update Capital (Only for the NEW shares)
-            if self.config:
-                cost = input_buy_price * input_num_shares
-                new_capital = self.config.current_capital - cost
-                config_repo.update_config({"current_capital": new_capital})
+            
+            # Update Capital (Only for the NEW shares) - REMOVED
+            # Treating current_capital as Total Equity now.
+            # if self.config:
+            #     cost = input_buy_price * input_num_shares
+            #     new_capital = self.config.current_capital - cost
+            #     config_repo.update_config({"current_capital": new_capital})
 
             return invested
 
@@ -141,14 +143,52 @@ class PortfolioService:
         }
         invested = portfolio_repo.buy_stock(final_data)
         
-        # Update Capital
-        if self.config:
-            cost = buy_price * num_shares
-            new_capital = self.config.current_capital - cost
-            config_repo.update_config({"current_capital": new_capital})
+        # Update Capital - REMOVED
+        # Treating current_capital as Total Equity.
+        # if self.config:
+        #     cost = buy_price * num_shares
+        #     new_capital = self.config.current_capital - cost
+        #     config_repo.update_config({"current_capital": new_capital})
             
         return invested
         
+    def sell_stock(self, sell_data):
+        symbol = sell_data['tradingsymbol']
+        sell_price = sell_data['sell_price']
+        sell_units = sell_data['num_shares']
+        # sell_date = sell_data.get('sell_date') # For logging, but we don't store transactions yet
+        
+        existing = portfolio_repo.get_invested_by_symbol(symbol)
+        if not existing:
+             raise Exception("Not invested in this stock")
+             
+        if sell_units > existing.num_shares:
+             raise Exception(f"Cannot sell {sell_units} units. Only {existing.num_shares} held.")
+             
+        # Calculate PnL to update Total Equity (Current Capital)
+        pnl = (sell_price - existing.buy_price) * sell_units
+        if self.config:
+            new_capital = self.config.current_capital + pnl
+            config_repo.update_config({"current_capital": new_capital})
+            
+        # Update Shares
+        existing.num_shares -= sell_units
+        
+        if existing.num_shares == 0:
+            portfolio_repo.delete_stock(symbol)
+            return {"message": "Position closed", "remaining_shares": 0}
+        else:
+            # Refresh Rank/Score for remaining
+            rank_repo_local = rank_repo
+            ranking = rank_repo_local.get_latest_rank_by_symbol(symbol)
+            if ranking:
+                existing.current_score = ranking.composite_score
+                # Rank isn't stored in DB on invested table usually, but we could? 
+                # Schema has it dump_only. 
+            
+            portfolio_repo.update_stock(existing)
+            return {"message": "Position reduced", "remaining_shares": existing.num_shares}
+
     def get_invested_stocks(self):
         """Get all invested stocks enriched with current rank"""
         invested = portfolio_repo.get_invested()

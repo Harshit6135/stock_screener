@@ -32,6 +32,13 @@ class InvestedInputSchema(Schema):
     buy_date = fields.Date(load_default=date.today)
     include_in_strategy = fields.Bool(load_default=True)
 
+class SellInputSchema(Schema):
+    """Schema for selling position"""
+    tradingsymbol = fields.Str(required=True)
+    sell_price = fields.Float(required=True)
+    num_shares = fields.Int(required=True) # Units to sell
+    sell_date = fields.Date(load_default=date.today)
+
 
 class PortfolioSummarySchema(Schema):
     """Schema for portfolio summary statistics"""

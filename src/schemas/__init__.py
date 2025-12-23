@@ -5,4 +5,4 @@ from schemas.indicators import IndicatorsSchema
 from schemas.actions import ActionsSchema, GenerateActionsInputSchema, ExecuteActionInputSchema
 from schemas.ranking import RankingSchema, TopNSchema, RankingAllSchema
 from schemas.risk_config import RiskConfigSchema
-from schemas.invested import InvestedSchema, InvestedInputSchema, PortfolioSummarySchema
+from schemas.invested import InvestedSchema, InvestedInputSchema, PortfolioSummarySchema, SellInputSchema

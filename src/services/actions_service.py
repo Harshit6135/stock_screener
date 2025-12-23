@@ -28,7 +28,7 @@ class ActionsService:
         self.buffer = self.config.get('buffer_percent', 0.25)
         self.exit_threshold = self.config.get('exit_threshold', 40.0)
         self.stop_multiplier = self.config.get('stop_loss_multiplier', 2.0)
-        self.risk_per_trade = self.config.get('risk_per_trade', 1000.0)
+        self.risk_per_trade_percent = self.config.get('risk_per_trade', 1.0) # Now Treated as PERCENT
         self.max_positions = self.config.get('max_positions', 15)
         self.current_capital = self.config.get('current_capital', 100000.0)
         self.sl_step_percent = self.config.get('sl_step_percent', 0.1)
@@ -111,7 +111,7 @@ class ActionsService:
 
     def _invest_in_stock(self, action):
         trade_value = action.units * action.expected_price
-        self.config.current_capital -= trade_value
+        # self.config.current_capital -= trade_value # DISABLED
 
         atr = indicators_repo.get_indicator_by_tradingsymbol("atrr_14", action.tradingsymbol)
         initial_stop = calculate_initial_stop_loss(action.expected_price,
@@ -240,9 +240,12 @@ class ActionsService:
             
             if self._should_swap(incumbent_score, challenger_score):
                 # Calculate new position size
+                # Risk per trade is now percent of CURRENT capital
+                risk_amount = self.current_capital * (self.risk_per_trade_percent / 100.0)
+                
                 new_sizing = calculate_position_size(atr=challenger_atr,
                                                            stop_multiplier=self.stop_multiplier,
-                                                           risk_per_trade=self.risk_per_trade,
+                                                           risk_per_trade=risk_amount,
                                                            current_price=challenger_price
                 )
                 
@@ -279,9 +282,10 @@ class ActionsService:
                 if price <= 0:
                     continue
                 
+                risk_amount = self.current_capital * (self.risk_per_trade_percent / 100.0)
                 sizing = calculate_position_size(atr=atr,
                                                        stop_multiplier=self.stop_multiplier,
-                                                       risk_per_trade=self.risk_per_trade,
+                                                       risk_per_trade=risk_amount,
                                                        current_price=price)
                 actions.append({
                     'action_date': action_date,
@@ -312,25 +316,26 @@ class ActionsService:
         actual_sell_price = exec_data.get('actual_sell_price') or action.expected_price
         
         # Update capital based on action type
+        # NOTE: Capital updates disabled to treat 'current_capital' as Total Equity
         if action.action_type == 'BUY':
             action.expected_price = actual_buy_price
             action.units = actual_units
             action.amount = actual_units * actual_buy_price
+            # self.config.current_capital -= action.amount # DISABLED
             self._invest_in_stock(action)
         elif action.action_type == 'SELL':
-            action.amount = action.units * actual_sell_price
-            self.config.current_capital += action.amount
+            # Calculate PnL and update Capital (Total Equity)
+            self._apply_pnl_to_capital(action.tradingsymbol, actual_sell_price, action.units)
+            
             action.expected_price = actual_sell_price
             self.sell_stock(action)
         elif action.action_type == 'SWAP':
-            sell_value = action.swap_from_units * actual_sell_price
-            self.config.current_capital += sell_value
+            # Calculate PnL and update Capital (Total Equity)
+            self._apply_pnl_to_capital(action.swap_from_symbol, actual_sell_price, action.swap_from_units)
+            
             action.swap_from_price = actual_sell_price
             self.sell_stock(action, swap=True)
-
-            action.amount = actual_units * actual_buy_price
-            self.config.current_capital -= action.amount
-
+            
             action.expected_price = actual_buy_price
             action.units = actual_units
             action.amount = actual_units * actual_buy_price
@@ -341,3 +346,15 @@ class ActionsService:
         action.executed_at = date.today()
         response = actions_repo.update_action_columns(action.action_id, action)
         return response
+
+    def _apply_pnl_to_capital(self, symbol, sell_price, units_sold):
+        """Helper to calculate PnL and update capital for Total Equity model"""
+        existing = portfolio_repo.get_invested_by_symbol(symbol)
+        if existing and self.config:
+            pnl = (sell_price - existing.buy_price) * units_sold
+            new_capital = self.config.current_capital + pnl
+            config_repo.update_config({"current_capital": new_capital})
+            # Note: We update config directly, and self.config reference might be stale 
+            # but since we re-read or use it for next step it might matter.
+            # Update local ref just in case
+            self.config.current_capital = new_capital

@@ -16,6 +16,8 @@ class ConfigRepository:
 
     @staticmethod
     def update_config(config_data):
-        query = RiskConfigModel.query.first()
-        query.update(config_data)
-        db.session.commit()
+        config = RiskConfigModel.query.first()
+        if config:
+            for key, value in config_data.items():
+                setattr(config, key, value)
+            db.session.commit()
