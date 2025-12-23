@@ -33,6 +33,7 @@
             text-align: center;
             margin-bottom: 10px;
             background: linear-gradient(90deg, #00d9ff, #667eea, #764ba2);
+            background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             font-size: 2.5rem;
@@ -491,36 +492,41 @@
                 <div id="summary-capital" style="font-size: 1.5rem; font-weight: bold; color: var(--accent);">₹0.00
                 </div>
             </div>
-            <div style="text-align: center; cursor: pointer;" onclick="toggleReturns()">
-                <div style="color: #888; margin-bottom: 5px;">Returns <span style="font-size: 0.8rem;">(Click to
-                        Toggle)</span></div>
+            <div style="text-align: center;">
+                <div style="color: #888; margin-bottom: 5px;">Returns</div>
                 <div id="summary-returns" style="font-size: 1.5rem; font-weight: bold; color: var(--info);">0.00%</div>
-                <div id="returns-label" style="font-size: 0.8rem; color: #666;">XIRR</div>
+                <div id="returns-label" style="font-size: 0.8rem; color: #666;">Absolute</div>
+            </div>
+            <div style="text-align: center; cursor: pointer;" onclick="openConfigDialog()">
+                <div style="color: #888; margin-bottom: 5px;">Risk Config</div>
+                <div style="font-size: 1.5rem;">⚙️</div>
+                <div style="font-size: 0.8rem; color: #666;">Settings</div>
             </div>
         </div>
 
         <div class="card">
             <div class="btn-grid">
-                <button class="btn-card btn-primary" id="btn-day0" onclick="runAction('/day0', 'GET', this)">
-                    <span class="icon">🔧</span>Init Database<span class="label">Day 0 Setup</span>
+                <button class="btn-card btn-primary" id="btn-init" onclick="runAction('/api/v1/init', 'GET', this)">
+                    <span class="icon">🔧</span>Init App<span class="label">Day 0 Setup</span>
                     <div class="progress-bar"></div>
                 </button>
                 <button class="btn-card btn-primary" id="btn-market"
-                    onclick="runAction('/update_market_data', 'GET', this)">
+                    onclick="runAction('/api/v1/marketdata/update_all', 'GET', this)">
                     <span class="icon">📈</span>Market Data<span class="label">Fetch Latest</span>
                     <div class="progress-bar"></div>
                 </button>
                 <button class="btn-card btn-primary" id="btn-indicators"
-                    onclick="runAction('/update_indicators', 'GET', this)">
+                    onclick="runAction('/api/v1/indicators/update_all', 'GET', this)">
                     <span class="icon">📊</span>Indicators<span class="label">Calculate All</span>
                     <div class="progress-bar"></div>
                 </button>
-                <button class="btn-card btn-success" id="btn-rank" onclick="runAction('/latest_rank', 'GET', this)">
-                    <span class="icon">🏆</span>Rankings<span class="label">Generate Scores</span>
+                <button class="btn-card btn-success" id="btn-rank"
+                    onclick="runAction('/api/v1/ranking/update', 'GET', this)">
+                    <span class="icon">🏆</span>Rankings<span class="label">Generate Rankings</span>
                     <div class="progress-bar"></div>
                 </button>
                 <button class="btn-card btn-success" id="btn-actions"
-                    onclick="runAction('/actions/generate', 'POST', this, {})">
+                    onclick="runAction('/api/v1/actions/generate', 'POST', this, {})">
                     <span class="icon">⚡</span>Actions<span class="label">Generate Trades</span>
                     <div class="progress-bar"></div>
                 </button>
@@ -593,6 +599,10 @@
                 <input type="number" id="invest-units" placeholder="e.g., 10" />
             </div>
             <div class="form-group">
+                <label>Buy Date</label>
+                <input type="date" id="invest-date" />
+            </div>
+            <div class="form-group">
                 <div class="checkbox-group">
                     <input type="checkbox" id="invest-strategy" checked />
                     <label for="invest-strategy" style="margin: 0;">Include in Strategy (uncheck for manual
@@ -606,6 +616,59 @@
         </div>
     </div>
 
+    <!-- Risk Config Modal -->
+    <div id="config-modal" class="modal">
+        <div class="modal-content">
+            <h3 class="modal-title">⚙️ Risk Configuration</h3>
+            <div class="form-group">
+                <label>Current Capital (₹)</label>
+                <input type="number" id="conf-capital" placeholder="e.g., 100000" />
+            </div>
+            <div class="form-group">
+                <label>Risk Per Trade (%)</label>
+                <input type="number" id="conf-risk" step="0.1" placeholder="e.g., 1.0" />
+            </div>
+            <div class="form-group">
+                <label>Max Positions</label>
+                <input type="number" id="conf-max-pos" placeholder="e.g., 15" />
+            </div>
+            <div class="form-group">
+                <label>Stop Loss Multiplier (ATR x)</label>
+                <input type="number" id="conf-sl-mult" step="0.1" placeholder="e.g., 2.0" />
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-cancel" onclick="closeModal('config-modal')">Cancel</button>
+                <button class="modal-btn modal-btn-primary" onclick="submitConfig()">Save Configuration</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sell Investment Modal -->
+    <div id="sell-modal" class="modal">
+        <div class="modal-content">
+            <h3 class="modal-title">📉 Sell Investment</h3>
+            <div class="form-group">
+                <label>Trading Symbol</label>
+                <input type="text" id="sell-symbol" readonly style="background: rgba(255,255,255,0.05); color: #888;" />
+            </div>
+            <div class="form-group">
+                <label>Sell Price (₹)</label>
+                <input type="number" id="sell-price" step="0.01" />
+            </div>
+            <div class="form-group">
+                <label>Number of Shares</label>
+                <input type="number" id="sell-units" />
+            </div>
+            <div class="form-group">
+                <label>Sell Date</label>
+                <input type="date" id="sell-date" />
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn modal-btn-cancel" onclick="closeModal('sell-modal')">Cancel</button>
+                <button class="modal-btn modal-btn-primary" onclick="submitSell()">Sell</button>
+            </div>
+        </div>
+    </div>
     <script>
         let currentAction = null;
         let portfolioData = {};
@@ -617,7 +680,7 @@
 
         async function fetchPortfolioSummary() {
             try {
-                const res = await fetch('/summary');
+                const res = await fetch('/api/v1/portfolio/summary');
                 if (res.ok) {
                     portfolioData = await res.json();
                     updateSummaryDisplay();
@@ -630,25 +693,23 @@
         function updateSummaryDisplay() {
             if (!portfolioData) return;
 
-            document.getElementById('summary-investment').innerText = '₹' + (portfolioData.total_investment || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            document.getElementById('summary-current-value').innerText = '₹' + (portfolioData.current_value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            document.getElementById('summary-capital').innerText = '₹' + (portfolioData.capital_left || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('summary-investment').innerText = '₹' + (portfolioData.total_investment ||
+                0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('summary-current-value').innerText = '₹' + (portfolioData.current_value ||
+                0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('summary-capital').innerText = '₹' + (portfolioData.capital_left ||
+                0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
             const returnsEl = document.getElementById('summary-returns');
             const labelEl = document.getElementById('returns-label');
 
-            if (showXirr) {
-                const xirr = portfolioData.xirr || 0;
-                returnsEl.innerText = xirr.toFixed(2) + '%';
-                returnsEl.style.color = xirr >= 0 ? '#38ef7d' : '#e74c3c';
-                labelEl.innerText = 'XIRR';
-            } else {
-                const absRet = portfolioData.absolute_return || 0;
-                returnsEl.innerText = '₹' + absRet.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                returnsEl.style.color = absRet >= 0 ? '#38ef7d' : '#e74c3c';
-                labelEl.innerText = 'Absolute';
-            }
+            const absRet = portfolioData.absolute_return || 0;
+            returnsEl.innerText = '₹' + absRet.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            returnsEl.style.color = absRet >= 0 ? '#38ef7d' : '#e74c3c';
+            labelEl.innerText = 'Absolute';
         }
+
+        // function toggleReturns() { ... } // Removed
 
         function toggleReturns() {
             showXirr = !showXirr;
@@ -698,25 +759,40 @@
 
         async function loadInvestments() {
             try {
-                const res = await fetch('/invested');
+                const res = await fetch('/api/v1/portfolio/invested');
                 const data = await res.json();
                 if (!data.length) {
                     document.getElementById('investments-table').innerHTML = '<p class="empty">No investments found.</p>';
                     return;
                 }
-                let html = '<table><tr><th>Symbol</th><th>Buy Price</th><th>Shares</th><th>Buy Date</th><th>Stop Loss</th><th>Strategy</th></tr>';
+                let html = `<table>
+                    <tr>
+                        <th>Rank</th>
+                        <th>Symbol</th>
+                        <th>Score</th>
+                        <th>Buy Price</th>
+                        <th>Shares</th>
+                        <th>Buy Date</th>
+                        <th>Stop Loss</th>
+                        <th>Strategy</th>
+                        <th>Action</th>
+                    </tr>`;
                 data.forEach(r => {
                     const strategyBadge = r.include_in_strategy
                         ? '<span class="badge badge-executed">Yes</span>'
                         : '<span class="badge badge-pending">Manual</span>';
                     html += `<tr>
-                        <td><strong>${r.tradingsymbol}</strong></td>
-                        <td>₹${r.buy_price?.toFixed(2) || '-'}</td>
-                        <td>${r.num_shares}</td>
-                        <td>${r.buy_date || '-'}</td>
-                        <td>₹${r.current_stop_loss?.toFixed(2) || '-'}</td>
-                        <td>${strategyBadge}</td>
-                    </tr>`;
+            <td><strong>${r.rank !== null && r.rank !== undefined ? '#' + r.rank : '-'}</strong></td>
+            <td><strong>${r.tradingsymbol}</strong></td>
+            <td class="score">${r.current_score?.toFixed(2) || '-'}</td>
+            <td>₹${r.buy_price?.toFixed(2) || '-'}</td>
+            <td>${r.num_shares}</td>
+            <td>${r.buy_date || '-'}</td>
+            <td>₹${r.current_stop_loss?.toFixed(2) || '-'}</td>
+            <td>${strategyBadge}</td>
+            <td><button class="btn-execute" style="background: var(--info); color: #fff;"
+                    onclick="openSellDialog('${r.tradingsymbol}', ${r.num_shares})">Sell</button></td>
+        </tr>`;
                 });
                 document.getElementById('investments-table').innerHTML = html + '</table>';
             } catch (e) {
@@ -735,7 +811,20 @@
                     document.getElementById('actions-table').innerHTML = '<p class="empty">No actions found.</p>';
                     return;
                 }
-                let html = '<table><tr><th>Id</th><th>Date</th><th>Type</th><th>Symbol</th><th>Score</th><th>Units</th><th>Price</th><th>Amount</th><th>Swap From</th><th>Status</th><th>Action</th></tr>';
+                let html = `<table>
+                    <tr>
+                        <th>Id</th>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Symbol</th>
+                        <th>Score</th>
+                        <th>Units</th>
+                        <th>Price</th>
+                        <th>Amount</th>
+                        <th>Swap From</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>`;
                 data.forEach(r => {
                     const badge = r.action_type === 'BUY' ? 'buy' : r.action_type === 'SELL' ? 'sell' : 'swap';
                     const statusBadge = r.status === 'PENDING' ? 'pending' : 'executed';
@@ -746,18 +835,18 @@
                         ? `<button class="btn-execute" onclick='openExecuteDialog(${JSON.stringify(r)})'>✓ Execute</button>`
                         : '<span style="color: #38ef7d;">Done</span>';
                     html += `<tr>
-                        <td>${r.id}</td>
-                        <td>${r.action_date}</td>
-                        <td><span class="badge badge-${badge}">${r.action_type}</span></td>
-                        <td><strong>${r.tradingsymbol}</strong></td>
-                        <td class="score">${r.composite_score?.toFixed(2) || '-'}</td>
-                        <td>${r.units}</td>
-                        <td>₹${r.expected_price?.toFixed(2) || '-'}</td>
-                        <td>₹${r.amount?.toFixed(2) || '-'}</td>
-                        <td>${swapInfo}</td>
-                        <td><span class="badge badge-${statusBadge}">${r.status}</span></td>
-                        <td>${executeBtn}</td>
-                    </tr>`;
+            <td>${r.id}</td>
+            <td>${r.action_date}</td>
+            <td><span class="badge badge-${badge}">${r.action_type}</span></td>
+            <td><strong>${r.tradingsymbol}</strong></td>
+            <td class="score">${r.composite_score?.toFixed(2) || '-'}</td>
+            <td>${r.units}</td>
+            <td>₹${r.expected_price?.toFixed(2) || '-'}</td>
+            <td>₹${r.amount?.toFixed(2) || '-'}</td>
+            <td>${swapInfo}</td>
+            <td><span class="badge badge-${statusBadge}">${r.status}</span></td>
+            <td>${executeBtn}</td>
+        </tr>`;
                 });
                 document.getElementById('actions-table').innerHTML = html + '</table>';
             } catch (e) {
@@ -768,20 +857,26 @@
         async function loadTop20() {
             showStatus('Loading Top 20 rankings...');
             try {
-                const res = await fetch('/ranking/top20');
+                const res = await fetch('/api/v1/ranking/top/20');
                 const data = await res.json();
                 if (!data.length) {
                     showStatus('No rankings found.', 'error');
                     return;
                 }
-                let html = '<table><tr><th>#</th><th>Symbol</th><th>Score</th><th>Invested</th></tr>';
+                let html = `<table>
+                    <tr>
+                        <th>#</th>
+                        <th>Symbol</th>
+                        <th>Score</th>
+                        <th>Invested</th>
+                    </tr>`;
                 data.forEach(r => {
                     html += `<tr>
-                        <td>${r.rank_position}</td>
-                        <td><strong>${r.tradingsymbol}</strong></td>
-                        <td class="score">${r.composite_score?.toFixed(2)}</td>
-                        <td>${r.is_invested ? '✅' : '-'}</td>
-                    </tr>`;
+            <td>${r.rank}</td>
+            <td><strong>${r.tradingsymbol}</strong></td>
+            <td class="score">${r.composite_score?.toFixed(2)}</td>
+            <td>${r.is_invested ? '✅' : '-'}</td>
+        </tr>`;
                 });
                 document.getElementById('investments-table').innerHTML = html + '</table>';
                 document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -794,6 +889,50 @@
             }
         }
 
+        async function openConfigDialog() {
+            try {
+                // Fetch current config
+                const res = await fetch('/api/v1/portfolio/risk_config');
+                if (res.ok) {
+                    const data = await res.json();
+                    document.getElementById('conf-capital').value = data.current_capital;
+                    document.getElementById('conf-risk').value = data.risk_per_trade;
+                    document.getElementById('conf-max-pos').value = data.max_positions;
+                    document.getElementById('conf-sl-mult').value = data.stop_loss_multiplier || 2.0;
+                }
+            } catch (e) {
+                console.log("No config found, using defaults");
+            }
+            openModal('config-modal');
+        }
+
+        async function submitConfig() {
+            const body = {
+                current_capital: parseFloat(document.getElementById('conf-capital').value) || 100000,
+                risk_per_trade: parseFloat(document.getElementById('conf-risk').value) || 1000,
+                max_positions: parseInt(document.getElementById('conf-max-pos').value) || 15,
+                stop_loss_multiplier: parseFloat(document.getElementById('conf-sl-mult').value) || 2.0
+            };
+
+            showStatus('Saving configuration...');
+            try {
+                const res = await fetch('/api/v1/portfolio/risk_config', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (res.ok) {
+                    showStatus('Config saved!', 'success');
+                    closeModal('config-modal');
+                    fetchPortfolioSummary(); // reload summary with new capital
+                } else {
+                    const txt = await res.text();
+                    showStatus('Error: ' + txt, 'error');
+                }
+            } catch (e) {
+                showStatus('Error: ' + e.message, 'error');
+            }
+        }
         // Modal functions
         function openModal(id) {
             document.getElementById(id).classList.add('active');
@@ -807,51 +946,57 @@
         function openExecuteDialog(action) {
             currentAction = action;
             let infoHtml = `
-                <div class="info-row"><span class="info-label">Type</span><span class="info-value">${action.action_type}</span></div>
-                <div class="info-row"><span class="info-label">Symbol</span><span class="info-value">${action.tradingsymbol}</span></div>
-                <div class="info-row"><span class="info-label">Expected Units</span><span class="info-value">${action.units}</span></div>
-                <div class="info-row"><span class="info-label">Expected Price</span><span class="info-value">₹${action.expected_price?.toFixed(2) || '-'}</span></div>
-            `;
+    <div class="info-row"><span class="info-label">Type</span><span class="info-value">${action.action_type}</span>
+    </div>
+    <div class="info-row"><span class="info-label">Symbol</span><span class="info-value">${action.tradingsymbol}</span>
+    </div>
+    <div class="info-row"><span class="info-label">Expected Units</span><span class="info-value">${action.units}</span>
+    </div>
+    <div class="info-row"><span class="info-label">Expected Price</span><span
+            class="info-value">₹${action.expected_price?.toFixed(2) || '-'}</span></div>
+    `;
 
             let fieldsHtml = '';
 
             if (action.action_type === 'BUY') {
                 fieldsHtml = `
-                    <div class="form-group">
-                        <label>Actual Buy Price (₹)</label>
-                        <input type="number" id="exec-buy-price" step="0.01" value="${action.expected_price || ''}" />
-                    </div>
-                    <div class="form-group">
-                        <label>Actual Units</label>
-                        <input type="number" id="exec-units" value="${action.units}" />
-                    </div>
-                `;
+    <div class="form-group">
+        <label>Actual Buy Price (₹)</label>
+        <input type="number" id="exec-buy-price" step="0.01" value="${action.expected_price || ''}" />
+    </div>
+    <div class="form-group">
+        <label>Actual Units</label>
+        <input type="number" id="exec-units" value="${action.units}" />
+    </div>
+    `;
             } else if (action.action_type === 'SELL') {
                 fieldsHtml = `
-                    <div class="form-group">
-                        <label>Actual Sell Price (₹)</label>
-                        <input type="number" id="exec-sell-price" step="0.01" value="${action.expected_price || ''}" />
-                    </div>
-                `;
+    <div class="form-group">
+        <label>Actual Sell Price (₹)</label>
+        <input type="number" id="exec-sell-price" step="0.01" value="${action.expected_price || ''}" />
+    </div>
+    `;
             } else if (action.action_type === 'SWAP') {
                 infoHtml += `
-                    <div class="info-row"><span class="info-label">Sell Symbol</span><span class="info-value">${action.swap_from_symbol}</span></div>
-                    <div class="info-row"><span class="info-label">Sell Units</span><span class="info-value">${action.swap_from_units}</span></div>
-                `;
+    <div class="info-row"><span class="info-label">Sell Symbol</span><span
+            class="info-value">${action.swap_from_symbol}</span></div>
+    <div class="info-row"><span class="info-label">Sell Units</span><span
+            class="info-value">${action.swap_from_units}</span></div>
+    `;
                 fieldsHtml = `
-                    <div class="form-group">
-                        <label>Actual Sell Price for ${action.swap_from_symbol} (₹)</label>
-                        <input type="number" id="exec-sell-price" step="0.01" value="${action.swap_from_price || ''}" />
-                    </div>
-                    <div class="form-group">
-                        <label>Actual Buy Price for ${action.tradingsymbol} (₹)</label>
-                        <input type="number" id="exec-buy-price" step="0.01" value="${action.expected_price || ''}" />
-                    </div>
-                    <div class="form-group">
-                        <label>Actual Units for ${action.tradingsymbol}</label>
-                        <input type="number" id="exec-units" value="${action.units}" />
-                    </div>
-                `;
+    <div class="form-group">
+        <label>Actual Sell Price for ${action.swap_from_symbol} (₹)</label>
+        <input type="number" id="exec-sell-price" step="0.01" value="${action.swap_from_price || ''}" />
+    </div>
+    <div class="form-group">
+        <label>Actual Buy Price for ${action.tradingsymbol} (₹)</label>
+        <input type="number" id="exec-buy-price" step="0.01" value="${action.expected_price || ''}" />
+    </div>
+    <div class="form-group">
+        <label>Actual Units for ${action.tradingsymbol}</label>
+        <input type="number" id="exec-units" value="${action.units}" />
+    </div>
+    `;
             }
 
             document.getElementById('execute-info').innerHTML = infoHtml;
@@ -872,7 +1017,7 @@
             if (unitsEl) payload.actual_units = parseInt(unitsEl.value);
             console.log(currentAction)
             try {
-                const res = await fetch(`/actions/${currentAction.id}/execute`, {
+                const res = await fetch(`/api/v1/actions/${currentAction.id}/execute`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -896,6 +1041,7 @@
             document.getElementById('invest-symbol').value = '';
             document.getElementById('invest-price').value = '';
             document.getElementById('invest-units').value = '';
+            document.getElementById('invest-date').value = new Date().toISOString().split('T')[0]; // Default to today
             document.getElementById('invest-strategy').checked = true;
             openModal('invest-modal');
         }
@@ -912,13 +1058,14 @@
             }
 
             try {
-                const res = await fetch('/invested', {
+                const res = await fetch('/api/v1/portfolio/invested', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         tradingsymbol: symbol,
                         buy_price: price,
                         num_shares: units,
+                        buy_date: document.getElementById('invest-date').value || undefined,
                         include_in_strategy: includeInStrategy
                     })
                 });
@@ -935,6 +1082,57 @@
             } catch (e) {
                 showStatus('❌ ' + e.message, 'error');
             }
+        }
+        // Sell Logic
+        function openSellDialog(symbol, shares) {
+            document.getElementById('sell-symbol').value = symbol;
+            // document.getElementById('sell-price').value = inv.current_value / inv.num_shares; // Can't guess exact price,
+            // maybe leave blank
+            document.getElementById('sell-price').value = '';
+            document.getElementById('sell-units').value = shares;
+            document.getElementById('sell-date').valueAsDate = new Date();
+            openModal('sell-modal');
+        }
+
+        async function submitSell() {
+            const payload = {
+                tradingsymbol: document.getElementById('sell-symbol').value,
+                sell_price: parseFloat(document.getElementById('sell-price').value),
+                num_shares: parseInt(document.getElementById('sell-units').value),
+                sell_date: document.getElementById('sell-date').value
+            };
+
+            if (!payload.sell_price || !payload.num_shares) {
+                showStatus('Please fill all fields', 'error');
+                return;
+            }
+
+            // Route call
+            const btn = document.querySelector('#sell-modal .modal-btn-primary');
+            btn.disabled = true;
+            btn.innerText = 'Selling...';
+
+            try {
+                const res = await fetch('/api/v1/portfolio/sell', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok) {
+                    showStatus('Sell executed successfully!', 'success');
+                    closeModal('sell-modal');
+                    loadInvestments();
+                    fetchPortfolioSummary();
+                } else {
+                    const txt = await res.text();
+                    showStatus('Error: ' + txt, 'error');
+                }
+            } catch (e) {
+                showStatus('Error: ' + e.message, 'error');
+            }
+            btn.disabled = false;
+            btn.innerText = 'Sell';
         }
     </script>
 </body>

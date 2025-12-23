@@ -6,6 +6,7 @@ from flask import Blueprint, render_template, request, jsonify
 from router.day0_router import init_db
 from router.kite_router import get_latest_data
 from router.ranking_router import calculate_score
+
 from router.indicators_router import calculate_indicators
 from models import ActionsModel
 
@@ -45,7 +46,6 @@ def generate_ranking():
     """Generate latest rankings and scores"""
     calculate_score()
     return "Ranking completed and saved."
-
 
 @main_bp.route("/api/actions")
 def get_actions():

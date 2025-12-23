@@ -658,6 +658,13 @@
         "exchange":"NSE"
     },
     {
+        "instrument_token":237569,
+        "exchange_token":"928",
+        "tradingsymbol":"ELECTCAST",
+        "name":"ELECTROSTEEL CASTINGS",
+        "exchange":"NSE"
+    },
+    {
         "instrument_token":239617,
         "exchange_token":"936",
         "tradingsymbol":"DPABHUSHAN",
@@ -1509,6 +1516,13 @@
         "exchange_token":"2320",
         "tradingsymbol":"SMCGLOBAL",
         "name":"SMC GLOBAL SECURITIES",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":596737,
+        "exchange_token":"2331",
+        "tradingsymbol":"JAYNECOIND",
+        "name":"JAYASWAL NECO INDUSTR",
         "exchange":"NSE"
     },
     {
@@ -2688,13 +2702,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":1226497,
-        "exchange_token":"4791",
-        "tradingsymbol":"RELINFRA-BE",
-        "name":"RELIANCE INFRASTRUCTU",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":1234433,
         "exchange_token":"4822",
         "tradingsymbol":"DODLA",
@@ -2734,6 +2741,13 @@
         "exchange_token":"4907",
         "tradingsymbol":"ENGINERSIN",
         "name":"ENGINEERS INDIA",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":1257217,
+        "exchange_token":"4911",
+        "tradingsymbol":"MADRASFERT",
+        "name":"MADRAS FERTILISERS",
         "exchange":"NSE"
     },
     {
@@ -3087,13 +3101,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":1574913,
-        "exchange_token":"6152",
-        "tradingsymbol":"PANSARI-BE",
-        "name":"PANSARI DEVELOPERS",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":1577985,
         "exchange_token":"6164",
         "tradingsymbol":"BHAGCHEM",
@@ -3139,7 +3146,7 @@
         "instrument_token":1661185,
         "exchange_token":"6489",
         "tradingsymbol":"IRIS",
-        "name":"IRIS BUSINESS SERV",
+        "name":"IRIS REGTECH SOLUTION",
         "exchange":"NSE"
     },
     {
@@ -3339,24 +3346,10 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":1816065,
-        "exchange_token":"7094",
-        "tradingsymbol":"SEJALLTD-BE",
-        "name":"SEJAL GLASS",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":1818881,
         "exchange_token":"7105",
         "tradingsymbol":"TEGA",
         "name":"TEGA INDUSTRIES",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":1825025,
-        "exchange_token":"7129",
-        "tradingsymbol":"ZODIAC",
-        "name":"ZODIAC ENERGY",
         "exchange":"NSE"
     },
     {
@@ -3483,13 +3476,6 @@
         "exchange_token":"7603",
         "tradingsymbol":"CMSINFO",
         "name":"CMS INFO SYSTEMS",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":1946881,
-        "exchange_token":"7605",
-        "tradingsymbol":"TREJHARA-BE",
-        "name":"TREJHARA SOLUTIONS",
         "exchange":"NSE"
     },
     {
@@ -3637,13 +3623,6 @@
         "exchange_token":"8546",
         "tradingsymbol":"CHALET",
         "name":"CHALET HOTELS",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":2193409,
-        "exchange_token":"8568",
-        "tradingsymbol":"HITECHGEAR-BE",
-        "name":"THE HI-TECH GEARS",
         "exchange":"NSE"
     },
     {
@@ -3850,13 +3829,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":2416641,
-        "exchange_token":"9440",
-        "tradingsymbol":"AXISCADES-BE",
-        "name":"AXISCADES TECH",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":2426881,
         "exchange_token":"9480",
         "tradingsymbol":"LICI",
@@ -3924,13 +3896,6 @@
         "exchange_token":"9668",
         "tradingsymbol":"HIKAL",
         "name":"HIKAL",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":2477825,
-        "exchange_token":"9679",
-        "tradingsymbol":"SOUTHWEST-BE",
-        "name":"SOUTH WEST PINNACLE",
         "exchange":"NSE"
     },
     {
@@ -4057,6 +4022,13 @@
         "exchange_token":"10310",
         "tradingsymbol":"AURUM",
         "name":"AURUM PROPTECH",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":2647809,
+        "exchange_token":"10343",
+        "tradingsymbol":"RADHIKAJWE",
+        "name":"RADHIKA JEWELTECH",
         "exchange":"NSE"
     },
     {
@@ -4886,6 +4858,13 @@
         "exchange":"NSE"
     },
     {
+        "instrument_token":3045377,
+        "exchange_token":"11896",
+        "tradingsymbol":"GEOJITFSL",
+        "name":"GEOJIT FINANCIAL SER L",
+        "exchange":"NSE"
+    },
+    {
         "instrument_token":3047681,
         "exchange_token":"11905",
         "tradingsymbol":"GENUSPOWER",
@@ -5131,13 +5110,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":3358721,
-        "exchange_token":"13120",
-        "tradingsymbol":"TVSELECT-BE",
-        "name":"TVS ELECTRONICS",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":3358977,
         "exchange_token":"13121",
         "tradingsymbol":"KERNEX",
@@ -5320,24 +5292,10 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":3435265,
-        "exchange_token":"13419",
-        "tradingsymbol":"SUPREMEINF-BZ",
-        "name":"SUPREME INFRA.",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":3436289,
         "exchange_token":"13423",
         "tradingsymbol":"ELIN",
         "name":"ELIN ELECTRONICS",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":3436545,
-        "exchange_token":"13424",
-        "tradingsymbol":"EMKAY-BE",
-        "name":"EMKAY GLOBAL FIN SERV",
         "exchange":"NSE"
     },
     {
@@ -5551,24 +5509,10 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":3542785,
-        "exchange_token":"13839",
-        "tradingsymbol":"DONEAR",
-        "name":"DONEAR IND.",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":3544065,
         "exchange_token":"13844",
         "tradingsymbol":"MMFL",
         "name":"MM FORGINGS",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":3547137,
-        "exchange_token":"13856",
-        "tradingsymbol":"VENUSREM-BE",
-        "name":"VENUS REMEDIES",
         "exchange":"NSE"
     },
     {
@@ -6013,13 +5957,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":3788033,
-        "exchange_token":"14797",
-        "tradingsymbol":"MEGASOFT-BE",
-        "name":"MEGASOFT",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":3792129,
         "exchange_token":"14813",
         "tradingsymbol":"ADSL",
@@ -6038,6 +5975,13 @@
         "exchange_token":"14838",
         "tradingsymbol":"DECCANCE",
         "name":"DECCAN CEMENTS",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":3802369,
+        "exchange_token":"14853",
+        "tradingsymbol":"OMAXE",
+        "name":"OMAXE",
         "exchange":"NSE"
     },
     {
@@ -6101,13 +6045,6 @@
         "exchange_token":"14982",
         "tradingsymbol":"CENTUM",
         "name":"CENTUM ELECTRONICS",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":3844353,
-        "exchange_token":"15017",
-        "tradingsymbol":"MAANALU",
-        "name":"MAAN ALUMINIUM",
         "exchange":"NSE"
     },
     {
@@ -6220,13 +6157,6 @@
         "exchange_token":"15184",
         "tradingsymbol":"BRIGADE",
         "name":"BRIGADE ENTER.",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":3889409,
-        "exchange_token":"15193",
-        "tradingsymbol":"BGRENERGY-BE",
-        "name":"BGR ENERGY SYSTEMS",
         "exchange":"NSE"
     },
     {
@@ -6370,13 +6300,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":4186881,
-        "exchange_token":"16355",
-        "tradingsymbol":"PANACHE-BE",
-        "name":"PANACHE DIGILIFE",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":4197121,
         "exchange_token":"16395",
         "tradingsymbol":"MMP",
@@ -6444,13 +6367,6 @@
         "exchange_token":"16827",
         "tradingsymbol":"KOKUYOCMLN",
         "name":"KOKUYO CAMLIN",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":4329729,
-        "exchange_token":"16913",
-        "tradingsymbol":"ARTEMISMED",
-        "name":"ARTEMIS MED SERVICE",
         "exchange":"NSE"
     },
     {
@@ -6633,13 +6549,6 @@
         "exchange_token":"17486",
         "tradingsymbol":"EXPLEOSOL",
         "name":"EXPLEO SOLUTIONS",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":4487937,
-        "exchange_token":"17531",
-        "tradingsymbol":"MAHASTEEL-BE",
-        "name":"MAHAMAYA STEEL INDS",
         "exchange":"NSE"
     },
     {
@@ -7140,10 +7049,10 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":4828929,
-        "exchange_token":"18863",
-        "tradingsymbol":"VERTOZ",
-        "name":"VERTOZ",
+        "instrument_token":4834049,
+        "exchange_token":"18883",
+        "tradingsymbol":"SJVN",
+        "name":"SJVN",
         "exchange":"NSE"
     },
     {
@@ -7273,13 +7182,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":4929793,
-        "exchange_token":"19257",
-        "tradingsymbol":"CHOLAFIN-D1",
-        "name":null,
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":4931841,
         "exchange_token":"19265",
         "tradingsymbol":"BLISSGVS",
@@ -7291,13 +7193,6 @@
         "exchange_token":"19279",
         "tradingsymbol":"THEJO",
         "name":"THEJO ENGINEERING",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":4939777,
-        "exchange_token":"19296",
-        "tradingsymbol":"TERASOFT-BE",
-        "name":"TERA SOFTWARE",
         "exchange":"NSE"
     },
     {
@@ -7319,13 +7214,6 @@
         "exchange_token":"19410",
         "tradingsymbol":"ROSSARI",
         "name":"ROSSARI BIOTECH",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":4976641,
-        "exchange_token":"19440",
-        "tradingsymbol":"SICALLOG-BE",
-        "name":"SICAL LOGISTICS",
         "exchange":"NSE"
     },
     {
@@ -7371,9 +7259,9 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":5041921,
-        "exchange_token":"19695",
-        "tradingsymbol":"JITFINFRA-BE",
+        "instrument_token":5040897,
+        "exchange_token":"19691",
+        "tradingsymbol":"JITFINFRA",
         "name":"JITF INFRALOGISTICS",
         "exchange":"NSE"
     },
@@ -7459,20 +7347,6 @@
         "exchange_token":"19943",
         "tradingsymbol":"DEEPAKNTR",
         "name":"DEEPAK NITRITE",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":5109505,
-        "exchange_token":"19959",
-        "tradingsymbol":"WAAREEINDO-BE",
-        "name":"INDOSOLAR",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":5132801,
-        "exchange_token":"20050",
-        "tradingsymbol":"M&MFIN-N3",
-        "name":null,
         "exchange":"NSE"
     },
     {
@@ -7620,13 +7494,6 @@
         "exchange_token":"20413",
         "tradingsymbol":"IOLCP",
         "name":"IOL CHEM AND PHARMA",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":5228801,
-        "exchange_token":"20425",
-        "tradingsymbol":"NACLIND",
-        "name":"NACL INDUSTRIES",
         "exchange":"NSE"
     },
     {
@@ -7903,13 +7770,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":5528065,
-        "exchange_token":"21594",
-        "tradingsymbol":"COMSYN-BE",
-        "name":"COMMERCIAL SYN BAGS",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":5533185,
         "exchange_token":"21614",
         "tradingsymbol":"ABCAPITAL",
@@ -8148,20 +8008,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":5981953,
-        "exchange_token":"23367",
-        "tradingsymbol":"SABTNL-BE",
-        "name":"SRI ADHIKARI BRO TELE N L",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":5986817,
-        "exchange_token":"23386",
-        "tradingsymbol":"VHLTD-BE",
-        "name":"VICEROY HOTELS",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":5990913,
         "exchange_token":"23402",
         "tradingsymbol":"SRM",
@@ -8173,13 +8019,6 @@
         "exchange_token":"23489",
         "tradingsymbol":"BHARTIHEXA",
         "name":"BHARTI HEXACOM",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":6018305,
-        "exchange_token":"23509",
-        "tradingsymbol":"UEL-BE",
-        "name":"UJAAS ENERGY",
         "exchange":"NSE"
     },
     {
@@ -8222,13 +8061,6 @@
         "exchange_token":"23650",
         "tradingsymbol":"MUTHOOTFIN",
         "name":"MUTHOOT FINANCE",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":6063873,
-        "exchange_token":"23687",
-        "tradingsymbol":"ANURAS-W1",
-        "name":"ANUPAM RASAYAN INDIA",
         "exchange":"NSE"
     },
     {
@@ -8617,13 +8449,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":6530561,
-        "exchange_token":"25510",
-        "tradingsymbol":"MOTHERSON-D1",
-        "name":null,
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":6546945,
         "exchange_token":"25574",
         "tradingsymbol":"SHAKTIPUMP",
@@ -8642,13 +8467,6 @@
         "exchange_token":"25597",
         "tradingsymbol":"MANBA",
         "name":"MANBA FINANCE",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":6556673,
-        "exchange_token":"25612",
-        "tradingsymbol":"INDOTHAI-BE",
-        "name":"INDO THAI SEC",
         "exchange":"NSE"
     },
     {
@@ -8715,13 +8533,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":6625025,
-        "exchange_token":"25879",
-        "tradingsymbol":"BFUTILITIE-BZ",
-        "name":"BF UTILITIES",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":6628353,
         "exchange_token":"25892",
         "tradingsymbol":"DBEIL",
@@ -8740,6 +8551,13 @@
         "exchange_token":"25907",
         "tradingsymbol":"WAAREEENER",
         "name":"WAAREE ENERGIES",
+        "exchange":"NSE"
+    },
+    {
+        "instrument_token":6635009,
+        "exchange_token":"25918",
+        "tradingsymbol":"OCCLLTD",
+        "name":"OCCL",
         "exchange":"NSE"
     },
     {
@@ -9065,24 +8883,10 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":7465985,
-        "exchange_token":"29164",
-        "tradingsymbol":"SWANDEF-BE",
-        "name":"SWAN DEFENCE N HEVY IND L",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":7467777,
         "exchange_token":"29171",
         "tradingsymbol":"LAXMIDENTL",
         "name":"LAXMI DENTAL",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":7476481,
-        "exchange_token":"29205",
-        "tradingsymbol":"STALLION-BE",
-        "name":"STALLION IND FLUOROCHEM L",
         "exchange":"NSE"
     },
     {
@@ -9244,13 +9048,6 @@
         "exchange_token":"30455",
         "tradingsymbol":"SPECTRUM",
         "name":"SPECTRUM ELECTRIC IND",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":7940353,
-        "exchange_token":"31017",
-        "tradingsymbol":"THOMASCOTT",
-        "name":"THOMAS SCOTT (INDIA)",
         "exchange":"NSE"
     },
     {
@@ -9471,13 +9268,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":194027521,
-        "exchange_token":"757920",
-        "tradingsymbol":"BORANA-BE",
-        "name":"BORANA WEAVES",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":194032129,
         "exchange_token":"757938",
         "tradingsymbol":"BELLACASA",
@@ -9611,13 +9401,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":194296065,
-        "exchange_token":"758969",
-        "tradingsymbol":"AHCL-BE",
-        "name":"ANLON HEALTHCARE",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":194297089,
         "exchange_token":"758973",
         "tradingsymbol":"VIKRAN",
@@ -9629,13 +9412,6 @@
         "exchange_token":"758981",
         "tradingsymbol":"RNBDENIMS",
         "name":"R&B DENIMS",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":194300929,
-        "exchange_token":"758988",
-        "tradingsymbol":"GCSL-BE",
-        "name":"GRETEX CORPORATE SERVICES",
         "exchange":"NSE"
     },
     {
@@ -9926,31 +9702,10 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":194520833,
-        "exchange_token":"759847",
-        "tradingsymbol":"SHILCTECH",
-        "name":"SHILCHAR TECHNOLOGIES",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":194525953,
         "exchange_token":"759867",
         "tradingsymbol":"CAPILLARY",
         "name":"CAPILLARY TECHNO INDIA L",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":194528257,
-        "exchange_token":"759876",
-        "tradingsymbol":"UTLSOLAR",
-        "name":"FUJIYAMA POWER SYSTEMS L",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":194529281,
-        "exchange_token":"759880",
-        "tradingsymbol":"TENNIND",
-        "name":"TENNECO CLEAN AIR INDIA L",
         "exchange":"NSE"
     },
     {
@@ -9982,20 +9737,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":194552065,
-        "exchange_token":"759969",
-        "tradingsymbol":"PAUSHAKLTD",
-        "name":"PAUSHAK",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":194561793,
-        "exchange_token":"760007",
-        "tradingsymbol":"EXCELSOFT",
-        "name":"EXCELSOFT TECHNOLOGIES L",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":194569985,
         "exchange_token":"760039",
         "tradingsymbol":"SUDEEPPHRM",
@@ -10003,16 +9744,9 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":194578689,
-        "exchange_token":"760073",
-        "tradingsymbol":"JAYKAY",
-        "name":"JAYKAY ENTERPRISES",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":194586369,
-        "exchange_token":"760103",
-        "tradingsymbol":"SKFINDUS-BE",
+        "instrument_token":194585857,
+        "exchange_token":"760101",
+        "tradingsymbol":"SKFINDUS",
         "name":"SKF IND (INDUSTRIAL)",
         "exchange":"NSE"
     },
@@ -10045,13 +9779,6 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":194625025,
-        "exchange_token":"760254",
-        "tradingsymbol":"CORONA",
-        "name":"CORONA REMEDIES",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":194626305,
         "exchange_token":"760259",
         "tradingsymbol":"WAKEFIT",
@@ -10059,24 +9786,10 @@
         "exchange":"NSE"
     },
     {
-        "instrument_token":194630913,
-        "exchange_token":"760277",
-        "tradingsymbol":"MODINATUR",
-        "name":"MODI NATURALS",
-        "exchange":"NSE"
-    },
-    {
         "instrument_token":194636801,
         "exchange_token":"760300",
         "tradingsymbol":"LEMERITE",
         "name":"LE MERITE EXPORTS",
-        "exchange":"NSE"
-    },
-    {
-        "instrument_token":194796289,
-        "exchange_token":"760923",
-        "tradingsymbol":"KNAGRI",
-        "name":"KN AGRI RESOURCES",
         "exchange":"NSE"
     },
     {
@@ -10150,27 +9863,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":128284164,
-        "exchange_token":"501110",
-        "tradingsymbol":"SUNRINV",
-        "name":"SUNRISE INDUSTRIAL TRADERS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":128284420,
-        "exchange_token":"501111",
-        "tradingsymbol":"ZGOLDINV",
-        "name":"GOLD ROCK INVESTMENTS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":128325124,
-        "exchange_token":"501270",
-        "tradingsymbol":"ANTARIKSH",
-        "name":"ANTARIKSH INDUSTRIES",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":128332292,
         "exchange_token":"501298",
         "tradingsymbol":"INDPRUD",
@@ -10192,38 +9884,10 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":128928260,
-        "exchange_token":"503626",
-        "tradingsymbol":"KSHITIJ",
-        "name":"KSHITIZ INVESTMENT",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":128942340,
         "exchange_token":"503681",
         "tradingsymbol":"ELCIDIN",
         "name":"ELCID INVESTMENTS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":128944388,
-        "exchange_token":"503689",
-        "tradingsymbol":"HEALINV",
-        "name":"HEALTHY INVESTMENTS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":128946180,
-        "exchange_token":"503696",
-        "tradingsymbol":"SHRENTI",
-        "name":"SHREENATH INVESTMENTS CO.LTD.",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":128996612,
-        "exchange_token":"503893",
-        "tradingsymbol":"ZSATYASL",
-        "name":"SATYAM SILK MILLS",
         "exchange":"BSE"
     },
     {
@@ -10255,27 +9919,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":129112580,
-        "exchange_token":"504346",
-        "tradingsymbol":"RRP",
-        "name":"RRP SEMICONDUCTOR",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":129117444,
-        "exchange_token":"504365",
-        "tradingsymbol":"RIDHISYN",
-        "name":"RIDHI SYNTHETICS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":129118724,
-        "exchange_token":"504370",
-        "tradingsymbol":"ZARDIINV",
-        "name":"ARDI INVESTMENT & TRADING",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":129178884,
         "exchange_token":"504605",
         "tradingsymbol":"UNIABEXAL",
@@ -10287,13 +9930,6 @@
         "exchange_token":"504731",
         "tradingsymbol":"AZADIND",
         "name":"AZAD INDIA MOBILITY",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":129214980,
-        "exchange_token":"504746",
-        "tradingsymbol":"INLCM",
-        "name":"INDIAN LINK CHAIN MANUFACTURES",
         "exchange":"BSE"
     },
     {
@@ -10339,20 +9975,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":129429764,
-        "exchange_token":"505585",
-        "tradingsymbol":"ZKOVALIN",
-        "name":"KOVALAM INVESTMENT & TRADING C",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":129432068,
-        "exchange_token":"505594",
-        "tradingsymbol":"MULTIIN",
-        "name":"MULTIPLUS HOLDINGS",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":129461764,
         "exchange_token":"505710",
         "tradingsymbol":"GRAUWEIL",
@@ -10374,27 +9996,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":129542148,
-        "exchange_token":"506024",
-        "tradingsymbol":"HVL",
-        "name":"HARIYANA VENTURES",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":129566724,
-        "exchange_token":"506120",
-        "tradingsymbol":"ALNATRD",
-        "name":"ALNA TRADING & EXPORTS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":129577476,
-        "exchange_token":"506162",
-        "tradingsymbol":"TERRAFORM",
-        "name":"TERRAFORM MAGNUM",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":129641988,
         "exchange_token":"506414",
         "tradingsymbol":"FERMENTA",
@@ -10406,20 +10007,6 @@
         "exchange_token":"506532",
         "tradingsymbol":"NITTAGELA",
         "name":"NITTA GELATIN INDIA",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":129684228,
-        "exchange_token":"506579",
-        "tradingsymbol":"AGVENTURES",
-        "name":"AG VENTURES",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":129684484,
-        "exchange_token":"506580",
-        "tradingsymbol":"PBGLOBAL",
-        "name":"PB GLOBAL ",
         "exchange":"BSE"
     },
     {
@@ -10458,13 +10045,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":129931012,
-        "exchange_token":"507543",
-        "tradingsymbol":"CORAGRO",
-        "name":"COROMANDEL AGRO PRODUCTS & OIL",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":129984772,
         "exchange_token":"507753",
         "tradingsymbol":"TGVSL",
@@ -10493,13 +10073,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":130035716,
-        "exchange_token":"507952",
-        "tradingsymbol":"SHIKHARLETR",
-        "name":"SHIKHAR LEASING & TRADING",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":130172420,
         "exchange_token":"508486",
         "tradingsymbol":"HAWKINCOOK",
@@ -10511,34 +10084,6 @@
         "exchange_token":"508807",
         "tradingsymbol":"ISTLTD",
         "name":"IST",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":130269956,
-        "exchange_token":"508867",
-        "tradingsymbol":"NEWMKTADV",
-        "name":"NEW MARKETS ADVISORY",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":130285828,
-        "exchange_token":"508929",
-        "tradingsymbol":"AIRLTD",
-        "name":"AVISHKAR INFRA REALTY",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":130302212,
-        "exchange_token":"508993",
-        "tradingsymbol":"KEDIACN",
-        "name":"KEDIA CONSTRUCTION CO.LTD.",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":130304772,
-        "exchange_token":"509003",
-        "tradingsymbol":"TRANOCE",
-        "name":"TRANSOCEANIC PROPERTIES",
         "exchange":"BSE"
     },
     {
@@ -10563,59 +10108,10 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":130504196,
-        "exchange_token":"509782",
-        "tradingsymbol":"OSEASPR",
-        "name":"OSEASPRE CONSULTANTS",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":130549764,
         "exchange_token":"509960",
         "tradingsymbol":"UPHOT",
         "name":"U.P.HOTELS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":130828292,
-        "exchange_token":"511048",
-        "tradingsymbol":"KUSUMEL",
-        "name":"KUSAM ELECTRICAL INDUSTRIES LT",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":130831364,
-        "exchange_token":"511060",
-        "tradingsymbol":"JUMBFNL",
-        "name":"JUMBO FINANCE",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":130834948,
-        "exchange_token":"511074",
-        "tradingsymbol":"EASYFIN",
-        "name":"EASY FINCORP",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":130840580,
-        "exchange_token":"511096",
-        "tradingsymbol":"TVOLCON",
-        "name":"TIVOLI CONSTRUCTION",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":130881028,
-        "exchange_token":"511254",
-        "tradingsymbol":"SAGARSYST",
-        "name":"SAGAR SYSTECH",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":130977796,
-        "exchange_token":"511632",
-        "tradingsymbol":"OLYMTFI",
-        "name":"OLYMPIC MANAGEMENT & FINANCIAL",
         "exchange":"BSE"
     },
     {
@@ -10633,13 +10129,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":131073028,
-        "exchange_token":"512004",
-        "tradingsymbol":"ZNILKENG",
-        "name":"NILKANTH ENGINEERING",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":131075588,
         "exchange_token":"512014",
         "tradingsymbol":"SOBME",
@@ -10654,24 +10143,10 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":131077636,
-        "exchange_token":"512022",
-        "tradingsymbol":"WINROC",
-        "name":"WINRO COMMERCIAL (INDIA)",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":131081732,
         "exchange_token":"512038",
         "tradingsymbol":"TCC",
         "name":"TCC CONCEPT",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131087364,
-        "exchange_token":"512060",
-        "tradingsymbol":"SHYAM",
-        "name":"VENTURA GUARANTY",
         "exchange":"BSE"
     },
     {
@@ -10682,150 +10157,10 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":131097860,
-        "exchange_token":"512101",
-        "tradingsymbol":"TRIPR",
-        "name":"TRIOCHEM PRODUCTS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131101956,
-        "exchange_token":"512117",
-        "tradingsymbol":"TWIROST",
-        "name":"TWIN ROSES TRADES & AGENCIES L",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131109636,
-        "exchange_token":"512147",
-        "tradingsymbol":"KAJALSY",
-        "name":"KAJAL SYNTHETICS & SILK MILLS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131121924,
-        "exchange_token":"512195",
-        "tradingsymbol":"BENTCOM",
-        "name":"BENTLEY COMMERCIAL ENTERPRISES",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131134724,
-        "exchange_token":"512245",
-        "tradingsymbol":"ZNIVITRD",
-        "name":"NIVI TRADING",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131138820,
-        "exchange_token":"512261",
-        "tradingsymbol":"BAJGLOB",
-        "name":"BAJAJ GLOBAL",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131139844,
-        "exchange_token":"512265",
-        "tradingsymbol":"AVONMERC",
-        "name":"AVON MERCANTILE",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131141380,
-        "exchange_token":"512271",
-        "tradingsymbol":"TASHIND",
-        "name":"TASHI INDIA",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131146500,
-        "exchange_token":"512291",
-        "tradingsymbol":"ZSPEEDCO",
-        "name":"SPEEDAGE COMMERCIALS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131149572,
-        "exchange_token":"512303",
-        "tradingsymbol":"ZMANSOON",
-        "name":"MANSOON TRADING CO.LTD.",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131165956,
-        "exchange_token":"512367",
-        "tradingsymbol":"ZSHERAPR",
-        "name":"SHERATON PROPERTIES & FINANCE",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131175428,
-        "exchange_token":"512404",
-        "tradingsymbol":"BENGALS",
-        "name":"BENGAL STEEL INDUSTRIES",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131176452,
-        "exchange_token":"512408",
-        "tradingsymbol":"UNIWSEC",
-        "name":"UNIWORTH SECURITIES",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131182852,
-        "exchange_token":"512433",
-        "tradingsymbol":"ASUTENT",
-        "name":"ASUTOSH ENTERPRISES",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131184388,
-        "exchange_token":"512439",
-        "tradingsymbol":"ESQRMON",
-        "name":"ESQUIRE MONEY GUARANTEES",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131185924,
-        "exchange_token":"512445",
-        "tradingsymbol":"DEVITRD",
-        "name":"DEVINSU TRADING",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":131187972,
         "exchange_token":"512453",
         "tradingsymbol":"SHRJAGP",
         "name":"SHRI JAGDAMBA POLYMERS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131190020,
-        "exchange_token":"512461",
-        "tradingsymbol":"PUNCTRD",
-        "name":"PUNCTUAL TRADING",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131201284,
-        "exchange_token":"512505",
-        "tradingsymbol":"MEENST",
-        "name":"MEENAKSHI STEEL INDUSTRIES",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131204356,
-        "exchange_token":"512517",
-        "tradingsymbol":"VINVANI",
-        "name":"VINAYAK VANIJYA",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131331076,
-        "exchange_token":"513012",
-        "tradingsymbol":"ZJEETMAC",
-        "name":"JEET MACHINE TOOLS",
         "exchange":"BSE"
     },
     {
@@ -10847,13 +10182,6 @@
         "exchange_token":"513536",
         "tradingsymbol":"GNRL",
         "name":"GUJARAT NATURAL RESOURCES LIMI",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":131644420,
-        "exchange_token":"514236",
-        "tradingsymbol":"TTLEL",
-        "name":"TTL ENTERPRISES",
         "exchange":"BSE"
     },
     {
@@ -10910,13 +10238,6 @@
         "exchange_token":"517166",
         "tradingsymbol":"SPELS",
         "name":"SPEL SEMICONDUCTOR",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":132396036,
-        "exchange_token":"517172",
-        "tradingsymbol":"PERVASIVE",
-        "name":"PERVASIVE COMMODITIES ",
         "exchange":"BSE"
     },
     {
@@ -11004,13 +10325,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":133918724,
-        "exchange_token":"523120",
-        "tradingsymbol":"THRIVE",
-        "name":"THRIVE FUTURE HABITATS",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":133928964,
         "exchange_token":"523160",
         "tradingsymbol":"MORGANITE",
@@ -11022,13 +10336,6 @@
         "exchange_token":"523323",
         "tradingsymbol":"KOVAI",
         "name":"KOVAI MEDICAL CENTER & HOSPITA",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":133975812,
-        "exchange_token":"523343",
-        "tradingsymbol":"MICROSE",
-        "name":"MICROSE INDIA",
         "exchange":"BSE"
     },
     {
@@ -11060,13 +10367,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":134155780,
-        "exchange_token":"524046",
-        "tradingsymbol":"PETPLST",
-        "name":"PET PLASTICS",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":134277124,
         "exchange_token":"524520",
         "tradingsymbol":"KMCSHIL",
@@ -11088,17 +10388,17 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":134745348,
-        "exchange_token":"526349",
-        "tradingsymbol":"NIRBHAYIND",
-        "name":"NIRBHAY COLOURS INDIA ",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":134766852,
         "exchange_token":"526433",
         "tradingsymbol":"ASMTEC",
         "name":"ASM TECHNOLOGIES",
+        "exchange":"BSE"
+    },
+    {
+        "instrument_token":134791684,
+        "exchange_token":"526530",
+        "tradingsymbol":"IIRM",
+        "name":"IIRM HOLDINGS INDIA",
         "exchange":"BSE"
     },
     {
@@ -11186,13 +10486,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":135917828,
-        "exchange_token":"530929",
-        "tradingsymbol":"RRPDEFENSE",
-        "name":"RRP DEFENSE",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":135977220,
         "exchange_token":"531161",
         "tradingsymbol":"ABMKNO",
@@ -11214,38 +10507,10 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":136088836,
-        "exchange_token":"531597",
-        "tradingsymbol":"MIDPOLY",
-        "name":"MIDLAND POLYMERS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":136092164,
-        "exchange_token":"531610",
-        "tradingsymbol":"UFMINDL",
-        "name":"UFM INDUSTRIES",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":136099076,
         "exchange_token":"531637",
         "tradingsymbol":"PRAVEG",
         "name":"PRAVEG",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":136111364,
-        "exchange_token":"531685",
-        "tradingsymbol":"FRONTFN",
-        "name":"FRONTLINE FINANCIAL SERVICES L",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":136114180,
-        "exchange_token":"531696",
-        "tradingsymbol":"VSDCONF",
-        "name":"VSD CONFIN",
         "exchange":"BSE"
     },
     {
@@ -11270,17 +10535,10 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":136162564,
-        "exchange_token":"531885",
-        "tradingsymbol":"SVAINDIA",
-        "name":"SVA INDIA",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":136178180,
-        "exchange_token":"531946",
-        "tradingsymbol":"CHADPAP",
-        "name":"CHADHA PAPERS",
+        "instrument_token":136168964,
+        "exchange_token":"531910",
+        "tradingsymbol":"MADHUVEER",
+        "name":"MADHUVEER COM 18 NETWORK LIMIT",
         "exchange":"BSE"
     },
     {
@@ -11288,20 +10546,6 @@
         "exchange_token":"532067",
         "tradingsymbol":"3BBLACKBIO",
         "name":"3B BLACKBIO DX ",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":136213252,
-        "exchange_token":"532083",
-        "tradingsymbol":"SHKALYN",
-        "name":"SHRI KALYAN HOLDINGS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":136227332,
-        "exchange_token":"532138",
-        "tradingsymbol":"SMCREDT",
-        "name":"SMC CREDITS",
         "exchange":"BSE"
     },
     {
@@ -11354,13 +10598,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":137894916,
-        "exchange_token":"538652",
-        "tradingsymbol":"HCLTD",
-        "name":"HIND COMMERCE",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":137899012,
         "exchange_token":"538668",
         "tradingsymbol":"MIIL",
@@ -11403,24 +10640,10 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":138048772,
-        "exchange_token":"539253",
-        "tradingsymbol":"SURYAINDIA",
-        "name":"SURYA INDIA ",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":138060804,
         "exchange_token":"539300",
         "tradingsymbol":"SUNRAKSHAK",
         "name":"SUNRAKSHAKK INDUSTRIES INDIA L",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":138108932,
-        "exchange_token":"539488",
-        "tradingsymbol":"TFLL",
-        "name":"TIRUPATI FIN-LEASE",
         "exchange":"BSE"
     },
     {
@@ -11431,38 +10654,10 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":138123012,
-        "exchange_token":"539543",
-        "tradingsymbol":"VALLEY",
-        "name":"VALLEY MAGNESITE COMPANY LIMIT",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":138127364,
-        "exchange_token":"539560",
-        "tradingsymbol":"ABHIJIT",
-        "name":"ABHIJIT TRADING CO.",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":138158596,
         "exchange_token":"539682",
         "tradingsymbol":"MOBAVENUE",
         "name":"MOBAVENUE AI TECH ",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":138158852,
-        "exchange_token":"539683",
-        "tradingsymbol":"SHIVKAMAL",
-        "name":"SHIVKAMAL IMPEX ",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":138160900,
-        "exchange_token":"539691",
-        "tradingsymbol":"RGCORP",
-        "name":"REAL GROWTH CORPORATION LIMITE",
         "exchange":"BSE"
     },
     {
@@ -11501,20 +10696,6 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":138309124,
-        "exchange_token":"540270",
-        "tradingsymbol":"RAIDEEPIND",
-        "name":"RAIDEEP INDUSTRIES ",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":138321412,
-        "exchange_token":"540318",
-        "tradingsymbol":"SUERYAAKNI",
-        "name":"SUERYAA KNITWEAR ",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":138423812,
         "exchange_token":"540718",
         "tradingsymbol":"AAYUSHBULL",
@@ -11543,38 +10724,10 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":138530052,
-        "exchange_token":"541133",
-        "tradingsymbol":"ACFL",
-        "name":"APEX CAPITAL AND FINANCE LIMIT",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":138587652,
-        "exchange_token":"541358",
-        "tradingsymbol":"UCIL",
-        "name":"UNIFINZ CAPITAL INDIA",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":138658052,
-        "exchange_token":"541633",
-        "tradingsymbol":"STRAEXPO",
-        "name":"SOPHIA TRAEXPO ",
-        "exchange":"BSE"
-    },
-    {
         "instrument_token":138755076,
         "exchange_token":"542012",
         "tradingsymbol":"A1L",
         "name":"A-1",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":138891268,
-        "exchange_token":"542544",
-        "tradingsymbol":"JYOTIN",
-        "name":"JYOT INTERNATIONAL MARKETING L",
         "exchange":"BSE"
     },
     {
@@ -11589,27 +10742,6 @@
         "exchange_token":"542727",
         "tradingsymbol":"CPML",
         "name":"CITY PULSE MULTIVENTURES LIMIT",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":138973188,
-        "exchange_token":"542864",
-        "tradingsymbol":"MOUNT",
-        "name":"MOUNT HOUSING AND INFRASTRUCTU",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":138973700,
-        "exchange_token":"542866",
-        "tradingsymbol":"COLAB",
-        "name":"COLAB PLATFORMS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":138990340,
-        "exchange_token":"542931",
-        "tradingsymbol":"VARDHANCFL",
-        "name":"VARDHAN CAPITAL & FINANCE LIMI",
         "exchange":"BSE"
     },
     {
@@ -11641,10 +10773,24 @@
         "exchange":"BSE"
     },
     {
+        "instrument_token":139135236,
+        "exchange_token":"543497",
+        "tradingsymbol":"BCCL",
+        "name":"BHATIA COLOUR CHEM ",
+        "exchange":"BSE"
+    },
+    {
         "instrument_token":139146756,
         "exchange_token":"543542",
         "tradingsymbol":"KESAR",
         "name":"KESAR INDIA",
+        "exchange":"BSE"
+    },
+    {
+        "instrument_token":139147012,
+        "exchange_token":"543543",
+        "tradingsymbol":"BRRL",
+        "name":"B-RIGHT REALESTATE",
         "exchange":"BSE"
     },
     {
@@ -11795,6 +10941,13 @@
         "exchange":"BSE"
     },
     {
+        "instrument_token":139354628,
+        "exchange_token":"544354",
+        "tradingsymbol":"SOLARIUM",
+        "name":"SOLARIUM GREEN ENERGY",
+        "exchange":"BSE"
+    },
+    {
         "instrument_token":139367940,
         "exchange_token":"544406",
         "tradingsymbol":"UNIFIED",
@@ -11844,80 +10997,10 @@
         "exchange":"BSE"
     },
     {
-        "instrument_token":139424004,
-        "exchange_token":"544625",
-        "tradingsymbol":"LOGICIEL",
-        "name":"LOGICIEL SOLUTIONS ",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":139424260,
-        "exchange_token":"544626",
-        "tradingsymbol":"EXATO",
-        "name":"EXATO TECHNOLOGIES",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":139424516,
-        "exchange_token":"544627",
-        "tradingsymbol":"PURPLEWAVE",
-        "name":"PURPLE WAVE INFOCOM",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":139425028,
-        "exchange_token":"544629",
-        "tradingsymbol":"RAVEL",
-        "name":"RAVELCARE ",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":139425284,
-        "exchange_token":"544630",
-        "tradingsymbol":"HELLOJI",
-        "name":"HELLOJI HOLIDAYS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":139426564,
-        "exchange_token":"544635",
-        "tradingsymbol":"LUXURY",
-        "name":"LUXURY TIME ",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":139427076,
-        "exchange_token":"544637",
-        "tradingsymbol":"METHODHUB",
-        "name":"METHODHUB SOFTWARE ",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":139427844,
-        "exchange_token":"544640",
-        "tradingsymbol":"RDEL",
-        "name":"RIDDHI DISPLAY EQUIPMENTS LIMI",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":139428100,
-        "exchange_token":"544641",
-        "tradingsymbol":"KVTOYS",
-        "name":"K. V. TOYS INDIA",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":139428612,
-        "exchange_token":"544643",
-        "tradingsymbol":"PRODOCS",
-        "name":"PRODOCS SOLUTIONS",
-        "exchange":"BSE"
-    },
-    {
-        "instrument_token":227880196,
-        "exchange_token":"890157",
-        "tradingsymbol":"AIRTELPP",
-        "name":"BHARTI AIRTEL ",
+        "instrument_token":139420164,
+        "exchange_token":"544610",
+        "tradingsymbol":"WORKMATES",
+        "name":"WORKMATES CORE2CLOUD SOLUTION",
         "exchange":"BSE"
     },
     {

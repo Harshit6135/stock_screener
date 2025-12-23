@@ -1,16 +1,18 @@
-"""
-Stock Screener V3 - Flask Application
-
-Multi-factor momentum screening and portfolio management system.
-"""
 from db import db
-from flask import Flask
 from flask_smorest import Api
 from flask_migrate import Migrate
-from config.flask_config import Config
+from flask import Flask, render_template
 
-from router.main_router import main_bp
-from resources import InstrumentsBlueprint, MarketDataBlueprint, IndicatorsBlueprint, PortfolioBlueprint
+from config import Config
+from src.api.v1.routes import (
+    actions_bp,
+    instruments_bp,
+    marketdata_bp,
+    indicators_bp,
+    portfolio_bp,
+    ranking_bp,
+    init_bp
+)
 
 
 def create_app(config_class=Config):
@@ -18,7 +20,6 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
     return app
-
 
 app = create_app()
 db.init_app(app)
@@ -29,13 +30,21 @@ api = Api(app)
 with app.app_context():
     db.create_all()
 
-# Register blueprints
-app.register_blueprint(main_bp)
-api.register_blueprint(InstrumentsBlueprint)
-api.register_blueprint(MarketDataBlueprint)
-api.register_blueprint(IndicatorsBlueprint)
-api.register_blueprint(PortfolioBlueprint)
+# Register API blueprints
+api.register_blueprint(init_bp)
+api.register_blueprint(instruments_bp)
+api.register_blueprint(marketdata_bp)
+api.register_blueprint(indicators_bp)
+api.register_blueprint(actions_bp)
+api.register_blueprint(ranking_bp)
+api.register_blueprint(portfolio_bp)
 
+
+# Main Dashboard Route
+@app.route("/")
+def dashboard():
+    """Render the main dashboard"""
+    return render_template('dashboard.html')
 
 if __name__ == "__main__":
     app.run(debug=True)

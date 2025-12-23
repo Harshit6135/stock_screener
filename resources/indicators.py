@@ -22,13 +22,13 @@ class Indicators(MethodView):
             abort(500, message=str(e))
         return indicator_data
 
-@blp.route("/indicators/query")
-class IndicatorsQuery(MethodView):
-    @blp.arguments(IndicatorsSchema, location="json")
-    @blp.response(200, IndicatorsSchema(many=True))
-    def get(self, filter_data):
-        """Fetch indicators by instrument_token or tradingsymbol within a date range"""
-        query = IndicatorsModel.query
+# @blp.route("/indicators/query")
+# class IndicatorsQuery(MethodView):
+#     @blp.arguments(IndicatorsSchema, location="json")
+#     @blp.response(200, IndicatorsSchema(many=True))
+#     def get(self, filter_data):
+#         """Fetch indicators by instrument_token or tradingsymbol within a date range"""
+#         query = IndicatorsModel.query
 
 
 @blp.route("/indicators/latest/<string:tradingsymbol>")
@@ -41,3 +41,17 @@ class LatestMarketData(MethodView):
         )
 
         return query.order_by(IndicatorsModel.date.desc()).first()
+
+
+@blp.route("/indicators/<string:tradingsymbol>/<string:date>")
+class IndicatorsByDate(MethodView):
+    @blp.response(200, IndicatorsSchema)
+    def get(self, tradingsymbol, date):
+        """Fetch the market data for a tradingsymbol on a specific date"""
+        indicator = IndicatorsModel.query.filter(
+            IndicatorsModel.tradingsymbol == tradingsymbol,
+            IndicatorsModel.date == date
+        ).first()
+        if indicator:
+            return indicator
+        abort(404, message="Indicator not found for the given symbol and date.")
