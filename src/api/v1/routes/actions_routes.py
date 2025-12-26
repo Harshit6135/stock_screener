@@ -48,6 +48,17 @@ class GenerateActions(MethodView):
             abort(500, message="Failed to generate actions")        
         return response
 
+@blp.route("/generate/<string:ranking_date>")
+class GenerateActions(MethodView):
+    @blp.response(201, ActionsSchema(many=True))
+    def post(self, ranking_date):
+        """Generate trade actions based on current rankings and portfolio"""
+        actions_service = ActionsService()
+        response = actions_service.generate_actions(action_date=ranking_date)
+        if response is None:
+            abort(500, message="Failed to generate actions")
+        return response
+
 
 @blp.route("/<int:action_id>/execute")
 class ExecuteAction(MethodView):

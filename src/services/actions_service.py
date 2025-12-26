@@ -1,6 +1,6 @@
 import pandas as pd
 
-from datetime import date
+from datetime import date, datetime
 from typing import List, Dict
 
 
@@ -150,8 +150,7 @@ class ActionsService:
         2. Check for SWAP (challenger beats incumbent by buffer)
         3. Check for BUY (vacancies exist, allocate to top stocks)
         """
-        if action_date is None:
-            action_date = date.today()
+        action_date = datetime.strptime(action_date, '%Y-%m-%d').date() if action_date else date.today()
 
         rankings, invested_list, current_prices, current_atrs = self.get_input_to_generate_actions(action_date)
         rankings = self.query_to_dict(rankings)

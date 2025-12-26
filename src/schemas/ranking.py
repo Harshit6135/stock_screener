@@ -41,6 +41,7 @@ class TopNSchema(Schema):
     rank = fields.Int()
     is_invested = fields.Bool()
     ranking_date = fields.Date()
+    close_price = fields.Float(allow_none=True)
 
 class RankingAllSchema(Schema):
     date = fields.Date()

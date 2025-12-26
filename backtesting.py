@@ -1,24 +1,15 @@
-import requests
-import pandas as pd
 from datetime import date, timedelta
-from router.backtesting_ranking_router import backtest_calculate_score
+import requests
 
-BASE_URL = "http://127.0.0.1:5000"
-
-# p_resp = requests.get(f"{BASE_URL}/market_data/{symbol}/{end_date}")
-# p_data = p_resp.json()
-# print(p_data)
-#
-# p_resp = requests.get(f"{BASE_URL}/indicators/{symbol}/{end_date}")
-# p_data = p_resp.json()
-# print(p_data)
-
-start_date = date(2025, 12, 10)
-end_date = date.today()
+base_url = "http://127.0.0.1:5000"
+start_date = date(2025, 6, 1)
+end_date = date(2025, 12, 18)
+#end_date = date.today()
 delta = timedelta(days=1)
 
 while start_date <= end_date:
     date_str = start_date.strftime("%Y-%m-%d")
     print(f"processing for {date_str}")
-    backtest_calculate_score(date_str)
+    requests.post(f"{base_url}/api/v1/ranking/update/{date_str}")
+    print(f"Processing Completed")
     start_date += delta
