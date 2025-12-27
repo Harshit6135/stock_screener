@@ -89,14 +89,14 @@ class RankingService:
             self.strategy_params.conviction_weight * metrics_df.get('final_vol_score', 0) +
             self.strategy_params.structure_weight * metrics_df.get('final_structure_score', 0)
         )
-        
+        metrics_df[metrics_df['tradingsymbol']=='DCXINDIA'].to_csv("Test.csv")
         return metrics_df
 
     def _apply_universe_penalties(self, metrics_df) -> pd.DataFrame:
         """Apply penalty box rules across universe"""
         metrics_df.loc[metrics_df['ema_200'] > metrics_df['close'], 'composite_score'] = 0
         metrics_df.loc[metrics_df['atrr_14'] / metrics_df['atrr_14'].shift(2) > self.strategy_params.atr_threshold, 'composite_score'] = 0
-        metrics_df.loc[metrics_df['volume']*metrics_df['close'] < self.strategy_params.turnover_threshold * 10000000, 'composite_score'] = 0
+        #metrics_df.loc[metrics_df['volume']*metrics_df['close'] < self.strategy_params.turnover_threshold * 10000000, 'composite_score'] = 0
         metrics_df.loc[metrics_df['ema_50'] > metrics_df['close'], 'composite_score'] = 0
         metrics_df['composite_score'] = metrics_df['composite_score'].fillna(0)
         return metrics_df

@@ -2,7 +2,7 @@ from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 from repositories import IndicatorsRepository
 
-from schemas import IndicatorsSchema, MaxDateSchema
+from schemas import IndicatorsSchema, MaxDateSchema, IndicatorSearchSchema
 from services import IndicatorsService
 
 blp = Blueprint("indicators", __name__, url_prefix="/api/v1/indicators", description="Operations on indicators")
@@ -23,7 +23,7 @@ class Indicators(MethodView):
 
 @blp.route("/query")
 class IndicatorsQuery(MethodView):
-    @blp.arguments(IndicatorsSchema, location="json")
+    @blp.arguments(IndicatorSearchSchema, location="json")
     @blp.response(200, IndicatorsSchema(many=True))
     def get(self, filter_data):
         """Fetch indicators by instrument_token or tradingsymbol within a date range"""

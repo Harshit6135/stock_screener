@@ -34,8 +34,9 @@ INITIAL_CAPITAL = 100000.0
 RISK_PER_TRADE_PERCENT = 1.0   # % of capital to risk per trade
 STOP_LOSS_MULTIPLIER = 2.0     # ATR multiplier for stop-loss
 EXIT_THRESHOLD = 40.0          # Score below this triggers exit
-MAX_POSITIONS = 10             # Maximum concurrent positions (typically same as TOP_N)
+MAX_POSITIONS = 10             # Maximum concurrent positions (soft limit)
 SL_STEP_PERCENT = 0.10         # Hard trailing step (10%)
+MAX_POSITION_PERCENT = 20.0    # Max % of capital per position (prevents over-concentration)
 
 # ============== KEY PARAMETERS (MODIFY THESE) ==============
 TOP_N = MAX_POSITIONS                     # Number of top stocks to select each week
@@ -93,8 +94,8 @@ def calculate_position_size(atr: float, stop_multiplier: float,
                             risk_per_trade: float, current_price: float) -> dict:
     """Calculate position size based on ATR and risk tolerance."""
     if atr is None or atr <= 0:
-        # Fallback: use 6% of price as stop distance
-        stop_distance = current_price * 0.06
+        # Fallback: use 5% of price as stop distance
+        stop_distance = current_price * 0.05
     else:
         stop_distance = atr * stop_multiplier
     
@@ -272,9 +273,14 @@ class WeeklyBacktester:
             if response.status_code == 200:
                 data = response.json()
                 if data and len(data) > 0:
-                    return {"atr": data[0].get('atrr_14')}
+                    atr_value = data[0].get('atrr_14')
+                    if atr_value:
+                        return {"atr": atr_value}
         except Exception as e:
             pass
+        
+        # Log when ATR is not available
+        print(f"    ⚠️ ATR not found for {symbol} on {as_of_date} - using 5% fallback")
         return {"atr": None}
     
     def should_trigger_stop_loss(self, current_price: float, effective_stop: float) -> bool:
@@ -397,7 +403,7 @@ class WeeklyBacktester:
                 pnl = (current_price - pos.entry_price) * pos.units
                 
                 # Calculate new position size with REAL ATR
-                risk_amount = self.current_capital * (RISK_PER_TRADE_PERCENT / 100.0)
+                risk_amount = INITIAL_CAPITAL * (RISK_PER_TRADE_PERCENT / 100.0)
                 challenger_indicator = self.fetch_indicator_data(challenger_symbol, week_date)
                 challenger_atr = challenger_indicator.get('atr') or (challenger_price * 0.02)
                 
@@ -457,7 +463,7 @@ class WeeklyBacktester:
                 continue
             
             # Calculate position size with REAL ATR
-            risk_amount = self.current_capital * (RISK_PER_TRADE_PERCENT / 100.0)
+            risk_amount = INITIAL_CAPITAL * (RISK_PER_TRADE_PERCENT / 100.0)
             indicator_data = self.fetch_indicator_data(symbol, week_date)
             atr = indicator_data.get('atr') or (price * 0.02)
             
@@ -472,8 +478,20 @@ class WeeklyBacktester:
                 continue
             
             cost = sizing['shares'] * price
+            
+            # Enforce max position cap (20% of capital per position)
+            max_position_value = self.initial_capital * (MAX_POSITION_PERCENT / 100.0)
+            if cost > max_position_value:
+                sizing['shares'] = int(max_position_value / price)
+                cost = sizing['shares'] * price
+            
             if cost > self.current_capital:
-                continue
+                # Try to buy what we can afford
+                affordable_shares = int(self.current_capital / price)
+                if affordable_shares <= 0:
+                    continue
+                sizing['shares'] = affordable_shares
+                cost = sizing['shares'] * price
             
             initial_stop = calculate_initial_stop_loss(price, atr, STOP_LOSS_MULTIPLIER)
             

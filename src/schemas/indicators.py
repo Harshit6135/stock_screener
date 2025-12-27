@@ -35,3 +35,10 @@ class IndicatorsSchema(Schema):
     distance_from_ema_200 = fields.Float(allow_none=True)
     risk_adjusted_return = fields.Float(allow_none=True)
     rvol = fields.Float(allow_none=True)
+
+
+class IndicatorSearchSchema(Schema):
+    tradingsymbol = fields.Str(required=True)
+    start_date = fields.Date(required=True)
+    end_date = fields.Date(allow_none=True)
+    instrument_token = fields.Int(allow_none=True)

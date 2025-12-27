@@ -2,8 +2,8 @@ from datetime import date, timedelta
 import requests
 
 base_url = "http://127.0.0.1:5000"
-start_date = date(2025, 1, 1)
-end_date = date(2025, 4, 12)
+start_date = date(2023, 1, 1)
+end_date = date(2025, 1, 1)
 #end_date = date.today()
 delta = timedelta(days=1)
 
