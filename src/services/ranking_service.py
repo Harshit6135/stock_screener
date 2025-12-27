@@ -97,6 +97,8 @@ class RankingService:
         metrics_df.loc[metrics_df['ema_200'] > metrics_df['close'], 'composite_score'] = 0
         metrics_df.loc[metrics_df['atrr_14'] / metrics_df['atrr_14'].shift(2) > self.strategy_params.atr_threshold, 'composite_score'] = 0
         metrics_df.loc[metrics_df['volume']*metrics_df['close'] < self.strategy_params.turnover_threshold * 10000000, 'composite_score'] = 0
+        metrics_df.loc[metrics_df['ema_50'] > metrics_df['close'], 'composite_score'] = 0
+        metrics_df['composite_score'] = metrics_df['composite_score'].fillna(0)
         return metrics_df
 
     # ============= COMPOSITE SCORECARD =============
@@ -187,7 +189,7 @@ class RankingService:
         metrics_df = pd.DataFrame(indicators_data_list)
 
         metrics_df = pd.merge(metrics_df, stocks_df, on='tradingsymbol', how='inner')
-        metrics_df = metrics_df[metrics_df['close'] >= metrics_df['ema_50']]
+        #metrics_df = metrics_df[metrics_df['close'] >= metrics_df['ema_50']]
         ranked_df = self.calculate_composite_score(metrics_df)
         
         # Add ranking date and position

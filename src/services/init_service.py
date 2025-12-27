@@ -222,16 +222,16 @@ class InitService:
         
         # Filter Mcap
         # Logic: Keep if NaN OR >= 500cr
-        df_filtered = df[df['marketCap'] >= mcap_threshold]
-        logger.info(f"Dropped {len(df) - len(df_filtered)} stocks due to Mcap < 500cr")
+        # df_filtered = df[df['marketCap'] >= mcap_threshold]
+        # logger.info(f"Dropped {len(df) - len(df_filtered)} stocks due to Mcap < 500cr")
+        #
+        # # Filter Price < 75
+        # # Logic: Keep if NaN OR >= 75
+        # current_len = len(df_filtered)
+        # df_filtered = df_filtered[df_filtered['regularMarketPrice'] >= PRICE_THRESHOLD]
+        # logger.info(f"Dropped {current_len - len(df_filtered)} stocks due to Price < {PRICE_THRESHOLD}")
         
-        # Filter Price < 75
-        # Logic: Keep if NaN OR >= 75
-        current_len = len(df_filtered)
-        df_filtered = df_filtered[df_filtered['regularMarketPrice'] >= PRICE_THRESHOLD]
-        logger.info(f"Dropped {current_len - len(df_filtered)} stocks due to Price < {PRICE_THRESHOLD}")
-        
-        return df_filtered
+        return df
 
     @staticmethod
     def get_instruments():

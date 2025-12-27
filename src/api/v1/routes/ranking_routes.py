@@ -103,21 +103,16 @@ class RankingBySymbol(MethodView):
             except ValueError:
                 abort(400, message="Invalid date format. Use YYYY-MM-DD")
         
-        # Fetch ranking for symbol
+        # Determine the date to use for fetching ranking/price
         if ranking_date:
+            actual_date = ranking_date
             rankings = ranking_repository.get_rankings_by_date_and_symbol(ranking_date, symbol)
+            ranking = rankings[0] if rankings else None
         else:
-            # Get latest ranking for symbol
             ranking = ranking_repository.get_latest_rank_by_symbol(symbol)
-            rankings = [ranking] if ranking else []
+            actual_date = ranking.ranking_date if ranking else marketdata_repository.get_latest_date_by_symbol(symbol).date
         
-        if not rankings or not rankings[0]:
-            return {}
-        
-        r = rankings[0]
-        actual_date = r.ranking_date
-        
-        # Fetch close price
+        # Fetch close price for the determined date
         price_data = marketdata_repository.query({
             "tradingsymbol": symbol,
             "start_date": actual_date,
@@ -126,10 +121,10 @@ class RankingBySymbol(MethodView):
         close_price = price_data[0].close if price_data else None
         
         return {
-            'tradingsymbol': r.tradingsymbol,
-            'composite_score': r.composite_score,
-            'rank': r.rank,
+            'tradingsymbol': symbol,
+            'composite_score': ranking.composite_score if ranking else 0.0,
+            'rank': ranking.rank if ranking else 0,
             'is_invested': False,
-            'ranking_date': r.ranking_date,
+            'ranking_date': actual_date,
             'close_price': close_price
         }

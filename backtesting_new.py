@@ -22,21 +22,24 @@ import csv
 import os
 
 # ============== CONFIGURATION ==============
+# API & Date Range
 BASE_URL = "http://127.0.0.1:5000"
-START_DATE = date(2025, 6, 1)
+START_DATE = date(2025, 1, 1)
 END_DATE = date(2025, 12, 18)
-TOP_N = 10
 OUTPUT_DIR = "data"
+
 
 # Risk Config (matching RiskConfigModel defaults)
 INITIAL_CAPITAL = 100000.0
 RISK_PER_TRADE_PERCENT = 1.0   # % of capital to risk per trade
 STOP_LOSS_MULTIPLIER = 2.0     # ATR multiplier for stop-loss
-BUFFER_PERCENT = 0.25          # Swap buffer (25%)
 EXIT_THRESHOLD = 40.0          # Score below this triggers exit
-MAX_POSITIONS = 10             # Maximum concurrent positions
+MAX_POSITIONS = 10             # Maximum concurrent positions (typically same as TOP_N)
 SL_STEP_PERCENT = 0.10         # Hard trailing step (10%)
 
+# ============== KEY PARAMETERS (MODIFY THESE) ==============
+TOP_N = MAX_POSITIONS                     # Number of top stocks to select each week
+BUFFER_PERCENT = 0.25          # Swap buffer - challenger must beat incumbent by this % (25% = 0.25)
 
 # ============== UTILITY FUNCTIONS (from src/utils) ==============
 
@@ -75,7 +78,10 @@ def calculate_effective_stop(buy_price: float, current_price: float, current_atr
     """Calculate effective stop-loss using both ATR and hard trailing methods."""
     atr_stop = calculate_atr_trailing_stop(current_price, current_atr, stop_multiplier, previous_stop)
     hard_stop = calculate_trailing_hard_stop(buy_price, current_price, initial_stop, sl_step_percent)
-    effective_stop = min(atr_stop, hard_stop)
+    
+    # Use MAX to be more aggressive in locking in profits as soon as either method moves up
+    effective_stop = max(atr_stop, hard_stop)
+    
     return {
         "atr_stop": round(atr_stop, 2),
         "hard_stop": round(hard_stop, 2),
@@ -134,6 +140,19 @@ class BacktestResult:
     max_drawdown: float
     actions: List[dict] = field(default_factory=list)
     top_10_stocks: List[str] = field(default_factory=list)
+    holdings: List[dict] = field(default_factory=list)  # Snapshot of all positions
+    # New metrics
+    invested_amount: float = 0.0          # Total value invested in positions
+    total_risk: float = 0.0               # Potential loss if all positions hit stop-loss
+    successful_trades: int = 0            # Trades with positive PnL
+    total_closed_trades: int = 0          # Total SELL + SWAP trades
+    
+    @property
+    def hit_rate(self) -> float:
+        """Percentage of successful trades"""
+        if self.total_closed_trades == 0:
+            return 0.0
+        return (self.successful_trades / self.total_closed_trades) * 100
 
 
 class BacktestRiskMonitor:
@@ -166,12 +185,19 @@ class BacktestRiskMonitor:
         return ((current - self.initial_capital) / self.initial_capital) * 100
     
     def get_summary(self) -> dict:
+        closed_trades = [t for t in self.trades if t['type'] in ('SELL', 'SWAP')]
+        successful_trades = len([t for t in closed_trades if t.get('pnl', 0) > 0])
+        total_trades = len(closed_trades)
+        hit_rate = (successful_trades / total_trades * 100) if total_trades > 0 else 0.0
+        
         return {
             "initial_capital": self.initial_capital,
             "final_value": self.portfolio_values[-1] if self.portfolio_values else self.initial_capital,
             "total_return_percent": round(self.get_total_return(), 2),
             "max_drawdown_percent": round(self.max_drawdown, 2),
-            "total_trades": len(self.trades)
+            "total_trades": total_trades,
+            "successful_trades": successful_trades,
+            "hit_rate_percent": round(hit_rate, 2)
         }
 
 
@@ -231,9 +257,24 @@ class WeeklyBacktester:
         return None
     
     def fetch_indicator_data(self, symbol: str, as_of_date: date) -> dict:
-        """Fetch ATR indicator for a symbol (simplified - returns estimate)"""
-        # In production, this would call an indicators API endpoint
-        # For now, estimate ATR as 2% of price as fallback
+        """Fetch indicators (ATR) for a symbol from API"""
+        try:
+            # Query indicators for that specific date
+            response = requests.get(
+                f"{BASE_URL}/api/v1/indicators/query",
+                json={
+                    "tradingsymbol": symbol,
+                    "start_date": as_of_date.strftime("%Y-%m-%d"),
+                    "end_date": as_of_date.strftime("%Y-%m-%d")
+                },
+                timeout=10
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data and len(data) > 0:
+                    return {"atr": data[0].get('atrr_14')}
+        except Exception as e:
+            pass
         return {"atr": None}
     
     def should_trigger_stop_loss(self, current_price: float, effective_stop: float) -> bool:
@@ -257,7 +298,9 @@ class WeeklyBacktester:
         )
         return self.current_capital + positions_value
     
-    def rebalance_portfolio(self, week_date: date, top_rankings: List[dict]) -> List[dict]:
+    def rebalance_portfolio(self, week_date: date, top_rankings: List[dict], 
+                          score_lookup: Dict[str, float], 
+                          price_lookup: Dict[str, float]) -> List[dict]:
         """
         Rebalance portfolio using ActionsService logic:
         PHASE 1: SELL (Stop-Loss or Score Degradation)
@@ -265,29 +308,7 @@ class WeeklyBacktester:
         PHASE 3: BUY (Fill vacancies)
         """
         actions = []
-        
-        # Build lookups from top rankings
-        score_lookup = {r['tradingsymbol']: r['composite_score'] for r in top_rankings}
-        price_lookup = {r['tradingsymbol']: r.get('close_price') or 100.0 for r in top_rankings}
-        top_symbols = set(score_lookup.keys())
-        
-        # Fetch scores for invested symbols NOT in top rankings
-        for symbol, pos in self.positions.items():
-            if symbol not in score_lookup:
-                ranking_data = self.fetch_ranking_by_symbol(symbol, week_date)
-                if ranking_data and ranking_data.get('composite_score'):
-                    # Only use API score if it's valid (not None/0)
-                    api_score = ranking_data.get('composite_score')
-                    if api_score and api_score > 0:
-                        score_lookup[symbol] = api_score
-                        pos.composite_score = api_score  # Update stored score
-                    else:
-                        score_lookup[symbol] = pos.composite_score
-                    price_lookup[symbol] = ranking_data.get('close_price') or pos.entry_price
-                else:
-                    # Use stored values if API fails or returns empty
-                    score_lookup[symbol] = pos.composite_score
-                    price_lookup[symbol] = pos.entry_price
+        top_symbols = set(r['tradingsymbol'] for r in top_rankings)
         
         # Track vacancies
         vacancies = MAX_POSITIONS - len(self.positions)
@@ -299,10 +320,11 @@ class WeeklyBacktester:
             # Use score from rankings if available, otherwise use position's stored score
             current_score = score_lookup.get(symbol, pos.composite_score)
             
-            # Estimate current ATR (would come from API in production)
-            current_atr = pos.atr_at_entry or (current_price * 0.02)
+            # Fetch current ATR from API
+            indicator_data = self.fetch_indicator_data(symbol, week_date)
+            current_atr = indicator_data.get('atr') or (current_price * 0.02)
             
-            # Calculate effective stop-loss
+            # Re-calculate effective stop-loss with FRESH ATR every week
             stops = calculate_effective_stop(
                 buy_price=pos.entry_price,
                 current_price=current_price,
@@ -374,9 +396,11 @@ class WeeklyBacktester:
                 # Sell incumbent
                 pnl = (current_price - pos.entry_price) * pos.units
                 
-                # Calculate new position size
+                # Calculate new position size with REAL ATR
                 risk_amount = self.current_capital * (RISK_PER_TRADE_PERCENT / 100.0)
-                challenger_atr = challenger_price * 0.02  # Estimate
+                challenger_indicator = self.fetch_indicator_data(challenger_symbol, week_date)
+                challenger_atr = challenger_indicator.get('atr') or (challenger_price * 0.02)
+                
                 sizing = calculate_position_size(
                     atr=challenger_atr,
                     stop_multiplier=STOP_LOSS_MULTIPLIER,
@@ -432,9 +456,11 @@ class WeeklyBacktester:
             if price <= 0:
                 continue
             
-            # Calculate position size
+            # Calculate position size with REAL ATR
             risk_amount = self.current_capital * (RISK_PER_TRADE_PERCENT / 100.0)
-            atr = price * 0.02  # Estimate ATR as 2% of price
+            indicator_data = self.fetch_indicator_data(symbol, week_date)
+            atr = indicator_data.get('atr') or (price * 0.02)
+            
             sizing = calculate_position_size(
                 atr=atr,
                 stop_multiplier=STOP_LOSS_MULTIPLIER,
@@ -501,15 +527,63 @@ class WeeklyBacktester:
             top_symbols = [r['tradingsymbol'] for r in top_rankings]
             print(f"  Top {len(top_symbols)}: {', '.join(top_symbols[:5])}...")
             
-            # Build price lookup
+            # Build lookups for ALL required stocks (Top 10 + currently held)
+            score_lookup = {r['tradingsymbol']: r['composite_score'] for r in top_rankings}
             price_lookup = {r['tradingsymbol']: r.get('close_price') or 100.0 for r in top_rankings}
             
-            # Rebalance portfolio
-            actions = self.rebalance_portfolio(monday, top_rankings)
+            # Fetch for held positions not in top 10
+            for sym, pos in list(self.positions.items()):
+                if sym not in score_lookup:
+                    ranking_data = self.fetch_ranking_by_symbol(sym, monday)
+                    # API now returns 0.0 and close_price even if not ranked
+                    if ranking_data and 'composite_score' in ranking_data:
+                        score_lookup[sym] = ranking_data.get('composite_score', 0.0)
+                        price_lookup[sym] = ranking_data.get('close_price') or pos.entry_price
+                        pos.composite_score = score_lookup[sym] # Sync position score
+                    else:
+                        # Fallback only if API failed COMPLETELY
+                        score_lookup[sym] = pos.composite_score
+                        price_lookup[sym] = pos.entry_price
+            
+            # Rebalance portfolio (now using the synced lookups)
+            actions = self.rebalance_portfolio(monday, top_rankings, score_lookup, price_lookup)
             
             # Calculate current portfolio value
             portfolio_value = self.calculate_portfolio_value(price_lookup)
             self.risk_monitor.update(portfolio_value)
+            
+            # Calculate new metrics
+            invested_amount = sum(
+                pos.units * price_lookup.get(sym, pos.entry_price)
+                for sym, pos in self.positions.items()
+            )
+            
+            # Total risk = potential loss if all positions hit stop-loss
+            total_risk = sum(
+                (price_lookup.get(sym, pos.entry_price) - pos.current_stop_loss) * pos.units
+                for sym, pos in self.positions.items()
+            )
+            
+            # Count successful trades (positive PnL) from SELL and SWAP actions
+            closed_trades = [a for a in actions if a['action_type'] in ('SELL', 'SWAP')]
+            successful_trades = len([t for t in closed_trades if t.get('pnl', 0) > 0])
+            total_closed_trades = len(closed_trades)
+            
+            # Capture holdings snapshot for this week
+            holdings_snapshot = []
+            for sym, pos in self.positions.items():
+                current_price = price_lookup.get(sym, pos.entry_price)
+                holdings_snapshot.append({
+                    'tradingsymbol': sym,
+                    'entry_date': pos.entry_date.strftime('%Y-%m-%d'),
+                    'entry_price': pos.entry_price,
+                    'current_price': current_price,
+                    'units': pos.units,
+                    'composite_score': pos.composite_score,
+                    'initial_stop_loss': pos.initial_stop_loss,
+                    'current_stop_loss': pos.current_stop_loss,
+                    'unrealized_pnl': round((current_price - pos.entry_price) * pos.units, 2)
+                })
             
             # Store result
             result = BacktestResult(
@@ -518,7 +592,12 @@ class WeeklyBacktester:
                 total_return=self.risk_monitor.get_total_return(),
                 max_drawdown=self.risk_monitor.max_drawdown,
                 actions=actions,
-                top_10_stocks=top_symbols
+                top_10_stocks=top_symbols,
+                holdings=holdings_snapshot,
+                invested_amount=round(invested_amount, 2),
+                total_risk=round(total_risk, 2),
+                successful_trades=successful_trades,
+                total_closed_trades=total_closed_trades
             )
             self.weekly_results.append(result)
             
@@ -542,7 +621,8 @@ class WeeklyBacktester:
         print(f"Final Value:        ₹{summary['final_value']:,.2f}")
         print(f"Total Return:       {summary['total_return_percent']:.2f}%")
         print(f"Max Drawdown:       {summary['max_drawdown_percent']:.2f}%")
-        print(f"Total Trades:       {summary['total_trades']}")
+        print(f"Total Trades:       {summary['total_trades']} (Success: {summary['successful_trades']})")
+        print(f"Hit Rate:           {summary['hit_rate_percent']:.2f}%")
         print(f"Open Positions:     {len(self.positions)}")
         print("-" * 40)
     
@@ -555,7 +635,8 @@ class WeeklyBacktester:
         with open(summary_file, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(['Week Date', 'Portfolio Value', 'Total Return %', 'Max Drawdown %', 
-                           'Sells', 'Swaps', 'Buys', 'Top 10 Stocks'])
+                           'Invested Amount', 'Total Risk', 'Successful Trades', 'Total Trades', 
+                           'Hit Rate %', 'Sells', 'Swaps', 'Buys', 'Top Stocks'])
             for result in self.weekly_results:
                 sells = len([a for a in result.actions if a['action_type'] == 'SELL'])
                 swaps = len([a for a in result.actions if a['action_type'] == 'SWAP'])
@@ -565,6 +646,11 @@ class WeeklyBacktester:
                     round(result.portfolio_value, 2),
                     round(result.total_return, 2),
                     round(result.max_drawdown, 2),
+                    result.invested_amount,
+                    result.total_risk,
+                    result.successful_trades,
+                    result.total_closed_trades,
+                    round(result.hit_rate, 1),
                     sells, swaps, buys,
                     '; '.join(result.top_10_stocks)
                 ])
@@ -598,6 +684,28 @@ class WeeklyBacktester:
             for key, value in summary.items():
                 writer.writerow([key, value])
         print(f"✅ Risk summary: {risk_file}")
+        
+        # Holdings log with stop-loss
+        holdings_file = f"{OUTPUT_DIR}/{filename_prefix}_holdings.csv"
+        with open(holdings_file, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Week Date', 'Symbol', 'Entry Date', 'Entry Price', 'Current Price',
+                           'Units', 'Score', 'Initial SL', 'Current SL', 'Unrealized PnL'])
+            for result in self.weekly_results:
+                for holding in result.holdings:
+                    writer.writerow([
+                        result.week_date.strftime('%Y-%m-%d'),
+                        holding.get('tradingsymbol', ''),
+                        holding.get('entry_date', ''),
+                        round(holding.get('entry_price', 0), 2),
+                        round(holding.get('current_price', 0), 2),
+                        holding.get('units', ''),
+                        round(holding.get('composite_score', 0), 2),
+                        round(holding.get('initial_stop_loss', 0), 2),
+                        round(holding.get('current_stop_loss', 0), 2),
+                        holding.get('unrealized_pnl', '')
+                    ])
+        print(f"✅ Holdings log: {holdings_file}")
 
 
 def main():
