@@ -1,5 +1,5 @@
 import pandas as pd
-
+from datetime import datetime
 from config import *
 from config import Strategy1Parameters as StrategyParams
 from repositories import IndicatorsRepository, MarketDataRepository, RankingRepository
@@ -89,14 +89,16 @@ class RankingService:
             self.strategy_params.conviction_weight * metrics_df.get('final_vol_score', 0) +
             self.strategy_params.structure_weight * metrics_df.get('final_structure_score', 0)
         )
-        
+        metrics_df[metrics_df['tradingsymbol']=='DCXINDIA'].to_csv("Test.csv")
         return metrics_df
 
     def _apply_universe_penalties(self, metrics_df) -> pd.DataFrame:
         """Apply penalty box rules across universe"""
         metrics_df.loc[metrics_df['ema_200'] > metrics_df['close'], 'composite_score'] = 0
         metrics_df.loc[metrics_df['atrr_14'] / metrics_df['atrr_14'].shift(2) > self.strategy_params.atr_threshold, 'composite_score'] = 0
-        metrics_df.loc[metrics_df['volume']*metrics_df['close'] < self.strategy_params.turnover_threshold * 10000000, 'composite_score'] = 0
+        #metrics_df.loc[metrics_df['volume']*metrics_df['close'] < self.strategy_params.turnover_threshold * 10000000, 'composite_score'] = 0
+        metrics_df.loc[metrics_df['ema_50'] > metrics_df['close'], 'composite_score'] = 0
+        metrics_df['composite_score'] = metrics_df['composite_score'].fillna(0)
         return metrics_df
 
     # ============= COMPOSITE SCORECARD =============
@@ -177,7 +179,7 @@ class RankingService:
                 "end_date": date
             }
 
-        print(date_range)
+        #print(date_range)
 
         price_data_list = self.query_to_dict(marketdata_repo.get_prices_for_all_stocks(date_range))
         indicators_data_list = self.query_to_dict(indicators_repo.get_indicators_for_all_stocks(date_range))
@@ -187,14 +189,14 @@ class RankingService:
         metrics_df = pd.DataFrame(indicators_data_list)
 
         metrics_df = pd.merge(metrics_df, stocks_df, on='tradingsymbol', how='inner')
+        #metrics_df = metrics_df[metrics_df['close'] >= metrics_df['ema_50']]
         ranked_df = self.calculate_composite_score(metrics_df)
         
         # Add ranking date and position
-        ranking_date = date if date else max_date
+        ranking_date = datetime.strptime(date, '%Y-%m-%d').date() if date else max_date
         ranked_df['ranking_date'] = ranking_date
         ranked_df = ranked_df.sort_values('composite_score', ascending=False)
         ranked_df['rank'] = range(1, len(ranked_df) + 1)
-        
         # 5. Save to database
         logger.info("Saving rankings to database...")
         response = ranking_repo.delete(ranking_date)
@@ -204,5 +206,5 @@ class RankingService:
             logger.error("Failed to delete existing rankings for today, cannot save new rankings")
             return None
         logger.info(f"Saved {len(ranked_df)} rankings to database for {ranking_date}")
-        ranked_df.to_csv("data/ranked.csv", index=False)
+        ranked_df.to_csv(f"data/ranked {date}.csv", index=False)
         return True
