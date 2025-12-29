@@ -92,3 +92,12 @@ class MarketDataRepository:
     def get_max_date_from_table():
         """Fetch the absolute maximum date present in the MarketDataModel table."""
         return db.session.query(func.max(MarketDataModel.date)).scalar()
+
+    @staticmethod
+    def get_marketdata_by_trading_symbol(tradingsymbol:str, date):
+        """Fetch market data for a tradingsymbol, on a specific date"""
+        query = MarketDataModel.query.filter(
+            MarketDataModel.tradingsymbol == tradingsymbol,
+            MarketDataModel.date == date
+        )
+        return query.order_by(MarketDataModel.date.desc()).first()

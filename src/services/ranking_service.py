@@ -206,5 +206,5 @@ class RankingService:
             logger.error("Failed to delete existing rankings for today, cannot save new rankings")
             return None
         logger.info(f"Saved {len(ranked_df)} rankings to database for {ranking_date}")
-        ranked_df.to_csv(f"data/ranked {date}.csv", index=False)
+        #ranked_df.to_csv(f"data/ranked {date}.csv", index=False)
         return True
