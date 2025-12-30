@@ -53,7 +53,7 @@ class RankingRepository:
     def get_rankings_by_date(ranking_date):
         return RankingModel.query.filter(
             RankingModel.ranking_date == ranking_date
-        ).order_by(RankingModel.composite_score.desc()).all()
+        ).all()
 
     @staticmethod
     def get_latest_rank_by_symbol(symbol):

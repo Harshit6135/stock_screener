@@ -138,3 +138,11 @@ class UpdateAllRankings(MethodView):
         ranking_service = RankingService()
         ranking_service.backfill_rankings()
         return {"message": "All rankings updated successfully."}
+
+@blp.route("/query/<string:rank_date>")
+class RankingsQuery(MethodView):
+    @blp.response(200, RankingSchema(many=True))
+    def get(self, rank_date):
+        """Fetch rankings by instrument_token or tradingsymbol within a date range"""
+        return ranking_repository.get_rankings_by_date(rank_date)
+

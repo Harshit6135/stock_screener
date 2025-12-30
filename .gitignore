@@ -48,8 +48,9 @@ htmlcov/
 .tox/
 
 # Data files (large/generated)
-data/*.csv
 !data/.gitkeep
+data/*.csv
+data/exports/*.csv
 
 # Cache
 .cache/
