@@ -38,6 +38,7 @@ class IndicatorsModel(db.Model):
     percent_b = db.Column(db.Float, nullable=True)
     ema_50_slope = db.Column(db.Float, nullable=True)
     distance_from_ema_200 = db.Column(db.Float, nullable=True)
+    distance_from_ema_50 = db.Column(db.Float, nullable=True)
     risk_adjusted_return = db.Column(db.Float, nullable=True)
     rvol = db.Column(db.Float, nullable=True)
 

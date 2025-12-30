@@ -128,3 +128,13 @@ class RankingBySymbol(MethodView):
             'ranking_date': actual_date,
             'close_price': close_price
         }
+
+
+@blp.route("/update_all")
+class UpdateAllRankings(MethodView):
+    @blp.response(201, MessageSchema)
+    def post(self):
+        """Update rankings for all available historical dates."""
+        ranking_service = RankingService()
+        ranking_service.backfill_rankings()
+        return {"message": "All rankings updated successfully."}

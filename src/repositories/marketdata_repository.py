@@ -92,3 +92,8 @@ class MarketDataRepository:
     def get_max_date_from_table():
         """Fetch the absolute maximum date present in the MarketDataModel table."""
         return db.session.query(func.max(MarketDataModel.date)).scalar()
+
+    @staticmethod
+    def get_min_date_from_table():
+        """Fetch the absolute minimum date present in the MarketDataModel table."""
+        return db.session.query(func.min(MarketDataModel.date)).scalar()

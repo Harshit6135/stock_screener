@@ -1,5 +1,5 @@
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, date
 from config import *
 from config import Strategy1Parameters as StrategyParams
 from repositories import IndicatorsRepository, MarketDataRepository, RankingRepository
@@ -46,6 +46,7 @@ class RankingService:
         
         metrics_df['momentum_rsi_rank'] = score_rsi_regime(metrics_df['rsi_signal_ema_3'])
         metrics_df['trend_extension_rank'] = score_trend_extension(metrics_df['distance_from_ema_200'])
+        metrics_df['trend_start_rank'] = score_trend_extension(metrics_df['distance_from_ema_50'])
         metrics_df['structure_bb_rank'] = score_percent_b(metrics_df['percent_b'])
 
         return metrics_df
@@ -113,40 +114,42 @@ class RankingService:
         metrics_df = self._calculate_percentile_ranks(metrics_df)
 
         # Calculate composite scores
-        metrics_df = self._calculate_weighted_composite(metrics_df)
+        # metrics_df = self._calculate_weighted_composite(metrics_df)
 
-        # Apply penalty box
-        metrics_df = self._apply_universe_penalties(metrics_df)
+        # # Apply penalty box
+        # metrics_df = self._apply_universe_penalties(metrics_df)
 
-        # Sort by composite score
-        metrics_df = metrics_df.sort_values('composite_score', ascending=False)
+        # # Sort by composite score
+        # metrics_df = metrics_df.sort_values('composite_score', ascending=False)
         req_cols = [
             'tradingsymbol',
             'ema_50_slope',
             'trend_rank',
             'distance_from_ema_200',
             'trend_extension_rank',
-            'final_trend_score',
+            'distance_from_ema_50',
+            'trend_start_rank',
+            # 'final_trend_score',
             'rsi_signal_ema_3',
             'momentum_rsi_rank',
             'ppo_12_26_9',
             'momentum_ppo_rank',
             'ppoh_12_26_9',
             'momentum_ppoh_rank',
-            'final_momentum_score',
+            # 'final_momentum_score',
             'risk_adjusted_return',
             'efficiency_rank',
             'rvol',
             'rvolume_rank',
             'price_vol_correlation',
             'price_vol_corr_rank',
-            'final_vol_score',
+            # 'final_vol_score',
             'bbb_20_2_2',
             'structure_rank',
             'percent_b',
             'structure_bb_rank',
-            'final_structure_score',
-            'composite_score'
+            # 'final_structure_score',
+            # 'composite_score'
         ]
         return metrics_df[req_cols]
 
@@ -188,15 +191,19 @@ class RankingService:
         stocks_df = pd.DataFrame(price_data_list)
         metrics_df = pd.DataFrame(indicators_data_list)
 
+        if len(stocks_df) == 0 or len(metrics_df) == 0:
+            logger.info("No data found for date: {}".format(date))
+            return None
+
         metrics_df = pd.merge(metrics_df, stocks_df, on='tradingsymbol', how='inner')
         #metrics_df = metrics_df[metrics_df['close'] >= metrics_df['ema_50']]
         ranked_df = self.calculate_composite_score(metrics_df)
         
         # Add ranking date and position
-        ranking_date = datetime.strptime(date, '%Y-%m-%d').date() if date else max_date
+        ranking_date = date
         ranked_df['ranking_date'] = ranking_date
-        ranked_df = ranked_df.sort_values('composite_score', ascending=False)
-        ranked_df['rank'] = range(1, len(ranked_df) + 1)
+        # ranked_df = ranked_df.sort_values('composite_score', ascending=False)
+        # ranked_df['rank'] = range(1, len(ranked_df) + 1)
         # 5. Save to database
         logger.info("Saving rankings to database...")
         response = ranking_repo.delete(ranking_date)
@@ -206,5 +213,103 @@ class RankingService:
             logger.error("Failed to delete existing rankings for today, cannot save new rankings")
             return None
         logger.info(f"Saved {len(ranked_df)} rankings to database for {ranking_date}")
-        ranked_df.to_csv(f"data/ranked {date}.csv", index=False)
+        # ranked_df.to_csv(f"data/ranked {date}.csv", index=False)
         return True
+
+    # def calculate_score(self):
+    #     logger.info("Starting to update score (API Mode)...")
+
+    #     logger.info("Fetching Instruments from DB...")
+    #     instruments = instr_repo.get_all_instruments()
+
+    #     logger.info("Calculating score for Instruments...")
+    #     yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
+        
+    #     for i, instr in enumerate(instruments):
+    #         print(instr)
+    #         tradingsymbol = instr.tradingsymbol
+    #         instr_token = instr.instrument_token
+    #         exchange = instr.exchange
+    #         log_symb = f"{tradingsymbol} ({instr_token})"
+    #         logger.info(f"Processing {i+1}/{len(instruments)} {log_symb})...")
+
+    #         last_data_date = marketdata_repo.get_latest_date_by_symbol(tradingsymbol)
+    #         if last_data_date:
+    #             last_data_date = pd.to_datetime(last_data_date.date)
+    #         else:
+    #             logger.error(f"No market data found for {log_symb}")
+    #             continue
+
+    #         last_ind_date = indicators_repo.get_latest_date_by_symbol(tradingsymbol)
+    #         if last_ind_date:
+    #             last_ind_date = pd.to_datetime(last_ind_date.date)
+    #             if last_ind_date == last_data_date:
+    #                 logger.info(f"Indicators up to date for {log_symb}.")
+    #                 continue
+    #             calc_start_date = last_ind_date - timedelta(days=additional_parameters['ema_200_lookback'])
+    #         else:
+    #             calc_start_date = pd.to_datetime("2000-01-01")
+    #             last_ind_date = calc_start_date
+
+    #         query_payload = {
+    #             "tradingsymbol": tradingsymbol,
+    #             "start_date": str(calc_start_date.date()),
+    #             "end_date": str(yesterday.date())
+    #         }
+    #         md_output = marketdata_repo.query(query_payload)
+    #         md_list = [{column.name:getattr(row, column.name) for column in row.__table__.columns} for row in md_output]
+
+    #         if len(md_list)<200:
+    #             logger.error(f"Less than 200 days data")
+    #             continue        
+
+    #         df_for_ind = pd.DataFrame(md_list)
+    #         df_for_ind['date'] = pd.to_datetime(df_for_ind['date'])
+    #         df_for_ind.set_index('date', inplace=True)
+    #         df_for_ind.sort_index(inplace=True)
+            
+    #         logger.info("Calculating indicators...")
+
+    #         ind_df = self.apply_study(df_for_ind, last_ind_date)
+    #         ind_df = self._calculate_derived_indicators(ind_df)
+    #         ind_df.columns = ind_df.columns.str.lower().str.replace(".0", "")
+    #         ind_df = ind_df.drop(columns=['open', 'high', 'low', 'close', 'volume'], errors='ignore')
+    #         ind_df.reset_index(inplace=True)
+    #         ind_df['instrument_token'] = instr_token
+    #         ind_df['tradingsymbol'] = tradingsymbol
+    #         ind_df['exchange'] = exchange
+
+    #         if last_ind_date:
+    #             next_day = last_ind_date + timedelta(days=1)
+    #             ind_df_filtered = ind_df[ind_df['date'] >= next_day]
+    #         else:
+    #             ind_df_filtered = ind_df
+    #         if ind_df_filtered.empty:
+    #             logger.info(f"No new data to calculate indicators for {log_symb}")
+    #             continue
+            
+    #         ind_df_filtered['date'] = ind_df_filtered['date'].dt.date   
+    #         ind_json = ind_df_filtered.to_dict(orient='records')
+    #         indicators_repo.bulk_insert(ind_json)
+
+    #     logger.info("Indicators updated successfully.")
+    def backfill_rankings(self):
+        """
+        Generates scores for all dates since the last updated date in the ranking table.
+        If no rankings exist, starts from the earliest available market data date.
+        """
+        last_ranking_date = ranking_repo.get_max_ranking_date()
+        
+        if last_ranking_date:
+            start_date = last_ranking_date
+        else:
+            start_date = marketdata_repo.get_min_date_from_table()
+        
+        current_date = pd.Timestamp.now().normalize()
+        if isinstance(start_date, (datetime, date)):
+            start_date = pd.Timestamp(start_date)
+
+        while start_date <= current_date:            
+            print(start_date)
+            self.generate_score(start_date)
+            start_date += pd.Timedelta(days=1)

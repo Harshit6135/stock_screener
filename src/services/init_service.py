@@ -17,8 +17,8 @@ logger = setup_logger(name="Orchestrator")
 
 class InitService:
     def __init__(self):
-        self.nse_path = "data/imports/EQUITY_L.csv"
-        self.bse_path = "data/imports/Equity.csv"
+        self.nse_path = "data/imports/NSE.csv"
+        self.bse_path = "data/imports/BSE.csv"
         self.dump_path = "data/exports/yfinance_dump.csv"
 
     def initialize_app(self):
