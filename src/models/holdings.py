@@ -5,9 +5,10 @@ class HoldingsModel(db.Model):
     __tablename__ = 'holdings'
     __bind_key__ = 'personal'
 
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    tradingsymbol = db.Column(db.String(50), nullable=False, index=True)
-    working_date = db.Column(db.Date, nullable=False, index=True)
+    id = db.Column(db.Integer, autoincrement=True)
+    tradingsymbol = db.Column(db.String(50), primary_key=True, nullable=False, index=True)
+    working_date = db.Column(db.Date, primary_key=True, nullable=False, index=True)
+    entry_date = db.Column(db.Date, nullable=False)
     entry_price = db.Column(db.Float, nullable=False)
     score = db.Column(db.Float, nullable=False)
     atr = db.Column(db.Float, nullable=False)

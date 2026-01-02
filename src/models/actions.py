@@ -7,28 +7,14 @@ class ActionsModel(db.Model):
     __tablename__ = "actions"
     __bind_key__ = "personal"
 
-    id = db.Column(db.Integer, primary_key=True)
-    action_date = db.Column(db.Date, nullable=False)
-    action_type = db.Column(db.String(10), nullable=False)  # BUY, SELL, SWAP
-    
-    # Primary stock
-    tradingsymbol = db.Column(db.String(50), nullable=False)
-    units = db.Column(db.Integer, nullable=False)
-    expected_price = db.Column(db.Float, nullable=True)
-    amount = db.Column(db.Float, nullable=True)  # units × expected_price
-    composite_score = db.Column(db.Float, nullable=True)
+    action_date = db.Column(db.Date, primary_key=True, nullable=False)
+    action_type = db.Column(db.String(10), nullable=False)  # BUY, SELL
 
-    # For SWAP actions
-    swap_from_symbol = db.Column(db.String(50), nullable=True)
-    swap_from_units = db.Column(db.Integer, nullable=True)
-    swap_from_price = db.Column(db.Float, nullable=True)
-    
-    # Tracking
-    status = db.Column(db.String(20), default='PENDING')  # PENDING, INVESTED, SKIPPED, EXPIRED
+    tradingsymbol = db.Column(db.String(50), primary_key=True, nullable=False)
+    units = db.Column(db.Integer, nullable=False)
+    price = db.Column(db.Float, nullable=False)
+    composite_score = db.Column(db.Float, nullable=True)
     reason = db.Column(db.String(200), nullable=True)
-    executed = db.Column(db.Boolean, default=False)
-    executed_at = db.Column(db.DateTime, nullable=True)
-    created_at = db.Column(db.DateTime, server_default=db.func.now())
 
     __table_args__ = (
         Index("idx_actions_date", "action_date"),

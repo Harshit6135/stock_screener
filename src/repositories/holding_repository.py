@@ -34,6 +34,17 @@ class HoldingsRepository:
             db.session.bulk_insert_mappings(HoldingsModel, holdings, return_defaults=True)
             db.session.commit()
         except SQLAlchemyError as e:
+            print(e)
             db.session.rollback()
             return None
         return holdings
+
+    @staticmethod
+    def delete_holdings_by_date(working_date):
+        try:
+            HoldingsModel.query.filter(HoldingsModel.working_date == working_date).delete()
+            db.session.commit()
+        except SQLAlchemyError as e:
+            print(e)
+            db.session.rollback()
+            return None
