@@ -6,11 +6,13 @@ from repositories import RankingRepository
 from repositories import IndicatorsRepository
 from repositories import MarketDataRepository
 from repositories import HoldingsRepository
+from repositories import ActionsRepository
 
 ranking = RankingRepository()
 indicators = IndicatorsRepository()
 marketdata = MarketDataRepository()
 holdings = HoldingsRepository()
+actions = ActionsRepository()
 
 class Strategy:
     @staticmethod
@@ -25,6 +27,7 @@ class Strategy:
                     working_date += timedelta(days=1)
                     continue
 
+                actions.delete_actions(working_date)
                 if start_date==working_date:
                     current_capital = parameters.initial_capital  #only valid for day1
                     stock_risk = current_capital * parameters.risk_threshold / 100 # has to be calculated every time capital is changed or based on initial capital only ?
@@ -82,7 +85,16 @@ class Strategy:
                             #print(f'Selling {item.tradingsymbol} as below SL')
                             selling_price = item.current_sl
                             sold += item.units * selling_price
-                            working_capital = Strategy.sell_holding(item.tradingsymbol, item.units, selling_price, working_capital)
+                            sell_parameters = {
+                                'symbol' : item.tradingsymbol,
+                                'units' : item.units,
+                                'selling_price' : selling_price,
+                                'working_capital' : working_capital,
+                                'working_date' : working_date,
+                                'sell_reason' : 'stoploss'
+                            }
+
+                            working_capital = Strategy.sell_holding(**sell_parameters)
                             current_holdings.remove(item)
 
                     #print(f'Remaining {len(current_holdings)} holdings with {working_capital} capital')
@@ -139,7 +151,16 @@ class Strategy:
                                 # sell current_holdings[j]
                                 selling_price = marketdata.get_marketdata_next_day(current_holdings[j].tradingsymbol, working_date).open
                                 sold += current_holdings[j].units * selling_price
-                                working_capital = Strategy.sell_holding(current_holdings[j].tradingsymbol, current_holdings[j].units, selling_price, working_capital)
+
+                                sell_parameters = {
+                                    'symbol' : current_holdings[j].tradingsymbol,
+                                    'units' : current_holdings[j].units,
+                                    'selling_price' : selling_price,
+                                    'working_capital' : working_capital,
+                                    'working_date' : working_date,
+                                    'sell_reason' : f'swap with {top_n[i].tradingsymbol}'
+                                }
+                                working_capital = Strategy.sell_holding(**sell_parameters)
                                 current_holdings.pop(j)
 
                                 # buy top_n[i]
@@ -234,15 +255,32 @@ class Strategy:
             'current_sl' : stoploss
         }
 
+        action_data = {
+            'action_date': working_date,
+            'action_type': 'buy',
+            'tradingsymbol': symbol,
+            'units': units,
+            'price': entry_price
+        }
+        actions.add(action_data)
         return stock_data
 
 
     @staticmethod
-    def sell_holding(symbol, units, selling_price, working_capital):
+    def sell_holding(symbol, units, selling_price, working_capital, working_date, sell_reason):
         sold_value = round(units * selling_price,2)
         working_capital += sold_value
         working_capital = round(working_capital,2)
 
+        action_data = {
+            'action_date': working_date,
+            'action_type': 'sell',
+            'tradingsymbol': symbol,
+            'units': units,
+            'price': selling_price,
+            'reason' : sell_reason
+        }
+        actions.add(action_data)
         return working_capital
 
 

@@ -13,7 +13,7 @@ class ActionsModel(db.Model):
     tradingsymbol = db.Column(db.String(50), primary_key=True, nullable=False)
     units = db.Column(db.Integer, nullable=False)
     price = db.Column(db.Float, nullable=False)
-    composite_score = db.Column(db.Float, nullable=True)
+    # composite_score = db.Column(db.Float, nullable=True)
     reason = db.Column(db.String(200), nullable=True)
 
     __table_args__ = (
