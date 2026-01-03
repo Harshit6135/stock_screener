@@ -78,3 +78,26 @@ class HoldingsRepository:
             working_date = db.session.query(func.max(SummaryModel.working_date)).scalar()
 
         return SummaryModel.query.filter(SummaryModel.working_date == working_date).first()
+
+    @staticmethod
+    def delete_holdings_all():
+        try:
+            HoldingsModel.query.delete()
+            db.session.commit()
+        except SQLAlchemyError as e:
+            print(e)
+            db.session.rollback()
+            return None
+        return None
+
+
+    @staticmethod
+    def delete_summary_all():
+        try:
+            SummaryModel.query.delete()
+            db.session.commit()
+        except SQLAlchemyError as e:
+            print(e)
+            db.session.rollback()
+            return None
+        return None

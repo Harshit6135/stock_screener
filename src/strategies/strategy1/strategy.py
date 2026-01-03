@@ -18,6 +18,9 @@ class Strategy:
     @staticmethod
     def backtesting(start_date, end_date, parameters):
         working_date = start_date
+        holdings.delete_holdings_all()
+        holdings.delete_summary_all()
+        actions.delete_actions_all()
 
         while working_date <= end_date:
             if working_date.weekday() == 4:
@@ -97,8 +100,6 @@ class Strategy:
                             working_capital = Strategy.sell_holding(**sell_parameters)
                             current_holdings.remove(item)
 
-                    #print(f'Remaining {len(current_holdings)} holdings with {working_capital} capital')
-
                     # check for current_holdings in top_n
                     i = 0
                     while i < len(current_holdings):
@@ -115,7 +116,7 @@ class Strategy:
 
                     # buy for the remaining positions
                     remaining_buys = parameters.max_positions-len(current_holdings)
-                    #print(f'Remaining buys {remaining_buys}')
+                    print(f'Remaining buys {remaining_buys}')
                     i=0
                     while i < remaining_buys:
                         entry_price = marketdata.get_marketdata_next_day(top_n[i].tradingsymbol, working_date).open
@@ -128,12 +129,23 @@ class Strategy:
                             'entry_price' : entry_price,
                             'score' : round(top_n[i].composite_score,2)
                         }
-
+                        print(f'Buying {top_n[i].tradingsymbol}')
                         stock_data = Strategy.add_holding(**add_holding_parameters)
                         working_capital = stock_data['working_capital']
                         if stock_data['units'] >0:
-                            top_n.pop(i)
                             week_holdings.append(stock_data)
+                        i+=1
+
+                    i=0
+                    while i < len(week_holdings):
+                        j=0
+                        while j < len(top_n):
+                            if top_n[j].tradingsymbol == week_holdings[i]['tradingsymbol']:
+                                print(f'{top_n[j].tradingsymbol}')
+                                top_n.pop(j)
+                                break
+                            else:
+                                j+=1
                         i+=1
 
                     #print(f'Remaining {len(top_n)} stocks to check from top_n')
@@ -188,9 +200,6 @@ class Strategy:
                         else:
                             i+=1
 
-                    #print(f'Stocks Bought {len(week_holdings)}')
-                    #print(f'Stocks Kept {len(current_holdings)}')
-
                     # update current holdings with recent data
                     for item in current_holdings:
                         stock_data = item.to_dict()
@@ -198,15 +207,14 @@ class Strategy:
                         stock_data['atr'] = round(indicators.get_indicator_by_tradingsymbol('atrr_14', item.tradingsymbol, working_date),2)
                         stock_data['score'] = round(ranking.get_rankings_by_date_and_symbol(working_date, item.tradingsymbol)[0].composite_score,2)
                         stock_data['current_price'] = marketdata.get_marketdata_by_trading_symbol(item.tradingsymbol, working_date).close
-                        stock_data['current_sl'] = stock_data['current_price'] - (stock_data['atr']*parameters.sl_multiplier)
+                        current_sl = stock_data['current_price'] - (stock_data['atr']*parameters.sl_multiplier)
+                        if current_sl > stock_data['current_sl']:
+                            stock_data['current_sl'] = current_sl
                         stock_data['risk'] = stock_data['units'] * (stock_data['entry_price'] - stock_data['current_sl'])
                         if stock_data['risk']<=0:
                             stock_data['risk'] = 0
 
                         week_holdings.append(stock_data)
-
-
-                    #print(f'Total Holdings {len(week_holdings)}')
                     holdings.bulk_insert(week_holdings)
 
                     summary_parameters = {
@@ -225,7 +233,12 @@ class Strategy:
     def add_holding(symbol, working_capital, stock_risk, parameters, working_date, entry_price, score):
         atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, working_date),2)
 
-        risk_per_trade = round(parameters.sl_multiplier*atr)
+        if atr==0:
+            print(f'O ATR in the data for {symbol} on {working_date}')
+        risk_per_trade = round(parameters.sl_multiplier*atr,2)
+        if risk_per_trade==0:
+            print(f'0 Risk Per Trade for {symbol} on {working_date}. ATR {atr}')
+
         stoploss = round(entry_price - risk_per_trade,2)
         units = math.floor(stock_risk / risk_per_trade)
         capital_needed = round(entry_price * units,2)

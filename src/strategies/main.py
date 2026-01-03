@@ -4,7 +4,7 @@ from repositories import ConfigRepository
 
 config = ConfigRepository()
 
-start_date = date(2025, 1, 3)
+start_date = date(2023, 1, 6)
 end_date = date(2025, 12, 28)
 
 strategies = {

@@ -55,3 +55,13 @@ class ActionsRepository:
         query.update(column_data)
         db.session.commit()
         return query.first()
+
+    @staticmethod
+    def delete_actions_all():
+        try:
+            ActionsModel.query.delete()
+            db.session.commit()
+            return None
+        except SQLAlchemyError:
+            db.session.rollback()
+            return None
