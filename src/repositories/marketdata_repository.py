@@ -1,5 +1,5 @@
 from db import db
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import and_, or_, func
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -92,6 +92,16 @@ class MarketDataRepository:
     def get_max_date_from_table():
         """Fetch the absolute maximum date present in the MarketDataModel table."""
         return db.session.query(func.max(MarketDataModel.date)).scalar()
+
+    @staticmethod
+    def get_marketdata_next_day(tradingsymbol:str, date):
+        """Fetch market data for a tradingsymbol, on a specific date"""
+        return MarketDataModel.query.filter(
+            MarketDataModel.tradingsymbol == tradingsymbol,
+            MarketDataModel.date > date,
+            MarketDataModel.date <= datetime.now().date()
+        ).order_by(MarketDataModel.date.asc()).first()
+
 
     @staticmethod
     def get_marketdata_by_trading_symbol(tradingsymbol:str, date):

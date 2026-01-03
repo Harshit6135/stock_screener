@@ -4,8 +4,8 @@ from repositories import ConfigRepository
 
 config = ConfigRepository()
 
-start_date = date(2025, 1, 1)
-end_date = date(2025, 1, 18)
+start_date = date(2025, 1, 3)
+end_date = date(2025, 12, 28)
 
 strategies = {
     'strategy_one' : 'momentum_strategy_one'

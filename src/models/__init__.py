@@ -6,4 +6,4 @@ from models.actions import ActionsModel
 from models.risk_config import RiskConfigModel
 from models.ranking import RankingModel
 from models.invested import InvestedModel
-from models.holdings import HoldingsModel
+from models.holdings import HoldingsModel, SummaryModel
