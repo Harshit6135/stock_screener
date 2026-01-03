@@ -124,7 +124,11 @@ class IndicatorsService:
             logger.info("Calculating indicators...")
 
             ind_df = self.apply_study(df_for_ind, last_ind_date)
-            ind_df = self._calculate_derived_indicators(ind_df)
+            try:
+                ind_df = self._calculate_derived_indicators(ind_df)
+            except Exception as e:
+                logger.error(f"Error calculating derived indicators for {log_symb}: {str(e)}")
+                continue
             ind_df.columns = ind_df.columns.str.lower().str.replace(".0", "")
             ind_df = ind_df.drop(columns=['open', 'high', 'low', 'close', 'volume'], errors='ignore')
             ind_df.reset_index(inplace=True)

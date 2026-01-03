@@ -3,7 +3,7 @@ from datetime import date
 from utils import calculate_initial_stop_loss, calculate_effective_stop
 from repositories import (ConfigRepository, PortfolioRepository,
                           MarketDataRepository, IndicatorsRepository,
-                          InstrumentsRepository, RankingRepository)
+                          InstrumentsRepository, RankingRepository, ScoreRepository)
 
 config_repo = ConfigRepository()
 portfolio_repo = PortfolioRepository()
@@ -11,6 +11,7 @@ marketdata_repo = MarketDataRepository()
 indicators_repo = IndicatorsRepository()
 instr_repo = InstrumentsRepository()
 rank_repo = RankingRepository()
+score_repo = ScoreRepository()
 
 
 class PortfolioService:
@@ -67,8 +68,8 @@ class PortfolioService:
 
         # 2. Fetch ATR for the buy date (or latest prior)
         atr = indicators_repo.get_indicator_by_tradingsymbol("atrr_14", symbol,  date=buy_date)
-        ranking = rank_repo.get_latest_rank_by_symbol(symbol)
-        current_score = ranking.composite_score if ranking else None
+        score = score_repo.get_by_symbol(symbol)
+        current_score = score.composite_score if score else None
 
         # 3. Calculate Stop Loss
         stop_multiplier = self.config.stop_loss_multiplier if self.config else 3.0
@@ -178,30 +179,23 @@ class PortfolioService:
             portfolio_repo.delete_stock(symbol)
             return {"message": "Position closed", "remaining_shares": 0}
         else:
-            # Refresh Rank/Score for remaining
-            rank_repo_local = rank_repo
-            ranking = rank_repo_local.get_latest_rank_by_symbol(symbol)
-            if ranking:
-                existing.current_score = ranking.composite_score
-                # Rank isn't stored in DB on invested table usually, but we could? 
-                # Schema has it dump_only. 
+            # Refresh Rank/Score for remaining (from avg_score)
+            score = score_repo.get_by_symbol(symbol)
+            if score:
+                existing.current_score = score.composite_score
             
             portfolio_repo.update_stock(existing)
             return {"message": "Position reduced", "remaining_shares": existing.num_shares}
 
     def get_invested_stocks(self):
-        """Get all invested stocks enriched with current rank"""
+        """Get all invested stocks enriched with current score from avg_score"""
         invested = portfolio_repo.get_invested()
 
-        # Enrich with Rank
-        # Note: We can use the global rank_repo initialized at top of file
-        rank_repo_local = rank_repo 
-        
+        # Enrich with Score from avg_score table
         for inv in invested:
-            rank_rec = rank_repo_local.get_latest_rank_by_symbol(inv.tradingsymbol)
-            if rank_rec:
-                inv.rank = rank_rec.rank
-                inv.current_score = rank_rec.composite_score
+            score = score_repo.get_by_symbol(inv.tradingsymbol)
+            if score:
+                inv.current_score = score.composite_score
             else:
                 inv.rank = None
         

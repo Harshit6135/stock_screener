@@ -28,12 +28,12 @@ class MarketDataService:
             
             if not records:
                 self.logger.warning(f"No data returned for {token}")
-                return None
+                return None, None
             return records, start_time
 
         except Exception as e:
             self.logger.error(f"Failed to fetch/process data for {token}: {e}")
-            return None
+            return None, None
 
     def update_latest_data_for_all(self, historical=False, historical_start_date="2010-01-01"):
         """
@@ -82,7 +82,7 @@ class MarketDataService:
                     logger.warning(f"Gap detected for {log_symb} (>20%). Triggering full refresh.")
                     marketdata_repository.delete_by_tradingsymbol(tradingsymbol)
                     sleep(max(0, 0.34 - (time() + start_time)))
-                    start_date = today - timedelta(days=HISTORY_LOOKBACK)
+                    start_date = yesterday - timedelta(days=HISTORY_LOOKBACK)
                     records, start_time = self.get_latest_data_by_token(instr_token, start_date)
 
             records_df = pd.DataFrame(records)
