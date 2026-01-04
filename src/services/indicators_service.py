@@ -64,6 +64,7 @@ class IndicatorsService:
         df['percent_b'] = self.calculate_percent_b(df['close'], df['BBU_20_2.0_2.0'], df['BBL_20_2.0_2.0'])
         df['ema_50_slope'] = self.calculate_ema_slope(df['EMA_50'], additional_parameters['ema_slope_lookback'])
         df['distance_from_ema_200'] = self.calculate_distance_from_ema(df['close'], df['EMA_200'])
+        df['distance_from_ema_50'] = self.calculate_distance_from_ema(df['close'], df['EMA_50'])
         df['risk_adjusted_return'] = df["ROC_20"]/(df['ATRr_14']/df['close'])
         df['rvol'] = df['volume']/df['VOL_SMA_20']
         return df
@@ -78,6 +79,7 @@ class IndicatorsService:
         yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
         
         for i, instr in enumerate(instruments):
+            print(instr)
             tradingsymbol = instr.tradingsymbol
             instr_token = instr.instrument_token
             exchange = instr.exchange
@@ -122,7 +124,11 @@ class IndicatorsService:
             logger.info("Calculating indicators...")
 
             ind_df = self.apply_study(df_for_ind, last_ind_date)
-            ind_df = self._calculate_derived_indicators(ind_df)
+            try:
+                ind_df = self._calculate_derived_indicators(ind_df)
+            except Exception as e:
+                logger.error(f"Error calculating derived indicators for {log_symb}: {str(e)}")
+                continue
             ind_df.columns = ind_df.columns.str.lower().str.replace(".0", "")
             ind_df = ind_df.drop(columns=['open', 'high', 'low', 'close', 'volume'], errors='ignore')
             ind_df.reset_index(inplace=True)

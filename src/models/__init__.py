@@ -4,6 +4,6 @@ from models.master import MasterModel
 from models.indicators import IndicatorsModel
 from models.actions import ActionsModel
 from models.risk_config import RiskConfigModel
-from models.ranking import RankingModel
+from models.ranking import RankingModel, ScoreModel, AvgScoreModel
 from models.invested import InvestedModel
 from models.holdings import HoldingsModel, SummaryModel

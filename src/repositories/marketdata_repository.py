@@ -94,6 +94,11 @@ class MarketDataRepository:
         return db.session.query(func.max(MarketDataModel.date)).scalar()
 
     @staticmethod
+    def get_min_date_from_table():
+        """Fetch the absolute minimum date present in the MarketDataModel table."""
+        return db.session.query(func.min(MarketDataModel.date)).scalar()
+
+    @staticmethod
     def get_marketdata_next_day(tradingsymbol:str, date):
         """Fetch market data for a tradingsymbol, on a specific date"""
         return MarketDataModel.query.filter(
@@ -101,7 +106,6 @@ class MarketDataRepository:
             MarketDataModel.date > date,
             MarketDataModel.date <= datetime.now().date()
         ).order_by(MarketDataModel.date.asc()).first()
-
 
     @staticmethod
     def get_marketdata_by_trading_symbol(tradingsymbol:str, date):

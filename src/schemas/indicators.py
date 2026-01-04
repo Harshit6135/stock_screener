@@ -33,6 +33,7 @@ class IndicatorsSchema(Schema):
     percent_b = fields.Float(allow_none=True)
     ema_50_slope = fields.Float(allow_none=True)
     distance_from_ema_200 = fields.Float(allow_none=True)
+    distance_from_ema_50 = fields.Float(allow_none=True)
     risk_adjusted_return = fields.Float(allow_none=True)
     rvol = fields.Float(allow_none=True)
 

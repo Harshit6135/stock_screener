@@ -11,7 +11,8 @@ from src.api.v1.routes import (
     indicators_bp,
     portfolio_bp,
     ranking_bp,
-    init_bp
+    init_bp,
+    score_bp
 )
 
 
@@ -38,6 +39,7 @@ api.register_blueprint(indicators_bp)
 api.register_blueprint(actions_bp)
 api.register_blueprint(ranking_bp)
 api.register_blueprint(portfolio_bp)
+api.register_blueprint(score_bp)
 
 
 # Main Dashboard Route
