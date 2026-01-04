@@ -1,6 +1,7 @@
 from db import db
 from sqlalchemy import Index
 
+
 class HoldingsModel(db.Model):
     __tablename__ = 'holdings'
     __bind_key__ = 'personal'
