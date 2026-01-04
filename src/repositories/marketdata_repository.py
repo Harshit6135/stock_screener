@@ -112,6 +112,6 @@ class MarketDataRepository:
         """Fetch market data for a tradingsymbol, on a specific date"""
         query = MarketDataModel.query.filter(
             MarketDataModel.tradingsymbol == tradingsymbol,
-            MarketDataModel.date == date
+            MarketDataModel.date >= date
         )
-        return query.order_by(MarketDataModel.date.desc()).first()
+        return query.order_by(MarketDataModel.date.asc()).first()

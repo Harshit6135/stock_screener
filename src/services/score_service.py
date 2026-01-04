@@ -254,6 +254,12 @@ class ScoreService:
                 # Calculate average per symbol
                 weekly_avg = df.groupby('tradingsymbol')['composite_score'].mean().reset_index()
                 weekly_avg['score_date'] = current_friday  # Store as Friday's date
+
+                df_marketcap = pd.read_csv('yfinance_dump.csv')
+                weekly_avg = weekly_avg.merge(df_marketcap[['tradingsymbol', 'marketCap', 'regularMarketPrice']], on='tradingsymbol', how='left')
+                weekly_avg = weekly_avg[weekly_avg['marketCap']>5000000000]
+                weekly_avg = weekly_avg[weekly_avg['regularMarketPrice']>75]
+                weekly_avg.drop(['marketCap', 'regularMarketPrice'], axis=1, inplace=True)
                 
                 all_avg_records.extend(weekly_avg.to_dict('records'))
                 weeks_processed += 1

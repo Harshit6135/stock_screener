@@ -5,7 +5,7 @@ from repositories import ConfigRepository
 config = ConfigRepository()
 
 start_date = date(2023, 1, 6)
-end_date = date(2025, 12, 28)
+end_date = date(2026, 1, 2)
 
 strategies = {
     'strategy_one' : 'momentum_strategy_one'

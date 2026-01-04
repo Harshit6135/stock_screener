@@ -2,19 +2,23 @@ from datetime import date, timedelta
 import math
 import pandas as pd
 
-from repositories import RankingRepository
+from repositories import ScoreRepository
 from repositories import IndicatorsRepository
 from repositories import MarketDataRepository
 from repositories import HoldingsRepository
 from repositories import ActionsRepository
 
-ranking = RankingRepository()
+ranking = ScoreRepository()
 indicators = IndicatorsRepository()
 marketdata = MarketDataRepository()
 holdings = HoldingsRepository()
 actions = ActionsRepository()
 
 class Strategy:
+    @staticmethod
+    def provide_actions(working_date, parameters):
+        top_n = ranking.get_top_n_by_date(parameters.max_positions, working_date)
+
     @staticmethod
     def backtesting(start_date, end_date, parameters):
         working_date = start_date
@@ -24,7 +28,7 @@ class Strategy:
 
         while working_date <= end_date:
             if working_date.weekday() == 4:
-                top_n = ranking.get_top_n_rankings_by_date(parameters.max_positions, working_date)
+                top_n = ranking.get_top_n_by_date(parameters.max_positions, working_date)
                 if not top_n:
                     print(f"No rankings found for {working_date}")
                     working_date += timedelta(days=1)
@@ -156,7 +160,7 @@ class Strategy:
                         buy_flag = False
                         j=0
                         while j < len(current_holdings):
-                            current_score = ranking.get_rankings_by_date_and_symbol(working_date, current_holdings[j].tradingsymbol)[0].composite_score
+                            current_score = ranking.get_by_symbol(current_holdings[j].tradingsymbol, working_date).composite_score
                             #print(f'{top_n[i].composite_score} vs {current_score}')
                             if top_n[i].composite_score > (1 + (parameters.buffer_percent/100))*current_score:
                                 print(f'Selling {current_holdings[j].tradingsymbol} and buying {top_n[i].tradingsymbol}')
@@ -205,7 +209,7 @@ class Strategy:
                         stock_data = item.to_dict()
                         stock_data['working_date'] = working_date
                         stock_data['atr'] = round(indicators.get_indicator_by_tradingsymbol('atrr_14', item.tradingsymbol, working_date),2)
-                        stock_data['score'] = round(ranking.get_rankings_by_date_and_symbol(working_date, item.tradingsymbol)[0].composite_score,2)
+                        stock_data['score'] = round(ranking.get_by_symbol(item.tradingsymbol, working_date).composite_score,2)
                         stock_data['current_price'] = marketdata.get_marketdata_by_trading_symbol(item.tradingsymbol, working_date).close
                         current_sl = stock_data['current_price'] - (stock_data['atr']*parameters.sl_multiplier)
                         if current_sl > stock_data['current_sl']:
