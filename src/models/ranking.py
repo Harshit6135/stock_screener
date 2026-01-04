@@ -70,8 +70,8 @@ class AvgScoreModel(db.Model):
 
     __table_args__ = (
         PrimaryKeyConstraint("tradingsymbol", "score_date"),
-        Index("idx_score_date", "score_date"),
-        Index("idx_score", "composite_score"),
+        Index("idx_avg_score_date", "score_date"),
+        Index("idx_avg_score", "composite_score"),
     )
 
     def __repr__(self):
