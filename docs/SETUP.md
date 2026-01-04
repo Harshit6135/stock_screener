@@ -24,7 +24,7 @@ curl -sSL https://install.python-poetry.org | python3 -
 
 ```bash
 git clone <repo-url>
-cd stocks_screener_v3
+cd stocks_screener_v2
 ```
 
 ### 3. Install Dependencies

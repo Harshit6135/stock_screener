@@ -563,6 +563,122 @@ Remove a specific position from portfolio.
 
 ---
 
+## Score Calculation
+
+### POST /api/v1/score/generate
+
+Generate composite scores incrementally from the last calculated date.
+
+**Response:**
+```json
+{
+  "message": "Generated composite scores for 5 dates (2025-12-11 to 2025-12-16)"
+}
+```
+
+---
+
+### POST /api/v1/score/recalculate
+
+Recalculate ALL composite scores from scratch. Use when strategy weights have been updated.
+
+**Response:**
+```json
+{
+  "message": "Recalculated 5000 composite scores across 50 dates"
+}
+```
+
+---
+
+### POST /api/v1/score/generate_avg
+
+Generate weekly average scores incrementally. For each Friday, calculates the average of that week's (Mon-Fri) daily composite scores.
+
+**Response:**
+```json
+{
+  "message": "Generated avg_scores for 3 Fridays"
+}
+```
+
+---
+
+### POST /api/v1/score/recalculate_avg
+
+Recalculate ALL weekly average scores from scratch.
+
+**Response:**
+```json
+{
+  "message": "Recalculated avg_scores for 10 Fridays"
+}
+```
+
+---
+
+### GET /api/v1/score/top/{n}
+
+Get top N stocks by weekly average composite score. Date is normalized to the nearest Friday.
+
+**Path Parameters:**
+
+| Parameter | Type    | Required | Description                |
+|-----------|---------|----------|----------------------------|
+| `n`       | integer | **Yes**  | Number of top stocks       |
+
+**Query Parameters:**
+
+| Parameter | Type   | Required | Description                          |
+|-----------|--------|----------|--------------------------------------|
+| `date`    | string | No       | Date to query (YYYY-MM-DD), normalized to Friday |
+
+**Response:**
+```json
+[
+  {
+    "tradingsymbol": "SMCGLOBAL",
+    "composite_score": 97.54,
+    "rank": 1,
+    "is_invested": false,
+    "ranking_date": "2025-12-13",
+    "close_price": 245.50
+  }
+]
+```
+
+---
+
+### GET /api/v1/score/symbol/{symbol}
+
+Get weekly average score for a specific symbol. Date is normalized to the nearest Friday.
+
+**Path Parameters:**
+
+| Parameter | Type   | Required | Description      |
+|-----------|--------|----------|------------------|
+| `symbol`  | string | **Yes**  | Trading symbol   |
+
+**Query Parameters:**
+
+| Parameter | Type   | Required | Description                          |
+|-----------|--------|----------|--------------------------------------|
+| `date`    | string | No       | Date to query (YYYY-MM-DD), normalized to Friday |
+
+**Response:**
+```json
+{
+  "tradingsymbol": "RELIANCE",
+  "composite_score": 85.5,
+  "rank": 0,
+  "is_invested": false,
+  "ranking_date": "2025-12-13",
+  "close_price": 2515.0
+}
+```
+
+---
+
 ## Rankings
 
 ### GET /ranking/top20

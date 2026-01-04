@@ -8,12 +8,25 @@ The Stock Screener uses a **multi-factor momentum scorecard** to rank stocks. Th
 
 ## Factor Weights
 
-| Factor | Weight | Description |
-|--------|--------|-------------|
-| **Trend** | 35% | EMA slope, price vs EMA |
-| **Momentum** | 30% | RSI, PPO, PPO Histogram |
-| **Volume** | 20% | Relative volume, price-volume correlation |
-| **Structure** | 15% | Bollinger Band width, %B position |
+The composite score is calculated in `ScoreService` using the following formula:
+
+```
+final_trend = trend_rank × 0.6 + trend_extension_rank × 0.2 + trend_start_rank × 0.2
+final_momentum = momentum_rank × 0.5 + acceleration_rank × 0.3 + slope_rank × 0.2
+final_structure = structure_rank × 1.0
+final_volume = volume_rank × 1.0
+
+composite_score = final_trend × 0.6 + final_momentum × 0.2 + final_structure × 0.1 + final_volume × 0.1
+```
+
+### Factor Distribution
+
+| Factor | Weight | Sub-Components |
+|--------|--------|----------------|
+| **Trend** | 60% | Trend rank (60%), Extension (20%), Start (20%) |
+| **Momentum** | 20% | Momentum rank (50%), Acceleration (30%), Slope (20%) |
+| **Volume** | 10% | Volume rank (100%) |
+| **Structure** | 10% | Structure rank (100%) |
 
 ---
 
