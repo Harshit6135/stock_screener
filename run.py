@@ -46,5 +46,29 @@ def dashboard():
     """Render the main dashboard"""
     return render_template('dashboard.html')
 
+@app.route("/strategy_cap")
+def strategy_cap():
+    from repositories import ConfigRepository
+    config = ConfigRepository()
+    data = {
+        'strategy_name' : 'momentum_strategy_one',
+        'initial_capital' : 100000,
+        'risk_threshold' : 1,
+        'max_positions' : 10,
+        'buffer_percent' : 25,
+        'exit_threshold' : 40,
+        'sl_multiplier' : 2
+    }
+    config.post_config(data)
+
+    return 'successful'
+
+@app.route("/strategy")
+def run_strategy():
+    from strategies.main import strategy_backtesting
+    strategy_backtesting('strategy_one')
+
+    return 'successful'
+
 if __name__ == "__main__":
     app.run(debug=True)

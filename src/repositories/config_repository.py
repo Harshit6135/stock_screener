@@ -5,8 +5,8 @@ from models import RiskConfigModel
 class ConfigRepository:
 
     @staticmethod
-    def get_config():
-        return RiskConfigModel.query.first()
+    def get_config(strategy_name):
+        return RiskConfigModel.query.filter(RiskConfigModel.strategy_name == strategy_name).first()
 
     @staticmethod
     def post_config(config_data):

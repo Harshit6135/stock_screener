@@ -13,6 +13,18 @@ class ActionsRepository:
         ).all()
 
     @staticmethod
+    def add(action_data):
+        """Add a single action"""
+        try:
+            action = ActionsModel(**action_data)
+            db.session.add(action)
+            db.session.commit()
+            return action
+        except SQLAlchemyError:
+            db.session.rollback()
+            return None
+
+    @staticmethod
     def bulk_insert(actions):
         """Add multiple indicators"""
         try:
@@ -22,6 +34,15 @@ class ActionsRepository:
             db.session.rollback()
             return None
         return actions
+
+    @staticmethod
+    def delete_actions(working_date):
+        try:
+            ActionsModel.query.filter(ActionsModel.action_date == working_date).delete()
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+            return None
 
     @staticmethod
     def get_action_by_action_id(action_id):
@@ -34,3 +55,13 @@ class ActionsRepository:
         query.update(column_data)
         db.session.commit()
         return query.first()
+
+    @staticmethod
+    def delete_actions_all():
+        try:
+            ActionsModel.query.delete()
+            db.session.commit()
+            return None
+        except SQLAlchemyError:
+            db.session.rollback()
+            return None

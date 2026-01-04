@@ -6,3 +6,4 @@ from repositories.ranking_repository import RankingRepository
 from repositories.portfolio_repository import PortfolioRepository
 from repositories.marketdata_repository import MarketDataRepository
 from repositories.indicators_repository import IndicatorsRepository
+from repositories.holding_repository import HoldingsRepository

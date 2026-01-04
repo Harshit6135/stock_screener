@@ -24,7 +24,7 @@ import os
 # ============== CONFIGURATION ==============
 # API & Date Range
 BASE_URL = "http://127.0.0.1:5000"
-START_DATE = date(2025, 1, 1)
+START_DATE = date(2023, 1, 1)
 END_DATE = date(2025, 12, 18)
 OUTPUT_DIR = "data"
 
@@ -40,7 +40,7 @@ MAX_POSITION_PERCENT = 20.0    # Max % of capital per position (prevents over-co
 
 # ============== KEY PARAMETERS (MODIFY THESE) ==============
 TOP_N = MAX_POSITIONS                     # Number of top stocks to select each week
-BUFFER_PERCENT = 0.25          # Swap buffer - challenger must beat incumbent by this % (25% = 0.25)
+BUFFER_PERCENT = 0.5          # Swap buffer - challenger must beat incumbent by this % (25% = 0.25)
 
 # ============== UTILITY FUNCTIONS (from src/utils) ==============
 
@@ -600,6 +600,7 @@ class WeeklyBacktester:
                     'composite_score': pos.composite_score,
                     'initial_stop_loss': pos.initial_stop_loss,
                     'current_stop_loss': pos.current_stop_loss,
+                    'risk': round((current_price - pos.current_stop_loss) * pos.units, 2),
                     'unrealized_pnl': round((current_price - pos.entry_price) * pos.units, 2)
                 })
             
@@ -708,7 +709,7 @@ class WeeklyBacktester:
         with open(holdings_file, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(['Week Date', 'Symbol', 'Entry Date', 'Entry Price', 'Current Price',
-                           'Units', 'Score', 'Initial SL', 'Current SL', 'Unrealized PnL'])
+                           'Units', 'Score', 'Initial SL', 'Current SL', 'Risk', 'Unrealized PnL'])
             for result in self.weekly_results:
                 for holding in result.holdings:
                     writer.writerow([
@@ -721,6 +722,7 @@ class WeeklyBacktester:
                         round(holding.get('composite_score', 0), 2),
                         round(holding.get('initial_stop_loss', 0), 2),
                         round(holding.get('current_stop_loss', 0), 2),
+                        round(holding.get('risk', 0), 2),
                         holding.get('unrealized_pnl', '')
                     ])
         print(f"✅ Holdings log: {holdings_file}")
