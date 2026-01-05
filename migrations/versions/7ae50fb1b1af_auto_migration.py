@@ -17,7 +17,7 @@ depends_on = None
 
 
 def upgrade():
-    # Cleanup any leftover table from failed migration attempts
+    # Cleanup any leftover tables from failed migration attempts
     op.execute("DROP TABLE IF EXISTS percentile")
     
     # Step 1: Create new 'percentile' table with same structure as old 'ranking'
@@ -70,7 +70,7 @@ def upgrade():
     # Step 3: Drop old 'ranking' table
     op.drop_table('ranking')
     
-    # Step 4: Create new 'ranking' table with structure for weekly rankings
+    # Step 4: Create new 'ranking' table with structure for weekly rankings (empty - user will recalculate)
     op.create_table('ranking',
         sa.Column('tradingsymbol', sa.String(length=50), nullable=False),
         sa.Column('ranking_date', sa.Date(), nullable=False),
@@ -81,42 +81,11 @@ def upgrade():
     op.create_index('idx_ranking_date', 'ranking', ['ranking_date'], unique=False)
     op.create_index('idx_ranking_score', 'ranking', ['composite_score'], unique=False)
     
-    # Step 5: Copy data from 'avg_score' to 'ranking' with rank calculated
-    # Note: rank is calculated using window function ordering by composite_score desc per date
-    op.execute("""
-        INSERT INTO ranking (tradingsymbol, ranking_date, composite_score, rank)
-        SELECT 
-            tradingsymbol, 
-            score_date,
-            composite_score,
-            ROW_NUMBER() OVER (PARTITION BY score_date ORDER BY composite_score DESC)
-        FROM avg_score
-    """)
-    
-    # Step 6: Drop old 'avg_score' table
-    with op.batch_alter_table('avg_score', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('idx_avg_score'))
-        batch_op.drop_index(batch_op.f('idx_avg_score_date'))
-    op.drop_table('avg_score')
+    # Step 5: Drop old 'avg_score' table if it exists (user will recalculate rankings)
+    op.execute("DROP TABLE IF EXISTS avg_score")
 
 
 def downgrade():
-    # Recreate avg_score from ranking
-    op.create_table('avg_score',
-        sa.Column('tradingsymbol', sa.String(length=50), nullable=False),
-        sa.Column('score_date', sa.Date(), nullable=False),
-        sa.Column('composite_score', sa.Float(), nullable=False),
-        sa.PrimaryKeyConstraint('tradingsymbol', 'score_date')
-    )
-    with op.batch_alter_table('avg_score', schema=None) as batch_op:
-        batch_op.create_index('idx_avg_score_date', ['score_date'], unique=False)
-        batch_op.create_index('idx_avg_score', ['composite_score'], unique=False)
-    
-    op.execute("""
-        INSERT INTO avg_score (tradingsymbol, score_date, composite_score)
-        SELECT tradingsymbol, ranking_date, composite_score FROM ranking
-    """)
-    
     # Drop new ranking table
     op.drop_table('ranking')
     

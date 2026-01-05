@@ -8,8 +8,7 @@ from .percentile import PercentileSchema, PercentileAllSchema
 from .ranking import TopNSchema, RankingSchema
 from .risk_config import RiskConfigSchema
 from .invested import InvestedSchema, InvestedInputSchema, PortfolioSummarySchema, SellInputSchema
-
-
+from .app import CleanupQuerySchema
 __all__ = [
     "InitResponseSchema",
     "MarketDataSchema",
@@ -32,4 +31,5 @@ __all__ = [
     "InvestedInputSchema",
     "PortfolioSummarySchema",
     "SellInputSchema",
+    "CleanupQuerySchema",
 ]

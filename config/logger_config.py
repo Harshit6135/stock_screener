@@ -8,7 +8,7 @@ from datetime import datetime
 def setup_logger(name="StockScreener", log_dir="logs"):
     os.makedirs(log_dir, exist_ok=True)
     
-    date_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    date_str = datetime.now().strftime("%Y-%m-%d")
     log_file = os.path.join(log_dir, f"stock_screener_{date_str}.log")
     
     logger = logging.getLogger(name)
@@ -18,8 +18,8 @@ def setup_logger(name="StockScreener", log_dir="logs"):
     if logger.hasHandlers():
         logger.handlers.clear()
         
-    # File Handler
-    file_handler = logging.FileHandler(log_file)
+    # File Handler (append mode)
+    file_handler = logging.FileHandler(log_file, mode='a')
     file_handler.setLevel(logging.INFO)
     file_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(file_format)

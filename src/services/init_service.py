@@ -173,8 +173,8 @@ class InitService:
             failed_downloads = 0
 
             for index, row in df.iterrows():
-                if index % 50 == 0:
-                    time.sleep(5)
+                if index % 100 == 0:
+                    time.sleep(2)
 
                 yfinance_info, yfinance_ticker_used, yfinance_status = yf.get_stock_info(df.at[index, 'yfinance_tickers'])
                 df.at[index, 'yfinance_info'] = json.dumps(yfinance_info)
@@ -231,7 +231,7 @@ class InitService:
         df_filtered = df_filtered[df_filtered['regularMarketPrice'] >= PRICE_THRESHOLD]
         logger.info(f"Dropped {current_len - len(df_filtered)} stocks due to Price < {PRICE_THRESHOLD}")
 
-        return df
+        return df_filtered
 
     @staticmethod
     def get_instruments():

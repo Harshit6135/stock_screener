@@ -3,7 +3,7 @@ from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 from datetime import datetime
 
-from schemas import MessageSchema
+from schemas import MessageSchema, CleanupQuerySchema
 from services import InitService, MarketDataService, IndicatorsService, PercentileService, ScoreService
 from repositories import MarketDataRepository, IndicatorsRepository, PercentileRepository, ScoreRepository
 
@@ -13,8 +13,9 @@ blp = Blueprint("app", __name__, url_prefix="/api/v1/app", description="Applicat
 
 @blp.route("/cleanup")
 class CleanupAfterDate(MethodView):
+    @blp.arguments(CleanupQuerySchema, location="query")
     @blp.response(200, MessageSchema)
-    def delete(self):
+    def delete(self, args):
         """
         Delete all data after a given start_date from:
         - marketdata
@@ -22,17 +23,8 @@ class CleanupAfterDate(MethodView):
         - percentile
         - score
         - ranking (weekly)
-        
-        Query param: start_date (YYYY-MM-DD format)
         """
-        start_date_str = request.args.get('start_date')
-        if not start_date_str:
-            abort(400, message="start_date query parameter is required (format: YYYY-MM-DD)")
-        
-        try:
-            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-        except ValueError:
-            abort(400, message="Invalid date format. Use YYYY-MM-DD")
+        start_date = args['start_date']
         
         # Initialize repositories
         marketdata_repo = MarketDataRepository()
