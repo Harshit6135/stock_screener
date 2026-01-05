@@ -12,14 +12,14 @@ class MasterModel(db.Model):
     # yfinance data
     industry = db.Column(db.String, nullable=True)
     sector = db.Column(db.String, nullable=True)
-    market_cap = db.Column(db.Float, nullable=True)
-    regularMarketPrice = db.Column(db.Float, nullable=True)
-    all_time_high = db.Column(db.Float, nullable=True)
-    all_time_low = db.Column(db.Float, nullable=True)
-    shares_outstanding = db.Column(db.Float, nullable=True)
-    float_shares = db.Column(db.Float, nullable=True)
-    held_percent_insiders = db.Column(db.Float, nullable=True)
-    held_percent_institutions = db.Column(db.Float, nullable=True)
+    marketcap = db.Column(db.Float, nullable=True)
+    regularmarketprice = db.Column(db.Float, nullable=True)
+    alltimehigh = db.Column(db.Float, nullable=True)
+    alltimelow = db.Column(db.Float, nullable=True)
+    sharesoutstanding = db.Column(db.Float, nullable=True)
+    floatshares = db.Column(db.Float, nullable=True)
+    heldpercentinsiders = db.Column(db.Float, nullable=True)
+    heldpercentinstitutions = db.Column(db.Float, nullable=True)
     
     # Metadata
     status = db.Column(db.String, default='Active')

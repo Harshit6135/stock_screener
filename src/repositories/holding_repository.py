@@ -2,7 +2,10 @@ from db import db
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 
+from config import setup_logger
 from models import HoldingsModel, SummaryModel
+
+logger = setup_logger(name="HoldingsRepository")
 
 class HoldingsRepository:
     
@@ -36,7 +39,7 @@ class HoldingsRepository:
             db.session.bulk_insert_mappings(HoldingsModel, holdings, return_defaults=True)
             db.session.commit()
         except SQLAlchemyError as e:
-            print(e)
+            logger.error(f"Error bulk_insert: {e}")
             db.session.rollback()
             return None
         return holdings
@@ -47,7 +50,7 @@ class HoldingsRepository:
             HoldingsModel.query.filter(HoldingsModel.working_date == working_date).delete()
             db.session.commit()
         except SQLAlchemyError as e:
-            print(e)
+            logger.error(f"Error bulk_insert: {e}")
             db.session.rollback()
             return None
 
@@ -59,14 +62,14 @@ class HoldingsRepository:
             SummaryModel.query.filter(SummaryModel.working_date == summary_data.working_date).delete()
             db.session.commit()
         except SQLAlchemyError as e:
-            print(e)
+            logger.error(f"Error insert_summary (delete part): {e}")
             db.session.rollback()
 
         try:
             db.session.add(summary_data)
             db.session.commit()
         except SQLAlchemyError as e:
-            print(e)
+            logger.error(f"Error bulk_insert: {e}")
             db.session.rollback()
             return None
         return summary_data
@@ -85,7 +88,7 @@ class HoldingsRepository:
             HoldingsModel.query.delete()
             db.session.commit()
         except SQLAlchemyError as e:
-            print(e)
+            logger.error(f"Error delete_holdings_all: {e}")
             db.session.rollback()
             return None
         return None
@@ -97,7 +100,7 @@ class HoldingsRepository:
             SummaryModel.query.delete()
             db.session.commit()
         except SQLAlchemyError as e:
-            print(e)
+            logger.error(f"Error delete_holdings_all: {e}")
             db.session.rollback()
             return None
         return None

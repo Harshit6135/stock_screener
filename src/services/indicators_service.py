@@ -79,7 +79,6 @@ class IndicatorsService:
         yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
         
         for i, instr in enumerate(instruments):
-            print(instr)
             tradingsymbol = instr.tradingsymbol
             instr_token = instr.instrument_token
             exchange = instr.exchange

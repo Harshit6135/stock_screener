@@ -173,8 +173,8 @@ class InitService:
             failed_downloads = 0
 
             for index, row in df.iterrows():
-                if index % 50 == 0:
-                    time.sleep(5)
+                if index % 100 == 0:
+                    time.sleep(2)
 
                 yfinance_info, yfinance_ticker_used, yfinance_status = yf.get_stock_info(df.at[index, 'yfinance_tickers'])
                 df.at[index, 'yfinance_info'] = json.dumps(yfinance_info)
@@ -194,7 +194,7 @@ class InitService:
     @staticmethod
     def push_to_master(df):
         try:
-            df.fillna('', inplace=True)
+            # df.fillna('', inplace=True) # Causing float columns to become empty strings
             req_cols = [
                 'ISIN', 'NSE_SYMBOL', 'BSE_SYMBOL', 'BSE_SECURITY_CODE', 
                 'NAME_OF_COMPANY', 'industry', 'sector', 'marketCap', 'regularMarketPrice',
@@ -203,7 +203,16 @@ class InitService:
             ]
             df = df[req_cols]
             df.columns = df.columns.str.lower()
+            
+            # Replace NaN with None (which becomes NULL in DB)
+            df = df.where(pd.notnull(df), None)
+            
             master_data = json.loads(df.to_json(orient='records', indent=4))
+            # Clean up json load: ensure None is actually None not 'None' string if json screwed up, 
+            # but df.to_json should handle None as null.
+            # However, df.where(pd.notnull(df), None) sets object type.
+            # json.loads(df.to_json) with None values converts them to null in JSON, which loads as None in python dict.
+            # Verified approach.
             master_repo.delete_all()
             master_repo.bulk_insert(master_data)
         except Exception as e:
@@ -221,17 +230,17 @@ class InitService:
         df['regularMarketPrice'] = pd.to_numeric(df['regularMarketPrice'], errors='coerce')
         
         # Filter Mcap
-        # Logic: Keep if NaN OR >= 500cr
-        # df_filtered = df[df['marketCap'] >= mcap_threshold]
-        # logger.info(f"Dropped {len(df) - len(df_filtered)} stocks due to Mcap < 500cr")
-        #
+        # Logic: Keep if >= 500cr
+        df_filtered = df[df['marketCap'] >= mcap_threshold]
+        logger.info(f"Dropped {len(df) - len(df_filtered)} stocks due to Mcap < 500cr")
+
         # # Filter Price < 75
-        # # Logic: Keep if NaN OR >= 75
-        # current_len = len(df_filtered)
-        # df_filtered = df_filtered[df_filtered['regularMarketPrice'] >= PRICE_THRESHOLD]
-        # logger.info(f"Dropped {current_len - len(df_filtered)} stocks due to Price < {PRICE_THRESHOLD}")
-        
-        return df
+        # # Logic: Keep  >= 75
+        current_len = len(df_filtered)
+        df_filtered = df_filtered[df_filtered['regularMarketPrice'] >= PRICE_THRESHOLD]
+        logger.info(f"Dropped {current_len - len(df_filtered)} stocks due to Price < {PRICE_THRESHOLD}")
+
+        return df_filtered
 
     @staticmethod
     def get_instruments():
@@ -243,23 +252,70 @@ class InitService:
     @staticmethod
     def sync_with_kite(df, instruments_df):
         try:
-            valid_symbols_nse = set(df[df['NSE_SYMBOL'] != '']['NSE_SYMBOL'])
-            kite_nse = instruments_df[
+            valid_symbols_nse = set(df.loc[df['NSE_SYMBOL'] != '', 'NSE_SYMBOL'])
+
+            # 1. Exact Match First
+            kite_nse_exact = instruments_df[
                 (instruments_df['exchange'] == 'NSE') & 
                 (instruments_df['tradingsymbol'].isin(valid_symbols_nse))
-            ]
+            ].copy()
+            kite_nse_exact['match_type'] = 'exact'
+            kite_nse_exact['lookup_symbol'] = kite_nse_exact['tradingsymbol']
 
-            valid_symbols_bse = set(df[(df['BSE_SYMBOL'] != '') & (df['NSE_SYMBOL'] == '')]['BSE_SYMBOL'])
+            # 2. Find unmatched symbols
+            matched_symbols = set(kite_nse_exact['tradingsymbol'])
+            remaining_symbols_nse = valid_symbols_nse - matched_symbols
+            
+            # 3. Match remaining using hyphen-split logic
+            instruments_df = instruments_df.copy()
+            instruments_df['base_symbol'] = instruments_df['tradingsymbol'].str.split('-').str[0]
+            
+            kite_nse_hyphen = instruments_df[
+                (instruments_df['exchange'] == 'NSE') & 
+                (instruments_df['base_symbol'].isin(remaining_symbols_nse))
+            ].copy()
+            # Keep only one match per base_symbol (prefer non-hyphenated if multiple exist, though exact would have caught it)
+            kite_nse_hyphen = kite_nse_hyphen.sort_values('tradingsymbol').drop_duplicates('base_symbol', keep='first')
+            kite_nse_hyphen['match_type'] = 'hyphen'
+            kite_nse_hyphen['lookup_symbol'] = kite_nse_hyphen['base_symbol']
+
+            # 4. Combine NSE results
+            kite_nse = pd.concat([kite_nse_exact, kite_nse_hyphen])
+
+            valid_symbols_bse = set(df.loc[(df['BSE_SYMBOL'] != '') & (df['NSE_SYMBOL'] == ''), 'BSE_SYMBOL'])
             kite_bse = instruments_df[
                 (instruments_df['exchange'] == 'BSE') & 
                 (instruments_df['tradingsymbol'].isin(valid_symbols_bse))
-            ]
+            ].copy()
+            kite_bse['match_type'] = 'exact'
+            kite_bse['lookup_symbol'] = kite_bse['tradingsymbol']
 
             final_instruments = pd.concat([kite_nse, kite_bse])
 
-            req_columns = ['instrument_token', 'exchange_token', 'tradingsymbol', 'name', 'exchange']
-            final_instruments = final_instruments[req_columns]
+            req_columns = ['instrument_token', 'exchange_token', 'tradingsymbol', 'name', 'exchange', 'lookup_symbol', 'base_symbol']
+            # Ensure columns exist (base_symbol might be NaN for exact matches if not calculated)
+            for col in req_columns:
+                if col not in final_instruments.columns:
+                    final_instruments[col] = None
+                    
             final_instruments['exchange_token'] = final_instruments['exchange_token'].astype(str)
+
+            # Merge with df to get mcap, industry, and sector
+            # Map NSE using lookup_symbol (which is original NSE_SYMBOL)
+            df_nse = df[df['NSE_SYMBOL'] != ''][['NSE_SYMBOL', 'marketCap', 'industry', 'sector']].rename(columns={'NSE_SYMBOL': 'lookup_key'})
+            
+            # Map BSE using lookup_symbol (which is BSE_SYMBOL)
+            df_bse = df[df['BSE_SYMBOL'] != ''][['BSE_SYMBOL', 'marketCap', 'industry', 'sector']].rename(columns={'BSE_SYMBOL': 'lookup_key'})
+            
+            df_map = pd.concat([df_nse, df_bse]).drop_duplicates('lookup_key')
+
+            final_instruments = final_instruments.merge(
+                df_map, left_on='lookup_symbol', right_on='lookup_key', how='left'
+            )
+            
+            output_columns = ['instrument_token', 'exchange_token', 'tradingsymbol', 'name', 'exchange', 'marketCap', 'industry', 'sector']
+            final_instruments = final_instruments[output_columns]
+            final_instruments.rename(columns={'marketCap': 'marketcap'}, inplace=True)
 
             instruments_json = json.loads(final_instruments.to_json(orient='records', indent=4))
             logger.info(f"Syncing {len(final_instruments)} instruments to Kite")

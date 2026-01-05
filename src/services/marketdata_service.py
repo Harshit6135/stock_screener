@@ -5,12 +5,14 @@ import pandas as pd
 
 from adaptors import KiteAdaptor
 from config import setup_logger, KITE_CONFIG, HISTORY_LOOKBACK
-from repositories import MarketDataRepository, InstrumentsRepository
+from repositories import MarketDataRepository, InstrumentsRepository, IndicatorsRepository, PercentileRepository
 
 
 logger = setup_logger(name='Orchestrator')
 instr_repository = InstrumentsRepository()
 marketdata_repository = MarketDataRepository()
+indicators_repository = IndicatorsRepository()
+percentile_repository = PercentileRepository()
 
 
 class MarketDataService:
@@ -74,16 +76,26 @@ class MarketDataService:
                 logger.warning(f"No data returned for {log_symb}")
                 continue
 
-            if not historical and last_data_date and len(records) > 1:
-                last_close = records[0]['close']
-                next_open = records[1]['open']
-                records = records[1:]
-                if next_open > (last_close * 1.20) or next_open < (last_close * 0.80):
-                    logger.warning(f"Gap detected for {log_symb} (>20%). Triggering full refresh.")
+            if not historical and last_data_date and len(records) >= 1:
+                # Corporate action detection: Compare stored close with fetched close for same date
+                stored_close = last_data_date.close
+                fetched_close = records[0]['close']
+                
+                if stored_close != fetched_close:
+                    # Corporate action detected - close values differ for same date
+                    logger.warning(f"Corporate action detected for {log_symb}. Stored close: {stored_close}, Fetched close: {fetched_close}. Triggering full refresh.")
+                    
+                    # Cascading delete: marketdata → indicators → percentile
                     marketdata_repository.delete_by_tradingsymbol(tradingsymbol)
+                    indicators_repository.delete_by_tradingsymbol(tradingsymbol)
+                    percentile_repository.delete_by_tradingsymbol(tradingsymbol)
+                    
                     sleep(max(0, 0.34 - (time() + start_time)))
                     start_date = yesterday - timedelta(days=HISTORY_LOOKBACK)
-                    records, start_time = self.get_latest_data_by_token(instr_token, start_date)
+                    records, start_time = self.get_latest_data_by_token(instr_token, start_date, yesterday)
+                else:
+                    # No corporate action - skip the duplicate first record and append new data
+                    records = records[1:]
 
             records_df = pd.DataFrame(records)
             records_df.reset_index(inplace=True)

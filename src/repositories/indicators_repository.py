@@ -104,3 +104,16 @@ class IndicatorsRepository:
         if result:
             return result[0]
         return None
+
+    @staticmethod
+    def delete_after_date(date):
+        """Delete all indicator records after a given date."""
+        try:
+            num_deleted = IndicatorsModel.query.filter(
+                IndicatorsModel.date > date
+            ).delete()
+            db.session.commit()
+            return num_deleted
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return -1

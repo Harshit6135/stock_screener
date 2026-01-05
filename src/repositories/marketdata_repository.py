@@ -115,3 +115,16 @@ class MarketDataRepository:
             MarketDataModel.date >= date
         )
         return query.order_by(MarketDataModel.date.asc()).first()
+
+    @staticmethod
+    def delete_after_date(date):
+        """Delete all market data records after a given date."""
+        try:
+            num_deleted = MarketDataModel.query.filter(
+                MarketDataModel.date > date
+            ).delete()
+            db.session.commit()
+            return num_deleted
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return -1

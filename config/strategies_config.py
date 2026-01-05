@@ -6,11 +6,11 @@ class Strategy1Parameters:
     conviction_weight: float = 0.15
     structure_weight: float = 0.10
     trend_rank_weight: float = 0.6
-    trend_extension_rank_weight: float = 0.2
-    trend_start_rank_weight: float = 0.2
-    momentum_rsi_rank_weight: float = 0.5 #0.6
-    momentum_ppo_rank_weight: float = 0.3 #0.25
-    momentum_ppoh_rank_weight: float = 0.2 #0.15
+    trend_extension_rank_weight: float = 0.4
+    trend_start_rank_weight: float = 0
+    momentum_rsi_rank_weight: float = 0.6 #0.5
+    momentum_ppo_rank_weight: float = 0.25 #0.3
+    momentum_ppoh_rank_weight: float = 0.15 #0.2
     rvolume_rank_weight: float = 0.7
     price_vol_corr_rank_weight: float = 0.3
     structure_rank_weight: float = 0.5
