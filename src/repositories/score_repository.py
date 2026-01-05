@@ -2,7 +2,10 @@ from datetime import date, timedelta
 from db import db
 from sqlalchemy.exc import SQLAlchemyError
 
+from config import setup_logger
 from models import ScoreModel, RankingModel
+
+logger = setup_logger(name="ScoreRepository")
 
 
 class ScoreRepository:
@@ -18,7 +21,7 @@ class ScoreRepository:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            print(f"Error inserting score records: {e}")
+            logger.error(f"Error inserting score records: {e}")
             return None
         return score_records
     
@@ -30,7 +33,7 @@ class ScoreRepository:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            print(f"Error deleting score records: {e}")
+            logger.error(f"Error deleting score records: {e}")
             return None
         return True
     
@@ -63,7 +66,7 @@ class ScoreRepository:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            print(f"Error inserting ranking records: {e}")
+            logger.error(f"Error inserting ranking records: {e}")
             return None
         return ranking_records
     
@@ -75,7 +78,7 @@ class ScoreRepository:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            print(f"Error deleting ranking records: {e}")
+            logger.error(f"Error deleting ranking records: {e}")
             return None
         return True
     

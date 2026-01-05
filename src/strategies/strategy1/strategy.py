@@ -7,6 +7,9 @@ from repositories import IndicatorsRepository
 from repositories import MarketDataRepository
 from repositories import HoldingsRepository
 from repositories import ActionsRepository
+from config import setup_logger
+
+logger = setup_logger(name="Strategy1")
 
 ranking = ScoreRepository()
 indicators = IndicatorsRepository()
@@ -30,7 +33,7 @@ class Strategy:
             if working_date.weekday() == 4:
                 top_n = ranking.get_top_n_by_date(parameters.max_positions, working_date)
                 if not top_n:
-                    print(f"No rankings found for {working_date}")
+                    logger.warning(f"No rankings found for {working_date}")
                     working_date += timedelta(days=1)
                     continue
 
@@ -73,11 +76,10 @@ class Strategy:
 
                 # if working_date != start_date
                 else:
-                    print(working_date)
+                    logger.info(f"Processing date: {working_date}")
                     sold = 0
                     current_holdings = holdings.get_holdings()
                     prev_summary = holdings.get_summary()
-                    #print(f'Starting with {len(current_holdings)} holdings with {prev_summary.remaining_capital} capital')
 
                     current_capital = prev_summary.remaining_capital
                     working_capital = current_capital
@@ -89,7 +91,7 @@ class Strategy:
                     for item in current_holdings:
                         low = Strategy.fetch_low(item.tradingsymbol, working_date)
                         if item.current_sl >= low:
-                            #print(f'Selling {item.tradingsymbol} as below SL')
+                            # logger.info(f'Selling {item.tradingsymbol} as below SL')
                             selling_price = item.current_sl
                             sold += item.units * selling_price
                             sell_parameters = {
@@ -110,17 +112,15 @@ class Strategy:
                         j=0
                         while j < len(top_n):
                             if top_n[j].tradingsymbol == current_holdings[i].tradingsymbol:
-                                #print(f'{top_n[j].tradingsymbol} already part of invested')
+                                # logger.debug(f'{top_n[j].tradingsymbol} already part of invested')
                                 top_n.pop(j)
                                 break
                             else:
                                 j+=1
                         i+=1
-                    #print(f'Remaining {len(top_n)} stocks to check from top_n')
-
                     # buy for the remaining positions
                     remaining_buys = parameters.max_positions-len(current_holdings)
-                    print(f'Remaining buys {remaining_buys}')
+                    logger.info(f'Remaining buys {remaining_buys}')
                     i=0
                     while i < remaining_buys:
                         entry_price = marketdata.get_marketdata_next_day(top_n[i].tradingsymbol, working_date).open
@@ -133,7 +133,7 @@ class Strategy:
                             'entry_price' : entry_price,
                             'score' : round(top_n[i].composite_score,2)
                         }
-                        print(f'Buying {top_n[i].tradingsymbol}')
+                        logger.info(f'Buying {top_n[i].tradingsymbol}')
                         stock_data = Strategy.add_holding(**add_holding_parameters)
                         working_capital = stock_data['working_capital']
                         if stock_data['units'] >0:
@@ -145,14 +145,14 @@ class Strategy:
                         j=0
                         while j < len(top_n):
                             if top_n[j].tradingsymbol == week_holdings[i]['tradingsymbol']:
-                                print(f'{top_n[j].tradingsymbol}')
+                                logger.debug(f'Skipping {top_n[j].tradingsymbol} as already bought')
                                 top_n.pop(j)
                                 break
                             else:
                                 j+=1
                         i+=1
 
-                    #print(f'Remaining {len(top_n)} stocks to check from top_n')
+                    logger.info(f'Remaining {len(top_n)} stocks to check from top_n')
 
                     # check for swaps
                     i = 0
@@ -161,9 +161,9 @@ class Strategy:
                         j=0
                         while j < len(current_holdings):
                             current_score = ranking.get_by_symbol(current_holdings[j].tradingsymbol, working_date).composite_score
-                            #print(f'{top_n[i].composite_score} vs {current_score}')
+                            
                             if top_n[i].composite_score > (1 + (parameters.buffer_percent/100))*current_score:
-                                print(f'Selling {current_holdings[j].tradingsymbol} and buying {top_n[i].tradingsymbol}')
+                                logger.info(f'Selling {current_holdings[j].tradingsymbol} and buying {top_n[i].tradingsymbol}')
                                 # sell current_holdings[j]
                                 selling_price = marketdata.get_marketdata_next_day(current_holdings[j].tradingsymbol, working_date).open
                                 sold += current_holdings[j].units * selling_price
@@ -238,10 +238,10 @@ class Strategy:
         atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, working_date),2)
 
         if atr==0:
-            print(f'O ATR in the data for {symbol} on {working_date}')
+            logger.warning(f'O ATR in the data for {symbol} on {working_date}')
         risk_per_trade = round(parameters.sl_multiplier*atr,2)
         if risk_per_trade==0:
-            print(f'0 Risk Per Trade for {symbol} on {working_date}. ATR {atr}')
+            logger.warning(f'0 Risk Per Trade for {symbol} on {working_date}. ATR {atr}')
 
         stoploss = round(entry_price - risk_per_trade,2)
         units = math.floor(stock_risk / risk_per_trade)

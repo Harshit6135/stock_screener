@@ -4,7 +4,7 @@ from flask_smorest import Blueprint, abort
 from datetime import datetime
 
 from schemas import MessageSchema, CleanupQuerySchema
-from services import InitService, MarketDataService, IndicatorsService, PercentileService, ScoreService
+from services import InitService, MarketDataService, IndicatorsService, PercentileService, ScoreService, RankingService
 from repositories import MarketDataRepository, IndicatorsRepository, PercentileRepository, ScoreRepository
 
 
@@ -104,8 +104,8 @@ class RunPipeline(MethodView):
         
         # Step 6: Calculate Rankings
         try:
-            score_service = ScoreService()
-            score_service.generate_rankings()
+            ranking_service = RankingService()
+            ranking_service.generate_rankings()
             results['ranking'] = "completed"
         except Exception as e:
             results['ranking'] = f"failed: {str(e)}"

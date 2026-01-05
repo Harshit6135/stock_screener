@@ -7,7 +7,7 @@ class Strategy1Parameters:
     structure_weight: float = 0.10
     trend_rank_weight: float = 0.6
     trend_extension_rank_weight: float = 0.4
-    # trend_start_rank_weight: float = 0.2
+    trend_start_rank_weight: float = 0
     momentum_rsi_rank_weight: float = 0.6 #0.5
     momentum_ppo_rank_weight: float = 0.25 #0.3
     momentum_ppoh_rank_weight: float = 0.15 #0.2

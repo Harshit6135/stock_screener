@@ -1,5 +1,5 @@
 """
-Score Service - Calculates weighted composite scores and weekly rankings
+Score Service - Calculates weighted composite scores from percentiles
 
 Composite Score Formula (from Strategy1Parameters):
   final_trend_score = trend_rank*0.6 + trend_extension_rank*0.2 + trend_start_rank*0.2
@@ -21,17 +21,8 @@ percentile_repo = PercentileRepository()
 logger = setup_logger(name="ScoreService")
 
 
-def get_friday(d):
-    """Get the Friday of the week containing date d (Friday = weekday 4)"""
-    days_until_friday = (4 - d.weekday()) % 7
-    if d.weekday() > 4:  # If Saturday or Sunday, go to previous Friday
-        days_until_friday = d.weekday() - 4
-        return d - timedelta(days=days_until_friday)
-    return d + timedelta(days=days_until_friday)
-
-
 class ScoreService:
-    """Service for calculating composite scores and weekly rankings"""
+    """Service for calculating composite scores from percentiles"""
     
     def __init__(self):
         self.params = Strategy1Parameters()
@@ -99,8 +90,6 @@ class ScoreService:
             logger.info("No existing scores, processing all percentiles")
         
         # Get distinct dates from percentile table to process
-        all_dates = percentile_repo.get_percentiles_by_date(None)  # Get all distinct dates
-        # Actually we need a method to get distinct dates - let's use score_repo's method which reads from percentile now
         from db import db
         from models import PercentileModel
         result = db.session.query(PercentileModel.percentile_date).distinct().order_by(PercentileModel.percentile_date).all()
@@ -168,95 +157,3 @@ class ScoreService:
         
         # Now generate all scores
         return self.generate_composite_scores()
-    
-    def generate_rankings(self):
-        """
-        Generate weekly rankings incrementally.
-        For each Friday, calculate average of that week's (Mon-Fri) daily scores,
-        sort by score descending, and assign rank (1 = highest).
-        """
-        logger.info("Starting incremental ranking generation...")
-        
-        last_ranking_date = score_repo.get_max_ranking_date()
-        last_score_date = score_repo.get_max_score_date()
-        
-        if not last_score_date:
-            logger.info("No scores available for ranking")
-            return {"message": "No scores available", "weeks": 0}
-        
-        # Determine starting Friday
-        if last_ranking_date:
-            current_friday = get_friday(last_ranking_date) + timedelta(days=7)
-        else:
-            # Start from first available Friday after earliest score
-            from db import db
-            from models import ScoreModel
-            result = db.session.query(ScoreModel.score_date).distinct().order_by(ScoreModel.score_date).all()
-            distinct_dates = [r[0] for r in result]
-            if not distinct_dates:
-                return {"message": "No score dates available", "weeks": 0}
-            first_date = distinct_dates[0]
-            current_friday = get_friday(first_date)
-            if current_friday < first_date:
-                current_friday += timedelta(days=7)
-        
-        # End at latest score date's Friday
-        end_friday = get_friday(last_score_date)
-        
-        weeks_processed = 0
-        all_ranking_records = []
-        
-        while current_friday <= end_friday:
-            # Week range: Monday to Friday (inclusive)
-            week_monday = current_friday - timedelta(days=4)  # Friday - 4 = Monday
-            week_friday = current_friday
-            
-            # Get scores for this week (Mon-Fri inclusive)
-            scores = score_repo.get_scores_in_date_range(week_monday, week_friday)
-            
-            if scores:
-                df = pd.DataFrame([
-                    {'tradingsymbol': s.tradingsymbol, 'composite_score': s.composite_score}
-                    for s in scores
-                ])
-                
-                # Calculate average per symbol
-                weekly_avg = df.groupby('tradingsymbol')['composite_score'].mean().reset_index()
-                
-                # Filter by market cap and price
-                df_marketcap = pd.read_csv('yfinance_dump.csv')
-                weekly_avg = weekly_avg.merge(df_marketcap[['tradingsymbol', 'marketCap', 'regularMarketPrice']], on='tradingsymbol', how='left')
-                weekly_avg = weekly_avg[weekly_avg['marketCap'] > 5000000000]
-                weekly_avg = weekly_avg[weekly_avg['regularMarketPrice'] > 75]
-                weekly_avg.drop(['marketCap', 'regularMarketPrice'], axis=1, inplace=True)
-                
-                # Sort by composite_score descending and assign rank
-                weekly_avg = weekly_avg.sort_values('composite_score', ascending=False).reset_index(drop=True)
-                weekly_avg['rank'] = range(1, len(weekly_avg) + 1)
-                weekly_avg['ranking_date'] = current_friday  # Store as Friday's date
-                
-                all_ranking_records.extend(weekly_avg.to_dict('records'))
-                weeks_processed += 1
-                logger.info(f"Processed week ending {current_friday}")
-            
-            current_friday += timedelta(days=7)
-        
-        if all_ranking_records:
-            score_repo.bulk_insert_ranking(all_ranking_records)
-        
-        logger.info(f"Generated rankings for {weeks_processed} weeks")
-        return {"message": f"Generated rankings for {weeks_processed} weeks", "weeks": weeks_processed}
-    
-    def recalculate_all_rankings(self):
-        """
-        Recalculate ALL weekly rankings from scratch.
-        Use this when composite scores have been recalculated.
-        """
-        logger.info("Starting FULL ranking recalculation...")
-        
-        # Clear existing rankings
-        logger.info("Clearing existing ranking table...")
-        score_repo.delete_all_ranking()
-        
-        # Now generate all rankings
-        return self.generate_rankings()

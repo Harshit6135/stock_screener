@@ -5,6 +5,7 @@ from .indicators_service import IndicatorsService
 from .marketdata_service import MarketDataService
 from .percentile_service import PercentileService
 from .score_service import ScoreService
+from .ranking_service import RankingService
 
 
 __all__ = [
@@ -14,5 +15,6 @@ __all__ = [
     "IndicatorsService",
     "MarketDataService",
     "PercentileService",
-    "ScoreService"
+    "ScoreService",
+    "RankingService"
 ]

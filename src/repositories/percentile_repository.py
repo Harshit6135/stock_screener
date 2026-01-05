@@ -1,7 +1,10 @@
 from db import db
 from sqlalchemy.exc import SQLAlchemyError
 
+from config import setup_logger
 from models import PercentileModel
+
+logger = setup_logger(name="PercentileRepository")
 
 
 class PercentileRepository:
@@ -14,7 +17,7 @@ class PercentileRepository:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            print(f"Error inserting Items to Table {e}")
+            logger.error(f"Error inserting Items to Table {e}")
             return None
         return percentile_records
 
@@ -24,7 +27,7 @@ class PercentileRepository:
             db.session.query(PercentileModel).filter(PercentileModel.percentile_date == percentile_date).delete()
             db.session.commit()
         except SQLAlchemyError as e:
-            print(f"Error deleting Items to Table {e}")
+            logger.error(f"Error deleting Items to Table {e}")
             db.session.rollback()
             return None
         return True

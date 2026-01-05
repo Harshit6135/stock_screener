@@ -1,7 +1,10 @@
 from db import db
 from sqlalchemy.exc import SQLAlchemyError
 
+from config import setup_logger
 from models import RankingModel
+
+logger = setup_logger(name="RankingRepository")
 
 
 class RankingRepository:
@@ -13,7 +16,7 @@ class RankingRepository:
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
-            print(f"Error inserting Items to Table {e}")
+            logger.error(f"Error inserting Items to Table {e}")
             return None
         return ranking_records
 
@@ -23,7 +26,7 @@ class RankingRepository:
             db.session.query(RankingModel).filter(RankingModel.ranking_date == ranking_date).delete()
             db.session.commit()
         except SQLAlchemyError as e:
-            print(f"Error deleting Items to Table {e}")
+            logger.error(f"Error deleting Items to Table {e}")
             db.session.rollback()
             return None
         return True

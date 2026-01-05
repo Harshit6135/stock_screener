@@ -1,5 +1,8 @@
 import json
 import yfinance as yf
+from config import setup_logger
+
+logger = setup_logger(name="YFinanceAdaptor")
 
 
 class YFinanceAdaptor:
@@ -20,6 +23,6 @@ class YFinanceAdaptor:
                     yfinance_status = 'Success'
                     break
             except Exception as e:
-                print(e)
+                logger.error(f"Error fetching {ticker}: {e}")
                 pass
         return yfinance_info, yfinance_ticker_used, yfinance_status

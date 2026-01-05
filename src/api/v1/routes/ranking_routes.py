@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from repositories import ScoreRepository, PortfolioRepository, MarketDataRepository
 from schemas import RankingSchema, MessageSchema, TopNSchema
-from services import ScoreService
+from services import RankingService
 
 
 blp = Blueprint("ranking", __name__, url_prefix="/api/v1/ranking", description="Operations on Weekly Rankings")
@@ -38,8 +38,8 @@ class GenerateRankings(MethodView):
     @blp.response(201, MessageSchema)
     def post(self):
         """Generate weekly rankings incrementally"""
-        score_service = ScoreService()
-        result = score_service.generate_rankings()
+        ranking_service = RankingService()
+        result = ranking_service.generate_rankings()
         return {"message": result["message"]}
 
 
@@ -48,8 +48,8 @@ class RecalculateRankings(MethodView):
     @blp.response(201, MessageSchema)
     def post(self):
         """Recalculate ALL weekly rankings from scratch"""
-        score_service = ScoreService()
-        result = score_service.recalculate_all_rankings()
+        ranking_service = RankingService()
+        result = ranking_service.recalculate_all_rankings()
         return {"message": result["message"]}
 
 

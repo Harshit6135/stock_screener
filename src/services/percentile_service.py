@@ -86,7 +86,6 @@ class PercentileService:
             self.strategy_params.conviction_weight * metrics_df.get('final_vol_score', 0) +
             self.strategy_params.structure_weight * metrics_df.get('final_structure_score', 0)
         )
-        metrics_df[metrics_df['tradingsymbol']=='DCXINDIA'].to_csv("Test.csv")
         return metrics_df
 
     def _apply_universe_penalties(self, metrics_df) -> pd.DataFrame:
@@ -210,6 +209,5 @@ class PercentileService:
             start_date = pd.Timestamp(start_date)
 
         while start_date <= current_date:
-            print(start_date)
             self.generate_percentile(start_date)
             start_date += pd.Timedelta(days=1)
