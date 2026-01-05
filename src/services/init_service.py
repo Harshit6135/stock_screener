@@ -221,16 +221,16 @@ class InitService:
         df['regularMarketPrice'] = pd.to_numeric(df['regularMarketPrice'], errors='coerce')
         
         # Filter Mcap
-        # Logic: Keep if NaN OR >= 500cr
-        # df_filtered = df[df['marketCap'] >= mcap_threshold]
-        # logger.info(f"Dropped {len(df) - len(df_filtered)} stocks due to Mcap < 500cr")
-        #
+        # Logic: Keep if >= 500cr
+        df_filtered = df[df['marketCap'] >= mcap_threshold]
+        logger.info(f"Dropped {len(df) - len(df_filtered)} stocks due to Mcap < 500cr")
+
         # # Filter Price < 75
-        # # Logic: Keep if NaN OR >= 75
-        # current_len = len(df_filtered)
-        # df_filtered = df_filtered[df_filtered['regularMarketPrice'] >= PRICE_THRESHOLD]
-        # logger.info(f"Dropped {current_len - len(df_filtered)} stocks due to Price < {PRICE_THRESHOLD}")
-        
+        # # Logic: Keep  >= 75
+        current_len = len(df_filtered)
+        df_filtered = df_filtered[df_filtered['regularMarketPrice'] >= PRICE_THRESHOLD]
+        logger.info(f"Dropped {current_len - len(df_filtered)} stocks due to Price < {PRICE_THRESHOLD}")
+
         return df
 
     @staticmethod
@@ -243,13 +243,14 @@ class InitService:
     @staticmethod
     def sync_with_kite(df, instruments_df):
         try:
-            valid_symbols_nse = set(df[df['NSE_SYMBOL'] != '']['NSE_SYMBOL'])
+            valid_symbols_nse = set(df.loc[df['NSE_SYMBOL'] != '', 'NSE_SYMBOL'])
+
             kite_nse = instruments_df[
                 (instruments_df['exchange'] == 'NSE') & 
                 (instruments_df['tradingsymbol'].isin(valid_symbols_nse))
             ]
 
-            valid_symbols_bse = set(df[(df['BSE_SYMBOL'] != '') & (df['NSE_SYMBOL'] == '')]['BSE_SYMBOL'])
+            valid_symbols_bse = set(df.loc[(df['BSE_SYMBOL'] != '') & (df['NSE_SYMBOL'] == ''), 'BSE_SYMBOL'])
             kite_bse = instruments_df[
                 (instruments_df['exchange'] == 'BSE') & 
                 (instruments_df['tradingsymbol'].isin(valid_symbols_bse))
@@ -260,6 +261,17 @@ class InitService:
             req_columns = ['instrument_token', 'exchange_token', 'tradingsymbol', 'name', 'exchange']
             final_instruments = final_instruments[req_columns]
             final_instruments['exchange_token'] = final_instruments['exchange_token'].astype(str)
+
+            # Merge with df to get mcap, industry, and sector
+            df_map = pd.concat([
+                df[df['NSE_SYMBOL'] != ''][['NSE_SYMBOL', 'marketCap', 'industry', 'sector']].rename(columns={'NSE_SYMBOL': 'tradingsymbol'}),
+                df[df['BSE_SYMBOL'] != ''][['BSE_SYMBOL', 'marketCap', 'industry', 'sector']].rename(columns={'BSE_SYMBOL': 'tradingsymbol'})
+            ]).drop_duplicates('tradingsymbol')
+
+            final_instruments = final_instruments.merge(df_map, on='tradingsymbol', how='left')
+            req_columns = ['instrument_token', 'exchange_token', 'tradingsymbol', 'name', 'exchange', 'marketCap', 'industry', 'sector']
+            final_instruments = final_instruments[req_columns]
+            final_instruments.rename(columns={'marketCap': 'market_cap'}, inplace=True)
 
             instruments_json = json.loads(final_instruments.to_json(orient='records', indent=4))
             logger.info(f"Syncing {len(final_instruments)} instruments to Kite")

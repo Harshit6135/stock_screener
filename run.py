@@ -10,9 +10,12 @@ from src.api.v1.routes import (
     marketdata_bp,
     indicators_bp,
     portfolio_bp,
-    ranking_bp,
+    percentile_bp,
     init_bp,
-    score_bp
+    score_bp,
+    app_bp,
+    ranking_bp,
+    strategy_bp
 )
 
 
@@ -37,10 +40,12 @@ api.register_blueprint(instruments_bp)
 api.register_blueprint(marketdata_bp)
 api.register_blueprint(indicators_bp)
 api.register_blueprint(actions_bp)
-api.register_blueprint(ranking_bp)
+api.register_blueprint(percentile_bp)
 api.register_blueprint(portfolio_bp)
 api.register_blueprint(score_bp)
-
+api.register_blueprint(app_bp)
+api.register_blueprint(ranking_bp)
+api.register_blueprint(strategy_bp)
 
 # Main Dashboard Route
 @app.route("/")
@@ -48,29 +53,6 @@ def dashboard():
     """Render the main dashboard"""
     return render_template('dashboard.html')
 
-@app.route("/strategy_cap")
-def strategy_cap():
-    from repositories import ConfigRepository
-    config = ConfigRepository()
-    data = {
-        'strategy_name' : 'momentum_strategy_one',
-        'initial_capital' : 100000,
-        'risk_threshold' : 1,
-        'max_positions' : 10,
-        'buffer_percent' : 25,
-        'exit_threshold' : 40,
-        'sl_multiplier' : 2
-    }
-    config.post_config(data)
-
-    return 'successful'
-
-@app.route("/strategy")
-def run_strategy():
-    from strategies.main import strategy_backtesting
-    strategy_backtesting('strategy_one')
-
-    return 'successful'
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, use_reloader=False)
