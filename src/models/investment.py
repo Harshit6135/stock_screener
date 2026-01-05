@@ -9,16 +9,19 @@ class InvestmentActionsModel(db.Model):
     __bind_key__ = 'personal'
 
     action_id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    date = db.Column(db.Date, nullable=False)
+    working_date = db.Column(db.Date, nullable=False)
     type = db.Column(db.String(10), nullable=False)  # 'buy' or 'sell'
+    reason = db.Column(db.String(50), nullable=True)
     symbol = db.Column(db.String(50), nullable=False)
     risk = db.Column(db.Float, nullable=True)
     atr = db.Column(db.Float, nullable=True)
     units = db.Column(db.Integer, nullable=False)
+    prev_close = db.Column(db.Numeric(10,2), nullable=False)
+    capital = db.Column(db.Numeric(10,2), nullable=False)
     status = db.Column(db.String(20), nullable=False, default='Pending')
 
     __table_args__ = (
-        Index("idx_investment_actions_date", "date"),
+        Index("idx_investment_actions_working_date", "working_date"),
         Index("idx_investment_actions_symbol", "symbol"),
         Index("idx_investment_actions_status", "status"),
     )
@@ -62,6 +65,40 @@ class InvestmentHoldingsModel(db.Model):
 
     def __repr__(self):
         return f"<InvestmentHolding {self.symbol} qty={self.units} @ {self.entry_price}>"
+
+    def to_dict(self):
+        return { c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+
+class InvestmentSummaryModel(db.Model):
+    """Investment summary tracking weekly capital, risk, and portfolio metrics"""
+    __tablename__ = 'investment_summary'
+    __bind_key__ = 'personal'
+
+    working_date = db.Column(db.Date, primary_key=True, nullable=False)
+    starting_capital = db.Column(db.Numeric(12, 2), nullable=False)
+    sold = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    bought = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    capital_risk = db.Column(db.Numeric(12, 2), nullable=True)
+    portfolio_value = db.Column(db.Numeric(12, 2), nullable=False)
+    portfolio_risk = db.Column(db.Numeric(12, 2), nullable=True)
+    net_pnl = db.Column(db.Numeric(12, 2), nullable=True)
+    pnl_percentage = db.Column(db.Numeric(12, 2), nullable=True)
+
+    __table_args__ = (
+        Index("idx_investment_summary_working_date", "working_date"),
+    )
+
+    @property
+    def remaining_capital(self):
+        """Calculate remaining capital: starting_capital + sold - bought"""
+        if self.starting_capital and self.sold is not None and self.bought is not None:
+            remaining = float(self.starting_capital) + float(self.sold) - float(self.bought)
+            return round(remaining, 2)
+        return 0.0
+
+    def __repr__(self):
+        return f"<InvestmentSummary {self.working_date} capital={self.starting_capital}>"
 
     def to_dict(self):
         return { c.name: getattr(self, c.name) for c in self.__table__.columns}

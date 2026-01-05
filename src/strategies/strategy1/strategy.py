@@ -7,6 +7,7 @@ from repositories import IndicatorsRepository
 from repositories import MarketDataRepository
 from repositories import HoldingsRepository
 from repositories import ActionsRepository
+from repositories import InvestmentRepository
 from config import setup_logger
 
 logger = setup_logger(name="Strategy1")
@@ -16,11 +17,19 @@ indicators = IndicatorsRepository()
 marketdata = MarketDataRepository()
 holdings = HoldingsRepository()
 actions = ActionsRepository()
+investment = InvestmentRepository()
 
 class Strategy:
     @staticmethod
     def provide_actions(working_date, parameters):
-        top_n = ranking.get_top_n_by_date(parameters.max_positions, working_date)
+        #top_n = ranking.get_top_n_by_date(parameters.max_positions, working_date)
+        current_holdings = investment.get_holdings()
+        if not current_holdings:
+
+            print('True')
+        else:
+            print('False')
+
 
     @staticmethod
     def backtesting(start_date, end_date, parameters):
@@ -349,3 +358,10 @@ class Strategy:
             elif item.low < low:
                 low = item.low
         return low
+
+
+    @staticmethod
+    def buy_action(symbol, working_date, parameters):
+        atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, working_date),2)
+        closing_price = marketdata.get_marketdata_by_trading_symbol(symbol, working_date).close
+        

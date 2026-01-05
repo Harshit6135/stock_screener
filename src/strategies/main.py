@@ -17,6 +17,6 @@ def strategy_backtesting(strategy_name):
         # TODO - Find way to make this automated
 
     strategy_config_user = config.get_config(strategies[strategy_name])
-    strategy.backtesting(start_date, end_date, strategy_config_user)
-
+    #strategy.backtesting(start_date, end_date, strategy_config_user)
+    strategy.provide_actions(start_date, strategy_config_user)
     return None

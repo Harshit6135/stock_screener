@@ -9,3 +9,4 @@ from .indicators_repository import IndicatorsRepository
 from .score_repository import ScoreRepository
 from .holding_repository import HoldingsRepository
 from .ranking_repository import RankingRepository
+from .investment_repository import InvestmentRepository

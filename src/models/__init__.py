@@ -9,6 +9,7 @@ from .score import ScoreModel
 from .ranking import RankingModel
 from .invested import InvestedModel
 from .holdings import HoldingsModel, SummaryModel
+from .investment import InvestmentActionsModel, InvestmentHoldingsModel, InvestmentSummaryModel
 
 
 __all__ = [
@@ -24,4 +25,7 @@ __all__ = [
     "InvestedModel",
     "HoldingsModel",
     "SummaryModel",
+    "InvestmentActionsModel",
+    "InvestmentHoldingsModel",
+    "InvestmentSummaryModel"
 ]
