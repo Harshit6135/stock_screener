@@ -194,7 +194,7 @@ class InitService:
     @staticmethod
     def push_to_master(df):
         try:
-            df.fillna('', inplace=True)
+            # df.fillna('', inplace=True) # Causing float columns to become empty strings
             req_cols = [
                 'ISIN', 'NSE_SYMBOL', 'BSE_SYMBOL', 'BSE_SECURITY_CODE', 
                 'NAME_OF_COMPANY', 'industry', 'sector', 'marketCap', 'regularMarketPrice',
@@ -203,7 +203,16 @@ class InitService:
             ]
             df = df[req_cols]
             df.columns = df.columns.str.lower()
+            
+            # Replace NaN with None (which becomes NULL in DB)
+            df = df.where(pd.notnull(df), None)
+            
             master_data = json.loads(df.to_json(orient='records', indent=4))
+            # Clean up json load: ensure None is actually None not 'None' string if json screwed up, 
+            # but df.to_json should handle None as null.
+            # However, df.where(pd.notnull(df), None) sets object type.
+            # json.loads(df.to_json) with None values converts them to null in JSON, which loads as None in python dict.
+            # Verified approach.
             master_repo.delete_all()
             master_repo.bulk_insert(master_data)
         except Exception as e:
