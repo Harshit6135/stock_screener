@@ -3,7 +3,7 @@ from flask_smorest import Blueprint
 
 from schemas import MessageSchema
 from repositories import ConfigRepository
-from strategies.main import strategy_backtesting
+from strategies.main import strategy_backtesting, strategy_actions
 
 
 blp = Blueprint("strategy", __name__, url_prefix="/api/v1/strategy", description="Strategy Operations")
@@ -28,10 +28,19 @@ class StrategyConfig(MethodView):
         return {"message": "Strategy configuration saved successfully"}
 
 
-@blp.route("/run")
-class StrategyRun(MethodView):
+@blp.route("/backtesting")
+class StrategyBackTest(MethodView):
     @blp.response(200, MessageSchema)
     def post(self):
         """Run backtesting strategy"""
         strategy_backtesting('strategy_one')
         return {"message": "Strategy backtesting completed successfully"}
+
+
+@blp.route("/actions")
+class StrategyActions(MethodView):
+    @blp.response(200, MessageSchema)
+    def post(self):
+        """Get strategy actions"""
+        strategy_actions('strategy_one')
+        return {"message": "Strategy actions completed successfully"}

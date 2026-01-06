@@ -2,7 +2,7 @@ from datetime import date, timedelta
 import math
 import pandas as pd
 
-from repositories import ScoreRepository
+from repositories import RankingRepository
 from repositories import IndicatorsRepository
 from repositories import MarketDataRepository
 from repositories import HoldingsRepository
@@ -12,7 +12,7 @@ from config import setup_logger
 
 logger = setup_logger(name="Strategy1")
 
-ranking = ScoreRepository()
+ranking = RankingRepository()
 indicators = IndicatorsRepository()
 marketdata = MarketDataRepository()
 holdings = HoldingsRepository()
@@ -22,13 +22,16 @@ investment = InvestmentRepository()
 class Strategy:
     @staticmethod
     def provide_actions(working_date, parameters):
-        #top_n = ranking.get_top_n_by_date(parameters.max_positions, working_date)
+        top_n = ranking.get_top_n_by_date(parameters.max_positions, working_date)
         current_holdings = investment.get_holdings()
+        new_actions = []
         if not current_holdings:
-
-            print('True')
+            for item in top_n:
+                action = Strategy.buy_action(item.tradingsymbol, working_date, parameters, 'top 10 buys')
+                new_actions.append(action)
+            investment.bulk_insert_actions(new_actions)
         else:
-            print('False')
+            print('test')
 
 
     @staticmethod
@@ -361,7 +364,33 @@ class Strategy:
 
 
     @staticmethod
-    def buy_action(symbol, working_date, parameters):
+    def buy_action(symbol, working_date, parameters, reason):
         atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, working_date),2)
         closing_price = marketdata.get_marketdata_by_trading_symbol(symbol, working_date).close
-        
+        risk_per_unit = parameters.sl_multiplier*atr
+
+        summary = investment.get_summary()
+
+        if not summary:
+            capital = parameters.initial_capital
+        else:
+            capital = summary.portfolio_value + summary.remaining_capital
+
+        max_risk = capital * parameters.risk_threshold / 100
+        units = math.floor(max_risk / risk_per_unit)
+
+        capital_needed = units * closing_price
+
+        action = {
+            'working_date' : working_date,
+            'type' : 'buy',
+            'reason' : reason,
+            'symbol' : symbol,
+            'risk' : risk_per_unit,
+            'atr' : atr,
+            'units' : units,
+            'prev_close' : closing_price,
+            'capital' : capital_needed
+        }
+
+        return action

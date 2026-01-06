@@ -13,8 +13,8 @@ class InvestmentActionsModel(db.Model):
     type = db.Column(db.String(10), nullable=False)  # 'buy' or 'sell'
     reason = db.Column(db.String(50), nullable=True)
     symbol = db.Column(db.String(50), nullable=False)
-    risk = db.Column(db.Float, nullable=True)
-    atr = db.Column(db.Float, nullable=True)
+    risk = db.Column(db.Numeric(10, 2), nullable=True)
+    atr = db.Column(db.Numeric(10, 2), nullable=True)
     units = db.Column(db.Integer, nullable=False)
     prev_close = db.Column(db.Numeric(10,2), nullable=False)
     capital = db.Column(db.Numeric(10,2), nullable=False)

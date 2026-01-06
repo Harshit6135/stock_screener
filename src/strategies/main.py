@@ -4,7 +4,7 @@ from repositories import ConfigRepository
 
 config = ConfigRepository()
 
-start_date = date(2023, 1, 6)
+start_date = date(2026, 1, 2)
 end_date = date(2026, 1, 2)
 
 strategies = {
@@ -17,6 +17,15 @@ def strategy_backtesting(strategy_name):
         # TODO - Find way to make this automated
 
     strategy_config_user = config.get_config(strategies[strategy_name])
-    #strategy.backtesting(start_date, end_date, strategy_config_user)
+    strategy.backtesting(start_date, end_date, strategy_config_user)
+
+    return None
+
+
+def strategy_actions(strategy_name):
+    if strategies[strategy_name] == 'momentum_strategy_one':
+        strategy = StrategyOne()
+
+    strategy_config_user = config.get_config(strategies[strategy_name])
     strategy.provide_actions(start_date, strategy_config_user)
     return None

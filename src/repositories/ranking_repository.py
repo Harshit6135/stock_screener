@@ -37,7 +37,7 @@ class RankingRepository:
         return latest_record.ranking_date if latest_record else None
 
     @staticmethod
-    def get_top_n_rankings_by_date(n, date=None):
+    def get_top_n_by_date(n, date=None):
         if date is None:
             latest = db.session.query(db.func.max(RankingModel.ranking_date)).scalar()
             if not latest:
