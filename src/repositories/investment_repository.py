@@ -82,3 +82,9 @@ class InvestmentRepository:
             print(f"Error as {e}")
             db.session.rollback()
             return None
+
+
+    @staticmethod
+    def check_pending_actions(working_date):
+        return InvestmentActionsModel.query.filter(InvestmentActionsModel.working_date != working_date,
+                                                     InvestmentActionsModel.status == 'Pending').all()

@@ -84,21 +84,20 @@ class InvestmentSummaryModel(db.Model):
     portfolio_risk = db.Column(db.Numeric(12, 2), nullable=True)
     net_pnl = db.Column(db.Numeric(12, 2), nullable=True)
     pnl_percentage = db.Column(db.Numeric(12, 2), nullable=True)
+    
+    # Generated column - automatically calculated by database
+    remaining_capital = db.Column(
+        db.Numeric(12, 2),
+        db.Computed('starting_capital + sold - bought'),
+        nullable=True
+    )
 
     __table_args__ = (
         Index("idx_investment_summary_working_date", "working_date"),
     )
 
-    @property
-    def remaining_capital(self):
-        """Calculate remaining capital: starting_capital + sold - bought"""
-        if self.starting_capital and self.sold is not None and self.bought is not None:
-            remaining = float(self.starting_capital) + float(self.sold) - float(self.bought)
-            return round(remaining, 2)
-        return 0.0
-
     def __repr__(self):
         return f"<InvestmentSummary {self.working_date} capital={self.starting_capital}>"
 
     def to_dict(self):
-        return { c.name: getattr(self, c.name) for c in self.__table__.columns}
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
