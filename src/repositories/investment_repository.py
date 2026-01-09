@@ -13,10 +13,26 @@ class InvestmentRepository:
 
 
     @staticmethod
+    def get_action_by_symbol(symbol, working_date=None):
+        if not working_date:
+            working_date = db.session.query(func.max(InvestmentActionsModel.working_date)).scalar()
+        return InvestmentActionsModel.query.filter(InvestmentActionsModel.working_date == working_date,
+                                                   InvestmentActionsModel.symbol == symbol).first()
+
+
+    @staticmethod
     def get_holdings(working_date=None):
         if not working_date:
             working_date = db.session.query(func.max(InvestmentHoldingsModel.working_date)).scalar()
         return InvestmentHoldingsModel.query.filter(InvestmentHoldingsModel.working_date == working_date).all()
+
+
+    @staticmethod
+    def get_holdings_by_symbol(symbol, working_date=None):
+        if not working_date:
+            working_date = db.session.query(func.max(InvestmentHoldingsModel.working_date)).scalar()
+        return InvestmentHoldingsModel.query.filter(InvestmentHoldingsModel.working_date == working_date,
+                                                    InvestmentHoldingsModel.symbol == symbol).first()
 
 
     @staticmethod
@@ -88,3 +104,23 @@ class InvestmentRepository:
     def check_pending_actions(working_date):
         return InvestmentActionsModel.query.filter(InvestmentActionsModel.working_date != working_date,
                                                      InvestmentActionsModel.status == 'Pending').all()
+
+
+    @staticmethod
+    def delete_holdings(working_date):
+        try:
+            InvestmentHoldingsModel.query.filter(InvestmentHoldingsModel.working_date == working_date).delete()
+            db.session.commit()
+        except Exception as e:
+            print(f"Error deleting (delete) {e}")
+            db.session.rollback()
+
+
+    @staticmethod
+    def delete_summary(working_date):
+        try:
+            InvestmentSummaryModel.query.filter(InvestmentSummaryModel.working_date == working_date).delete()
+            db.session.commit()
+        except Exception as e:
+            print(f"Error deleting (delete) {e}")
+            db.session.rollback()

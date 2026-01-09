@@ -70,4 +70,4 @@ class RankingRepository:
         return RankingModel.query.filter(
             RankingModel.ranking_date == ranking_date,
             RankingModel.tradingsymbol == symbol
-        ).order_by(RankingModel.composite_score.desc()).all()
+        ).order_by(RankingModel.composite_score.desc()).first()

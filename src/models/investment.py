@@ -17,6 +17,7 @@ class InvestmentActionsModel(db.Model):
     atr = db.Column(db.Numeric(10, 2), nullable=True)
     units = db.Column(db.Integer, nullable=False)
     prev_close = db.Column(db.Numeric(10,2), nullable=False)
+    execution_price = db.Column(db.Numeric(10,2), nullable=True)
     capital = db.Column(db.Numeric(10,2), nullable=False)
     status = db.Column(db.String(20), nullable=False, default='Pending')
 

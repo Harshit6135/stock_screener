@@ -3,7 +3,6 @@ from .instruments_repository import InstrumentsRepository
 from .actions_repository import ActionsRepository
 from .config_repository import ConfigRepository
 from .percentile_repository import PercentileRepository
-from .portfolio_repository import PortfolioRepository
 from .marketdata_repository import MarketDataRepository
 from .indicators_repository import IndicatorsRepository
 from .score_repository import ScoreRepository

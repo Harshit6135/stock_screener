@@ -44,3 +44,9 @@ class StrategyActions(MethodView):
         """Get strategy actions"""
         strategy_actions('strategy_one')
         return {"message": "Strategy actions completed successfully"}
+
+@blp.route("/update_actions")
+class UpdateActions(MethodView):
+    @blp.response(201, MessageSchema)
+    def post(self):
+        """Update strategy actions"""

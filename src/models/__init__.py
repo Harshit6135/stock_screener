@@ -7,7 +7,6 @@ from .risk_config import RiskConfigModel
 from .percentile import PercentileModel
 from .score import ScoreModel
 from .ranking import RankingModel
-from .invested import InvestedModel
 from .holdings import HoldingsModel, SummaryModel
 from .investment import InvestmentActionsModel, InvestmentHoldingsModel, InvestmentSummaryModel
 
