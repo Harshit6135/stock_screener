@@ -1,9 +1,10 @@
 from flask.views import MethodView
 from flask_smorest import Blueprint
+from datetime import date
 
 from schemas import MessageSchema
 from repositories import ConfigRepository
-from strategies.main import strategy_backtesting, strategy_actions
+from services import Strategy
 
 
 blp = Blueprint("strategy", __name__, url_prefix="/api/v1/strategy", description="Strategy Operations")
@@ -33,7 +34,11 @@ class StrategyBackTest(MethodView):
     @blp.response(200, MessageSchema)
     def post(self):
         """Run backtesting strategy"""
-        strategy_backtesting('strategy_one')
+        strategy = Strategy()
+        start_date = date(2025, 12, 26)
+        end_date = date(2025, 12, 26)
+        strategy.backtesting(start_date, end_date)
+
         return {"message": "Strategy backtesting completed successfully"}
 
 

@@ -101,7 +101,7 @@ class InvestmentRepository:
 
 
     @staticmethod
-    def check_pending_actions(working_date):
+    def check_other_pending_actions(working_date):
         return InvestmentActionsModel.query.filter(InvestmentActionsModel.working_date != working_date,
                                                      InvestmentActionsModel.status == 'Pending').all()
 
@@ -124,3 +124,27 @@ class InvestmentRepository:
         except Exception as e:
             print(f"Error deleting (delete) {e}")
             db.session.rollback()
+
+
+    @staticmethod
+    def update_action(action_data):
+        action_id = action_data['action_id']
+        if action_data['status'] == 'Approved':
+            if not 'execution_price' in action_data:
+                print('Missing execution price')
+                return None
+        try:
+            action = InvestmentActionsModel.query.filter(InvestmentActionsModel.action_id == action_id).first()
+            if action:
+                for key, value in action_data.items():
+                    if hasattr(action, key):
+                        setattr(action, key, value)
+                db.session.commit()
+                return True
+            else:
+                print(f"Action with id {action_id} not found")
+                return None
+        except Exception as e:
+            print(f"Error updating action {e}")
+            db.session.rollback()
+            return None

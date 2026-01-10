@@ -83,8 +83,8 @@ class InvestmentSummaryModel(db.Model):
     capital_risk = db.Column(db.Numeric(12, 2), nullable=True)
     portfolio_value = db.Column(db.Numeric(12, 2), nullable=False)
     portfolio_risk = db.Column(db.Numeric(12, 2), nullable=True)
-    net_pnl = db.Column(db.Numeric(12, 2), nullable=True)
-    pnl_percentage = db.Column(db.Numeric(12, 2), nullable=True)
+    gain = db.Column(db.Numeric(12, 2), nullable=True)
+    gain_percentage = db.Column(db.Numeric(12, 2), nullable=True)
     
     # Generated column - automatically calculated by database
     remaining_capital = db.Column(

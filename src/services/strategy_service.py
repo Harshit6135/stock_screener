@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import timedelta
 import math
 import pandas as pd
 
@@ -6,8 +6,8 @@ from repositories import RankingRepository
 from repositories import IndicatorsRepository
 from repositories import MarketDataRepository
 from repositories import HoldingsRepository
-from repositories import ActionsRepository
 from repositories import InvestmentRepository
+from repositories import ConfigRepository
 from config import setup_logger
 
 logger = setup_logger(name="Strategy1")
@@ -16,13 +16,16 @@ ranking = RankingRepository()
 indicators = IndicatorsRepository()
 marketdata = MarketDataRepository()
 holdings = HoldingsRepository()
-actions = ActionsRepository()
 investment = InvestmentRepository()
+config = ConfigRepository()
+
+global parameters
+parameters = config.get_config('momentum_strategy_one')
 
 class Strategy:
     @staticmethod
-    def provide_actions(working_date, parameters):
-        pending_actions = investment.check_pending_actions(working_date)
+    def generate_actions(working_date):
+        pending_actions = investment.check_other_pending_actions(working_date)
         if pending_actions:
             return 'Actions pending from another date, please take action before proceeding'
 
@@ -31,7 +34,7 @@ class Strategy:
         new_actions = []
         if not current_holdings:
             for item in top_n:
-                action = Strategy.buy_action(item.tradingsymbol, working_date, parameters, 'top 10 buys')
+                action = Strategy.buy_action(item.tradingsymbol, working_date, 'top 10 buys')
                 new_actions.append(action)
             investment.bulk_insert_actions(new_actions)
 
@@ -63,7 +66,7 @@ class Strategy:
             remaining_buys = parameters.max_positions-len(current_holdings)
             i=0
             while i < remaining_buys:
-                action = Strategy.buy_action(top_n[i].tradingsymbol, working_date, parameters, 'top 10 buys')
+                action = Strategy.buy_action(top_n[i].tradingsymbol, working_date, 'top 10 buys')
                 new_actions.append(action)
                 i+=1
 
@@ -80,7 +83,7 @@ class Strategy:
                         new_actions.append(action)
                         current_holdings.pop(j)
 
-                        action = Strategy.buy_action(top_n[i].tradingsymbol, working_date, parameters, f'swap current score {top_n[i].composite_score}')
+                        action = Strategy.buy_action(top_n[i].tradingsymbol, working_date, f'swap current score {top_n[i].composite_score}')
                         new_actions.append(action)
                         buy_flag = True
                         break
@@ -97,7 +100,25 @@ class Strategy:
 
 
     @staticmethod
-    def process_actions(parameters, working_date):
+    def approve_all_actions(working_date):
+        actions = investment.get_actions(working_date)
+        for item in actions:
+            if item.type == 'sell' and item.reason == 'stoploss':
+                execution_price = investment.get_holdings_by_symbol(item.symbol, working_date).current_sl
+            else:
+                execution_price = marketdata.get_marketdata_next_day(item.symbol, working_date).open
+
+            action_data = {
+                'action_id' : item.action_id,
+                'status' : 'Approved',
+                'execution_price' : execution_price
+            }
+
+            investment.update_action(action_data)
+
+
+    @staticmethod
+    def process_actions(working_date):
         holdings = investment.get_holdings(working_date)
         if holdings:
             investment.delete_holdings(working_date)
@@ -135,21 +156,34 @@ class Strategy:
 
         week_holdings = []
         for item in buy_symbols:
-            week_holdings.append(Strategy.buy_holding(item, parameters))
+            week_holdings.append(Strategy.buy_holding(item))
 
         for item in holdings:
-            week_holdings.append(Strategy.update_holding(item.symbol, parameters, actions_date))
+            week_holdings.append(Strategy.update_holding(item.symbol, actions_date))
 
         investment.bulk_insert_holdings(week_holdings)
-        prev_summary = investment.get_summary()
-        summary = Strategy.get_summary(week_holdings, prev_summary.remaining_capital, sold)
 
+        summary = Strategy.get_summary(week_holdings, sold)
+        investment.insert_summary(summary)
 
         return  week_holdings
 
 
     @staticmethod
-    def get_summary(week_holdings, starting_capital, sold):
+    def backtesting(start_date, end_date):
+        working_date = start_date
+        while working_date <= end_date:
+            Strategy.generate_actions(working_date)
+            Strategy.approve_all_actions(working_date)
+            Strategy.process_actions(working_date)
+            working_date += timedelta(days=7)
+
+
+    @staticmethod
+    def get_summary(week_holdings, sold):
+        prev_summary = investment.get_summary()
+        starting_capital = prev_summary.remaining_capital if prev_summary else parameters.initial_capital
+        day0_cap = parameters.initial_capital
         # Convert list of holdings to DataFrame for fast/vectorized calculations
         df = pd.DataFrame(week_holdings)
         # Bought: sum(entry_price * units) where entry_date == working_date
@@ -169,7 +203,9 @@ class Strategy:
             'bought': round(float(bought), 2),
             'capital_risk': round(float(capital_risk), 2),
             'portfolio_value': round(float(portfolio_value), 2),
-            'portfolio_risk': round(float(portfolio_risk), 2)
+            'portfolio_risk': round(float(portfolio_risk), 2),
+            'gain' : round(portfolio_value - starting_capital,2),
+            'gain_percentage' : round((portfolio_value - starting_capital) / starting_capital * 100,2)
         }
         return summary
 
@@ -192,7 +228,7 @@ class Strategy:
 
 
     @staticmethod
-    def buy_action(symbol, working_date, parameters, reason):
+    def buy_action(symbol, working_date, reason):
         atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, working_date),2)
         closing_price = marketdata.get_marketdata_by_trading_symbol(symbol, working_date).close
         risk_per_unit = parameters.sl_multiplier*atr
@@ -248,7 +284,7 @@ class Strategy:
 
 
     @staticmethod
-    def buy_holding(symbol, parameters):
+    def buy_holding(symbol):
         action_data = investment.get_action_by_symbol(symbol)
         working_date = action_data.working_date
         atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, working_date),2)
@@ -268,7 +304,7 @@ class Strategy:
 
 
     @staticmethod
-    def update_holding(symbol, parameters, working_date):
+    def update_holding(symbol, working_date):
         holding_data = investment.get_holdings_by_symbol(symbol)
         atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, working_date),2)
         holding_data = {
@@ -280,7 +316,7 @@ class Strategy:
             'atr' : atr,
             'score' : round(ranking.get_rankings_by_date_and_symbol(working_date, symbol).composite_score,2),
             'entry_sl' : holding_data.entry_sl,
-            'current_price' : marketdata.get_marketdata_by_trading_symbol(symbol, working_date)
+            'current_price' : marketdata.get_marketdata_by_trading_symbol(symbol, working_date),
             'current_sl' : marketdata.get_marketdata_by_trading_symbol(symbol, working_date) - (parameters.sl_multiplier * atr)
         }
         return holding_data
