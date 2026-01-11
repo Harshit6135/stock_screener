@@ -13,7 +13,8 @@ from src.api.v1.routes import (
     score_bp,
     app_bp,
     ranking_bp,
-    strategy_bp
+    strategy_bp,
+    investment_bp
 )
 
 
@@ -37,13 +38,12 @@ api.register_blueprint(init_bp)
 api.register_blueprint(instruments_bp)
 api.register_blueprint(marketdata_bp)
 api.register_blueprint(indicators_bp)
-
 api.register_blueprint(percentile_bp)
-
 api.register_blueprint(score_bp)
 api.register_blueprint(app_bp)
 api.register_blueprint(ranking_bp)
 api.register_blueprint(strategy_bp)
+api.register_blueprint(investment_bp)
 
 # Main Dashboard Route
 @app.route("/")

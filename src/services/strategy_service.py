@@ -178,8 +178,8 @@ class Strategy:
         while working_date <= end_date:
             print(f'Working on {working_date}')
             Strategy.generate_actions(working_date)
-            Strategy.approve_all_actions(working_date)
-            Strategy.process_actions(working_date)
+            # Strategy.approve_all_actions(working_date)
+            # Strategy.process_actions(working_date)
             working_date += timedelta(days=7)
 
 

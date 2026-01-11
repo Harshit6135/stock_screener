@@ -10,6 +10,10 @@ from .risk_config import RiskConfigSchema
 
 from .app import CleanupQuerySchema
 from .backtest import BacktestInputSchema
+from .investment import (
+    ActionDateSchema, ActionQuerySchema, ActionSchema, ActionUpdateSchema,
+    HoldingDateSchema, HoldingSchema, SummarySchema
+)
 
 __all__ = [
     "InitResponseSchema",
@@ -27,5 +31,12 @@ __all__ = [
     "RankingSchema",
     "RiskConfigSchema",
     "CleanupQuerySchema",
-    "BacktestInputSchema"
+    "BacktestInputSchema",
+    "ActionDateSchema",
+    "ActionQuerySchema",
+    "ActionSchema",
+    "ActionUpdateSchema",
+    "HoldingDateSchema",
+    "HoldingSchema",
+    "SummarySchema",
 ]

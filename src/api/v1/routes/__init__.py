@@ -7,3 +7,4 @@ from .score_routes import blp as score_bp
 from .app_routes import blp as app_bp
 from .ranking_routes import blp as ranking_bp
 from .strategy_routes import blp as strategy_bp
+from .investment_routes import blp as investment_bp

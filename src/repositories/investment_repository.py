@@ -6,10 +6,34 @@ from models import InvestmentActionsModel, InvestmentHoldingsModel, InvestmentSu
 class InvestmentRepository:
 
     @staticmethod
+    def get_action_dates():
+        """Get distinct working dates from actions table, ordered descending"""
+        dates = db.session.query(
+            InvestmentActionsModel.working_date
+        ).distinct().order_by(
+            InvestmentActionsModel.working_date.desc()
+        ).all()
+        return [d[0] for d in dates]
+
+    @staticmethod
+    def get_holdings_dates():
+        """Get distinct working dates from holdings table, ordered descending"""
+        dates = db.session.query(
+            InvestmentHoldingsModel.working_date
+        ).distinct().order_by(
+            InvestmentHoldingsModel.working_date.desc()
+        ).all()
+        return [d[0] for d in dates]
+
+    @staticmethod
     def get_actions(working_date=None):
         if not working_date:
-            working_date = db.session.query(func.max(InvestmentActionsModel.working_date)).scalar()
-        return InvestmentActionsModel.query.filter(InvestmentActionsModel.working_date == working_date).all()
+            working_date = db.session.query(
+                func.max(InvestmentActionsModel.working_date)
+            ).scalar()
+        return InvestmentActionsModel.query.filter(
+            InvestmentActionsModel.working_date == working_date
+        ).all()
 
 
     @staticmethod
