@@ -5,11 +5,9 @@ from flask import Flask, render_template
 
 from config import Config
 from src.api.v1.routes import (
-    actions_bp,
     instruments_bp,
     marketdata_bp,
     indicators_bp,
-    portfolio_bp,
     percentile_bp,
     init_bp,
     score_bp,
@@ -39,9 +37,9 @@ api.register_blueprint(init_bp)
 api.register_blueprint(instruments_bp)
 api.register_blueprint(marketdata_bp)
 api.register_blueprint(indicators_bp)
-api.register_blueprint(actions_bp)
+
 api.register_blueprint(percentile_bp)
-api.register_blueprint(portfolio_bp)
+
 api.register_blueprint(score_bp)
 api.register_blueprint(app_bp)
 api.register_blueprint(ranking_bp)
@@ -52,6 +50,18 @@ api.register_blueprint(strategy_bp)
 def dashboard():
     """Render the main dashboard"""
     return render_template('dashboard.html')
+
+
+@app.route("/backtest")
+def backtest():
+    """Render the backtest page"""
+    return render_template('backtest.html')
+
+
+@app.route("/actions")
+def actions():
+    """Render the actions page"""
+    return render_template('actions.html')
 
 
 if __name__ == "__main__":

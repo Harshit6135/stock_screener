@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backtest | Stock Screener</title>
+    <style>
+        :root {
+            --graphite-dark: #1a1a1a;
+            --graphite-mid: #2d2d2d;
+            --graphite-light: #363636;
+            --graphite-lighter: #4a4a4a;
+            --te-orange: #ff6600;
+            --te-orange-dim: #cc5200;
+            --text-primary: #e0e0e0;
+            --text-secondary: #888888;
+            --text-muted: #5a5a5a;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+            background: var(--graphite-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            width: 100%;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 50px;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .header .subtitle {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+        }
+
+        /* Card Panel */
+        .panel {
+            background: var(--graphite-mid);
+            border: 1px solid var(--graphite-lighter);
+            padding: 40px;
+            margin-bottom: 24px;
+        }
+
+        .panel-title {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            margin-bottom: 24px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--graphite-lighter);
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .form-group input[type="date"] {
+            width: 100%;
+            padding: 14px 16px;
+            font-family: inherit;
+            font-size: 1rem;
+            background: var(--graphite-dark);
+            border: 2px solid var(--graphite-lighter);
+            color: var(--text-primary);
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .form-group input[type="date"]:focus {
+            border-color: var(--te-orange);
+        }
+
+        .form-group input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(0.7);
+            cursor: pointer;
+        }
+
+        /* Teenage Engineering Button */
+        .te-btn {
+            display: inline-block;
+            width: 100%;
+            padding: 18px 32px;
+            font-family: inherit;
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            text-align: center;
+            background: var(--te-orange);
+            color: var(--graphite-dark);
+            border: none;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.15s ease;
+            box-shadow: 
+                0 4px 0 var(--te-orange-dim),
+                0 6px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .te-btn:hover {
+            background: #ff7722;
+            transform: translateY(-1px);
+            box-shadow: 
+                0 5px 0 var(--te-orange-dim),
+                0 8px 12px rgba(0, 0, 0, 0.35);
+        }
+
+        .te-btn:active {
+            transform: translateY(3px);
+            box-shadow: 
+                0 1px 0 var(--te-orange-dim),
+                0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .te-btn:disabled {
+            background: var(--graphite-lighter);
+            color: var(--text-muted);
+            cursor: not-allowed;
+            box-shadow: 
+                0 4px 0 var(--graphite-light),
+                0 6px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .te-btn:disabled:hover {
+            transform: none;
+        }
+
+        /* Secondary Button */
+        .te-btn-secondary {
+            background: var(--graphite-light);
+            color: var(--text-primary);
+            box-shadow: 
+                0 4px 0 var(--graphite-dark),
+                0 6px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .te-btn-secondary:hover {
+            background: var(--graphite-lighter);
+        }
+
+        /* Status Display */
+        .status-panel {
+            background: var(--graphite-dark);
+            border: 2px solid var(--graphite-lighter);
+            padding: 20px;
+            min-height: 80px;
+            display: none;
+        }
+
+        .status-panel.active {
+            display: block;
+        }
+
+        .status-panel.success {
+            border-color: #22c55e;
+        }
+
+        .status-panel.error {
+            border-color: #ef4444;
+        }
+
+        .status-panel.loading {
+            border-color: var(--te-orange);
+        }
+
+        .status-label {
+            font-size: 0.6rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .status-message {
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+
+        /* Loading Indicator */
+        .loading-dots {
+            display: inline-flex;
+            gap: 4px;
+        }
+
+        .loading-dots span {
+            width: 6px;
+            height: 6px;
+            background: var(--te-orange);
+            animation: pulse 1.4s infinite;
+        }
+
+        .loading-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .loading-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes pulse {
+            0%, 80%, 100% {
+                opacity: 0.3;
+            }
+            40% {
+                opacity: 1;
+            }
+        }
+
+        /* Navigation Link */
+        .nav-link {
+            display: inline-block;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-muted);
+            text-decoration: none;
+            transition: color 0.2s ease;
+            margin-top: 30px;
+        }
+
+        .nav-link:hover {
+            color: var(--te-orange);
+        }
+
+        .nav-link::before {
+            content: "← ";
+        }
+
+        /* Date Range Row */
+        .date-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 500px) {
+            .date-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Backtest</h1>
+            <p class="subtitle">Strategy Performance Analysis</p>
+        </div>
+
+        <div class="panel">
+            <div class="panel-title">Date Range</div>
+            
+            <div class="date-row">
+                <div class="form-group">
+                    <label for="start-date">Start Date</label>
+                    <input type="date" id="start-date" />
+                </div>
+                <div class="form-group">
+                    <label for="end-date">End Date</label>
+                    <input type="date" id="end-date" />
+                </div>
+            </div>
+
+            <button class="te-btn" id="run-btn" onclick="runBacktest()">
+                Run Backtest
+            </button>
+        </div>
+
+        <div class="status-panel" id="status-panel">
+            <div class="status-label">Status</div>
+            <div class="status-message" id="status-message"></div>
+        </div>
+
+        <a href="/" class="nav-link">Back to Dashboard</a>
+    </div>
+
+    <script>
+        // Set default dates (last 30 days)
+        document.addEventListener('DOMContentLoaded', () => {
+            const today = new Date();
+            const thirtyDaysAgo = new Date(today);
+            thirtyDaysAgo.setDate(today.getDate() - 30);
+
+            document.getElementById('end-date').value = formatDate(today);
+            document.getElementById('start-date').value = formatDate(thirtyDaysAgo);
+        });
+
+        function formatDate(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        function showStatus(message, type = 'loading') {
+            const panel = document.getElementById('status-panel');
+            const messageEl = document.getElementById('status-message');
+            
+            panel.className = 'status-panel active ' + type;
+            
+            if (type === 'loading') {
+                messageEl.innerHTML = message + ' <span class="loading-dots"><span></span><span></span><span></span></span>';
+            } else {
+                messageEl.textContent = message;
+            }
+        }
+
+        function hideStatus() {
+            document.getElementById('status-panel').className = 'status-panel';
+        }
+
+        async function runBacktest() {
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+            const runBtn = document.getElementById('run-btn');
+
+            if (!startDate || !endDate) {
+                showStatus('Please select both start and end dates', 'error');
+                return;
+            }
+
+            if (new Date(startDate) > new Date(endDate)) {
+                showStatus('Start date must be before end date', 'error');
+                return;
+            }
+
+            runBtn.disabled = true;
+            showStatus('Running backtest');
+
+            try {
+                const response = await fetch('/api/v1/strategy/backtesting', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        start_date: startDate,
+                        end_date: endDate
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showStatus('✓ ' + (data.message || 'Backtest completed successfully'), 'success');
+                } else {
+                    showStatus('✗ ' + (data.message || 'Backtest failed'), 'error');
+                }
+            } catch (error) {
+                showStatus('✗ ' + error.message, 'error');
+            } finally {
+                runBtn.disabled = false;
+            }
+        }
+    </script>
+</body>
+
+</html>

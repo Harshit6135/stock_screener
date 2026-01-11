@@ -148,3 +148,33 @@ class InvestmentRepository:
             print(f"Error updating action {e}")
             db.session.rollback()
             return None
+
+
+    @staticmethod
+    def delete_all_actions():
+        try:
+            InvestmentActionsModel.query.delete()
+            db.session.commit()
+        except Exception as e:
+            print(f"Error deleting (delete) {e}")
+            db.session.rollback()
+
+
+    @staticmethod
+    def delete_all_holdings():
+        try:
+            InvestmentHoldingsModel.query.delete()
+            db.session.commit()
+        except Exception as e:
+            print(f"Error deleting (delete) {e}")
+            db.session.rollback()
+
+
+    @staticmethod
+    def delete_all_summary():
+        try:
+            InvestmentSummaryModel.query.delete()
+            db.session.commit()
+        except Exception as e:
+            print(f"Error deleting (delete) {e}")
+            db.session.rollback()

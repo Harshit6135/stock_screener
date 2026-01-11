@@ -3,14 +3,14 @@ from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 from datetime import datetime, timedelta
 
-from repositories import ScoreRepository, PortfolioRepository, MarketDataRepository
+from repositories import ScoreRepository, MarketDataRepository
 from schemas import RankingSchema, MessageSchema, TopNSchema
 from services import RankingService
 
 
 blp = Blueprint("ranking", __name__, url_prefix="/api/v1/ranking", description="Operations on Weekly Rankings")
 score_repo = ScoreRepository()
-portfolio_repo = PortfolioRepository()
+
 marketdata_repo = MarketDataRepository()
 
 
@@ -74,32 +74,8 @@ class TopRankings(MethodView):
         rankings = score_repo.get_top_n_by_date(n, ranking_date)
         if not rankings:
             return []
-        
-        invested_symbols = portfolio_repo.get_invested()
-        invested_symbols = [i.tradingsymbol for i in invested_symbols]
-        
-        # Get actual ranking date used (for fetching prices)
-        actual_date = ranking_date if ranking_date else score_repo.get_max_ranking_date()
-
-        result = []
-        for r in rankings:
-            # Fetch close price from market data for this date
-            price_data = marketdata_repo.query({
-                "tradingsymbol": r.tradingsymbol,
-                "start_date": actual_date,
-                "end_date": actual_date
-            })
-            close_price = price_data[0].close if price_data else None
-            
-            result.append({
-                'tradingsymbol': r.tradingsymbol,
-                'composite_score': r.composite_score,
-                'rank': r.rank,
-                'is_invested': r.tradingsymbol in invested_symbols,
-                'ranking_date': r.ranking_date,
-                'close_price': close_price
-            })
-        return result
+        else:
+            return rankings
 
 
 @blp.route("/symbol/<string:symbol>")
