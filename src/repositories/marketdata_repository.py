@@ -45,7 +45,7 @@ class MarketDataRepository:
     @staticmethod
     def get_latest_date_for_all():
         """Fetch the max date for each instrument"""
-        query = MarketDataModel.query(
+        query = db.session.query(
             MarketDataModel.instrument_token,
             func.max(MarketDataModel.date).label("max_date")
         ).group_by(MarketDataModel.instrument_token)

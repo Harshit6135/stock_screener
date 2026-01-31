@@ -80,7 +80,7 @@ class Strategy:
                 buy_flag = False
                 j=0
                 while j < len(current_holdings):
-                    current_score = ranking.get_rankings_by_date_and_symbol(current_holdings[j].symbol, working_date).composite_score
+                    current_score = ranking.get_rankings_by_date_and_symbol(working_date, current_holdings[j].symbol).composite_score
 
                     if top_n[i].composite_score > (1 + (Strategy.get_parameters().buffer_percent/100))*current_score:
                         action = Strategy.sell_action(current_holdings[j].symbol, working_date, current_holdings[j].units, f'swap current score {current_score}')
@@ -118,6 +118,7 @@ class Strategy:
             }
 
             investment.update_action(action_data)
+        return len(actions)
 
 
     @staticmethod
@@ -316,6 +317,7 @@ class Strategy:
         atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, working_date),2)
         sl_multiplier = Decimal(str(Strategy.get_parameters().sl_multiplier))
         atr_decimal = Decimal(str(atr))
+        current_price = marketdata.get_marketdata_by_trading_symbol(symbol, working_date).close
         holding_data = {
             'symbol' : symbol,
             'working_date' : working_date,
@@ -325,7 +327,7 @@ class Strategy:
             'atr' : atr,
             'score' : round(ranking.get_rankings_by_date_and_symbol(working_date, symbol).composite_score,2),
             'entry_sl' : holding_data.entry_sl,
-            'current_price' : marketdata.get_marketdata_by_trading_symbol(symbol, working_date),
-            'current_sl' : Decimal(marketdata.get_marketdata_by_trading_symbol(symbol, working_date)) - (sl_multiplier * atr_decimal)
+            'current_price' : current_price,
+            'current_sl' : Decimal(current_price) - (sl_multiplier * atr_decimal)
         }
         return holding_data

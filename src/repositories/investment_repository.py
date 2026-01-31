@@ -1,6 +1,9 @@
 from db import db
 from sqlalchemy import func
 from models import InvestmentActionsModel, InvestmentHoldingsModel, InvestmentSummaryModel
+from config import setup_logger
+
+logger = setup_logger(name="InvestmentRepository")
 
 
 class InvestmentRepository:
@@ -72,14 +75,14 @@ class InvestmentRepository:
             InvestmentActionsModel.query.filter(InvestmentActionsModel.working_date == actions[0]['working_date']).delete()
             db.session.commit()
         except Exception as e:
-            print(f"Error bulk_insert_actions (delete) {e}")
+            logger.error(f"Error bulk_insert_actions (delete) {e}")
             db.session.rollback()
 
         try:
             db.session.bulk_insert_mappings(InvestmentActionsModel, actions, return_defaults=True)
             db.session.commit()
         except Exception as e:
-            print(f"Error bulk_insert_actions {e}")
+            logger.error(f"Error bulk_insert_actions {e}")
             db.session.rollback()
             return None
         return True
@@ -91,14 +94,14 @@ class InvestmentRepository:
             InvestmentHoldingsModel.query.filter(InvestmentHoldingsModel.working_date == holdings[0]['working_date']).delete()
             db.session.commit()
         except Exception as e:
-            print(f"Error bulk_insert_actions (delete) {e}")
+            logger.error(f"Error bulk_insert_holdings (delete) {e}")
             db.session.rollback()
 
         try:
             db.session.bulk_insert_mappings(InvestmentHoldingsModel, holdings, return_defaults=True)
             db.session.commit()
         except Exception as e:
-            print(f"Error bulk_insert_actions {e}")
+            logger.error(f"Error bulk_insert_holdings {e}")
             db.session.rollback()
             return None
         return True
@@ -111,7 +114,7 @@ class InvestmentRepository:
             InvestmentSummaryModel.query.filter(InvestmentSummaryModel.working_date == summary['working_date']).delete()
             db.session.commit()
         except Exception as e:
-            print(f"Error as {e}")
+            logger.error(f"Error deleting summary {e}")
             db.session.rollback()
 
         try:
@@ -119,7 +122,7 @@ class InvestmentRepository:
             db.session.commit()
             return True
         except Exception as e:
-            print(f"Error as {e}")
+            logger.error(f"Error inserting summary {e}")
             db.session.rollback()
             return None
 
@@ -136,7 +139,7 @@ class InvestmentRepository:
             InvestmentHoldingsModel.query.filter(InvestmentHoldingsModel.working_date == working_date).delete()
             db.session.commit()
         except Exception as e:
-            print(f"Error deleting (delete) {e}")
+            logger.error(f"Error delete_holdings {e}")
             db.session.rollback()
 
 
@@ -146,7 +149,7 @@ class InvestmentRepository:
             InvestmentSummaryModel.query.filter(InvestmentSummaryModel.working_date == working_date).delete()
             db.session.commit()
         except Exception as e:
-            print(f"Error deleting (delete) {e}")
+            logger.error(f"Error delete_summary {e}")
             db.session.rollback()
 
 
@@ -155,7 +158,7 @@ class InvestmentRepository:
         action_id = action_data['action_id']
         if action_data['status'] == 'Approved':
             if not 'execution_price' in action_data:
-                print('Missing execution price')
+                logger.warning('Missing execution price for approval')
                 return None
         try:
             action = InvestmentActionsModel.query.filter(InvestmentActionsModel.action_id == action_id).first()
@@ -166,10 +169,10 @@ class InvestmentRepository:
                 db.session.commit()
                 return True
             else:
-                print(f"Action with id {action_id} not found")
+                logger.warning(f"Action with id {action_id} not found")
                 return None
         except Exception as e:
-            print(f"Error updating action {e}")
+            logger.error(f"Error updating action {e}")
             db.session.rollback()
             return None
 
@@ -180,7 +183,7 @@ class InvestmentRepository:
             InvestmentActionsModel.query.delete()
             db.session.commit()
         except Exception as e:
-            print(f"Error deleting (delete) {e}")
+            logger.error(f"Error delete_all_actions {e}")
             db.session.rollback()
 
 
@@ -190,7 +193,7 @@ class InvestmentRepository:
             InvestmentHoldingsModel.query.delete()
             db.session.commit()
         except Exception as e:
-            print(f"Error deleting (delete) {e}")
+            logger.error(f"Error delete_all_holdings {e}")
             db.session.rollback()
 
 
@@ -200,5 +203,5 @@ class InvestmentRepository:
             InvestmentSummaryModel.query.delete()
             db.session.commit()
         except Exception as e:
-            print(f"Error deleting (delete) {e}")
+            logger.error(f"Error deleting all summary {e}")
             db.session.rollback()
