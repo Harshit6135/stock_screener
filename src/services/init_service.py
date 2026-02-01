@@ -20,6 +20,7 @@ class InitService:
         self.nse_path = "data/imports/NSE.csv"
         self.bse_path = "data/imports/BSE.csv"
         self.dump_path = "data/exports/yfinance_dump.csv"
+        self.instr_json = "data/exports/instruments.json"
 
     def initialize_app(self):
         logger.info("Starting Day 0 Process...")
@@ -194,7 +195,6 @@ class InitService:
     @staticmethod
     def push_to_master(df):
         try:
-            # df.fillna('', inplace=True) # Causing float columns to become empty strings
             req_cols = [
                 'ISIN', 'NSE_SYMBOL', 'BSE_SYMBOL', 'BSE_SECURITY_CODE', 
                 'NAME_OF_COMPANY', 'industry', 'sector', 'marketCap', 'regularMarketPrice',
@@ -208,11 +208,6 @@ class InitService:
             df = df.where(pd.notnull(df), None)
             
             master_data = json.loads(df.to_json(orient='records', indent=4))
-            # Clean up json load: ensure None is actually None not 'None' string if json screwed up, 
-            # but df.to_json should handle None as null.
-            # However, df.where(pd.notnull(df), None) sets object type.
-            # json.loads(df.to_json) with None values converts them to null in JSON, which loads as None in python dict.
-            # Verified approach.
             master_repo.delete_all()
             master_repo.bulk_insert(master_data)
         except Exception as e:
@@ -220,22 +215,14 @@ class InitService:
 
     @staticmethod
     def filter_stocks(df):
-        # Request: Remove mcap < 500cr
-        # Mcap is usually in bytes in yfinance? Let's check. Yes, usually full number.
-        # "500cr" = 500 * 10,000,000 = 5,000,000,000
         mcap_threshold = MCAP_THRESHOLD * 10000000
-
-        # Ensure numeric
         df['marketCap'] = pd.to_numeric(df['marketCap'], errors='coerce')
         df['regularMarketPrice'] = pd.to_numeric(df['regularMarketPrice'], errors='coerce')
         
         # Filter Mcap
-        # Logic: Keep if >= 500cr
         df_filtered = df[df['marketCap'] >= mcap_threshold]
-        logger.info(f"Dropped {len(df) - len(df_filtered)} stocks due to Mcap < 500cr")
+        logger.info(f"Dropped {len(df) - len(df_filtered)} stocks due to Mcap < {MCAP_THRESHOLD}cr")
 
-        # # Filter Price < 75
-        # # Logic: Keep  >= 75
         current_len = len(df_filtered)
         df_filtered = df_filtered[df_filtered['regularMarketPrice'] >= PRICE_THRESHOLD]
         logger.info(f"Dropped {current_len - len(df_filtered)} stocks due to Price < {PRICE_THRESHOLD}")
@@ -249,8 +236,7 @@ class InitService:
         logger.info(f"Fetched {len(instruments_df)} instruments from Kite")
         return instruments_df
 
-    @staticmethod
-    def sync_with_kite(df, instruments_df):
+    def sync_with_kite(self, df, instruments_df):
         try:
             valid_symbols_nse = set(df.loc[df['NSE_SYMBOL'] != '', 'NSE_SYMBOL'])
 
@@ -319,7 +305,7 @@ class InitService:
 
             instruments_json = json.loads(final_instruments.to_json(orient='records', indent=4))
             logger.info(f"Syncing {len(final_instruments)} instruments to Kite")
-            final_instruments.to_json("data/exports/instruments.json", orient='records', indent=4)
+            final_instruments.to_json(self.instr_json, orient='records', indent=4)
             response = instr_repo.delete_all()
             if response == -1:
                 return 500, 0

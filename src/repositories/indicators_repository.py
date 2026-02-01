@@ -46,7 +46,7 @@ class IndicatorsRepository:
     @staticmethod
     def get_latest_date_for_all():
         """Fetch the max date for each instrument"""
-        query = IndicatorsModel.query(
+        query = db.session.query(
             IndicatorsModel.instrument_token,
             func.max(IndicatorsModel.date).label("max_date")
         ).group_by(IndicatorsModel.instrument_token)
