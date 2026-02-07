@@ -60,7 +60,6 @@ class RankingService:
         
         # End at latest score date's Friday
         end_friday = get_friday(last_score_date)
-        
         weeks_processed = 0
         all_ranking_records = []
         

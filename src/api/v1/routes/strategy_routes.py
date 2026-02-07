@@ -49,16 +49,19 @@ class StrategyBackTest(MethodView):
         return {"message": "Strategy backtesting completed successfully"}
 
 
-# @blp.route("/actions")
-# class StrategyActions(MethodView):
-#     @blp.response(200, MessageSchema)
-#     def post(self):
-#         """Get strategy actions"""
-#         strategy_actions('strategy_one')
-#         return {"message": "Strategy actions completed successfully"}
+@blp.route("/actions")
+class StrategyActions(MethodView):
+    @blp.response(200, MessageSchema)
+    def post(self):
+        """Get strategy actions"""
+        strategy = Strategy()
+        working_date = datetime.strptime("2026-02-06", '%Y-%m-%d').date()
+        new_actions = strategy.generate_actions(working_date)
+        # strategy_actions('momentum_strategy_one')
+        return {"actions": new_actions}
 
-# @blp.route("/update_actions")
-# class UpdateActions(MethodView):
-#     @blp.response(201, MessageSchema)
-#     def post(self):
-#         """Update strategy actions"""
+@blp.route("/update_actions")
+class UpdateActions(MethodView):
+    @blp.response(201, MessageSchema)
+    def post(self):
+        """Update strategy actions"""
