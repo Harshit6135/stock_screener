@@ -5,14 +5,13 @@ import pandas as pd
 
 from adaptors import KiteAdaptor
 from config import setup_logger, KITE_CONFIG, HISTORY_LOOKBACK
-from repositories import MarketDataRepository, InstrumentsRepository, IndicatorsRepository, PercentileRepository
+from repositories import MarketDataRepository, InstrumentsRepository, IndicatorsRepository
 
 
 logger = setup_logger(name='Orchestrator')
 instr_repository = InstrumentsRepository()
 marketdata_repository = MarketDataRepository()
 indicators_repository = IndicatorsRepository()
-percentile_repository = PercentileRepository()
 
 
 class MarketDataService:
@@ -60,7 +59,7 @@ class MarketDataService:
                     last_date = last_data_date.date
                     start_date = pd.to_datetime(last_date)
                 else:
-                    start_date = yesterday - timedelta(days=HISTORY_LOOKBACK) # Default 1 year
+                    start_date = yesterday - timedelta(days=HISTORY_LOOKBACK)
 
                 if start_date > yesterday:
                     logger.info(f"No data to fetch for {log_symb} as last data date is {last_date}")
@@ -88,13 +87,11 @@ class MarketDataService:
                     # Cascading delete: marketdata → indicators → percentile
                     marketdata_repository.delete_by_tradingsymbol(tradingsymbol)
                     indicators_repository.delete_by_tradingsymbol(tradingsymbol)
-                    percentile_repository.delete_by_tradingsymbol(tradingsymbol)
                     
                     sleep(max(0, 0.34 - (time() + start_time)))
                     start_date = yesterday - timedelta(days=HISTORY_LOOKBACK)
                     records, start_time = self.get_latest_data_by_token(instr_token, start_date, yesterday)
                 else:
-                    # No corporate action - skip the duplicate first record and append new data
                     records = records[1:]
 
             records_df = pd.DataFrame(records)
@@ -133,16 +130,11 @@ class MarketDataService:
                 records = self.kite_client.fetch_ticker_data(ticker, current_start, current_end)
                 start_time = time()
                 if records:
-                    # We got data, add it to our list
-                    # Note: records come sorted by date usually. 
                     all_records.extend(records)
                 else:
-                    # Optimization: If we get NO data for this chunk, and we are moving backwards,
-                    # it means we have likely reached before the stock's listing date.
                     self.logger.info("No data in this chunk, assuming reached start of history. Stopping fetch.")
                     break
                 
-                # Prepare for next backward chunk
                 current_end = current_start - pd.Timedelta(days=1)
                 
                 if current_end < target_start_date:
