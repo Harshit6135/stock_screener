@@ -4,10 +4,19 @@ A multi-factor momentum screening and portfolio management system for Indian sto
 
 ## 🌟 Features
 
-- **Multi-Factor Scoring**: Trend, Momentum, Volume, Structure factors with configurable weights
-- **Composite Score Calculation**: Weighted formula combining trend (60%), momentum (20%), structure (10%), and volume (10%)
-- **Weekly Average Scores**: Friday-based weekly aggregation for consistent ranking
-- **Portfolio Management**: Champion vs Challenger rotation, ATR-based position sizing
+- **Multi-Factor Scoring**: Trend, Momentum, Risk Efficiency, Volume, Structure factors
+- **Cross-Sectional Percentile Ranking**: Daily percentile ranks across the universe
+- **Composite Score Calculation**: Weighted formula (30% Trend, 30% Momentum, 20% Efficiency, 15% Volume, 5% Structure)
+- **Goldilocks Trend Scoring**: Non-linear distance from 200 EMA scoring
+- **RSI Regime Mapping**: Non-linear RSI zones for momentum
+- **Indian Market Cost Model**: STT, stamp duty, GST, impact cost
+- **Tax-Aware Trading**: STCG/LTCG optimization with near-1-year hold bias
+- **Portfolio Risk Controls**: Drawdown circuits, sector concentration limits
+- **Weekly Rankings**: Friday-based weekly aggregation
+- **Multi-Phase Actions**: SELL → SWAP → BUY phases
+- **REST API**: Flask-Smorest with Swagger docs
+- **Weekly Rankings**: Friday-based weekly aggregation for consistent comparison
+- **Portfolio Management**: Champion vs Challenger rotation with buffer threshold
 - **Dual Stop-Loss**: ATR trailing + Hard trailing system
 - **Multi-Phase Action Generation**: SELL → SWAP → BUY phases for systematic rebalancing
 - **Backtesting Engine**: Comprehensive historical simulation with risk monitoring
@@ -42,10 +51,11 @@ make run
 
 | Document | Description |
 |----------|-------------|
-| [Setup Guide](docs/SETUP.md) | Detailed installation instructions |
+| [Setup Guide](docs/SETUP.md) | Installation and configuration |
 | [API Reference](docs/API.md) | All API endpoints |
-| [Day 0 Setup](docs/DAY0.md) | Initial data loading process |
-| [Strategy Guide](docs/STRATEGY.md) | Scoring methodology |
+| [Day 0 Setup](docs/DAY0.md) | Initial data loading |
+| [Strategy Guide](docs/STRATEGY.md) | Indicators, scoring, trading logic |
+| [TODO](docs/TODO.md) | Future work and enhancements |
 
 ---
 
@@ -67,39 +77,61 @@ make clean        # Remove cache files
 
 ```
 stocks_screener_v2/
-├── config/                    # Flask, app configuration, strategy parameters
+├── config/                    # Flask, app config, strategy parameters
+│   ├── strategies_config.py   # Factor weights and thresholds
+│   ├── indicators_config.py   # pandas_ta study definitions
+│   └── app_config.py          # Application settings
 ├── data/                      # CSV files, instrument lists
 ├── src/
 │   ├── api/v1/routes/         # API route handlers
-│   │   ├── actions_routes.py      # Trade action endpoints
 │   │   ├── indicators_routes.py   # Technical indicator endpoints
 │   │   ├── instrument_routes.py   # Instrument management
 │   │   ├── marketdata_routes.py   # Market data endpoints
-│   │   ├── portfolio_routes.py    # Portfolio management
-│   │   ├── ranking_routes.py      # Ranking endpoints
-│   │   └── score_routes.py        # Composite score endpoints
+│   │   ├── percentile_routes.py   # Percentile ranking endpoints
+│   │   ├── ranking_routes.py      # Weekly ranking endpoints
+│   │   ├── score_routes.py        # Composite score endpoints
+│   │   ├── actions_routes.py      # Trading action endpoints
+│   │   ├── investment_routes.py   # Investment/portfolio endpoints
+│   │   ├── costs_routes.py        # Transaction cost endpoints
+│   │   └── tax_routes.py          # Tax calculation endpoints
 │   ├── models/                # SQLAlchemy models
-│   │   ├── actions.py             # Trade actions
-│   │   ├── holdings.py            # Portfolio holdings
-│   │   ├── indicators.py          # Technical indicators
-│   │   ├── invested.py            # Investment positions
-│   │   ├── ranking.py             # Stock rankings
-│   │   └── risk_config.py         # Risk configuration
+│   │   ├── indicators.py          # Technical indicators (EMA, RSI, PPO, ATR, etc.)
+│   │   ├── percentile.py          # Daily percentile ranks
+│   │   ├── score.py               # Composite scores
+│   │   ├── ranking.py             # Weekly rankings
+│   │   ├── investment.py          # Holdings, Actions, Summary
+│   │   ├── instruments.py         # Stock instruments
+│   │   └── marketdata.py          # OHLCV data
 │   ├── repositories/          # Data access layer
-│   ├── schemas/               # Marshmallow schemas
+│   ├── schemas/               # Marshmallow schemas for API
 │   ├── services/              # Business logic layer
-│   │   ├── actions_service.py     # SELL/SWAP/BUY action generation
 │   │   ├── indicators_service.py  # Technical indicator calculations
+│   │   ├── percentile_service.py  # Cross-sectional percentile ranking
+│   │   ├── score_service.py       # Composite score generation
+│   │   ├── ranking_service.py     # Weekly ranking from daily scores
+│   │   ├── actions_service.py    # SELL/SWAP/BUY action generation
+│   │   ├── factors_service.py     # Goldilocks/RSI factor calculations
+│   │   ├── portfolio_controls_service.py  # Drawdown/sector controls
 │   │   ├── marketdata_service.py  # Market data processing
-│   │   ├── portfolio_service.py   # Portfolio management
-│   │   ├── ranking_service.py     # Stock ranking logic
-│   │   └── score_service.py       # Composite & weekly avg scores
-│   ├── strategies/            # Trading strategies
-│   └── utils/                 # Helper functions (stop-loss, position sizing)
-├── templates/                 # HTML templates (dashboard.html)
+│   │   └── init_service.py        # Day 0 initialization
+│   └── utils/                 # Helpers
+│       ├── finance_utils.py       # XIRR calculation
+│       ├── sizing_utils.py        # Multi-constraint position sizing
+│       ├── stoploss_utils.py      # Trailing stop-loss logic
+│       ├── penalty_box_utils.py   # Stock disqualification rules
+│       ├── transaction_costs_utils.py  # Indian market cost model
+│       ├── tax_utils.py           # STCG/LTCG calculator
+│       ├── ranking_utils.py       # Ranking helpers
+│       └── database_manager.py    # Multi-database session management
+├── templates/                 # HTML templates (dashboard, backtest)
 ├── migrations/                # Alembic migrations
 ├── docs/                      # Documentation
-├── backtesting_new.py         # Backtesting engine
+├── .agent/                    # AI agent instructions
+├── src/backtesting/           # Backtesting module
+│   ├── runner.py              # Weekly backtester with API integration
+│   ├── models.py              # Position, BacktestResult, RiskMonitor
+│   ├── config.py              # API-based config loader
+│   └── api_client.py          # HTTP client for data fetching
 └── run.py                     # Application entry point
 ```
 
@@ -107,51 +139,90 @@ stocks_screener_v2/
 
 ## 📈 Scoring System
 
-### Composite Score Formula
+### Data Pipeline
 
 ```
-final_trend = trend_rank × 0.6 + trend_extension_rank × 0.2 + trend_start_rank × 0.2
-final_momentum = momentum_rank × 0.5 + acceleration_rank × 0.3 + slope_rank × 0.2
-final_structure = structure_rank × 1.0
-final_volume = volume_rank × 1.0
-
-composite_score = final_trend × 0.6 + final_momentum × 0.2 + final_structure × 0.1 + final_volume × 0.1
+Market Data → Indicators → Percentiles → Scores → Rankings → Actions
 ```
 
-### Weekly Average Scores
+1. **Market Data**: OHLCV fetched via Kite Connect
+2. **Indicators**: Technical indicators calculated (EMA 50/200, RSI, PPO, ATR, Bollinger, etc.)
+3. **Percentiles**: Cross-sectional percentile ranks across the universe (0-100)
+4. **Scores**: Weighted composite score from percentile ranks
+5. **Rankings**: Weekly aggregation (Mon-Fri average) ranked on Fridays
+6. **Actions**: SELL/SWAP/BUY decisions based on rankings and portfolio state
 
-- Calculated every Friday (week-end anchor)
-- Aggregates daily composite scores from Monday to Friday
-- Used for consistent weekly comparison and backtesting
+### Technical Indicators Calculated
+
+| Indicator | Description |
+|-----------|-------------|
+| `EMA_50`, `EMA_200` | Exponential Moving Averages |
+| `RSI_14` | Relative Strength Index (14-period) |
+| `RSI_SIGNAL_EMA_3` | 3-day smoothed RSI |
+| `PPO_12_26_9` | Percentage Price Oscillator |
+| `PPOH_12_26_9` | PPO Histogram |
+| `ROC_10`, `ROC_20` | Rate of Change |
+| `ATRr_14` | Average True Range (14-period) |
+| `BBU/BBM/BBL_20_2` | Bollinger Bands |
+| `percent_b` | Position within Bollinger Bands |
+| `ema_50_slope` | EMA 50 slope (trend velocity) |
+| `distance_from_ema_200` | % distance from 200 EMA |
+| `risk_adjusted_return` | ROC_20 / (ATR/Price) |
+| `rvol` | Relative volume (vs 20-day avg) |
+| `price_vol_correlation` | 10-day price-volume correlation |
+
+### Composite Score Formula (Current)
+
+```
+final_trend = trend_rank × 0.6 + trend_extension_rank × 0.4
+final_momentum = momentum_rsi_rank × 0.6 + momentum_ppo_rank × 0.25 + momentum_ppoh_rank × 0.15
+final_vol = rvolume_rank × 0.7 + price_vol_corr_rank × 0.3
+final_structure = structure_rank × 0.5 + structure_bb_rank × 0.5
+
+composite_score = trend × 0.30 + momentum × 0.25 + efficiency × 0.20 + vol × 0.15 + structure × 0.10
+```
+
+### Weekly Rankings
+
+- Aggregates daily composite scores (Mon-Fri)
+- Stored with Friday date as anchor
+- Used for portfolio decisions and backtesting
 
 ---
 
 ## 🔄 Action Generation Phases
 
-The `ActionsService` generates trade actions in three phases:
+The `ActionsService` class generates trade actions in three phases:
 
-1. **SELL Phase**: Exit positions with stop-loss hits or score degradation
-2. **SWAP Phase**: Replace incumbent if challenger beats by buffer (default 25%)
+1. **SELL Phase**: Exit positions with stop-loss hits or score degradation (< exit threshold)
+2. **SWAP Phase**: Replace incumbent if challenger beats by buffer (default 50%)
 3. **BUY Phase**: Fill vacant slots with top-ranked stocks
 
 ---
 
 ## 🧪 Backtesting
 
-Run historical backtests with `backtesting_new.py`:
+Run historical backtests using the backtesting module:
 
-```bash
-python backtesting_new.py
+```python
+from src.backtesting import run_backtest
+from datetime import date
+
+results, summary = run_backtest(
+    start_date=date(2024, 1, 1),
+    end_date=date(2024, 12, 31)
+)
 ```
 
 **Features:**
-- Weekly rebalancing aligned with ActionsService logic
+- Weekly rebalancing aligned with Strategy logic
 - ATR-based position sizing and stop-loss
 - Risk monitoring with drawdown tracking
 - Trade-by-trade analysis with hit rate metrics
 - CSV export for results and holdings
 
 **Key Parameters:**
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `INITIAL_CAPITAL` | ₹10,00,000 | Starting capital |
@@ -182,15 +253,27 @@ KITE_API_KEY = "your_api_key"
 KITE_API_SECRET = "your_api_secret"
 ```
 
+### Strategy Parameters (`config/strategies_config.py`)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `trend_strength_weight` | 0.30 | Weight for trend factor |
+| `momentum_velocity_weight` | 0.25 | Weight for momentum factor |
+| `risk_efficiency_weight` | 0.20 | Weight for efficiency factor |
+| `conviction_weight` | 0.15 | Weight for volume factor |
+| `structure_weight` | 0.10 | Weight for structure factor |
+| `turnover_threshold` | 1 Cr | Minimum daily turnover |
+| `atr_threshold` | 2 | ATR multiplier for stops |
+
 ---
 
 ## 🌐 Web Dashboard
 
-Access the dashboard at `http://127.0.0.1:5000/` after starting the server.
+Access at `http://127.0.0.1:5000/` after starting the server.
 
 **Features:**
-- Action buttons for all screener operations (Day 0, Market Data, Indicators, Rankings, Generate Actions)
-- Current Investments table with XIRR and returns
+- Action buttons for screener operations (Day 0, Market Data, Indicators, Rankings)
+- Current investments table with XIRR and returns
 - Actions table with date filter
 - Top 20 rankings view
 - Execute trades with actual prices
@@ -199,47 +282,73 @@ Access the dashboard at `http://127.0.0.1:5000/` after starting the server.
 
 ## 📊 API Endpoints
 
+### Core Data Pipeline
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/init/day0` | POST | Initialize with instruments and market data |
+| `/marketdata/update` | POST | Fetch latest market data |
+| `/indicators/generate` | POST | Calculate technical indicators |
+| `/percentile/generate` | POST | Generate percentile ranks |
+| `/scores/generate` | POST | Generate composite scores |
+| `/ranking/generate` | POST | Generate weekly rankings |
+
 ### Score Endpoints
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/scores/generate` | POST | Generate composite scores incrementally |
 | `/scores/recalculate` | POST | Recalculate all composite scores |
-| `/scores/avg/generate` | POST | Generate weekly average scores |
-| `/scores/avg/recalculate` | POST | Recalculate all weekly averages |
 
 ### Ranking Endpoints
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/ranking/top20` | GET | Top 20 ranked stocks |
-| `/ranking/generate` | POST | Generate rankings for a date |
+| `/ranking/{date}` | GET | Rankings for specific date |
+| `/ranking/generate` | POST | Generate rankings incrementally |
+| `/ranking/recalculate` | POST | Recalculate all rankings |
 
-### Action Endpoints
+### Actions Endpoints (formerly Strategy)
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/actions/generate` | POST | Generate trade actions |
-| `/actions/execute` | POST | Execute a trade action |
+| `/api/v1/actions/generate` | POST | Generate trade actions |
+| `/api/v1/actions/backtesting` | POST | Run backtesting simulation |
+| `/api/v1/actions/config` | POST | Initialize strategy config |
 
-### Portfolio Endpoints
+### Backtest Query Endpoints
+
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/portfolio/invested` | GET | Get current positions |
-| `/portfolio/holdings` | GET | Get holdings |
-| `/risk_config` | GET/PUT | Portfolio risk settings |
+| `/api/v1/indicators/{name}` | GET | Get indicator value by name |
+| `/api/v1/marketdata/{symbol}` | GET | Get OHLCV for symbol |
+| `/api/v1/score/{symbol}` | GET | Get composite score |
+| `/api/v1/costs/roundtrip` | GET | Calculate transaction costs |
+| `/api/v1/tax/estimate` | GET | Estimate capital gains tax |
 
-See [API Reference](docs/API.md) for complete documentation.
+### Investment Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/investment/holdings` | GET | Current portfolio holdings |
+| `/investment/actions` | GET | Trade action history |
+| `/investment/summary` | GET | Portfolio summary |
+
+See Swagger UI at `/api/v1/swagger` for full interactive documentation.
 
 ---
 
 ## ⚙️ Risk Configuration
 
-Default settings (configurable via API):
+Default settings:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `initial_capital` | ₹1,00,000 | Starting capital |
 | `risk_per_trade` | ₹1,000 | Max loss per trade |
 | `max_positions` | 15 | Maximum stocks |
-| `buffer_percent` | 25% | Swap hysteresis |
+| `buffer_percent` | 50% | Swap hysteresis |
 | `exit_threshold` | 40 | Score for exit |
 
 ---

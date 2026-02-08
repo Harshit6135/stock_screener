@@ -13,6 +13,7 @@ percentile_repository = PercentileRepository()
 
 @blp.route("/")
 class PercentileList(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.arguments(PercentileSchema(many=True))
     @blp.response(201, MessageSchema)
     def post(self, percentile_data):
@@ -25,6 +26,7 @@ class PercentileList(MethodView):
 
 @blp.route("/update")
 class PercentileUpdateAll(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.arguments(PercentileAllSchema())
     @blp.response(201, MessageSchema)
     def post(self, percentile_data):
@@ -37,6 +39,7 @@ class PercentileUpdateAll(MethodView):
 
 @blp.route("/update/<string:percentile_date>")
 class PercentileUpdateByDate(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.response(201, MessageSchema)
     def post(self, percentile_date):
         """Generate percentiles for a specific date"""
@@ -47,6 +50,7 @@ class PercentileUpdateByDate(MethodView):
 
 @blp.route("/update_all")
 class UpdateAllPercentiles(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.response(201, MessageSchema)
     def post(self):
         """Backfill percentiles for all available historical dates"""
@@ -57,6 +61,7 @@ class UpdateAllPercentiles(MethodView):
 
 @blp.route("/query/<string:percentile_date>")
 class PercentilesQuery(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.response(200, PercentileSchema(many=True))
     def get(self, percentile_date):
         """Fetch percentiles for a specific date"""

@@ -6,4 +6,5 @@ from .marketdata_repository import MarketDataRepository
 from .indicators_repository import IndicatorsRepository
 from .score_repository import ScoreRepository
 from .ranking_repository import RankingRepository
+from .actions_repository import ActionsRepository
 from .investment_repository import InvestmentRepository

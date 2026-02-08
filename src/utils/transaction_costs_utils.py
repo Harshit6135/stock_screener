@@ -1,0 +1,101 @@
+from config.strategies_config import TransactionCostConfig, ImpactCostConfig
+
+
+def calculate_transaction_costs(trade_value: float, side: str,
+                                  config: TransactionCostConfig = None) -> dict:
+    """
+    Calculate Indian market transaction costs
+    
+    Args:
+        trade_value: Order value in INR
+        side: 'buy' or 'sell'
+        config: TransactionCostConfig with rates
+        
+    Returns:
+        dict with breakdown and total costs
+    """
+    if config is None:
+        config = TransactionCostConfig()
+    
+    # Brokerage: min of percentage or cap
+    brokerage = min(trade_value * config.brokerage_percent, config.brokerage_cap)
+    
+    # STT: sell side only for delivery
+    stt = trade_value * config.stt_percent if side == 'sell' else 0
+    
+    # Exchange charges
+    exchange = trade_value * config.exchange_percent
+    
+    # SEBI charges
+    sebi = trade_value * config.sebi_per_crore / 1e7
+    
+    # Stamp duty: buy side only
+    stamp = trade_value * config.stamp_duty_percent if side == 'buy' else 0
+    
+    # GST: on brokerage + exchange + SEBI
+    taxable = brokerage + exchange + sebi
+    gst = taxable * config.gst_percent
+    
+    total = brokerage + stt + exchange + sebi + stamp + gst
+    
+    return {
+        "brokerage": round(brokerage, 2),
+        "stt": round(stt, 2),
+        "exchange": round(exchange, 2),
+        "sebi": round(sebi, 2),
+        "stamp": round(stamp, 2),
+        "gst": round(gst, 2),
+        "total": round(total, 2),
+        "percent": round(total / trade_value * 100, 4) if trade_value > 0 else 0
+    }
+
+
+def calculate_impact_cost(order_pct_adv: float,
+                          config: ImpactCostConfig = None) -> float:
+    """
+    Calculate market impact cost based on order size vs ADV
+    
+    Args:
+        order_pct_adv: Order value as percentage of 20-day ADV (e.g., 0.05 = 5%)
+        config: ImpactCostConfig with tier thresholds
+        
+    Returns:
+        Impact cost as a decimal (e.g., 0.15 for 15 bps)
+    """
+    if config is None:
+        config = ImpactCostConfig()
+    
+    if order_pct_adv < config.tier1_threshold:
+        return config.tier1_bps / 10000
+    elif order_pct_adv < config.tier2_threshold:
+        return config.tier2_bps / 10000
+    elif order_pct_adv < config.tier3_threshold:
+        return config.tier3_bps / 10000
+    else:
+        return config.tier4_bps / 10000
+
+
+def calculate_round_trip_cost(trade_value: float, order_pct_adv: float = 0.05,
+                               tx_config: TransactionCostConfig = None,
+                               impact_config: ImpactCostConfig = None) -> dict:
+    """
+    Calculate total round-trip cost (buy + sell + impact)
+    
+    Returns:
+        dict with buy, sell, impact, and total costs
+    """
+    buy_costs = calculate_transaction_costs(trade_value, 'buy', tx_config)
+    sell_costs = calculate_transaction_costs(trade_value, 'sell', tx_config)
+    
+    impact_buy = trade_value * calculate_impact_cost(order_pct_adv, impact_config)
+    impact_sell = impact_buy  # assume symmetric
+    
+    total = buy_costs['total'] + sell_costs['total'] + impact_buy + impact_sell
+    
+    return {
+        "buy_costs": buy_costs['total'],
+        "sell_costs": sell_costs['total'],
+        "impact_cost": round(impact_buy + impact_sell, 2),
+        "total": round(total, 2),
+        "percent": round(total / trade_value * 100, 4) if trade_value > 0 else 0
+    }

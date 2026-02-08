@@ -1,5 +1,7 @@
+from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
+from datetime import datetime
 
 from repositories import MarketDataRepository
 from schemas import MarketDataSchema, MarketDataQuerySchema, MaxDateSchema
@@ -10,6 +12,7 @@ marketdata_repo = MarketDataRepository()
 
 @blp.route("/")
 class MarketData(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.arguments(MarketDataSchema(many=True))
     @blp.response(201, MarketDataSchema(many=True))
     def post(self, market_data):
@@ -22,6 +25,7 @@ class MarketData(MethodView):
 
 @blp.route("/query")
 class MarketDataQuery(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.arguments(MarketDataQuerySchema, location="json")
     @blp.response(200, MarketDataSchema(many=True))
     def get(self, filter_data):
@@ -31,6 +35,7 @@ class MarketDataQuery(MethodView):
 
 @blp.route("/max_date")
 class MarketsDataMaxDate(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.response(200, MaxDateSchema(many=True))
     def get(self):
         """Fetch the max date for each instrument"""
@@ -39,6 +44,7 @@ class MarketsDataMaxDate(MethodView):
 
 @blp.route("/latest/<string:tradingsymbol>")
 class LatestMarketData(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.response(200, MarketDataSchema)
     def get(self, tradingsymbol):
         """Fetch the latest market data for a tradingsymbol"""
@@ -75,7 +81,7 @@ class MarketDataDelete(MethodView):
 
 @blp.route("/update_all")
 class MarketDataUpdateAll(MethodView):
-
+    @blp.doc(tags=["Data Pipeline"])
     def post(self):
         """Fetch latest market data for all instruments"""
         marketdata_service = MarketDataService()
@@ -84,9 +90,47 @@ class MarketDataUpdateAll(MethodView):
 
 @blp.route("/update_all/historical")
 class MarketDataUpdateAllHistorical(MethodView):
-
+    @blp.doc(tags=["Data Pipeline"])
     def post(self):
         """Fetch latest market data for all instruments"""
         marketdata_service = MarketDataService()
         marketdata_service.update_latest_data_for_all(historical=True)
         return "Market data update completed."
+
+
+@blp.route("/<string:tradingsymbol>")
+class MarketDataBySymbol(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
+    @blp.response(200, MarketDataSchema)
+    def get(self, tradingsymbol: str):
+        """
+        Get OHLCV market data for a stock on specific date.
+        
+        Used by backtesting API client.
+        
+        Parameters:
+            tradingsymbol: Stock symbol (path param)
+            date: Query param - Date (YYYY-MM-DD)
+            
+        Returns:
+            Dict with open, high, low, close, volume
+        """
+        date_str = request.args.get('date')
+        
+        if not date_str:
+            # Return latest if no date specified
+            return marketdata_repo.get_latest_date_by_symbol(tradingsymbol)
+        
+        try:
+            as_of_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            abort(400, message="Invalid date format. Use YYYY-MM-DD")
+        
+        result = marketdata_repo.get_marketdata_by_trading_symbol(
+            tradingsymbol, as_of_date
+        )
+        
+        if not result:
+            abort(404, message=f"No market data for {tradingsymbol} on {date_str}")
+        
+        return result

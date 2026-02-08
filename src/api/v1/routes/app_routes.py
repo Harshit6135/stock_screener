@@ -13,6 +13,7 @@ blp = Blueprint("app", __name__, url_prefix="/api/v1/app", description="Applicat
 
 @blp.route("/cleanup")
 class CleanupAfterDate(MethodView):
+    @blp.doc(tags=["System"])
     @blp.arguments(CleanupQuerySchema, location="query")
     @blp.response(200, MessageSchema)
     def delete(self, args):
@@ -49,6 +50,7 @@ class CleanupAfterDate(MethodView):
 
 @blp.route("/run-pipeline")
 class RunPipeline(MethodView):
+    @blp.doc(tags=["System"])
     @blp.response(200, MessageSchema)
     def post(self):
         """

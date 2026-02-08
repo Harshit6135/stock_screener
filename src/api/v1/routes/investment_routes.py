@@ -18,6 +18,7 @@ blp = Blueprint(
 
 @blp.route("/actions/dates")
 class ActionDates(MethodView):
+    @blp.doc(tags=["Trading"])
     @blp.response(200, ActionDateSchema)
     def get(self):
         """Get all distinct action dates"""
@@ -27,6 +28,7 @@ class ActionDates(MethodView):
 
 @blp.route("/actions")
 class Actions(MethodView):
+    @blp.doc(tags=["Trading"])
     @blp.arguments(ActionQuerySchema, location="query")
     @blp.response(200, ActionSchema(many=True))
     def get(self, args):
@@ -38,6 +40,7 @@ class Actions(MethodView):
 
 @blp.route("/actions/<action_id>")
 class ActionUpdate(MethodView):
+    @blp.doc(tags=["Trading"])
     @blp.arguments(ActionUpdateSchema)
     @blp.response(200, MessageSchema)
     def put(self, data, action_id):
@@ -62,6 +65,7 @@ class ActionUpdate(MethodView):
 
 @blp.route("/holdings/dates")
 class HoldingDates(MethodView):
+    @blp.doc(tags=["Trading"])
     @blp.response(200, HoldingDateSchema)
     def get(self):
         """Get all distinct holding dates"""
@@ -71,6 +75,7 @@ class HoldingDates(MethodView):
 
 @blp.route("/holdings")
 class Holdings(MethodView):
+    @blp.doc(tags=["Trading"])
     @blp.arguments(ActionQuerySchema, location="query")
     @blp.response(200, HoldingSchema(many=True))
     def get(self, args):
@@ -82,6 +87,7 @@ class Holdings(MethodView):
 
 @blp.route("/summary")
 class Summary(MethodView):
+    @blp.doc(tags=["Trading"])
     @blp.arguments(ActionQuerySchema, location="query")
     @blp.response(200, SummarySchema)
     def get(self, args):

@@ -10,6 +10,7 @@ blp = Blueprint("init", __name__, url_prefix="/api/v1/init", description="Initia
 
 @blp.route("/")
 class Init(MethodView):
+    @blp.doc(tags=["System"])
     @blp.response(201, InitResponseSchema)
     def post(self):
         """Initialize App"""

@@ -1,37 +1,11 @@
+"""
+Investment Models
+
+Database models for holdings and portfolio summary.
+Actions moved to models/actions.py for better separation.
+"""
 from db import db
 from sqlalchemy import Index
-import uuid
-
-
-class InvestmentActionsModel(db.Model):
-    """Investment actions for tracking buy/sell decisions with risk and ATR data"""
-    __tablename__ = 'investment_actions'
-    __bind_key__ = 'personal'
-
-    action_id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    working_date = db.Column(db.Date, nullable=False)
-    type = db.Column(db.String(10), nullable=False)  # 'buy' or 'sell'
-    reason = db.Column(db.String(50), nullable=True)
-    symbol = db.Column(db.String(50), nullable=False)
-    risk = db.Column(db.Numeric(10, 2), nullable=True)
-    atr = db.Column(db.Numeric(10, 2), nullable=True)
-    units = db.Column(db.Integer, nullable=False)
-    prev_close = db.Column(db.Numeric(10,2), nullable=False)
-    execution_price = db.Column(db.Numeric(10,2), nullable=True)
-    capital = db.Column(db.Numeric(10,2), nullable=False)
-    status = db.Column(db.String(20), nullable=False, default='Pending')
-
-    __table_args__ = (
-        Index("idx_investment_actions_working_date", "working_date"),
-        Index("idx_investment_actions_symbol", "symbol"),
-        Index("idx_investment_actions_status", "status"),
-    )
-
-    def __repr__(self):
-        return f"<InvestmentAction {self.action_id} {self.type} {self.symbol} x{self.units}>"
-
-    def to_dict(self):
-        return { c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
 class InvestmentHoldingsModel(db.Model):
@@ -68,7 +42,7 @@ class InvestmentHoldingsModel(db.Model):
         return f"<InvestmentHolding {self.symbol} qty={self.units} @ {self.entry_price}>"
 
     def to_dict(self):
-        return { c.name: getattr(self, c.name) for c in self.__table__.columns}
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
 class InvestmentSummaryModel(db.Model):
@@ -102,3 +76,7 @@ class InvestmentSummaryModel(db.Model):
 
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+
+# Legacy compatibility - import from actions for backward compatibility
+from .actions import ActionsModel as InvestmentActionsModel

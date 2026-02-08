@@ -41,6 +41,9 @@ class IndicatorsModel(db.Model):
     distance_from_ema_50 = db.Column(db.Float, nullable=True)
     risk_adjusted_return = db.Column(db.Float, nullable=True)
     rvol = db.Column(db.Float, nullable=True)
+    roc_60 = db.Column(db.Float, nullable=True)  # 3-month momentum
+    roc_125 = db.Column(db.Float, nullable=True)  # 6-month momentum
+    atr_spike = db.Column(db.Float, nullable=True)  # ATR / ATR_20_avg
 
     __table_args__ = (
         # composite primary key

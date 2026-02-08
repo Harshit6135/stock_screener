@@ -1,5 +1,7 @@
+from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
+from datetime import datetime
 from repositories import IndicatorsRepository
 
 from schemas import IndicatorsSchema, MaxDateSchema, IndicatorSearchSchema
@@ -11,6 +13,7 @@ indicators_repository = IndicatorsRepository()
 
 @blp.route("/")
 class Indicators(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.arguments(IndicatorsSchema(many=True))
     @blp.response(201, IndicatorsSchema)
     def post(self, indicator_data):
@@ -23,6 +26,7 @@ class Indicators(MethodView):
 
 @blp.route("/query")
 class IndicatorsQuery(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.arguments(IndicatorSearchSchema, location="json")
     @blp.response(200, IndicatorsSchema(many=True))
     def get(self, filter_data):
@@ -32,6 +36,7 @@ class IndicatorsQuery(MethodView):
 
 @blp.route("/latest/<string:tradingsymbol>")
 class LatestIndicatorsData(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.response(200, IndicatorsSchema)
     def get(self, tradingsymbol):
         """Fetch the latest indicators for a tradingsymbol"""
@@ -40,6 +45,7 @@ class LatestIndicatorsData(MethodView):
 
 @blp.route("/max_date")
 class IndicatorsMaxDate(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.response(200, MaxDateSchema(many=True))
     def get(self):
         """Fetch the max date for each instrument"""
@@ -76,9 +82,46 @@ class IndicatorsDelete(MethodView):
 
 @blp.route("/update_all")
 class IndicatorsUpdateAll(MethodView):
-
+    @blp.doc(tags=["Data Pipeline"])
     def post(self):
         """Calculate indicators for all instruments"""
         indicators_service = IndicatorsService()
         indicators_service.calculate_indicators()
         return "Calculation of Indicators completed."
+
+
+@blp.route("/<string:indicator_name>")
+class IndicatorByName(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
+    def get(self, indicator_name: str):
+        """
+        Get specific indicator value for a stock on a date.
+        
+        Used by backtesting API client.
+        
+        Parameters:
+            indicator_name: Column name (e.g., 'atrr_14', 'ema_200')
+            tradingsymbol: Query param - Stock symbol
+            date: Query param - Date (YYYY-MM-DD)
+            
+        Returns:
+            Dict with indicator name and value
+        """
+        tradingsymbol = request.args.get('tradingsymbol')
+        date_str = request.args.get('date')
+        
+        if not tradingsymbol:
+            abort(400, message="tradingsymbol query parameter required")
+        
+        as_of_date = None
+        if date_str:
+            try:
+                as_of_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                abort(400, message="Invalid date format. Use YYYY-MM-DD")
+        
+        value = indicators_repository.get_indicator_by_tradingsymbol(
+            indicator_name, tradingsymbol, as_of_date
+        )
+        
+        return {indicator_name: value}

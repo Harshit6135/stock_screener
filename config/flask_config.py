@@ -8,5 +8,6 @@ class Config:
     OPENAPI_SWAGGER_UI_PATH = "/swagger-ui"
     OPENAPI_SWAGGER_UI_URL = "https://cdn.jsdelivr.net/npm/swagger-ui-dist/"
     SQLALCHEMY_BINDS = {
-        "personal": "sqlite:///personal.db"
+        "personal": "sqlite:///personal.db",
+        "backtest": "sqlite:///backtest.db"
     }

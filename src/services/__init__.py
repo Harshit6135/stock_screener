@@ -5,7 +5,10 @@ from .marketdata_service import MarketDataService
 from .percentile_service import PercentileService
 from .score_service import ScoreService
 from .ranking_service import RankingService
-from .strategy_service import Strategy
+from .actions_service import ActionsService
+
+# Backward compatibility alias
+Strategy = ActionsService
 
 
 __all__ = [
@@ -15,5 +18,6 @@ __all__ = [
     "PercentileService",
     "ScoreService",
     "RankingService",
-    "Strategy"
+    "ActionsService",
+    "Strategy"  # Deprecated alias
 ]

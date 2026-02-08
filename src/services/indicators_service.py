@@ -51,6 +51,14 @@ class IndicatorsService:
         return (df_close - ema) / ema
 
     @staticmethod
+    def calculate_atr_spike(atr: pd.Series, lookback: int = 20) -> pd.Series:
+        """
+        ATR relative to recent average - detects earnings/news volatility
+        """
+        atr_avg = atr.rolling(window=lookback).mean()
+        return atr / atr_avg
+
+    @staticmethod
     def apply_study(df, last_ind_date):
         df.ta.study(ema_strategy)
         date_truncate = last_ind_date - timedelta(days=additional_parameters['truncate_days'])
@@ -67,6 +75,7 @@ class IndicatorsService:
         df['distance_from_ema_50'] = self.calculate_distance_from_ema(df['close'], df['EMA_50'])
         df['risk_adjusted_return'] = df["ROC_20"]/(df['ATRr_14']/df['close'])
         df['rvol'] = df['volume']/df['VOL_SMA_20']
+        df['atr_spike'] = self.calculate_atr_spike(df['ATRr_14'])
         return df
 
     def calculate_indicators(self):

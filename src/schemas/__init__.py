@@ -10,8 +10,14 @@ from .risk_config import RiskConfigSchema
 
 from .app import CleanupQuerySchema
 from .backtest import BacktestInputSchema
+
+# Actions schemas (new dedicated module)
+from .actions import (
+    ActionDateSchema, ActionQuerySchema, ActionSchema, ActionUpdateSchema
+)
+
+# Investment schemas (holdings and summary)
 from .investment import (
-    ActionDateSchema, ActionQuerySchema, ActionSchema, ActionUpdateSchema,
     HoldingDateSchema, HoldingSchema, SummarySchema
 )
 

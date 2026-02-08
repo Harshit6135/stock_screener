@@ -19,6 +19,8 @@ momentum_strategy = ta.Study(
         {"kind": "rsi", "length": 14},
         {"kind": "roc", "length": 10},
         {"kind": "roc", "length": 20},
+        {"kind": "roc", "length": 60},   # 3-month pure momentum
+        {"kind": "roc", "length": 125},  # 6-month pure momentum
         {"kind": "sma", "length": 20},
         {"kind": "stoch", "k": 14, "d": 3},
         {"kind": "ppo", "fast": 12, "slow": 26, "signal": 9},

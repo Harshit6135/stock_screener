@@ -11,12 +11,14 @@ instr_repository = InstrumentsRepository()
 
 @blp.route("/")
 class InstrumentList(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.response(200, InstrumentSchema(many=True))
     def get(self):
         """Get all instruments"""
         instruments = instr_repository.get_all_instruments()
         return instruments
 
+    @blp.doc(tags=["Data Pipeline"])
     @blp.arguments(InstrumentSchema(many=True))
     @blp.response(201, InstrumentSchema(many=True))
     def post(self, instrument_data):
@@ -26,6 +28,7 @@ class InstrumentList(MethodView):
             abort(500, message="Failed to add instruments")
         return response
 
+    @blp.doc(tags=["Data Pipeline"])
     @blp.response(200, MessageSchema)
     def delete(self):
         """Delete all instruments"""
@@ -37,6 +40,7 @@ class InstrumentList(MethodView):
 
 @blp.route("/<int:instrument_token>")
 class Instrument(MethodView):
+    @blp.doc(tags=["Data Pipeline"])
     @blp.response(200, InstrumentSchema)
     def get(self, instrument_token):
         """Get a task by instrument_token"""
@@ -46,6 +50,7 @@ class Instrument(MethodView):
         abort(404, message="Instrument not found")
 
 
+    @blp.doc(tags=["Data Pipeline"])
     @blp.arguments(InstrumentSchema)
     @blp.response(200, InstrumentSchema)
     def put(self, instrument_data, instrument_token):
