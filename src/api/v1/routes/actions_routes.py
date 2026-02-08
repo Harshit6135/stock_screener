@@ -26,26 +26,6 @@ blp = Blueprint(
 )
 
 
-@blp.route("/config")
-class ActionsConfig(MethodView):
-    @blp.doc(tags=["Trading"])
-    @blp.response(200, MessageSchema)
-    def post(self):
-        """Initialize strategy configuration"""
-        config = ConfigRepository()
-        data = {
-            'strategy_name': 'momentum_strategy_one',
-            'initial_capital': 100000,
-            'risk_threshold': 1,
-            'max_positions': 10,
-            'buffer_percent': 25,
-            'exit_threshold': 40,
-            'sl_multiplier': 2
-        }
-        config.post_config(data)
-        return {"message": "Strategy configuration saved successfully"}
-
-
 @blp.route("/generate")
 class GenerateActions(MethodView):
     @blp.doc(tags=["Trading"])
@@ -135,4 +115,3 @@ class ActionDetail(MethodView):
         if result:
             return {"message": f"Action {action_id} updated successfully"}
         abort(400, message=f"Failed to update action {action_id}")
-
