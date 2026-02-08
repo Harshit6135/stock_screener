@@ -2,16 +2,21 @@
 Actions Routes
 
 API endpoints for trading actions (BUY/SELL/SWAP).
-Uses dedicated actions module (models/actions.py, schemas/actions.py, repositories/actions_repository.py).
 """
 from datetime import datetime
 from flask.views import MethodView
-from flask_smorest import Blueprint
+from flask_smorest import Blueprint, abort
 
-from schemas import MessageSchema, BacktestInputSchema
-from repositories import ConfigRepository, ActionsRepository
+from config import setup_logger
+from schemas import (
+    MessageSchema, ActionDateSchema, ActionQuerySchema,
+    ActionSchema, ActionUpdateSchema
+)
+from repositories import ConfigRepository, InvestmentRepository
 from services import ActionsService
 
+
+logger = setup_logger(name="ActionsRoutes")
 
 blp = Blueprint(
     "actions",
@@ -41,29 +46,6 @@ class ActionsConfig(MethodView):
         return {"message": "Strategy configuration saved successfully"}
 
 
-@blp.route("/backtesting")
-class ActionsBackTest(MethodView):
-    @blp.doc(tags=["Trading"])
-    @blp.arguments(BacktestInputSchema)
-    @blp.response(200, MessageSchema)
-    def post(self, data):
-        """Run backtesting strategy using new backtesting module.
-        
-        Results are written to backtest.db for analysis.
-        """
-        from src.backtesting import run_backtest
-        
-        start_date = datetime.strptime(str(data['start_date']), '%Y-%m-%d').date()
-        end_date = datetime.strptime(str(data['end_date']), '%Y-%m-%d').date()
-        
-        results, summary = run_backtest(start_date, end_date)
-        
-        return {
-            "message": f"Backtest completed. Final value: {summary.get('final_value', 0)}, "
-                      f"Total return: {summary.get('total_return', 0):.2f}%"
-        }
-
-
 @blp.route("/generate")
 class GenerateActions(MethodView):
     @blp.doc(tags=["Trading"])
@@ -78,10 +60,6 @@ class GenerateActions(MethodView):
         Raises:
             HTTPException: 400 for validation errors, 500 for failures
         """
-        from flask_smorest import abort
-        from config import setup_logger
-        logger = setup_logger(name="ActionsRoutes")
-        
         try:
             actions = ActionsService()
             working_date = datetime.now().date()
@@ -95,10 +73,66 @@ class GenerateActions(MethodView):
             abort(500, message=f"Action generation failed: {str(e)}")
 
 
-@blp.route("/update")
-class UpdateActions(MethodView):
+@blp.route("/dates")
+class ActionDates(MethodView):
     @blp.doc(tags=["Trading"])
-    @blp.response(201, MessageSchema)
-    def post(self):
-        """Update trading actions"""
-        pass
+    @blp.response(200, ActionDateSchema)
+    def get(self):
+        """Get all distinct action dates"""
+        dates = InvestmentRepository.get_action_dates()
+        return {"dates": dates}
+
+
+@blp.route("/")
+class ActionsList(MethodView):
+    @blp.doc(tags=["Trading"])
+    @blp.arguments(ActionQuerySchema, location="query")
+    @blp.response(200, ActionSchema(many=True))
+    def get(self, args):
+        """
+        Get actions for a specific date.
+        
+        Parameters:
+            date: Query param - Working date (YYYY-MM-DD)
+            
+        Returns:
+            List of actions for the specified date
+        """
+        working_date = args.get('date')
+        actions = InvestmentRepository.get_actions(working_date)
+        return [a.to_dict() for a in actions]
+
+
+@blp.route("/<action_id>")
+class ActionDetail(MethodView):
+    @blp.doc(tags=["Trading"])
+    @blp.arguments(ActionUpdateSchema)
+    @blp.response(200, MessageSchema)
+    def put(self, data, action_id):
+        """
+        Update an action (approve/reject/update units).
+        
+        Parameters:
+            action_id: Path param - Action ID
+            data: ActionUpdateSchema with status, units, execution_price
+            
+        Returns:
+            Message confirming update
+        """
+        action_data = {
+            'action_id': action_id,
+            'status': data['status'],
+        }
+
+        if 'units' in data:
+            action_data['units'] = data['units']
+
+        if 'execution_price' in data:
+            action_data['execution_price'] = data['execution_price']
+
+        result = InvestmentRepository.update_action(action_data)
+
+        if result:
+            return {"message": f"Action {action_id} updated successfully"}
+        abort(400, message=f"Failed to update action {action_id}")
+

@@ -126,7 +126,12 @@ stocks_screener_v2/
 ├── templates/                 # HTML templates (dashboard, backtest)
 ├── migrations/                # Alembic migrations
 ├── docs/                      # Documentation
+├── scripts/                   # Utility scripts
+│   └── pre-commit-hook.sh     # Git hook for workflow enforcement
 ├── .agent/                    # AI agent instructions
+│   ├── instructions.md        # Agent guidelines and compliance checklist
+│   └── workflows/             # Mandatory workflows
+│       └── default.md         # Default workflow for code changes
 ├── src/backtesting/           # Backtesting module
 │   ├── runner.py              # Weekly backtester with API integration
 │   ├── models.py              # Position, BacktestResult, RiskMonitor
@@ -324,8 +329,14 @@ Access at `http://127.0.0.1:5000/` after starting the server.
 | `/api/v1/indicators/{name}` | GET | Get indicator value by name |
 | `/api/v1/marketdata/{symbol}` | GET | Get OHLCV for symbol |
 | `/api/v1/score/{symbol}` | GET | Get composite score |
-| `/api/v1/costs/roundtrip` | GET | Calculate transaction costs |
+| `/api/v1/costs/roundtrip` | GET | Calculate round-trip transaction costs |
+| `/api/v1/costs/buy` | GET | Calculate buy-side costs |
+| `/api/v1/costs/sell` | GET | Calculate sell-side costs |
+| `/api/v1/costs/position-size` | GET | Calculate ATR-based position size |
+| `/api/v1/costs/equal-weight-size` | GET | Calculate equal-weight position |
 | `/api/v1/tax/estimate` | GET | Estimate capital gains tax |
+| `/api/v1/tax/hold-for-ltcg` | GET | Check if holding for LTCG is beneficial |
+| `/api/v1/tax/adjusted-cost` | GET | Calculate tax-adjusted switching cost |
 
 ### Investment Endpoints
 

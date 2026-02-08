@@ -19,8 +19,8 @@ momentum_strategy = ta.Study(
         {"kind": "rsi", "length": 14},
         {"kind": "roc", "length": 10},
         {"kind": "roc", "length": 20},
-        {"kind": "roc", "length": 60},   # 3-month pure momentum
-        {"kind": "roc", "length": 125},  # 6-month pure momentum
+        {"kind": "roc", "length": 60},
+        {"kind": "roc", "length": 125},
         {"kind": "sma", "length": 20},
         {"kind": "stoch", "k": 14, "d": 3},
         {"kind": "ppo", "fast": 12, "slow": 26, "signal": 9},
@@ -44,6 +44,6 @@ derived_strategy = ta.Study(
 additional_parameters = {
     "vol_price_lookback": 10,
     "ema_slope_lookback": 5,
-    "truncate_days": 365, # Data Required for Indicators other than EMA 200
-    "ema_200_lookback": 900 # Data Required for EMA 200
+    "truncate_days": 365,
+    "ema_200_lookback": 900
 }

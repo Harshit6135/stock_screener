@@ -7,7 +7,7 @@ from .percentile import PercentileModel
 from .score import ScoreModel
 from .ranking import RankingModel
 from .actions import ActionsModel
-from .investment import InvestmentActionsModel, InvestmentHoldingsModel, InvestmentSummaryModel
+from .investment import InvestmentHoldingsModel, InvestmentSummaryModel
 
 
 __all__ = [
@@ -15,13 +15,11 @@ __all__ = [
     "InstrumentModel",
     "MasterModel",
     "IndicatorsModel",
-    "ActionsModel",  # New dedicated actions model
-    "InvestmentActionsModel",  # Legacy compatibility
     "RiskConfigModel",
     "PercentileModel",
     "ScoreModel",
     "RankingModel",
-    "InvestmentActionsModel",
+    "ActionsModel",
     "InvestmentHoldingsModel",
     "InvestmentSummaryModel"
 ]

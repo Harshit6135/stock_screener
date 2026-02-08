@@ -24,6 +24,4 @@ from .investment_routes import blp as investment_bp
 # ANALYSIS
 from .costs_routes import blp as costs_bp
 from .tax_routes import blp as tax_bp
-
-# Backward compatibility alias
-strategy_bp = actions_bp
+from .backtest_routes import blp as backtest_bp

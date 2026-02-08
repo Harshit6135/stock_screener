@@ -57,8 +57,8 @@ class DatabaseManager:
         
         Creates investment_actions, investment_holdings, investment_summary tables.
         """
+        from src.models.actions import ActionsModel
         from src.models.investment import (
-            InvestmentActionsModel,
             InvestmentHoldingsModel, 
             InvestmentSummaryModel
         )
@@ -67,7 +67,7 @@ class DatabaseManager:
             engine = db.get_engine(bind='backtest')
             
             # Create tables if they don't exist
-            InvestmentActionsModel.__table__.create(engine, checkfirst=True)
+            ActionsModel.__table__.create(engine, checkfirst=True)
             InvestmentHoldingsModel.__table__.create(engine, checkfirst=True)
             InvestmentSummaryModel.__table__.create(engine, checkfirst=True)
             
@@ -83,14 +83,14 @@ class DatabaseManager:
         session = cls.get_backtest_session()
         
         with app.app_context():
+            from src.models.actions import ActionsModel
             from src.models.investment import (
-                InvestmentActionsModel,
                 InvestmentHoldingsModel,
                 InvestmentSummaryModel
             )
             
             try:
-                session.query(InvestmentActionsModel).delete()
+                session.query(ActionsModel).delete()
                 session.query(InvestmentHoldingsModel).delete()
                 session.query(InvestmentSummaryModel).delete()
                 session.commit()

@@ -4,8 +4,24 @@ import logging
 
 from datetime import datetime
 
+try:
+    from pythonjsonlogger import jsonlogger
+    HAS_JSON_LOGGER = True
+except ImportError:
+    HAS_JSON_LOGGER = False
+
 
 def setup_logger(name="StockScreener", log_dir="logs"):
+    """
+    Set up a logger with JSON formatting for structured logging.
+    
+    Parameters:
+        name (str): Logger name
+        log_dir (str): Directory for log files
+        
+    Returns:
+        logging.Logger: Configured logger instance
+    """
     os.makedirs(log_dir, exist_ok=True)
     
     date_str = datetime.now().strftime("%Y-%m-%d")
@@ -17,20 +33,29 @@ def setup_logger(name="StockScreener", log_dir="logs"):
     # Avoid duplicate handlers if setup is called multiple times
     if logger.hasHandlers():
         logger.handlers.clear()
-        
-    # File Handler (append mode)
+    
+    # File Handler with JSON formatting
     file_handler = logging.FileHandler(log_file, mode='a')
     file_handler.setLevel(logging.INFO)
-    file_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(file_format)
     
-    # Console Handler
+    if HAS_JSON_LOGGER:
+        json_format = jsonlogger.JsonFormatter(
+            '%(asctime)s %(levelname)s %(name)s %(message)s',
+            rename_fields={'asctime': 'timestamp', 'levelname': 'level'}
+        )
+        file_handler.setFormatter(json_format)
+    else:
+        file_format = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+        file_handler.setFormatter(file_format)
+    
+    # Console Handler (human-readable for debugging)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
-    console_format = logging.Formatter('%(message)s')
+    console_format = logging.Formatter('%(levelname)s | %(name)s | %(message)s')
     console_handler.setFormatter(console_format)
     
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
     
     return logger
+

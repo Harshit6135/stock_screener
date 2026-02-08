@@ -2,6 +2,7 @@ import json
 import yfinance as yf
 from config import setup_logger
 
+
 logger = setup_logger(name="YFinanceAdaptor")
 
 

@@ -12,6 +12,7 @@ from dataclasses import asdict
 from flask import current_app
 
 from config import setup_logger
+from config.strategies_config import PositionSizingConfig
 from src.backtesting.models import Position, BacktestResult, BacktestRiskMonitor
 from src.backtesting.config import BacktestConfigLoader
 from src.backtesting.api_client import BacktestAPIClient
@@ -214,7 +215,6 @@ class WeeklyBacktester:
         self.current_capital -= total_cost
         
         # Calculate initial stop-loss
-        from config.strategies_config import PositionSizingConfig
         initial_stop = calculate_initial_stop_loss(
             price, atr, self.config.stop_multiplier,
             PositionSizingConfig()

@@ -1,5 +1,22 @@
 
 
+# ⚠️ MANDATORY FIRST STEP - READ THIS BEFORE ANY WORK ⚠️
+
+> [!CAUTION]
+> **STOP! Before writing ANY code, you MUST:**
+> 1. Read this ENTIRE instructions.md file
+> 2. Create IMPLEMENTATION_PLAN.md for ANY non-trivial change
+> 3. Call notify_user to request explicit approval
+> 4. **DO NOT PROCEED** until user says "proceed", "implement", or "approved"
+>
+> **After EVERY implementation:**
+> - Update README.md with new endpoints/features
+> - Update this instructions.md with new utils/services
+>
+> **Violations of this workflow are UNACCEPTABLE.**
+
+---
+
 # Stock Screener Agent Instructions
 
 Guidelines for AI assistants working on this codebase.
@@ -26,8 +43,24 @@ Description: You are a high-stakes Quantitative Analyst specializing in the Indi
 > 3. Request user review via notify_user
 > 4. **WAIT for explicit approval** (e.g., "proceed", "implement", "looks good")
 > 5. Only then execute the implementation
+> 6. **After implementation: Update README.md and instructions.md**
 > 
 > **Exception:** Simple one-off requests like "fix this typo" or "rename this variable" don't need a plan.
+
+### Compliance Checklist
+
+**Before EVERY response involving code changes, verify:**
+
+```
+✓ CHECKED: [ ] Read .agent/instructions.md
+✓ CHECKED: [ ] Created IMPLEMENTATION_PLAN.md (if non-trivial)
+✓ CHECKED: [ ] Got explicit user approval before coding
+✓ CHECKED: [ ] Will update README.md after changes
+✓ CHECKED: [ ] Will update instructions.md after changes
+```
+
+**Include this checklist in your first response** to demonstrate compliance.
+Failure to follow this workflow is considered a CRITICAL ERROR.
 
 ## File Naming Conventions
 
@@ -78,16 +111,16 @@ config/
 
 ## Utils
 
-| Util | Purpose |
-|------|---------|
-| `sizing_utils.py` | Multi-constraint position sizing |
-| `stoploss_utils.py` | ATR trailing stops |
-| `ranking_utils.py` | Ranking helpers |
-| `penalty_box_utils.py` | Stock disqualification |
-| `transaction_costs_utils.py` | Indian market costs |
-| `tax_utils.py` | STCG/LTCG calculation |
-| `finance_utils.py` | XIRR calculation |
-| `database_manager.py` | Multi-database session management |
+| Util | Purpose | Key Functions |
+|------|---------|---------------|
+| `sizing_utils.py` | Multi-constraint position sizing | `calculate_position_size`, `calculate_equal_weight_position` |
+| `stoploss_utils.py` | ATR trailing stops | `calculate_initial_stop_loss`, `calculate_effective_stop` |
+| `ranking_utils.py` | Ranking helpers | `percentile_rank`, `z_score_normalize`, `score_rsi_regime`, `score_trend_extension`, `score_percent_b` |
+| `penalty_box_utils.py` | Stock disqualification | `apply_penalty_box`, `check_penalty_status` |
+| `transaction_costs_utils.py` | Indian market costs | `calculate_buy_costs`, `calculate_sell_costs`, `calculate_round_trip_cost` |
+| `tax_utils.py` | STCG/LTCG calculation | `calculate_capital_gains_tax`, `should_hold_for_ltcg`, `calculate_tax_adjusted_cost` |
+| `finance_utils.py` | XIRR calculation | `calculate_xirr` |
+| `database_manager.py` | Multi-database session management | `get_session`, `init_backtest_db`, `clear_backtest_db` |
 
 ## Config Classes
 

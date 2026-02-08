@@ -124,3 +124,4 @@ def calculate_equal_weight_position(portfolio_value: float, max_positions: int,
         "shares": max(1, shares),
         "position_value": round(shares * current_price, 2)
     }
+

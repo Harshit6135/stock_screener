@@ -21,6 +21,7 @@ dependencies = [
     "flask-migrate~=4.1",
     "scipy~=1.14",
     "yfinance~=0.2",
+    "python-json-logger~=3.2",
 ]
 
 [project.optional-dependencies]

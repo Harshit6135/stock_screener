@@ -62,10 +62,20 @@ def should_hold_for_ltcg(purchase_date: date, current_date: date,
                           current_score: float,
                           config: TaxConfig = None) -> dict:
     """
-    Check if holding for LTCG is beneficial
+    Check if holding for LTCG is beneficial.
+    
+    Recommends holding if:
+    - In tax hold window (300-365 days)
+    - Score >= minimum threshold
+    
+    Parameters:
+        purchase_date: Date of purchase
+        current_date: Current date
+        current_score: Current composite score
+        config: TaxConfig with rates
     
     Returns:
-        dict with recommendation and reasoning
+        dict with hold_for_ltcg (bool), reason (str), days_to_ltcg (int)
     """
     if config is None:
         config = TaxConfig()
@@ -109,10 +119,21 @@ def calculate_tax_adjusted_cost(purchase_price: float, current_price: float,
                                  quantity: int, switching_cost_pct: float,
                                  config: TaxConfig = None) -> float:
     """
-    Calculate effective switching cost including tax impact
+    Calculate effective switching cost including tax impact.
+    
+    Useful for swap decisions where tax must be considered.
+    
+    Parameters:
+        purchase_price: Buy price per share
+        current_price: Current/sell price per share
+        purchase_date: Date of purchase
+        current_date: Date of sale
+        quantity: Number of shares
+        switching_cost_pct: Transaction cost percentage (from costs utils)
+        config: TaxConfig with rates
     
     Returns:
-        Total switching cost percentage
+        float: Total switching cost percentage (transaction + tax)
     """
     if config is None:
         config = TaxConfig()
@@ -123,4 +144,5 @@ def calculate_tax_adjusted_cost(purchase_price: float, current_price: float,
     trade_value = current_price * quantity
     tax_pct = tax_info['tax'] / trade_value if trade_value > 0 else 0
     
-    return switching_cost_pct + tax_pct
+    return round(switching_cost_pct + tax_pct, 4)
+

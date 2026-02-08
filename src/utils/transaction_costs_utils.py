@@ -4,15 +4,15 @@ from config.strategies_config import TransactionCostConfig, ImpactCostConfig
 def calculate_transaction_costs(trade_value: float, side: str,
                                   config: TransactionCostConfig = None) -> dict:
     """
-    Calculate Indian market transaction costs
+    Calculate Indian market transaction costs.
     
-    Args:
-        trade_value: Order value in INR
-        side: 'buy' or 'sell'
-        config: TransactionCostConfig with rates
+    Parameters:
+        trade_value (float): Order value in INR
+        side (str): 'buy' or 'sell'
+        config (TransactionCostConfig): Cost configuration
         
     Returns:
-        dict with breakdown and total costs
+        dict: Breakdown with brokerage, stt, exchange, sebi, stamp, gst, ipf, dp, total, percent
     """
     if config is None:
         config = TransactionCostConfig()
@@ -20,23 +20,32 @@ def calculate_transaction_costs(trade_value: float, side: str,
     # Brokerage: min of percentage or cap
     brokerage = min(trade_value * config.brokerage_percent, config.brokerage_cap)
     
-    # STT: sell side only for delivery
-    stt = trade_value * config.stt_percent if side == 'sell' else 0
+    # STT: buy and sell for delivery trades
+    if side == 'buy':
+        stt = trade_value * config.stt_buy_percent
+    else:
+        stt = trade_value * config.stt_sell_percent
     
-    # Exchange charges
+    # Exchange charges (buy and sell)
     exchange = trade_value * config.exchange_percent
     
-    # SEBI charges
+    # SEBI charges (buy and sell)
     sebi = trade_value * config.sebi_per_crore / 1e7
     
     # Stamp duty: buy side only
     stamp = trade_value * config.stamp_duty_percent if side == 'buy' else 0
     
-    # GST: on brokerage + exchange + SEBI
+    # IPF charges (buy and sell)
+    ipf = trade_value * config.ipf_per_crore / 1e7
+    
+    # DP charges: sell side only
+    dp = config.dp_charges if side == 'sell' else 0
+    
+    # GST: on brokerage + exchange + SEBI (buy and sell)
     taxable = brokerage + exchange + sebi
     gst = taxable * config.gst_percent
     
-    total = brokerage + stt + exchange + sebi + stamp + gst
+    total = brokerage + stt + exchange + sebi + stamp + gst + ipf + dp
     
     return {
         "brokerage": round(brokerage, 2),
@@ -45,9 +54,51 @@ def calculate_transaction_costs(trade_value: float, side: str,
         "sebi": round(sebi, 2),
         "stamp": round(stamp, 2),
         "gst": round(gst, 2),
+        "ipf": round(ipf, 2),
+        "dp": round(dp, 2),
         "total": round(total, 2),
         "percent": round(total / trade_value * 100, 4) if trade_value > 0 else 0
     }
+
+
+def calculate_buy_costs(trade_value: float,
+                        config: TransactionCostConfig = None) -> dict:
+    """
+    Calculate buy-side transaction costs.
+    
+    Parameters:
+        trade_value (float): Order value in INR
+        config (TransactionCostConfig): Cost configuration
+        
+    Returns:
+        dict: Breakdown with brokerage, stt, exchange, sebi, stamp, gst, total, percent
+        
+    Example:
+        >>> costs = calculate_buy_costs(100000.0)
+        >>> costs['total']
+        15.35
+    """
+    return calculate_transaction_costs(trade_value, 'buy', config)
+
+
+def calculate_sell_costs(trade_value: float,
+                         config: TransactionCostConfig = None) -> dict:
+    """
+    Calculate sell-side transaction costs.
+    
+    Parameters:
+        trade_value (float): Order value in INR
+        config (TransactionCostConfig): Cost configuration
+        
+    Returns:
+        dict: Breakdown with brokerage, stt, exchange, sebi, stamp, gst, total, percent
+        
+    Example:
+        >>> costs = calculate_sell_costs(100000.0)
+        >>> costs['total']
+        118.06
+    """
+    return calculate_transaction_costs(trade_value, 'sell', config)
 
 
 def calculate_impact_cost(order_pct_adv: float,
@@ -99,3 +150,4 @@ def calculate_round_trip_cost(trade_value: float, order_pct_adv: float = 0.05,
         "total": round(total, 2),
         "percent": round(total / trade_value * 100, 4) if trade_value > 0 else 0
     }
+
