@@ -3,7 +3,7 @@ from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 from datetime import datetime
 
-from schemas import ScoreSchema, MessageSchema
+from schemas import MessageSchema
 from services import ScoreService
 from repositories import ScoreRepository
 

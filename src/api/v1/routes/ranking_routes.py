@@ -120,7 +120,6 @@ class RankingBySymbol(MethodView):
             'tradingsymbol': symbol,
             'composite_score': ranking.composite_score if ranking else 0.0,
             'rank': ranking.rank if ranking else 0,
-            'is_invested': False,
             'ranking_date': actual_date,
             'close_price': close_price
         }

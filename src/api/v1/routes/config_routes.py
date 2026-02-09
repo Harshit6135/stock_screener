@@ -6,7 +6,7 @@ GET/PUT endpoints for runtime configuration management.
 from flask.views import MethodView
 from flask_smorest import Blueprint
 
-from schemas import RiskConfigSchema
+from schemas import ConfigSchema
 from repositories import ConfigRepository
 
 blp = Blueprint(
@@ -22,7 +22,7 @@ class StrategyConfigResource(MethodView):
     """Runtime configuration for trading strategies"""
 
     @blp.doc(tags=["System"])
-    @blp.response(200, RiskConfigSchema)
+    @blp.response(200, ConfigSchema)
     def get(self, strategy_name: str):
         """
         Get current strategy configuration.
@@ -40,8 +40,8 @@ class StrategyConfigResource(MethodView):
         return config
 
     @blp.doc(tags=["System"])
-    @blp.arguments(RiskConfigSchema)
-    @blp.response(200, RiskConfigSchema)
+    @blp.arguments(ConfigSchema)
+    @blp.response(200, ConfigSchema)
     def put(self, data: dict, strategy_name: str):
         """
         Update strategy configuration at runtime.

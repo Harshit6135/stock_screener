@@ -1,7 +1,5 @@
-from flask import request
 from flask.views import MethodView
-from flask_smorest import Blueprint, abort
-from datetime import datetime
+from flask_smorest import Blueprint
 
 from schemas import MessageSchema, CleanupQuerySchema
 from services import InitService, MarketDataService, IndicatorsService, PercentileService, ScoreService, RankingService

@@ -12,7 +12,7 @@ from schemas import (
     MessageSchema, ActionDateSchema, ActionQuerySchema,
     ActionSchema, ActionUpdateSchema
 )
-from repositories import ConfigRepository, InvestmentRepository
+from repositories import InvestmentRepository
 from services import ActionsService
 
 

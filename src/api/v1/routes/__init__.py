@@ -25,3 +25,20 @@ from .investment_routes import blp as investment_bp
 from .costs_routes import blp as costs_bp
 from .tax_routes import blp as tax_bp
 from .backtest_routes import blp as backtest_bp
+
+__all__ = [
+    "init_bp",
+    "app_bp",
+    "config_bp",
+    "instruments_bp",
+    "marketdata_bp",
+    "indicators_bp",
+    "percentile_bp",
+    "score_bp",
+    "ranking_bp",
+    "actions_bp",
+    "investment_bp",
+    "costs_bp",
+    "tax_bp",
+    "backtest_bp",
+]

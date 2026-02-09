@@ -9,7 +9,7 @@ from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 from datetime import datetime
 
-from src.utils.tax_utils import (
+from utils import (
     calculate_capital_gains_tax,
     should_hold_for_ltcg,
     calculate_tax_adjusted_cost

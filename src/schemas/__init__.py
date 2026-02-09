@@ -6,7 +6,7 @@ from .indicators_schema import IndicatorsSchema, IndicatorSearchSchema
 from .score_schema import ScoreSchema
 from .percentile_schema import PercentileSchema, PercentileAllSchema
 from .ranking_schema import TopNSchema, RankingSchema
-from .risk_config_schema import RiskConfigSchema
+from .config_schema import ConfigSchema
 
 from .app_schema import CleanupQuerySchema
 from .backtest_schema import BacktestInputSchema

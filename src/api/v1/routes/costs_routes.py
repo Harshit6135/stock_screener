@@ -11,9 +11,7 @@ from flask_smorest import Blueprint, abort
 from utils import (
     calculate_round_trip_cost,
     calculate_buy_costs,
-    calculate_sell_costs
-)
-from src.utils.sizing_utils import (
+    calculate_sell_costs,
     calculate_position_size,
     calculate_equal_weight_position
 )

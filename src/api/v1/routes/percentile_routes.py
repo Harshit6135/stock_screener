@@ -1,7 +1,6 @@
 from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
-from datetime import datetime
 from repositories import PercentileRepository
 from schemas import PercentileSchema, MessageSchema, PercentileAllSchema
 from services import PercentileService
