@@ -70,10 +70,10 @@ Failure to follow this workflow is considered a CRITICAL ERROR.
 |------|---------|----------|
 | Services | `*_service.py` | `indicators_service.py` |
 | Repositories | `*_repository.py` | `indicators_repository.py` |
-| Models | `*.py` (singular noun) | `indicators.py` |
+| Models | `*_model.py` | `indicators_model.py` |
 | Utils | `*_utils.py` | `sizing_utils.py` |
 | Routes | `*_routes.py` | `actions_routes.py` |
-| Schemas | `*.py` | `indicators.py` |
+| Schemas | `*_schema.py` | `indicators_schema.py` |
 | Config | `*_config.py` | `strategies_config.py` |
 | Docs | `UPPERCASE.md` | `API.md` |
 

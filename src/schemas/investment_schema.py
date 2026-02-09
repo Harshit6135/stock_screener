@@ -15,7 +15,7 @@ class HoldingDateSchema(Schema):
 class HoldingSchema(Schema):
     """Schema for holding response"""
     symbol = fields.String(dump_only=True)
-    working_date = fields.Date(dump_only=True)
+    invest_date = fields.Date(dump_only=True)
     entry_date = fields.Date(dump_only=True)
     entry_price = fields.Decimal(as_string=True, dump_only=True)
     units = fields.Integer(dump_only=True)
@@ -28,7 +28,7 @@ class HoldingSchema(Schema):
 
 class SummarySchema(Schema):
     """Schema for summary response"""
-    working_date = fields.Date(dump_only=True)
+    invest_date = fields.Date(dump_only=True)
     starting_capital = fields.Decimal(as_string=True, dump_only=True)
     sold = fields.Decimal(as_string=True, dump_only=True)
     bought = fields.Decimal(as_string=True, dump_only=True)

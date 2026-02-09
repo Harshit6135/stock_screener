@@ -1,7 +1,7 @@
 from db import db
 
 
-class RiskConfigModel(db.Model):
+class ConfigModel(db.Model):
     """Portfolio-level risk configuration parameters"""
     __tablename__ = "risk_config"
     __bind_key__ = "personal"

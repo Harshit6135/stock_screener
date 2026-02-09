@@ -20,7 +20,7 @@ class ActionQuerySchema(Schema):
 class ActionSchema(Schema):
     """Schema for action response"""
     action_id = fields.String(dump_only=True)
-    working_date = fields.Date(dump_only=True)
+    action_date = fields.Date(dump_only=True)
     type = fields.String(dump_only=True)
     reason = fields.String(dump_only=True)
     symbol = fields.String(dump_only=True)

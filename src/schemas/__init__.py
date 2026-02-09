@@ -1,23 +1,23 @@
-from .init_app import InitResponseSchema
-from .marketdata import MarketDataSchema, MaxDateSchema, MarketDataQuerySchema
-from .instruments import InstrumentSchema, MessageSchema
-from .indicators import IndicatorsSchema, IndicatorSearchSchema
+from .init_app_schema import InitResponseSchema
+from .market_data_schema import MarketDataSchema, MaxDateSchema, MarketDataQuerySchema
+from .instruments_schema import InstrumentSchema, MessageSchema
+from .indicators_schema import IndicatorsSchema, IndicatorSearchSchema
 
-from .score import ScoreSchema
-from .percentile import PercentileSchema, PercentileAllSchema
-from .ranking import TopNSchema, RankingSchema
-from .risk_config import RiskConfigSchema
+from .score_schema import ScoreSchema
+from .percentile_schema import PercentileSchema, PercentileAllSchema
+from .ranking_schema import TopNSchema, RankingSchema
+from .risk_config_schema import RiskConfigSchema
 
-from .app import CleanupQuerySchema
-from .backtest import BacktestInputSchema
+from .app_schema import CleanupQuerySchema
+from .backtest_schema import BacktestInputSchema
 
 # Actions schemas (new dedicated module)
-from .actions import (
+from .actions_schema import (
     ActionDateSchema, ActionQuerySchema, ActionSchema, ActionUpdateSchema
 )
 
 # Investment schemas (holdings and summary)
-from .investment import (
+from .investment_schema import (
     HoldingDateSchema, HoldingSchema, SummarySchema
 )
 

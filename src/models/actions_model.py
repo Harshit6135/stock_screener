@@ -11,11 +11,11 @@ import uuid
 
 class ActionsModel(db.Model):
     """Trading actions for buy/sell decisions with risk and ATR data"""
-    __tablename__ = 'investment_actions'
+    __tablename__ = 'actions'
     __bind_key__ = 'personal'
 
     action_id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    working_date = db.Column(db.Date, nullable=False)
+    action_date = db.Column(db.Date, nullable=False)
     type = db.Column(db.String(10), nullable=False)  # 'buy' or 'sell'
     reason = db.Column(db.String(50), nullable=True)
     symbol = db.Column(db.String(50), nullable=False)
@@ -28,9 +28,9 @@ class ActionsModel(db.Model):
     status = db.Column(db.String(20), nullable=False, default='Pending')
 
     __table_args__ = (
-        Index("idx_investment_actions_working_date", "working_date"),
-        Index("idx_investment_actions_symbol", "symbol"),
-        Index("idx_investment_actions_status", "status"),
+        Index("idx_actions_action_date", "action_date"),
+        Index("idx_actions_symbol", "symbol"),
+        Index("idx_actions_status", "status"),
     )
 
     def __repr__(self):

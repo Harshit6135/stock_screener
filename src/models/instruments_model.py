@@ -1,6 +1,6 @@
 from db import db
 
-class InstrumentModel(db.Model):
+class InstrumentsModel(db.Model):
     __tablename__ = "instruments"
 
     instrument_token = db.Column(db.Integer, primary_key=True)

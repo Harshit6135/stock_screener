@@ -8,3 +8,16 @@ from .score_repository import ScoreRepository
 from .ranking_repository import RankingRepository
 from .actions_repository import ActionsRepository
 from .investment_repository import InvestmentRepository
+
+__all__ = [
+    "MasterRepository",
+    "InstrumentsRepository",
+    "ConfigRepository",
+    "PercentileRepository",
+    "MarketDataRepository",
+    "IndicatorsRepository",
+    "ScoreRepository",
+    "RankingRepository",
+    "ActionsRepository",
+    "InvestmentRepository"
+]

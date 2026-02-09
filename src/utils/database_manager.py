@@ -57,19 +57,15 @@ class DatabaseManager:
         
         Creates investment_actions, investment_holdings, investment_summary tables.
         """
-        from src.models.actions import ActionsModel
-        from src.models.investment import (
-            InvestmentHoldingsModel, 
-            InvestmentSummaryModel
-        )
+        from models import ActionsModel, InvestmentsHoldingsModel, InvestmentsSummaryModel
         
         with app.app_context():
             engine = db.get_engine(bind='backtest')
             
             # Create tables if they don't exist
             ActionsModel.__table__.create(engine, checkfirst=True)
-            InvestmentHoldingsModel.__table__.create(engine, checkfirst=True)
-            InvestmentSummaryModel.__table__.create(engine, checkfirst=True)
+            InvestmentsHoldingsModel.__table__.create(engine, checkfirst=True)
+            InvestmentsSummaryModel.__table__.create(engine, checkfirst=True)
             
             logger.info("Backtest database initialized")
     
@@ -83,16 +79,12 @@ class DatabaseManager:
         session = cls.get_backtest_session()
         
         with app.app_context():
-            from src.models.actions import ActionsModel
-            from src.models.investment import (
-                InvestmentHoldingsModel,
-                InvestmentSummaryModel
-            )
+            from models import ActionsModel, InvestmentsHoldingsModel, InvestmentsSummaryModel
             
             try:
                 session.query(ActionsModel).delete()
-                session.query(InvestmentHoldingsModel).delete()
-                session.query(InvestmentSummaryModel).delete()
+                session.query(InvestmentsHoldingsModel).delete()
+                session.query(InvestmentsSummaryModel).delete()
                 session.commit()
                 logger.info("Backtest database cleared")
             except Exception as e:
