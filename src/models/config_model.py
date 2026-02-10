@@ -3,7 +3,7 @@ from db import db
 
 class ConfigModel(db.Model):
     """Portfolio-level risk configuration parameters"""
-    __tablename__ = "risk_config"
+    __tablename__ = "config"
     __bind_key__ = "personal"
 
     id = db.Column(db.Integer, primary_key=True, autoincrement = True)

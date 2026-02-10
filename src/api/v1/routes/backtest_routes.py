@@ -14,7 +14,7 @@ from schemas import MessageSchema, BacktestInputSchema
 logger = setup_logger(name="BacktestRoutes")
 
 blp = Blueprint(
-    "backtest",
+    "Backtest",
     __name__,
     url_prefix="/api/v1/backtest",
     description="Backtesting Operations"

@@ -18,7 +18,7 @@ from utils import (
 
 
 blp = Blueprint(
-    "costs", 
+    "Transaction Costs", 
     __name__, 
     url_prefix="/api/v1/costs", 
     description="Transaction Cost and Sizing Calculations"
@@ -27,7 +27,7 @@ blp = Blueprint(
 
 @blp.route("/roundtrip")
 class RoundTripCosts(MethodView):
-    @blp.doc(tags=["Analysis"])
+    @blp.doc(tags=["Transaction Costs"])
     def get(self):
         """
         Calculate round-trip transaction costs.
@@ -60,7 +60,7 @@ class RoundTripCosts(MethodView):
 
 @blp.route("/buy")
 class BuyCosts(MethodView):
-    @blp.doc(tags=["Analysis"])
+    @blp.doc(tags=["Transaction Costs"])
     def get(self):
         """
         Calculate buy-side transaction costs only.
@@ -88,7 +88,7 @@ class BuyCosts(MethodView):
 
 @blp.route("/sell")
 class SellCosts(MethodView):
-    @blp.doc(tags=["Analysis"])
+    @blp.doc(tags=["Transaction Costs"])
     def get(self):
         """
         Calculate sell-side transaction costs only.
@@ -116,7 +116,7 @@ class SellCosts(MethodView):
 
 @blp.route("/position-size")
 class PositionSize(MethodView):
-    @blp.doc(tags=["Analysis"])
+    @blp.doc(tags=["Transaction Costs"])
     def get(self):
         """
         Calculate ATR-based position size with multiple constraints.
@@ -158,7 +158,7 @@ class PositionSize(MethodView):
 
 @blp.route("/equal-weight-size")
 class EqualWeightSize(MethodView):
-    @blp.doc(tags=["Analysis"])
+    @blp.doc(tags=["Transaction Costs"])
     def get(self):
         """
         Calculate equal-weight position size.

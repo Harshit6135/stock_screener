@@ -5,12 +5,12 @@ from services import InitService
 from schemas import InitResponseSchema
 
 
-blp = Blueprint("init", __name__, url_prefix="/api/v1/init", description="Initialize App")
+blp = Blueprint("Initialization", __name__, url_prefix="/api/v1/init", description="Initialize App")
 
 
 @blp.route("/")
 class Init(MethodView):
-    @blp.doc(tags=["System"])
+    @blp.doc(tags=["Initialization"])
     @blp.response(201, InitResponseSchema)
     def post(self):
         """Initialize App"""

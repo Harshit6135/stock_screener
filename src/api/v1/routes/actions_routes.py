@@ -19,7 +19,7 @@ from services import ActionsService
 logger = setup_logger(name="ActionsRoutes")
 
 blp = Blueprint(
-    "actions",
+    "Actions",
     __name__,
     url_prefix="/api/v1/actions",
     description="Trading Actions Operations"
@@ -28,7 +28,7 @@ blp = Blueprint(
 
 @blp.route("/generate")
 class GenerateActions(MethodView):
-    @blp.doc(tags=["Trading"])
+    @blp.doc(tags=["Actions"])
     @blp.response(200, MessageSchema)
     def post(self) -> dict:
         """
@@ -55,7 +55,7 @@ class GenerateActions(MethodView):
 
 @blp.route("/dates")
 class ActionDates(MethodView):
-    @blp.doc(tags=["Trading"])
+    @blp.doc(tags=["Actions"])
     @blp.response(200, ActionDateSchema)
     def get(self):
         """Get all distinct action dates"""
@@ -65,7 +65,7 @@ class ActionDates(MethodView):
 
 @blp.route("/")
 class ActionsList(MethodView):
-    @blp.doc(tags=["Trading"])
+    @blp.doc(tags=["Actions"])
     @blp.arguments(ActionQuerySchema, location="query")
     @blp.response(200, ActionSchema(many=True))
     def get(self, args):
@@ -85,7 +85,7 @@ class ActionsList(MethodView):
 
 @blp.route("/<action_id>")
 class ActionDetail(MethodView):
-    @blp.doc(tags=["Trading"])
+    @blp.doc(tags=["Actions"])
     @blp.arguments(ActionUpdateSchema)
     @blp.response(200, MessageSchema)
     def put(self, data, action_id):

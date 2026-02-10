@@ -6,12 +6,12 @@ from services import InitService, MarketDataService, IndicatorsService, Percenti
 from repositories import MarketDataRepository, IndicatorsRepository, PercentileRepository, ScoreRepository
 
 
-blp = Blueprint("app", __name__, url_prefix="/api/v1/app", description="Application Orchestration & Cleanup Operations")
+blp = Blueprint("App Orchestration", __name__, url_prefix="/api/v1/app", description="Application Orchestration & Cleanup Operations")
 
 
 @blp.route("/cleanup")
 class CleanupAfterDate(MethodView):
-    @blp.doc(tags=["System"])
+    @blp.doc(tags=["App Orchestration"])
     @blp.arguments(CleanupQuerySchema, location="query")
     @blp.response(200, MessageSchema)
     def delete(self, args):
@@ -48,7 +48,7 @@ class CleanupAfterDate(MethodView):
 
 @blp.route("/run-pipeline")
 class RunPipeline(MethodView):
-    @blp.doc(tags=["System"])
+    @blp.doc(tags=["App Orchestration"])
     @blp.response(200, MessageSchema)
     def post(self):
         """

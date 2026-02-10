@@ -8,7 +8,7 @@ from services import ScoreService
 from repositories import ScoreRepository
 
 
-blp = Blueprint("score", __name__, url_prefix="/api/v1/score", description="Operations on Score calculations")
+blp = Blueprint("Scores", __name__, url_prefix="/api/v1/score", description="Operations on Score calculations")
 score_repo = ScoreRepository()
 
 
@@ -16,7 +16,7 @@ score_repo = ScoreRepository()
 
 @blp.route("/generate")
 class GenerateScores(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Scores"])
     @blp.response(201, MessageSchema)
     def post(self):
         """Generate composite scores incrementally from last calculated date"""
@@ -27,7 +27,7 @@ class GenerateScores(MethodView):
 
 @blp.route("/recalculate")
 class RecalculateScores(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Scores"])
     @blp.response(201, MessageSchema)
     def post(self):
         """Recalculate ALL composite scores from scratch (use when weights updated)"""
@@ -40,7 +40,7 @@ class RecalculateScores(MethodView):
 
 @blp.route("/<string:tradingsymbol>")
 class ScoreBySymbol(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Scores"])
     def get(self, tradingsymbol: str):
         """
         Get composite score for a stock on a date.

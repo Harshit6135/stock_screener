@@ -8,7 +8,7 @@ from schemas import RankingSchema, MessageSchema, TopNSchema
 from services import RankingService
 
 
-blp = Blueprint("ranking", __name__, url_prefix="/api/v1/ranking", description="Operations on Weekly Rankings")
+blp = Blueprint("Rankings", __name__, url_prefix="/api/v1/ranking", description="Operations on Weekly Rankings")
 score_repo = ScoreRepository()
 
 marketdata_repo = MarketDataRepository()
@@ -35,7 +35,7 @@ def get_prev_friday(d):
 
 @blp.route("/generate")
 class GenerateRankings(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Rankings"])
     @blp.response(201, MessageSchema)
     def post(self):
         """Generate weekly rankings incrementally"""
@@ -46,7 +46,7 @@ class GenerateRankings(MethodView):
 
 @blp.route("/recalculate")
 class RecalculateRankings(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Rankings"])
     @blp.response(201, MessageSchema)
     def post(self):
         """Recalculate ALL weekly rankings from scratch"""
@@ -59,7 +59,7 @@ class RecalculateRankings(MethodView):
 
 @blp.route("/top/<int:n>")
 class TopRankings(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Rankings"])
     @blp.response(200, TopNSchema(many=True))
     def get(self, n):
         """Get top N stocks by ranking. Date is normalized to Friday."""
@@ -83,7 +83,7 @@ class TopRankings(MethodView):
 
 @blp.route("/symbol/<string:symbol>")
 class RankingBySymbol(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Rankings"])
     @blp.response(200, TopNSchema)
     def get(self, symbol):
         """Get ranking for a specific symbol. Date is normalized to Friday."""
@@ -127,7 +127,7 @@ class RankingBySymbol(MethodView):
 
 @blp.route("/query/<string:ranking_date_str>")
 class RankingsQuery(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Rankings"])
     @blp.response(200, RankingSchema(many=True))
     def get(self, ranking_date_str):
         """Fetch all rankings for a specific date"""

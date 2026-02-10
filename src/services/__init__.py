@@ -7,10 +7,6 @@ from .score_service import ScoreService
 from .ranking_service import RankingService
 from .actions_service import ActionsService
 
-# Backward compatibility alias
-Strategy = ActionsService
-
-
 __all__ = [
     "InitService",
     "IndicatorsService",
@@ -18,6 +14,5 @@ __all__ = [
     "PercentileService",
     "ScoreService",
     "RankingService",
-    "ActionsService",
-    "Strategy"  # Deprecated alias
+    "ActionsService"
 ]

@@ -17,7 +17,8 @@ from src.api.v1.routes import (
     investment_bp,
     config_bp,
     costs_bp,
-    tax_bp
+    tax_bp,
+    backtest_bp
 )
 
 
@@ -36,20 +37,26 @@ api = Api(app)
 with app.app_context():
     db.create_all()
 
-# Register API blueprints
+# Register API blueprints (order matches Swagger UI / Redoc tag groups)
+# System & Config
 api.register_blueprint(init_bp)
+api.register_blueprint(app_bp)
+api.register_blueprint(config_bp)
+# Data Pipeline
 api.register_blueprint(instruments_bp)
 api.register_blueprint(marketdata_bp)
 api.register_blueprint(indicators_bp)
 api.register_blueprint(percentile_bp)
 api.register_blueprint(score_bp)
-api.register_blueprint(app_bp)
 api.register_blueprint(ranking_bp)
+# Trading
 api.register_blueprint(actions_bp)
 api.register_blueprint(investment_bp)
-api.register_blueprint(config_bp)
+# Analysis
 api.register_blueprint(costs_bp)
 api.register_blueprint(tax_bp)
+# Backtest
+api.register_blueprint(backtest_bp)
 
 
 # Main Dashboard Route

@@ -14,7 +14,7 @@ class InvestmentsHoldingsModel(db.Model):
     __bind_key__ = 'personal'
 
     symbol = db.Column(db.String(50), primary_key=True, nullable=False)
-    invest_date = db.Column(db.Date, primary_key=True, nullable=False)
+    date = db.Column(db.Date, primary_key=True, nullable=False)
     entry_date = db.Column(db.Date, nullable=False)
     entry_price = db.Column(db.Numeric(10, 2), nullable=False)
     units = db.Column(db.Integer, nullable=False)
@@ -26,7 +26,7 @@ class InvestmentsHoldingsModel(db.Model):
 
     __table_args__ = (
         Index("idx_investment_holdings_symbol", "symbol"),
-        Index("idx_investment_holdings_invest_date", "invest_date"),
+        Index("idx_investment_holdings_date", "date"),
         Index("idx_investment_holdings_entry_date", "entry_date"),
     )
 
@@ -50,7 +50,7 @@ class InvestmentsSummaryModel(db.Model):
     __tablename__ = 'investment_summary'
     __bind_key__ = 'personal'
 
-    invest_date = db.Column(db.Date, primary_key=True, nullable=False)
+    date = db.Column(db.Date, primary_key=True, nullable=False)
     starting_capital = db.Column(db.Numeric(12, 2), nullable=False)
     sold = db.Column(db.Numeric(12, 2), nullable=False, default=0)
     bought = db.Column(db.Numeric(12, 2), nullable=False, default=0)
@@ -68,7 +68,7 @@ class InvestmentsSummaryModel(db.Model):
     )
 
     __table_args__ = (
-        Index("idx_investment_summary_invest_date", "invest_date"),
+        Index("idx_investment_summary_date", "date"),
     )
 
     def __repr__(self):

@@ -14,7 +14,7 @@ from repositories import InvestmentRepository
 
 
 blp = Blueprint(
-    "investment",
+    "Investments",
     __name__,
     url_prefix="/api/v1/investment",
     description="Investment Operations"
@@ -23,7 +23,7 @@ blp = Blueprint(
 
 @blp.route("/holdings/dates")
 class HoldingDates(MethodView):
-    @blp.doc(tags=["Trading"])
+    @blp.doc(tags=["Investments"])
     @blp.response(200, HoldingDateSchema)
     def get(self):
         """Get all distinct holding dates"""
@@ -33,7 +33,7 @@ class HoldingDates(MethodView):
 
 @blp.route("/holdings")
 class Holdings(MethodView):
-    @blp.doc(tags=["Trading"])
+    @blp.doc(tags=["Investments"])
     @blp.arguments(ActionQuerySchema, location="query")
     @blp.response(200, HoldingSchema(many=True))
     def get(self, args):
@@ -45,7 +45,7 @@ class Holdings(MethodView):
 
 @blp.route("/summary")
 class Summary(MethodView):
-    @blp.doc(tags=["Trading"])
+    @blp.doc(tags=["Investments"])
     @blp.arguments(ActionQuerySchema, location="query")
     @blp.response(200, SummarySchema)
     def get(self, args):

@@ -17,7 +17,7 @@ from utils import (
 
 
 blp = Blueprint(
-    "tax", 
+    "Tax Analysis", 
     __name__, 
     url_prefix="/api/v1/tax", 
     description="Tax Calculation Operations"
@@ -26,7 +26,7 @@ blp = Blueprint(
 
 @blp.route("/estimate")
 class TaxEstimate(MethodView):
-    @blp.doc(tags=["Analysis"])
+    @blp.doc(tags=["Tax Analysis"])
     def get(self):
         """
         Estimate capital gains tax for a trade.
@@ -84,7 +84,7 @@ class TaxEstimate(MethodView):
 
 @blp.route("/hold-for-ltcg")
 class HoldForLTCG(MethodView):
-    @blp.doc(tags=["Analysis"])
+    @blp.doc(tags=["Tax Analysis"])
     def get(self):
         """
         Check if holding for LTCG is beneficial.
@@ -127,7 +127,7 @@ class HoldForLTCG(MethodView):
 
 @blp.route("/adjusted-cost")
 class TaxAdjustedCost(MethodView):
-    @blp.doc(tags=["Analysis"])
+    @blp.doc(tags=["Tax Analysis"])
     def get(self):
         """
         Calculate effective switching cost including tax impact.

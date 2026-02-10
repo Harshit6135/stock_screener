@@ -29,66 +29,66 @@ class InvestmentRepository:
 
     def get_holdings_dates(self):
         """
-        Get distinct invest dates from holdings table.
+        Get distinct dates from holdings table.
 
         Returns:
-            list: invest dates in descending order
+            list: dates in descending order
         """
         dates = self.session.query(
-            InvestmentsHoldingsModel.invest_date
+            InvestmentsHoldingsModel.date
         ).distinct().order_by(
-            InvestmentsHoldingsModel.invest_date.desc()
+            InvestmentsHoldingsModel.date.desc()
         ).all()
         return [d[0] for d in dates]
 
-    def get_holdings(self, invest_date=None):
+    def get_holdings(self, date=None):
         """
-        Get all holdings for a given invest date.
+        Get all holdings for a given date.
         
         Parameters:
-            invest_date: Date to query, defaults to latest
+            date: Date to query, defaults to latest
         
         Returns:
             list: InvestmentsHoldingsModel instances
         """
-        if not invest_date:
-            invest_date = self.session.query(func.max(InvestmentsHoldingsModel.invest_date)).scalar()
+        if not date:
+            date = self.session.query(func.max(InvestmentsHoldingsModel.date)).scalar()
         return self.session.query(InvestmentsHoldingsModel).filter(
-            InvestmentsHoldingsModel.invest_date == invest_date
+            InvestmentsHoldingsModel.date == date
         ).all()
 
-    def get_holdings_by_symbol(self, symbol, invest_date=None):
+    def get_holdings_by_symbol(self, symbol, date=None):
         """
         Get holding for a specific symbol and date.
         
         Parameters:
             symbol (str): Trading symbol
-            invest_date: Date to query, defaults to latest
+            date: Date to query, defaults to latest
         
         Returns:
             InvestmentsHoldingsModel: Holding instance or None
         """
-        if not invest_date:
-            invest_date = self.session.query(func.max(InvestmentsHoldingsModel.invest_date)).scalar()
+        if not date:
+            date = self.session.query(func.max(InvestmentsHoldingsModel.date)).scalar()
         return self.session.query(InvestmentsHoldingsModel).filter(
-            InvestmentsHoldingsModel.invest_date == invest_date,
+            InvestmentsHoldingsModel.date == date,
             InvestmentsHoldingsModel.symbol == symbol
         ).first()
 
-    def get_summary(self, invest_date=None):
+    def get_summary(self, date=None):
         """
         Get portfolio summary for a given date.
         
         Parameters:
-            invest_date: Date to query, defaults to latest
+            date: Date to query, defaults to latest
         
         Returns:
             InvestmentsSummaryModel: Summary instance or None
         """
-        if not invest_date:
-            invest_date = self.session.query(func.max(InvestmentsSummaryModel.invest_date)).scalar()
+        if not date:
+            date = self.session.query(func.max(InvestmentsSummaryModel.date)).scalar()
         return self.session.query(InvestmentsSummaryModel).filter(
-            InvestmentsSummaryModel.invest_date == invest_date
+            InvestmentsSummaryModel.date == date
         ).first()
 
     def bulk_insert_holdings(self, holdings):
@@ -103,7 +103,7 @@ class InvestmentRepository:
         """
         try:
             self.session.query(InvestmentsHoldingsModel).filter(
-                InvestmentsHoldingsModel.invest_date == holdings[0]['invest_date']
+                InvestmentsHoldingsModel.date == holdings[0]['date']
             ).delete()
             self.session.commit()
         except Exception as e:
@@ -132,7 +132,7 @@ class InvestmentRepository:
         summary_data = InvestmentsSummaryModel(**summary)
         try:
             self.session.query(InvestmentsSummaryModel).filter(
-                InvestmentsSummaryModel.invest_date == summary['invest_date']
+                InvestmentsSummaryModel.date == summary['date']
             ).delete()
             self.session.commit()
         except Exception as e:
@@ -148,32 +148,32 @@ class InvestmentRepository:
             self.session.rollback()
             return None
 
-    def delete_holdings(self, invest_date):
+    def delete_holdings(self, date):
         """
         Delete holdings for a specific date.
         
         Parameters:
-            invest_date: Date to delete
+            date: Date to delete
         """
         try:
             self.session.query(InvestmentsHoldingsModel).filter(
-                InvestmentsHoldingsModel.invest_date == invest_date
+                InvestmentsHoldingsModel.date == date
             ).delete()
             self.session.commit()
         except Exception as e:
             logger.error(f"Error delete_holdings {e}")
             self.session.rollback()
 
-    def delete_summary(self, invest_date):
+    def delete_summary(self, date):
         """
         Delete summary for a specific date.
         
         Parameters:
-            invest_date: Date to delete
+            date: Date to delete
         """
         try:
             self.session.query(InvestmentsSummaryModel).filter(
-                InvestmentsSummaryModel.invest_date == invest_date
+                InvestmentsSummaryModel.date == date
             ).delete()
             self.session.commit()
         except Exception as e:
@@ -183,7 +183,6 @@ class InvestmentRepository:
     def delete_all_holdings(self):
         """
         Delete all holdings (used in cleanup operations).
-        
         """
         try:
             self.session.query(InvestmentsHoldingsModel).delete()

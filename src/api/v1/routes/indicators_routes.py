@@ -7,13 +7,13 @@ from repositories import IndicatorsRepository
 from schemas import IndicatorsSchema, MaxDateSchema, IndicatorSearchSchema
 from services import IndicatorsService
 
-blp = Blueprint("indicators", __name__, url_prefix="/api/v1/indicators", description="Operations on indicators")
+blp = Blueprint("Indicators", __name__, url_prefix="/api/v1/indicators", description="Operations on indicators")
 indicators_repository = IndicatorsRepository()
 
 
 @blp.route("/")
 class Indicators(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Indicators"])
     @blp.arguments(IndicatorsSchema(many=True))
     @blp.response(201, IndicatorsSchema)
     def post(self, indicator_data):
@@ -26,7 +26,7 @@ class Indicators(MethodView):
 
 @blp.route("/query")
 class IndicatorsQuery(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Indicators"])
     @blp.arguments(IndicatorSearchSchema, location="json")
     @blp.response(200, IndicatorsSchema(many=True))
     def get(self, filter_data):
@@ -36,7 +36,7 @@ class IndicatorsQuery(MethodView):
 
 @blp.route("/latest/<string:tradingsymbol>")
 class LatestIndicatorsData(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Indicators"])
     @blp.response(200, IndicatorsSchema)
     def get(self, tradingsymbol):
         """Fetch the latest indicators for a tradingsymbol"""
@@ -45,7 +45,7 @@ class LatestIndicatorsData(MethodView):
 
 @blp.route("/max_date")
 class IndicatorsMaxDate(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Indicators"])
     @blp.response(200, MaxDateSchema(many=True))
     def get(self):
         """Fetch the max date for each instrument"""
@@ -54,6 +54,7 @@ class IndicatorsMaxDate(MethodView):
 
 @blp.route("/query/all")
 class IndicatorsQueryAll(MethodView):
+    @blp.doc(tags=["Indicators"])
     @blp.arguments(IndicatorsSchema, location="json")
     @blp.response(200, IndicatorsSchema(many=True))
     def get(self, filter_data):
@@ -70,6 +71,7 @@ class IndicatorsQueryAll(MethodView):
 
 @blp.route("/delete/<string:tradingsymbol>")
 class IndicatorsDelete(MethodView):
+    @blp.doc(tags=["Indicators"])
     @blp.arguments(IndicatorsSchema, location="json")
     @blp.response(200, IndicatorsSchema(many=True))
     def delete(self, tradingsymbol):
@@ -82,7 +84,7 @@ class IndicatorsDelete(MethodView):
 
 @blp.route("/update_all")
 class IndicatorsUpdateAll(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Indicators"])
     def post(self):
         """Calculate indicators for all instruments"""
         indicators_service = IndicatorsService()
@@ -92,7 +94,7 @@ class IndicatorsUpdateAll(MethodView):
 
 @blp.route("/<string:indicator_name>")
 class IndicatorByName(MethodView):
-    @blp.doc(tags=["Data Pipeline"])
+    @blp.doc(tags=["Indicators"])
     def get(self, indicator_name: str):
         """
         Get specific indicator value for a stock on a date.
