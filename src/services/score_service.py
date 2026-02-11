@@ -28,49 +28,24 @@ class ScoreService:
         self.params = Strategy1Parameters()
     
     def _calculate_composite_for_df(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Apply weighted formula to calculate composite scores"""
+        """Apply weighted formula using factor-based percentile ranks"""
         
-        # Fill NaN values in rank columns to avoid FutureWarning
+        # Fill NaN values in rank columns
         rank_cols = [
-            'trend_rank', 'trend_extension_rank', 'trend_start_rank',
-            'momentum_rsi_rank', 'momentum_ppo_rank', 'momentum_ppoh_rank',
-            'rvolume_rank', 'price_vol_corr_rank',
-            'structure_rank', 'structure_bb_rank', 'efficiency_rank'
+            'trend_rank', 'momentum_rank', 'efficiency_rank',
+            'volume_rank', 'structure_rank'
         ]
         for col in rank_cols:
             if col in df.columns:
                 df[col] = df[col].fillna(0).astype(float)
         
-        # Calculate component scores
-        df['final_trend_score'] = (
-            df['trend_rank'] * self.params.trend_rank_weight +
-            df['trend_extension_rank'] * self.params.trend_extension_rank_weight +
-            df['trend_start_rank'] * self.params.trend_start_rank_weight
-        )
-        
-        df['final_momentum_score'] = (
-            df['momentum_rsi_rank'] * self.params.momentum_rsi_rank_weight +
-            df['momentum_ppo_rank'] * self.params.momentum_ppo_rank_weight +
-            df['momentum_ppoh_rank'] * self.params.momentum_ppoh_rank_weight
-        )
-        
-        df['final_vol_score'] = (
-            df['rvolume_rank'] * self.params.rvolume_rank_weight +
-            df['price_vol_corr_rank'] * self.params.price_vol_corr_rank_weight
-        )
-        
-        df['final_structure_score'] = (
-            df['structure_rank'] * self.params.structure_rank_weight +
-            df['structure_bb_rank'] * self.params.structure_bb_rank_weight
-        )
-        
-        # Calculate composite score
+        # Composite score from factor-based ranks (30/30/20/15/5)
         df['composite_score'] = (
-            self.params.trend_strength_weight * df['final_trend_score'] +
-            self.params.momentum_velocity_weight * df['final_momentum_score'] +
-            self.params.risk_efficiency_weight * df['efficiency_rank'] +
-            self.params.conviction_weight * df['final_vol_score'] +
-            self.params.structure_weight * df['final_structure_score']
+            self.params.trend_strength_weight * df.get('trend_rank', 0) +
+            self.params.momentum_velocity_weight * df.get('momentum_rank', 0) +
+            self.params.risk_efficiency_weight * df.get('efficiency_rank', 0) +
+            self.params.conviction_weight * df.get('volume_rank', 0) +
+            self.params.structure_weight * df.get('structure_rank', 0)
         )
         
         return df
@@ -127,8 +102,8 @@ class ScoreService:
             # Prepare records for insertion
             score_records = df[[
                 'tradingsymbol', 'percentile_date',
-                'final_trend_score', 'final_momentum_score', 
-                'final_vol_score', 'final_structure_score',
+                'trend_rank', 'momentum_rank', 
+                'efficiency_rank', 'volume_rank', 'structure_rank',
                 'composite_score'
             ]].copy()
             score_records.rename(columns={'percentile_date': 'score_date'}, inplace=True)

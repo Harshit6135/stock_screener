@@ -72,8 +72,6 @@ class IndicatorsQueryAll(MethodView):
 @blp.route("/delete/<string:tradingsymbol>")
 class IndicatorsDelete(MethodView):
     @blp.doc(tags=["Indicators"])
-    @blp.arguments(IndicatorsSchema, location="json")
-    @blp.response(200, IndicatorsSchema(many=True))
     def delete(self, tradingsymbol):
         """Delete indicators by instrument_token or tradingsymbol within a date range"""
         response=indicators_repository.delete_by_tradingsymbol(tradingsymbol)

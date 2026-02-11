@@ -97,8 +97,8 @@ class ActionsRepository:
             self.session.rollback()
 
         try:
-            sess.bulk_insert_mappings(ActionsModel, actions, return_defaults=True)
-            sess.commit()
+            self.session.bulk_insert_mappings(ActionsModel, actions, return_defaults=True)
+            self.session.commit()
         except Exception as e:
             logger.error(f"Error bulk_insert_actions {e}")
             self.session.rollback()

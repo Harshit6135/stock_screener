@@ -5,11 +5,12 @@ from datetime import datetime
 
 from schemas import MessageSchema
 from services import ScoreService
-from repositories import ScoreRepository
+from repositories import ScoreRepository, RankingRepository
 
 
 blp = Blueprint("Scores", __name__, url_prefix="/api/v1/score", description="Operations on Score calculations")
 score_repo = ScoreRepository()
+ranking_repo = RankingRepository()
 
 
 # ========== Score Generation Endpoints ==========
@@ -63,7 +64,7 @@ class ScoreBySymbol(MethodView):
             except ValueError:
                 abort(400, message="Invalid date format. Use YYYY-MM-DD")
         
-        ranking = score_repo.get_by_symbol(tradingsymbol, as_of_date)
+        ranking = ranking_repo.get_by_symbol(tradingsymbol, as_of_date)
         
         if not ranking:
             return {"composite_score": None, "rank": None}

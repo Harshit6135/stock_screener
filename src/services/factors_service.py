@@ -65,16 +65,19 @@ class FactorsService:
             return max(0, cfg.zone4_decay - decay)
     
     def calculate_momentum_factor(self, rsi_smooth: pd.Series, ppo: pd.Series,
-                                   roc_60: pd.Series, roc_125: pd.Series) -> pd.Series:
+                                   momentum_3m: pd.Series, momentum_6m: pd.Series) -> pd.Series:
         """
-        RSI regime + PPO + pure momentum
+        RSI regime + PPO + pure skip-week momentum
         Uses non-linear RSI scoring
+        
+        momentum_3m/6m skip last 5 trading days to avoid
+        short-term mean-reversion noise (per spec §1.2.G)
         """
         rsi_score = rsi_smooth.apply(self._rsi_regime_score)
         ppo_norm = ppo.clip(-5, 5) / 5 * 50 + 50  # normalize to 0-100
         
-        # Pure momentum: average of 3m and 6m returns
-        pure_momentum = ((roc_60 + roc_125) / 2).clip(-50, 50) / 50 * 50 + 50
+        # Pure momentum: average of skip-week 3m and 6m returns
+        pure_momentum = ((momentum_3m + momentum_6m) / 2).clip(-50, 50) / 50 * 50 + 50
         
         momentum = (
             0.40 * rsi_score +
@@ -178,7 +181,7 @@ class FactorsService:
         
         df['factor_momentum'] = self.calculate_momentum_factor(
             df['rsi_signal_ema_3'], df['ppo_12_26_9'], 
-            df['roc_60'], df['roc_125'])
+            df['momentum_3m'], df['momentum_6m'])
         
         df['factor_efficiency'] = self.calculate_risk_efficiency_factor(
             df['roc_20'], df['atrr_14'], df['close'], df['atr_spike'])

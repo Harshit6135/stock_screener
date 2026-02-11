@@ -6,6 +6,8 @@ Dataclasses for positions, results, and risk monitoring.
 from datetime import date
 from dataclasses import dataclass, field
 from typing import List, Optional
+import pandas as pd
+from utils.metrics import calculate_all_metrics
 
 
 @dataclass
@@ -106,18 +108,18 @@ class BacktestRiskMonitor:
         return ((current - self.initial_capital) / self.initial_capital) * 100
     
     def get_summary(self) -> dict:
-        """Get comprehensive risk summary"""
-        closed_trades = [t for t in self.trades if t.get('type') in ('SELL', 'SWAP')]
-        successful_trades = len([t for t in closed_trades if t.get('pnl', 0) > 0])
-        total_trades = len(closed_trades)
-        hit_rate = (successful_trades / total_trades * 100) if total_trades > 0 else 0.0
+        """Get comprehensive risk summary using metrics module"""
+        # Build equity curve
+        equity_curve = pd.Series(self.portfolio_values) if self.portfolio_values else pd.Series(dtype=float)
         
-        return {
-            "initial_capital": self.initial_capital,
-            "final_value": self.portfolio_values[-1] if self.portfolio_values else self.initial_capital,
-            "total_return_percent": round(self.get_total_return(), 2),
-            "max_drawdown_percent": round(self.max_drawdown, 2),
-            "total_trades": total_trades,
-            "successful_trades": successful_trades,
-            "hit_rate_percent": round(hit_rate, 2)
-        }
+        # Use master metrics calculator
+        metrics = calculate_all_metrics(
+            equity_curve=equity_curve,
+            trades=self.trades,
+            initial_value=self.initial_capital
+        )
+        
+        # Add fields not covered by metrics module
+        metrics['initial_capital'] = self.initial_capital
+        
+        return metrics

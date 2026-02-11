@@ -3,8 +3,8 @@ from datetime import datetime, date
 from config import *
 from config import Strategy1Parameters as StrategyParams
 from repositories import IndicatorsRepository, MarketDataRepository, PercentileRepository
-from utils import (score_rsi_regime, score_percent_b, score_trend_extension,
-                   z_score_normalize, percentile_rank)
+from utils import percentile_rank
+from services.factors_service import FactorsService
 
 percentile_repo = PercentileRepository()
 indicators_repo = IndicatorsRepository()
@@ -20,79 +20,52 @@ class PercentileService:
     """
     def __init__(self):
         self.strategy_params = StrategyParams()
+        self.factors_service = FactorsService()
 
-    @staticmethod
-    def _calculate_percentile_ranks(metrics_df) -> pd.DataFrame:
-        """Calculate percentile ranks across the universe"""
-
-        # Define metrics to rank
-        rank_cols = {
-            'ema_50_slope': 'trend_rank',
-            'ppo_12_26_9': 'momentum_ppo_rank',
-            'ppoh_12_26_9': 'momentum_ppoh_rank',
-            'risk_adjusted_return': 'efficiency_rank',
-            'rvol': 'rvolume_rank',
-            'price_vol_correlation': 'price_vol_corr_rank',
-            'bbb_20_2_2': 'structure_rank'
+    def _calculate_percentile_ranks(self, metrics_df) -> pd.DataFrame:
+        """Calculate factor scores via FactorsService, then percentile-rank cross-sectionally"""
+        
+        # Calculate all 5 factors using FactorsService non-linear scoring
+        metrics_df = self.factors_service.calculate_all_factors(metrics_df)
+        
+        # Percentile-rank each factor across the universe
+        factor_cols = {
+            'factor_trend': 'trend_rank',
+            'factor_momentum': 'momentum_rank',
+            'factor_efficiency': 'efficiency_rank',
+            'factor_volume': 'volume_rank',
+            'factor_structure': 'structure_rank'
         }
         
-        for col, rank_name in rank_cols.items():
+        for col, rank_name in factor_cols.items():
             if col in metrics_df.columns:
                 metrics_df[rank_name] = percentile_rank(metrics_df[col])
         
-        metrics_df['momentum_rsi_rank'] = score_rsi_regime(metrics_df['rsi_signal_ema_3'])
-        metrics_df['trend_extension_rank'] = score_trend_extension(metrics_df['distance_from_ema_200'])
-        metrics_df['trend_start_rank'] = score_trend_extension(metrics_df['distance_from_ema_50'])
-        metrics_df['structure_bb_rank'] = score_percent_b(metrics_df['percent_b'])
-
         return metrics_df
 
     def _calculate_weighted_composite(self, metrics_df) -> pd.DataFrame:
-        """Calculate weighted composite score"""
+        """Calculate weighted composite score from factor-based percentile ranks"""
         
-        # Aggregate trend (combine EMA slope and extension)
-        if 'trend_rank' in metrics_df.columns and 'trend_extension_rank' in metrics_df.columns:
-            metrics_df['final_trend_score'] = (
-                metrics_df['trend_rank'].fillna(0) * self.strategy_params.trend_rank_weight +
-                metrics_df['trend_extension_rank'].fillna(0) * self.strategy_params.trend_extension_rank_weight
-            )
-        else:
-            metrics_df['final_trend_score'] = metrics_df.get('trend_rank', 0)
-
-        # Aggregate momentum (RSI + PPO)
-        momentum_cols = [c for c in ['momentum_rsi_rank', 'momentum_ppo_rank', 'momentum_ppoh_rank'] 
-                        if c in metrics_df.columns]
-        if momentum_cols:
-            metrics_df['final_momentum_score'] = (metrics_df["momentum_rsi_rank"] * self.strategy_params.momentum_rsi_rank_weight + 
-                                              metrics_df["momentum_ppo_rank"] * self.strategy_params.momentum_ppo_rank_weight + 
-                                              metrics_df["momentum_ppoh_rank"] * self.strategy_params.momentum_ppoh_rank_weight)
-        else:
-            metrics_df['final_momentum_score'] = 0
-        
-        metrics_df['final_vol_score'] = (metrics_df["rvolume_rank"] * self.strategy_params.rvolume_rank_weight + 
-                               metrics_df["price_vol_corr_rank"] * self.strategy_params.price_vol_corr_rank_weight)
-
-        # Combine BB Width and %B for structure (as per report Section 4.1)
-        metrics_df['final_structure_score'] = (
-            metrics_df.get('structure_rank', 0) * self.strategy_params.structure_rank_weight +
-            metrics_df.get('structure_bb_rank', 0) * self.strategy_params.structure_bb_rank_weight
-        )
-
-        # Calculate composite score
+        # Composite score using spec weights (30/30/20/15/5)
         metrics_df['composite_score'] = (
-            self.strategy_params.trend_strength_weight * metrics_df.get('final_trend_score', 0) +
-            self.strategy_params.momentum_velocity_weight * metrics_df.get('final_momentum_score', 0) +
+            self.strategy_params.trend_strength_weight * metrics_df.get('trend_rank', 0) +
+            self.strategy_params.momentum_velocity_weight * metrics_df.get('momentum_rank', 0) +
             self.strategy_params.risk_efficiency_weight * metrics_df.get('efficiency_rank', 0) +
-            self.strategy_params.conviction_weight * metrics_df.get('final_vol_score', 0) +
-            self.strategy_params.structure_weight * metrics_df.get('final_structure_score', 0)
+            self.strategy_params.conviction_weight * metrics_df.get('volume_rank', 0) +
+            self.strategy_params.structure_weight * metrics_df.get('structure_rank', 0)
         )
         return metrics_df
 
     def _apply_universe_penalties(self, metrics_df) -> pd.DataFrame:
-        """Apply penalty box rules across universe"""
+        """Apply penalty box rules and liquidity filter across universe"""
         metrics_df.loc[metrics_df['ema_200'] > metrics_df['close'], 'composite_score'] = 0
         metrics_df.loc[metrics_df['atrr_14'] / metrics_df['atrr_14'].shift(2) > self.strategy_params.atr_threshold, 'composite_score'] = 0
         metrics_df.loc[metrics_df['ema_50'] > metrics_df['close'], 'composite_score'] = 0
+        
+        # Liquidity filter: exclude stocks with RVOL below 0.5
+        if 'rvol' in metrics_df.columns:
+            metrics_df.loc[metrics_df['rvol'] < 0.5, 'composite_score'] = 0
+        
         metrics_df['composite_score'] = metrics_df['composite_score'].fillna(0)
         return metrics_df
 
@@ -101,7 +74,7 @@ class PercentileService:
         """
         Calculate composite score for multiple stocks
         Args:
-            metrics_df: DataFrame with OHLCV data
+            metrics_df: DataFrame with OHLCV + indicator data
         Returns:
             DataFrame with stocks and their factor scores + composite score
         """
@@ -109,30 +82,23 @@ class PercentileService:
 
         req_cols = [
             'tradingsymbol',
-            'ema_50_slope',
+            # Raw factors
+            'factor_trend',
+            'factor_momentum',
+            'factor_efficiency',
+            'factor_volume',
+            'factor_structure',
+            # Percentile ranks
             'trend_rank',
-            'distance_from_ema_200',
-            'trend_extension_rank',
-            'distance_from_ema_50',
-            'trend_start_rank',
-            'rsi_signal_ema_3',
-            'momentum_rsi_rank',
-            'ppo_12_26_9',
-            'momentum_ppo_rank',
-            'ppoh_12_26_9',
-            'momentum_ppoh_rank',
-            'risk_adjusted_return',
+            'momentum_rank',
             'efficiency_rank',
-            'rvol',
-            'rvolume_rank',
-            'price_vol_correlation',
-            'price_vol_corr_rank',
-            'bbb_20_2_2',
+            'volume_rank',
             'structure_rank',
-            'percent_b',
-            'structure_bb_rank',
         ]
-        return metrics_df[req_cols]
+        
+        # Only include columns that exist in the DataFrame
+        available_cols = [c for c in req_cols if c in metrics_df.columns]
+        return metrics_df[available_cols]
 
     @staticmethod
     def query_to_dict(results):

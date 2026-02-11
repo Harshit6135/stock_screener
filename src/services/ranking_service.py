@@ -9,9 +9,10 @@ import pandas as pd
 from datetime import date, timedelta
 
 from config import setup_logger
-from repositories import ScoreRepository
+from repositories import ScoreRepository, RankingRepository
 
 score_repo = ScoreRepository()
+ranking_repo = RankingRepository()
 logger = setup_logger(name="RankingService")
 
 
@@ -35,7 +36,7 @@ class RankingService:
         """
         logger.info("Starting incremental ranking generation...")
         
-        last_ranking_date = score_repo.get_max_ranking_date()
+        last_ranking_date = ranking_repo.get_max_ranking_date()
         last_score_date = score_repo.get_max_score_date()
         
         if not last_score_date:
@@ -92,7 +93,7 @@ class RankingService:
             current_friday += timedelta(days=7)
         
         if all_ranking_records:
-            score_repo.bulk_insert_ranking(all_ranking_records)
+            ranking_repo.bulk_insert(all_ranking_records)
         
         logger.info(f"Generated rankings for {weeks_processed} weeks")
         return {"message": f"Generated rankings for {weeks_processed} weeks", "weeks": weeks_processed}
@@ -106,7 +107,7 @@ class RankingService:
         
         # Clear existing rankings
         logger.info("Clearing existing ranking table...")
-        score_repo.delete_all_ranking()
+        ranking_repo.delete_all()
         
         # Now generate all rankings
         return self.generate_rankings()

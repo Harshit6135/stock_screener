@@ -72,8 +72,6 @@ class MarketDataQueryAll(MethodView):
 @blp.route("/delete/<string:tradingsymbol>")
 class MarketDataDelete(MethodView):
     @blp.doc(tags=["Market Data"])
-    @blp.arguments(MarketDataQuerySchema, location="json")
-    @blp.response(200, MarketDataSchema(many=True))
     def delete(self, tradingsymbol):
         """Delete market data by instrument_token or tradingsymbol within a date range"""
         response=marketdata_repo.delete_by_tradingsymbol(tradingsymbol)

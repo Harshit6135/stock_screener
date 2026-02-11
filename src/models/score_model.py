@@ -9,12 +9,21 @@ class ScoreModel(db.Model):
     tradingsymbol = db.Column(db.String(50), nullable=False)
     score_date = db.Column(db.Date, nullable=False)
     
-    final_trend_score = db.Column(db.Float, nullable=True)
-    final_momentum_score = db.Column(db.Float, nullable=True)
-    final_vol_score = db.Column(db.Float, nullable=True)
-    final_structure_score = db.Column(db.Float, nullable=True)
+    # Factor scores from FactorsService
+    factor_trend = db.Column(db.Float, nullable=True)
+    factor_momentum = db.Column(db.Float, nullable=True)
+    factor_efficiency = db.Column(db.Float, nullable=True)
+    factor_volume = db.Column(db.Float, nullable=True)
+    factor_structure = db.Column(db.Float, nullable=True)
     
-    # Final composite
+    # Cross-sectional percentile ranks (0-100)
+    trend_rank = db.Column(db.Float, nullable=True)
+    momentum_rank = db.Column(db.Float, nullable=True)
+    efficiency_rank = db.Column(db.Float, nullable=True)
+    volume_rank = db.Column(db.Float, nullable=True)
+    structure_rank = db.Column(db.Float, nullable=True)
+    
+    # Final weighted composite
     composite_score = db.Column(db.Float, nullable=False)
 
     __table_args__ = (

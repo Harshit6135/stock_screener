@@ -3,7 +3,7 @@ from flask_smorest import Blueprint
 
 from schemas import MessageSchema, CleanupQuerySchema
 from services import InitService, MarketDataService, IndicatorsService, PercentileService, ScoreService, RankingService
-from repositories import MarketDataRepository, IndicatorsRepository, PercentileRepository, ScoreRepository
+from repositories import MarketDataRepository, IndicatorsRepository, PercentileRepository, ScoreRepository, RankingRepository
 
 
 blp = Blueprint("App Orchestration", __name__, url_prefix="/api/v1/app", description="Application Orchestration & Cleanup Operations")
@@ -30,6 +30,7 @@ class CleanupAfterDate(MethodView):
         indicators_repo = IndicatorsRepository()
         percentile_repo = PercentileRepository()
         score_repo = ScoreRepository()
+        ranking_repo = RankingRepository()
         
         # Delete data after the given date from each table
         deleted_counts = {}
@@ -38,7 +39,7 @@ class CleanupAfterDate(MethodView):
         deleted_counts['indicators'] = indicators_repo.delete_after_date(start_date)
         deleted_counts['percentile'] = percentile_repo.delete_after_date(start_date)
         deleted_counts['score'] = score_repo.delete_after_date(start_date)
-        deleted_counts['ranking'] = score_repo.delete_ranking_after_date(start_date)
+        deleted_counts['ranking'] = ranking_repo.delete_after_date(start_date)
         
         return {
             "message": f"Deleted data after {start_date}",

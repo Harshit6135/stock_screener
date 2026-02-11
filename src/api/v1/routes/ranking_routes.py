@@ -3,13 +3,13 @@ from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 from datetime import datetime, timedelta
 
-from repositories import ScoreRepository, MarketDataRepository
+from repositories import RankingRepository, MarketDataRepository
 from schemas import RankingSchema, MessageSchema, TopNSchema
 from services import RankingService
 
 
 blp = Blueprint("Rankings", __name__, url_prefix="/api/v1/ranking", description="Operations on Weekly Rankings")
-score_repo = ScoreRepository()
+ranking_repo = RankingRepository()
 
 marketdata_repo = MarketDataRepository()
 
@@ -74,7 +74,7 @@ class TopRankings(MethodView):
                 abort(400, message="Invalid date format. Use YYYY-MM-DD")
         
         # Get top N from ranking table
-        rankings = score_repo.get_top_n_by_date(n, ranking_date)
+        rankings = ranking_repo.get_top_n_by_date(n, ranking_date)
         if not rankings:
             return []
         else:
@@ -98,7 +98,7 @@ class RankingBySymbol(MethodView):
                 abort(400, message="Invalid date format. Use YYYY-MM-DD")
         
         # Fetch from ranking table
-        ranking = score_repo.get_by_symbol(symbol, ranking_date)
+        ranking = ranking_repo.get_by_symbol(symbol, ranking_date)
         actual_date = ranking.ranking_date if ranking else None
         
         if not actual_date:
@@ -131,4 +131,4 @@ class RankingsQuery(MethodView):
     @blp.response(200, RankingSchema(many=True))
     def get(self, ranking_date_str):
         """Fetch all rankings for a specific date"""
-        return score_repo.get_rankings_by_date(ranking_date_str)
+        return ranking_repo.get_rankings_by_date(ranking_date_str)

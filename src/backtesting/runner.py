@@ -1,11 +1,10 @@
 """
 Backtest Runner
 
-Main entry point for running backtests with API-based data fetching.
-No hardcoded values - all configuration from API or config classes.
+Main entry point for running backtests with direct repository-based data access.
+No hardcoded values - all configuration from ConfigRepository or config classes.
 Writes simulated results to backtest.db (isolated from personal.db).
 """
-import os
 from datetime import date, timedelta
 from typing import Dict, List, Optional
 from dataclasses import asdict
@@ -13,46 +12,46 @@ from flask import current_app
 
 from config import setup_logger
 from config.strategies_config import PositionSizingConfig
-from src.backtesting.models import Position, BacktestResult, BacktestRiskMonitor
-from src.backtesting.config import BacktestConfigLoader
-from src.backtesting.api_client import BacktestAPIClient
-from src.utils.stoploss_utils import (
+from backtesting.models import Position, BacktestResult, BacktestRiskMonitor
+from backtesting.config import BacktestConfigLoader
+from backtesting.data_provider import BacktestDataProvider
+from utils.stoploss_utils import (
     calculate_initial_stop_loss,
     calculate_effective_stop
 )
-from src.utils.transaction_costs_utils import calculate_round_trip_cost
-from src.utils.tax_utils import calculate_capital_gains_tax
-from src.utils.database_manager import DatabaseManager
-from src.services.portfolio_controls_service import PortfolioControlsService
-from repositories import InvestmentRepository
+from utils.transaction_costs_utils import calculate_round_trip_cost
+from utils.sizing_utils import calculate_position_size as shared_calculate_position_size, calculate_equal_weight_position
+from utils.tax_utils import calculate_capital_gains_tax
+from utils.database_manager import DatabaseManager
+from services.trading_engine import TradingEngine, HoldingSnapshot, CandidateInfo
+from repositories import InvestmentRepository, ActionsRepository
 
 logger = setup_logger(name="BacktestRunner")
 
 
 class WeeklyBacktester:
     """
-    API-based weekly backtesting engine.
+    Weekly backtesting engine.
     
     All configuration fetched from API. Uses existing utils for:
     - Stop-loss calculations
     - Transaction costs
     - Tax calculations
-    - Drawdown controls
+    
+    Core trading decisions (SELL/BUY/SWAP) are delegated to TradingEngine
+    for consistency with live ActionsService.
     """
     
-    def __init__(self, start_date: date, end_date: date, base_url: Optional[str] = None):
+    def __init__(self, start_date: date, end_date: date):
         self.start_date = start_date
         self.end_date = end_date
         
-        # Load config from API
-        self.config_loader = BacktestConfigLoader(base_url)
+        # Load config from repository
+        self.config_loader = BacktestConfigLoader()
         self.config = self.config_loader.fetch()
         
-        # API client for data
-        self.api = BacktestAPIClient(base_url)
-        
-        # Portfolio controls for drawdown management
-        self.portfolio_controls = PortfolioControlsService()
+        # Data provider for direct DB access
+        self.data = BacktestDataProvider()
         
         # Portfolio state
         self.current_capital = self.config.initial_capital
@@ -63,9 +62,6 @@ class WeeklyBacktester:
         # Cumulative costs and taxes
         self.total_transaction_costs = 0.0
         self.total_taxes_paid = 0.0
-        
-        # Drawdown tracking
-        self.is_paused = False
         
         # Database session for backtest writes
         self.backtest_session = None
@@ -83,7 +79,11 @@ class WeeklyBacktester:
     
     def calculate_position_size(self, atr: Optional[float], current_price: float) -> Dict:
         """
-        Calculate position size based on risk parameters from config.
+        Calculate position size using shared sizing util.
+        
+        Delegates to utils.sizing_utils.calculate_position_size which applies
+        4 constraints: ATR-risk, liquidity, concentration, minimum.
+        Falls back to equal-weight if ATR unavailable.
         
         Parameters:
             atr: Average True Range
@@ -92,38 +92,26 @@ class WeeklyBacktester:
         Returns:
             Dict with shares, position_value, stop_distance
         """
-        risk_per_trade = self.config.initial_capital * (self.config.risk_per_trade_percent / 100.0)
+        # Use actual portfolio value, not initial capital
+        invested_value = sum(pos.entry_price * pos.units for pos in self.positions.values())
+        portfolio_value = self.current_capital + invested_value
         
         if atr is None or atr <= 0:
-            stop_distance = current_price * self.config.sl_fallback_percent
-        else:
-            stop_distance = atr * self.config.stop_multiplier
+            # Fallback to equal-weight position when no ATR
+            result = calculate_equal_weight_position(
+                portfolio_value, self.config.max_positions, current_price
+            )
+            result['stop_distance'] = round(current_price * self.config.sl_fallback_percent, 2)
+            return result
         
-        if stop_distance <= 0:
-            return {"shares": 0, "position_value": 0, "stop_distance": 0}
-        
-        shares = int(risk_per_trade / stop_distance)
-        shares = max(1, shares)
-        position_value = shares * current_price
-        
-        return {
-            "shares": shares,
-            "position_value": round(position_value, 2),
-            "stop_distance": round(stop_distance, 2)
-        }
+        result = shared_calculate_position_size(
+            atr=atr,
+            current_price=current_price,
+            portfolio_value=portfolio_value
+        )
+        return result
     
-    def should_trigger_stop_loss(self, current_price: float, effective_stop: float) -> bool:
-        """Check if current price has breached the stop-loss level"""
-        return current_price <= effective_stop
-    
-    def should_exit_score_degradation(self, score: float) -> bool:
-        """Check if position should exit due to score falling below threshold"""
-        return score < self.config.exit_threshold
-    
-    def should_swap(self, incumbent_score: float, challenger_score: float) -> bool:
-        """Determine if challenger should replace incumbent (with buffer)"""
-        threshold = incumbent_score * (1 + self.config.buffer_percent)
-        return challenger_score > threshold
+
     
     def calculate_portfolio_value(self, current_prices: Dict[str, float]) -> float:
         """Calculate total portfolio value"""
@@ -247,25 +235,18 @@ class WeeklyBacktester:
                             score_lookup: Dict[str, float],
                             price_lookup: Dict[str, float]) -> List[dict]:
         """
-        Rebalance portfolio:
-        PHASE 1: SELL (Stop-Loss or Score Degradation)
-        PHASE 2: SWAP (Challenger beats Incumbent × buffer)
-        PHASE 3: BUY (Fill vacancies)
-        """
-        actions = []
-        vacancies = self.config.max_positions - len(self.positions)
+        Rebalance portfolio using shared TradingEngine.
         
-        # ========== PHASE 1: SELL ==========
-        for symbol, pos in list(self.positions.items()):
+        Delegates SELL/BUY/SWAP decisions to TradingEngine.generate_decisions(),
+        then executes each decision.
+        """
+        # Update trailing stops before decision-making
+        for symbol, pos in self.positions.items():
             current_price = price_lookup.get(symbol, pos.entry_price)
-            current_score = score_lookup.get(symbol, pos.composite_score)
-            
-            # Fetch current ATR
-            current_atr = self.api.get_indicator('atrr_14', symbol, week_date)
+            current_atr = self.data.get_indicator('atrr_14', symbol, week_date)
             if current_atr is None:
                 current_atr = current_price * 0.02  # 2% fallback
             
-            # Update trailing stop
             stops = calculate_effective_stop(
                 buy_price=pos.entry_price,
                 current_price=current_price,
@@ -276,88 +257,75 @@ class WeeklyBacktester:
                 previous_stop=pos.current_stop_loss
             )
             pos.current_stop_loss = stops['effective_stop']
-            
-            # Check STOP-LOSS
-            if self.should_trigger_stop_loss(current_price, stops['effective_stop']):
-                action = self.execute_sell(
-                    symbol, current_price, week_date,
-                    f"Stop-loss triggered at {stops['effective_stop']:.2f}"
-                )
-                actions.append(action)
-                vacancies += 1
-                continue
-            
-            # Check SCORE DEGRADATION
-            if self.should_exit_score_degradation(current_score):
-                action = self.execute_sell(
-                    symbol, current_price, week_date,
-                    f"Score degraded to {current_score:.1f}"
-                )
-                actions.append(action)
-                vacancies += 1
         
-        # ========== PHASE 2: SWAP ==========
-        invested_symbols = set(self.positions.keys())
-        challengers = [r for r in top_rankings if r['tradingsymbol'] not in invested_symbols]
+        # Build normalized inputs for TradingEngine
+        holdings_snap = [
+            HoldingSnapshot(
+                symbol=symbol,
+                units=pos.units,
+                stop_loss=pos.current_stop_loss,
+                score=score_lookup.get(symbol, pos.composite_score),
+            )
+            for symbol, pos in self.positions.items()
+        ]
         
-        for symbol, pos in list(self.positions.items()):
-            if not challengers:
-                break
-            
-            incumbent_score = score_lookup.get(symbol, 0)
-            current_price = price_lookup.get(symbol, pos.entry_price)
-            
-            top_challenger = challengers[0]
-            challenger_symbol = top_challenger['tradingsymbol']
-            challenger_score = top_challenger['composite_score']
-            challenger_price = price_lookup.get(challenger_symbol, 100.0)
-            
-            if self.should_swap(incumbent_score, challenger_score):
+        candidates = [
+            CandidateInfo(symbol=r['tradingsymbol'], score=r['composite_score'])
+            for r in top_rankings
+        ]
+        
+        # Use config-driven parameters
+        swap_buffer = 1 + self.config.buffer_percent
+        
+        decisions = TradingEngine.generate_decisions(
+            holdings=holdings_snap,
+            candidates=candidates,
+            prices=price_lookup,
+            max_positions=self.config.max_positions,
+            swap_buffer=swap_buffer,
+            exit_threshold=self.config.exit_threshold,
+        )
+        
+        # Execute decisions
+        actions = []
+        for d in decisions:
+            if d.action_type == 'SELL':
+                current_price = price_lookup.get(d.symbol, 0)
+                action = self.execute_sell(d.symbol, current_price, week_date, d.reason)
+                actions.append(action)
+                
+            elif d.action_type == 'BUY':
+                price = price_lookup.get(d.symbol, 0)
+                score = next((c.score for c in candidates if c.symbol == d.symbol), 0)
+                atr = self.data.get_indicator('atrr_14', d.symbol, week_date)
+                buy_action = self.execute_buy(
+                    d.symbol, price, score, atr or 0, week_date, d.reason
+                )
+                if buy_action:
+                    actions.append(buy_action)
+                    
+            elif d.action_type == 'SWAP':
                 # Sell incumbent
-                sell_action = self.execute_sell(
-                    symbol, current_price, week_date,
-                    f"Swapped for {challenger_symbol}"
-                )
+                sell_price = price_lookup.get(d.symbol, 0)
+                sell_act = self.execute_sell(d.symbol, sell_price, week_date, d.reason)
                 
                 # Buy challenger
-                challenger_atr = self.api.get_indicator('atrr_14', challenger_symbol, week_date)
-                buy_action = self.execute_buy(
-                    challenger_symbol, challenger_price, challenger_score,
-                    challenger_atr or 0, week_date,
-                    f"Swap from {symbol}"
+                buy_price = price_lookup.get(d.swap_for, 0)
+                buy_score = next((c.score for c in candidates if c.symbol == d.swap_for), 0)
+                buy_atr = self.data.get_indicator('atrr_14', d.swap_for, week_date)
+                buy_act = self.execute_buy(
+                    d.swap_for, buy_price, buy_score, buy_atr or 0, week_date, d.reason
                 )
                 
-                if buy_action:
+                if buy_act:
                     actions.append({
                         'action_date': week_date.isoformat(),
                         'action_type': 'SWAP',
-                        'swap_from': symbol,
-                        'swap_to': challenger_symbol,
-                        'sell_details': sell_action,
-                        'buy_details': buy_action
+                        'swap_from': d.symbol,
+                        'swap_to': d.swap_for,
+                        'sell_details': sell_act,
+                        'buy_details': buy_act
                     })
-                    challengers.pop(0)
-        
-        # ========== PHASE 3: BUY ==========
-        for challenger in challengers[:vacancies]:
-            symbol = challenger['tradingsymbol']
-            if symbol in self.positions:
-                continue
-            
-            price = price_lookup.get(symbol, 100.0)
-            score = challenger['composite_score']
-            atr = self.api.get_indicator('atrr_14', symbol, week_date)
-            
-            buy_action = self.execute_buy(
-                symbol, price, score, atr or 0, week_date,
-                "New buy - vacancy fill"
-            )
-            if buy_action:
-                actions.append(buy_action)
-                vacancies -= 1
-            
-            if vacancies <= 0:
-                break
         
         return actions
     
@@ -390,7 +358,7 @@ class WeeklyBacktester:
             logger.info(f"Processing week: {week_date}")
             
             # Fetch rankings from API
-            rankings = self.api.get_top_rankings(self.config.max_positions, week_date)
+            rankings = self.data.get_top_rankings(self.config.max_positions, week_date)
             if not rankings:
                 logger.warning(f"No rankings for {week_date}, skipping")
                 continue
@@ -399,14 +367,14 @@ class WeeklyBacktester:
             score_lookup = {r['tradingsymbol']: r['composite_score'] for r in rankings}
             price_lookup = {}
             for r in rankings:
-                price = self.api.get_close_price(r['tradingsymbol'], week_date)
+                price = self.data.get_close_price(r['tradingsymbol'], week_date)
                 if price:
                     price_lookup[r['tradingsymbol']] = price
             
             # Add current holdings to price lookup
             for symbol in self.positions:
                 if symbol not in price_lookup:
-                    price = self.api.get_close_price(symbol, week_date)
+                    price = self.data.get_close_price(symbol, week_date)
                     if price:
                         price_lookup[symbol] = price
             
@@ -417,18 +385,7 @@ class WeeklyBacktester:
             portfolio_value = self.calculate_portfolio_value(price_lookup)
             self.risk_monitor.update(portfolio_value)
             
-            # Check drawdown controls
-            drawdown_status = self.portfolio_controls.check_drawdown_status(
-                portfolio_value, self.risk_monitor.peak_value
-            )
-            if drawdown_status['status'] == 'paused':
-                self.is_paused = True
-                logger.warning(f"New entries paused: {drawdown_status['drawdown']}% drawdown")
-            elif drawdown_status['status'] == 'critical':
-                self.is_paused = True
-                logger.warning(f"Critical drawdown: {drawdown_status['drawdown']}% - reducing exposure")
-            else:
-                self.is_paused = False
+
             
             # Record result
             result = BacktestResult(
@@ -506,17 +463,15 @@ class WeeklyBacktester:
                 })
         
         if action_records:
-            InvestmentRepository.bulk_insert_actions(
-                action_records, 
-                session=self.backtest_session
-            )
+            actions_repo = ActionsRepository(session=self.backtest_session)
+            actions_repo.bulk_insert_actions(action_records)
         
         # Convert holdings to database format
         holding_records = []
         for pos in self.positions.values():
             holding_records.append({
                 'symbol': pos.tradingsymbol,
-                'working_date': week_date,
+                'date': week_date,
                 'entry_date': pos.entry_date,
                 'entry_price': pos.entry_price,
                 'units': pos.units,
@@ -527,18 +482,17 @@ class WeeklyBacktester:
                 'current_sl': pos.current_stop_loss
             })
         
+        inv_repo = InvestmentRepository(session=self.backtest_session)
+        
         if holding_records:
-            InvestmentRepository.bulk_insert_holdings(
-                holding_records,
-                session=self.backtest_session
-            )
+            inv_repo.bulk_insert_holdings(holding_records)
         
         # Create summary record
-        prev_summary = InvestmentRepository.get_summary(session=self.backtest_session)
-        starting_capital = prev_summary.remaining_capital if prev_summary else self.config.initial_capital
+        prev_summary = inv_repo.get_summary()
+        starting_capital = prev_summary.starting_capital if prev_summary else self.config.initial_capital
         
         summary = {
-            'working_date': week_date,
+            'date': week_date,
             'starting_capital': round(starting_capital, 2),
             'sold': round(self.total_transaction_costs, 2),  # Approx
             'bought': 0,
@@ -550,7 +504,7 @@ class WeeklyBacktester:
                 (portfolio_value - self.config.initial_capital) / self.config.initial_capital * 100, 2
             )
         }
-        InvestmentRepository.insert_summary(summary, session=self.backtest_session)
+        inv_repo.insert_summary(summary)
     
     def get_summary(self) -> dict:
         """Get comprehensive backtest summary"""
@@ -560,19 +514,18 @@ class WeeklyBacktester:
         return risk_summary
 
 
-def run_backtest(start_date: date, end_date: date, base_url: Optional[str] = None):
+def run_backtest(start_date: date, end_date: date):
     """
     Convenience function to run a backtest.
     
     Parameters:
         start_date: Start date for backtest
         end_date: End date for backtest
-        base_url: Optional API base URL
         
     Returns:
         Tuple of (results, summary)
     """
-    backtester = WeeklyBacktester(start_date, end_date, base_url)
+    backtester = WeeklyBacktester(start_date, end_date)
     results = backtester.run()
     summary = backtester.get_summary()
     return results, summary

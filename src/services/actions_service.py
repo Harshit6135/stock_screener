@@ -2,17 +2,20 @@
 Actions Service
 
 Handles investment action generation, approval, and processing.
-Renamed from strategy_service.py - all methods are action-related.
+Renames from strategy_service.py - all methods are action-related.
 """
 from datetime import timedelta, date
 from decimal import Decimal
-import math
 from typing import Dict, List, Optional, Union
 import pandas as pd
 
 from repositories import (RankingRepository, IndicatorsRepository, MarketDataRepository, 
                           InvestmentRepository, ConfigRepository, ActionsRepository)
 from config import setup_logger
+from utils.transaction_costs_utils import calculate_round_trip_cost
+from utils.tax_utils import calculate_capital_gains_tax
+from utils.sizing_utils import calculate_position_size
+from services.trading_engine import TradingEngine, HoldingSnapshot, CandidateInfo
 
 logger = setup_logger(name="ActionsService")
 
@@ -21,7 +24,7 @@ indicators = IndicatorsRepository()
 marketdata = MarketDataRepository()
 investment = InvestmentRepository()
 config = ConfigRepository()
-actions = ActionsRepository()
+actions_repo = ActionsRepository()
 
 
 class ActionsService:
@@ -38,6 +41,9 @@ class ActionsService:
         """
         Generate trading actions (BUY/SELL/SWAP) for a given date.
         
+        Delegates core decision logic to TradingEngine.generate_decisions(),
+        which implements the shared SELL → BUY → SWAP algorithm.
+        
         Parameters:
             action_date (date): Date to generate actions for
         
@@ -51,61 +57,74 @@ class ActionsService:
         if action_date is None:
             raise ValueError("action_date cannot be None")
 
-        pending_actions = investment.check_other_pending_actions(action_date)
+        pending_actions = actions_repo.check_other_pending_actions(action_date)
         if pending_actions:
             return 'Actions pending from another date, please take action before proceeding'
 
         top_n = ranking.get_top_n_by_date(self.config.max_positions, action_date)
-        top_n_symbols = [item.tradingsymbol for item in top_n]
         current_holdings = investment.get_holdings()
         new_actions = []
+
         if not current_holdings:
+            # No holdings — buy all top-N
             for item in top_n:
-                action = self.buy_action(item.tradingsymbol, action_date, 'top 10 buys')
+                action = self.buy_action(item.tradingsymbol, action_date, 'top N buys')
                 new_actions.append(action)
         else:
-            i = 0
-            while i < len(current_holdings):
-                low = self.fetch_low(current_holdings[i].symbol, action_date)
-                if current_holdings[i].current_sl >= low:
-                    action = self.sell_action(current_holdings[i].symbol, action_date, current_holdings[i].units, 'stoploss hit')
+            # Build normalized inputs for TradingEngine
+            holdings_snap = []
+            prices = {}
+            for h in current_holdings:
+                # Fetch weekly low for stop-loss check
+                low = self.fetch_low(h.symbol, action_date)
+                prices[h.symbol] = low
+
+                # Fetch current score
+                rank_data = ranking.get_rankings_by_date_and_symbol(action_date, h.symbol)
+                score = rank_data.composite_score if rank_data else 0
+
+                holdings_snap.append(HoldingSnapshot(
+                    symbol=h.symbol,
+                    units=h.units,
+                    stop_loss=float(h.current_sl),
+                    score=score,
+                ))
+
+            candidates = [
+                CandidateInfo(symbol=item.tradingsymbol, score=item.composite_score)
+                for item in top_n
+            ]
+
+            # Use config-driven swap buffer and exit threshold
+            swap_buffer = 1 + self.config.buffer_percent
+            exit_threshold = self.config.exit_threshold
+
+            decisions = TradingEngine.generate_decisions(
+                holdings=holdings_snap,
+                candidates=candidates,
+                prices=prices,
+                max_positions=self.config.max_positions,
+                swap_buffer=swap_buffer,
+                exit_threshold=exit_threshold,
+            )
+
+            # Convert decisions to action dicts
+            for d in decisions:
+                if d.action_type == 'SELL':
+                    action = self.sell_action(d.symbol, action_date, d.units, d.reason)
                     new_actions.append(action)
-                    current_holdings.pop(i)
-                elif current_holdings[i].symbol in top_n_symbols:
-                    current_holdings.pop(i)
-                else:
-                    i += 1
+                elif d.action_type == 'BUY':
+                    action = self.buy_action(d.symbol, action_date, d.reason)
+                    new_actions.append(action)
+                elif d.action_type == 'SWAP':
+                    # Sell incumbent
+                    sell_act = self.sell_action(d.symbol, action_date, d.swap_sell_units, d.reason)
+                    new_actions.append(sell_act)
+                    # Buy challenger
+                    buy_act = self.buy_action(d.swap_for, action_date, d.reason)
+                    new_actions.append(buy_act)
 
-            remaining_buys = self.config.max_positions - len(current_holdings)
-            i = 0
-            while i < remaining_buys:
-                action = self.buy_action(top_n[i].tradingsymbol, action_date, 'top 10 buys')
-                new_actions.append(action)
-                i += 1
-
-            i = 0
-            while i < len(top_n):
-                buy_flag = False
-                j = 0
-                while j < len(current_holdings):
-                    current_score = ranking.get_rankings_by_date_and_symbol(action_date, current_holdings[j].symbol).composite_score
-
-                    if top_n[i].composite_score > (1 + (self.config.buffer_percent/100)) * current_score:
-                        action = self.sell_action(current_holdings[j].symbol, action_date, current_holdings[j].units, f'swap current score {current_score}')
-                        new_actions.append(action)
-                        current_holdings.pop(j)
-
-                        action = self.buy_action(top_n[i].tradingsymbol, action_date, f'swap current score {top_n[i].composite_score}')
-                        new_actions.append(action)
-                        buy_flag = True
-                        break
-                    else:
-                        j += 1
-                if buy_flag:
-                    top_n.pop(i)
-                else:
-                    i += 1
-        actions.bulk_insert_actions(new_actions)
+        actions_repo.bulk_insert_actions(new_actions)
         return new_actions
 
     @staticmethod
@@ -125,8 +144,8 @@ class ActionsService:
         if action_date is None:
             raise ValueError("action_date cannot be None")
             
-        actions = actions.get_actions(action_date)
-        for item in actions:
+        actions_list = actions_repo.get_actions(action_date)
+        for item in actions_list:
             execution_price = marketdata.get_marketdata_next_day(item.symbol, action_date).open
 
             action_data = {
@@ -135,8 +154,14 @@ class ActionsService:
                 'execution_price' : execution_price
             }
 
-            actions.update_action(action_data)
-        return len(actions)
+            # Populate sell_cost and tax for SELL actions
+            if item.type == 'sell':
+                costs = calculate_round_trip_cost(float(item.units * execution_price))
+                action_data['sell_cost'] = costs.get('sell_costs', 0)
+                action_data['tax'] = 0  # Tax calculated at processing time
+
+            actions_repo.update_action(action_data)
+        return len(actions_list)
 
     @staticmethod
     def process_actions(action_date: date) -> Optional[List[Dict]]:
@@ -158,7 +183,7 @@ class ActionsService:
             investment.delete_summary(action_date)
 
         holdings = investment.get_holdings()
-        actions = actions.get_actions(action_date)
+        actions_list = actions_repo.get_actions(action_date)
 
         if not holdings:
             holdings_date = date(2000,1,1)
@@ -170,7 +195,7 @@ class ActionsService:
 
         buy_symbols = []
         sell_symbols = []
-        for items in actions:
+        for items in actions_list:
             if items.status == 'Pending':
                 logger.warning(f'Pending Actions for {items.symbol} on {items.action_date}. Please approve/reject before proceeding')
                 return None
@@ -267,6 +292,9 @@ class ActionsService:
         """
         Generate a BUY action with position sizing.
         
+        Uses shared sizing_utils.calculate_position_size for consistent
+        sizing across live and backtesting.
+        
         Parameters:
             symbol (str): Trading symbol
             action_date (date): Action date
@@ -277,9 +305,6 @@ class ActionsService:
         
         Raises:
             ValueError: If symbol is empty or ATR unavailable
-        
-        Example:
-            >>> action = self.buy_action("RELIANCE", date(2024,1,15), "top 10")
         """
         if not symbol:
             raise ValueError("Symbol cannot be empty")
@@ -292,19 +317,23 @@ class ActionsService:
         atr = round(atr, 2)
         
         closing_price = marketdata.get_marketdata_by_trading_symbol(symbol, action_date).close
-        risk_per_unit = self.config.sl_multiplier*atr
 
         summary = investment.get_summary()
-
         if not summary:
-            capital = self.config.initial_capital
+            portfolio_value = self.config.initial_capital
         else:
-            capital = summary.portfolio_value + summary.remaining_capital
+            portfolio_value = float(summary.portfolio_value) + float(summary.remaining_capital)
 
-        max_risk = Decimal(capital) * Decimal(self.config.risk_threshold / 100)
-        units = math.floor(Decimal(max_risk) / Decimal(risk_per_unit))
-
+        # Use shared position sizing util
+        sizing = calculate_position_size(
+            atr=atr,
+            current_price=float(closing_price),
+            portfolio_value=portfolio_value
+        )
+        
+        units = sizing['shares']
         capital_needed = units * closing_price
+        risk_per_unit = sizing.get('stop_distance', atr * self.config.sl_multiplier)
 
         action = {
             'action_date' : action_date,

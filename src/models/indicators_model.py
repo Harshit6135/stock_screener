@@ -44,6 +44,8 @@ class IndicatorsModel(db.Model):
     roc_60 = db.Column(db.Float, nullable=True)
     roc_125 = db.Column(db.Float, nullable=True)
     atr_spike = db.Column(db.Float, nullable=True)
+    momentum_3m = db.Column(db.Float, nullable=True)
+    momentum_6m = db.Column(db.Float, nullable=True)
 
     __table_args__ = (
         # composite primary key

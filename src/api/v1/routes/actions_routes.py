@@ -12,11 +12,12 @@ from schemas import (
     MessageSchema, ActionDateSchema, ActionQuerySchema,
     ActionSchema, ActionUpdateSchema
 )
-from repositories import InvestmentRepository
+from repositories import ActionsRepository
 from services import ActionsService
 
 
 logger = setup_logger(name="ActionsRoutes")
+actions_repo = ActionsRepository()
 
 blp = Blueprint(
     "Actions",
@@ -59,7 +60,7 @@ class ActionDates(MethodView):
     @blp.response(200, ActionDateSchema)
     def get(self):
         """Get all distinct action dates"""
-        dates = InvestmentRepository.get_action_dates()
+        dates = actions_repo.get_action_dates()
         return {"dates": dates}
 
 
@@ -79,7 +80,7 @@ class ActionsList(MethodView):
             List of actions for the specified date
         """
         working_date = args.get('date')
-        actions = InvestmentRepository.get_actions(working_date)
+        actions = actions_repo.get_actions(working_date)
         return [a.to_dict() for a in actions]
 
 
@@ -110,7 +111,7 @@ class ActionDetail(MethodView):
         if 'execution_price' in data:
             action_data['execution_price'] = data['execution_price']
 
-        result = InvestmentRepository.update_action(action_data)
+        result = actions_repo.update_action(action_data)
 
         if result:
             return {"message": f"Action {action_id} updated successfully"}

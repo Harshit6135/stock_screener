@@ -1,10 +1,8 @@
 """
 Backtest Configuration
 
-All backtest parameters fetched from API - no hardcoding.
+All backtest parameters loaded from ConfigRepository - no HTTP calls.
 """
-import os
-import requests
 from typing import Optional
 from dataclasses import dataclass
 
@@ -14,12 +12,15 @@ from config.strategies_config import (
     ChallengerConfig,
     BacktestConfig as BaseBacktestConfig
 )
+from repositories import ConfigRepository
 
 logger = setup_logger(name="BacktestConfig")
 
+config_repo = ConfigRepository()
+
 @dataclass
 class FetchedConfig:
-    """Configuration fetched from API at runtime"""
+    """Configuration loaded from database at runtime"""
     initial_capital: float
     risk_per_trade_percent: float
     stop_multiplier: float
@@ -32,18 +33,17 @@ class FetchedConfig:
 
 class BacktestConfigLoader:
     """
-    Load backtest configuration from API.
+    Load backtest configuration from ConfigRepository.
     
-    Falls back to local config if API unavailable.
+    Falls back to local config classes if DB config unavailable.
     """
     
-    def __init__(self, base_url: Optional[str] = None):
-        self.base_url = base_url or os.getenv("API_BASE_URL", "http://127.0.0.1:5000")
+    def __init__(self):
         self._config: Optional[FetchedConfig] = None
     
     def fetch(self, strategy_name: str = "momentum_strategy_one") -> FetchedConfig:
         """
-        Fetch configuration from API.
+        Fetch configuration from ConfigRepository.
         
         Parameters:
             strategy_name: Strategy identifier
@@ -55,25 +55,21 @@ class BacktestConfigLoader:
             return self._config
         
         try:
-            response = requests.get(
-                f"{self.base_url}/api/v1/config/{strategy_name}",
-                timeout=10
-            )
-            if response.status_code == 200:
-                data = response.json()
+            data = config_repo.get_config(strategy_name)
+            if data:
                 self._config = FetchedConfig(
-                    initial_capital=data.get('initial_capital', 100000.0),
-                    risk_per_trade_percent=data.get('risk_threshold', 1.0),
-                    stop_multiplier=data.get('sl_multiplier', 2.0),
-                    exit_threshold=data.get('exit_threshold', 40.0),
-                    max_positions=data.get('max_positions', 10),
-                    buffer_percent=data.get('buffer_percent', 0.25),
+                    initial_capital=getattr(data, 'initial_capital', 100000.0),
+                    risk_per_trade_percent=getattr(data, 'risk_threshold', 1.0),
+                    stop_multiplier=getattr(data, 'sl_multiplier', 2.0),
+                    exit_threshold=getattr(data, 'exit_threshold', 40.0),
+                    max_positions=getattr(data, 'max_positions', 10),
+                    buffer_percent=getattr(data, 'buffer_percent', 0.25),
                     sl_fallback_percent=PositionSizingConfig().sl_fallback_percent,
                     sl_step_percent=PositionSizingConfig().sl_step_percent
                 )
                 return self._config
         except Exception as e:
-            logger.warning(f"Could not fetch config from API: {e}")
+            logger.warning(f"Could not fetch config from repository: {e}")
         
         # Fallback to local config classes
         sizing = PositionSizingConfig()

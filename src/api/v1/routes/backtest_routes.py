@@ -38,7 +38,7 @@ class RunBacktest(MethodView):
         Returns:
             dict: Message with backtest results summary
         """
-        from src.backtesting import run_backtest
+        from backtesting import run_backtest
         
         try:
             start_date = datetime.strptime(str(data['start_date']), '%Y-%m-%d').date()

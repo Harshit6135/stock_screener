@@ -12,6 +12,8 @@ from schemas import (
 )
 from repositories import InvestmentRepository
 
+inv_repo = InvestmentRepository()
+
 
 blp = Blueprint(
     "Investments",
@@ -27,7 +29,7 @@ class HoldingDates(MethodView):
     @blp.response(200, HoldingDateSchema)
     def get(self):
         """Get all distinct holding dates"""
-        dates = InvestmentRepository.get_holdings_dates()
+        dates = inv_repo.get_holdings_dates()
         return {"dates": dates}
 
 
@@ -39,7 +41,7 @@ class Holdings(MethodView):
     def get(self, args):
         """Get holdings for a specific date"""
         working_date = args.get('date')
-        holdings = InvestmentRepository.get_holdings(working_date)
+        holdings = inv_repo.get_holdings(working_date)
         return [h.to_dict() for h in holdings]
 
 
@@ -51,7 +53,7 @@ class Summary(MethodView):
     def get(self, args):
         """Get summary for a specific date"""
         working_date = args.get('date')
-        summary = InvestmentRepository.get_summary(working_date)
+        summary = inv_repo.get_summary(working_date)
         if summary:
             return summary.to_dict()
         return {}

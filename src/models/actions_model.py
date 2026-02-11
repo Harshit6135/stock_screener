@@ -26,6 +26,9 @@ class ActionsModel(db.Model):
     execution_price = db.Column(db.Numeric(10,2), nullable=True)
     capital = db.Column(db.Numeric(10,2), nullable=False)
     status = db.Column(db.String(20), nullable=False, default='Pending')
+    buy_cost = db.Column(db.Numeric(10,2), nullable=True)
+    sell_cost = db.Column(db.Numeric(10,2), nullable=True)
+    tax = db.Column(db.Numeric(10,2), nullable=True)
 
     __table_args__ = (
         Index("idx_actions_action_date", "action_date"),
