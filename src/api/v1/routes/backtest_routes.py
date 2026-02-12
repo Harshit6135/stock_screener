@@ -43,8 +43,9 @@ class RunBacktest(MethodView):
         try:
             start_date = datetime.strptime(str(data['start_date']), '%Y-%m-%d').date()
             end_date = datetime.strptime(str(data['end_date']), '%Y-%m-%d').date()
+            strategy_name = data.get('strategy_name', 'momentum_strategy_one')
             
-            results, summary = run_backtest(start_date, end_date)
+            results, summary = run_backtest(start_date, end_date, strategy_name)
             
             return {
                 "message": f"Backtest completed. Final value: {summary.get('final_value', 0)}, "

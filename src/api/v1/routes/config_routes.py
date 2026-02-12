@@ -4,7 +4,7 @@ Configuration API Routes
 GET/POST/PUT endpoints for runtime configuration management.
 """
 from flask.views import MethodView
-from flask_smorest import Blueprint
+from flask_smorest import Blueprint, abort
 
 from schemas import ConfigSchema
 from repositories import ConfigRepository
@@ -36,7 +36,7 @@ class StrategyConfigResource(MethodView):
         config_repo = ConfigRepository()
         config = config_repo.get_config(strategy_name)
         if config is None:
-            return {"message": f"Configuration not found for {strategy_name}"}, 404
+            abort(404, message=f"Configuration not found for {strategy_name}")
         return config
 
     @blp.doc(tags=["Configuration"])
@@ -56,7 +56,7 @@ class StrategyConfigResource(MethodView):
         config_repo = ConfigRepository()
         existing = config_repo.get_config(strategy_name)
         if existing is None:
-            return {"message": f"Configuration not found for {strategy_name}"}, 404
+            abort(404, message=f"Configuration not found for {strategy_name}")
         
         # Update only provided fields
         config_repo.update_config(data)

@@ -6,6 +6,9 @@ class Strategy1Parameters:
     conviction_weight: float = 0.15
     structure_weight: float = 0.05
     
+    # ATR spike threshold for penalty box (ratio of current ATR / lagged ATR)
+    atr_threshold: float = 2.0
+    
     # Sub-factor weights for trend
     trend_rank_weight: float = 0.6
     trend_extension_rank_weight: float = 0.4

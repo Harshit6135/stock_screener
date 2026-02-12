@@ -4,6 +4,7 @@ Actions Routes
 API endpoints for trading actions (BUY/SELL/SWAP).
 """
 from datetime import datetime
+from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 
@@ -30,10 +31,14 @@ blp = Blueprint(
 @blp.route("/generate")
 class GenerateActions(MethodView):
     @blp.doc(tags=["Actions"])
+    @blp.arguments(ActionQuerySchema, location="query")
     @blp.response(200, MessageSchema)
-    def post(self) -> dict:
+    def post(self, args) -> dict:
         """
         Generate trading actions for current week.
+        
+        Parameters:
+            strategy_name: Query param - Strategy name (default: momentum_strategy_one)
         
         Returns:
             dict: Message with generated actions
@@ -42,10 +47,11 @@ class GenerateActions(MethodView):
             HTTPException: 400 for validation errors, 500 for failures
         """
         try:
-            actions = ActionsService()
+            strategy_name = args.get('strategy_name', 'momentum_strategy_one')
+            actions = ActionsService(strategy_name)
             working_date = datetime.now().date()
             new_actions = actions.generate_actions(working_date)
-            return {"actions": new_actions}
+            return {"message": f"Generated {len(new_actions)} actions"}
         except ValueError as e:
             logger.error(f"Validation error: {e}")
             abort(400, message=str(e))
@@ -116,3 +122,71 @@ class ActionDetail(MethodView):
         if result:
             return {"message": f"Action {action_id} updated successfully"}
         abort(400, message=f"Failed to update action {action_id}")
+
+
+@blp.route("/approve")
+class ApproveActions(MethodView):
+    @blp.doc(tags=["Actions"])
+    @blp.arguments(ActionQuerySchema, location="query")
+    @blp.response(200, MessageSchema)
+    def post(self, args):
+        """
+        Approve all pending actions for a given date.
+        
+        Sets execution_price to next-day open and calculates sell costs.
+        
+        Parameters:
+            date: Query param - Action date (YYYY-MM-DD)
+            
+        Returns:
+            Message with count of approved actions
+        """
+        try:
+            working_date = args.get('date')
+            if not working_date:
+                abort(400, message="date query parameter is required")
+            count = ActionsService.approve_all_actions(working_date)
+            return {"message": f"Approved {count} actions"}
+        except ValueError as e:
+            logger.error(f"Validation error: {e}")
+            abort(400, message=str(e))
+        except Exception as e:
+            logger.error(f"Failed to approve actions: {e}")
+            abort(500, message=f"Approval failed: {str(e)}")
+
+
+@blp.route("/process")
+class ProcessActions(MethodView):
+    @blp.doc(tags=["Actions"])
+    @blp.arguments(ActionQuerySchema, location="query")
+    @blp.response(200, MessageSchema)
+    def post(self, args):
+        """
+        Process approved actions and update holdings.
+        
+        Creates/updates holding records from approved buy/sell actions.
+        
+        Parameters:
+            date: Query param - Action date (YYYY-MM-DD)
+            strategy_name: Query param - Strategy name (default: momentum_strategy_one)
+            
+        Returns:
+            Message with processing result
+        """
+        try:
+            working_date = args.get('date')
+            if not working_date:
+                abort(400, message="date query parameter is required")
+            strategy_name = args.get('strategy_name', 'momentum_strategy_one')
+            service = ActionsService(strategy_name)
+            holdings = service.process_actions(working_date)
+            if holdings is None:
+                abort(400, message="Processing failed - check pending actions or date conflicts")
+            return {"message": f"Processed actions, {len(holdings)} holdings updated"}
+        except ValueError as e:
+            logger.error(f"Validation error: {e}")
+            abort(400, message=str(e))
+        except Exception as e:
+            logger.error(f"Failed to process actions: {e}")
+            abort(500, message=f"Processing failed: {str(e)}")
+

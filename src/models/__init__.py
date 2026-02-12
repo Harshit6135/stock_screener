@@ -15,7 +15,7 @@ __all__ = [
     "InstrumentsModel",
     "MasterModel",
     "IndicatorsModel",
-    "RiskConfigModel",
+    "ConfigModel",
     "PercentileModel",
     "ScoreModel",
     "RankingModel",

@@ -56,7 +56,6 @@ class LatestMarketData(MethodView):
 class MarketDataQueryAll(MethodView):
     @blp.doc(tags=["Market Data"])
     @blp.arguments(MarketDataQuerySchema, location="json")
-    @blp.response(200, MarketDataSchema(many=True))
     def get(self, filter_data):
         """Fetch market data by instrument_token or tradingsymbol within a date range"""
         response=marketdata_repo.get_prices_for_all_stocks(filter_data)
@@ -87,7 +86,7 @@ class MarketDataUpdateAll(MethodView):
         """Fetch latest market data for all instruments"""
         marketdata_service = MarketDataService()
         marketdata_service.update_latest_data_for_all()
-        return "Market data update completed."
+        return {"message": "Market data update completed."}
 
 @blp.route("/update_all/historical")
 class MarketDataUpdateAllHistorical(MethodView):

@@ -59,8 +59,11 @@ class PercentileService:
     def _apply_universe_penalties(self, metrics_df) -> pd.DataFrame:
         """Apply penalty box rules and liquidity filter across universe"""
         metrics_df.loc[metrics_df['ema_200'] > metrics_df['close'], 'composite_score'] = 0
-        metrics_df.loc[metrics_df['atrr_14'] / metrics_df['atrr_14'].shift(2) > self.strategy_params.atr_threshold, 'composite_score'] = 0
         metrics_df.loc[metrics_df['ema_50'] > metrics_df['close'], 'composite_score'] = 0
+        
+        # ATR spike penalty: requires per-symbol atr_spike column (computed in indicators pipeline)
+        if 'atr_spike' in metrics_df.columns:
+            metrics_df.loc[metrics_df['atr_spike'] > self.strategy_params.atr_threshold, 'composite_score'] = 0
         
         # Liquidity filter: exclude stocks with RVOL below 0.5
         if 'rvol' in metrics_df.columns:

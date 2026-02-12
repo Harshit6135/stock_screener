@@ -42,13 +42,13 @@ class WeeklyBacktester:
     for consistency with live ActionsService.
     """
     
-    def __init__(self, start_date: date, end_date: date):
+    def __init__(self, start_date: date, end_date: date, strategy_name: str = "momentum_strategy_one"):
         self.start_date = start_date
         self.end_date = end_date
         
         # Load config from repository
         self.config_loader = BacktestConfigLoader()
-        self.config = self.config_loader.fetch()
+        self.config = self.config_loader.fetch(strategy_name)
         
         # Data provider for direct DB access
         self.data = BacktestDataProvider()
@@ -124,7 +124,10 @@ class WeeklyBacktester:
     def execute_sell(self, symbol: str, current_price: float, week_date: date, 
                      reason: str) -> Dict:
         """
-        Execute a sell order with transaction costs and taxes.
+        Execute a sell order. Tax and costs tracked separately, not deducted from proceeds.
+        
+        Capital receives gross_proceeds (matches live behavior).
+        Tax and costs are recorded as separate fields for reporting.
         
         Returns:
             Action dict with all details
@@ -132,12 +135,12 @@ class WeeklyBacktester:
         pos = self.positions[symbol]
         gross_proceeds = pos.units * current_price
         
-        # Calculate transaction costs
+        # Calculate transaction costs (tracked separately)
         costs = calculate_round_trip_cost(gross_proceeds)
         sell_costs = costs.get('sell_costs', 0)
         self.total_transaction_costs += sell_costs
         
-        # Calculate taxes
+        # Calculate taxes (tracked separately)
         tax_info = calculate_capital_gains_tax(
             purchase_price=pos.entry_price,
             current_price=current_price,
@@ -148,12 +151,11 @@ class WeeklyBacktester:
         tax = tax_info.get('tax', 0)
         self.total_taxes_paid += tax
         
-        # Net proceeds
-        net_proceeds = gross_proceeds - sell_costs - tax
-        pnl = net_proceeds - (pos.entry_price * pos.units)
+        # Gross PnL (before costs/tax)
+        gross_pnl = (current_price - pos.entry_price) * pos.units
         
-        # Update capital
-        self.current_capital += net_proceeds
+        # Update capital with gross proceeds (tax/costs tracked separately)
+        self.current_capital += gross_proceeds
         
         action = {
             'action_date': week_date.isoformat(),
@@ -161,15 +163,15 @@ class WeeklyBacktester:
             'tradingsymbol': symbol,
             'units': pos.units,
             'price': current_price,
-            'gross_pnl': round((current_price - pos.entry_price) * pos.units, 2),
+            'gross_pnl': round(gross_pnl, 2),
             'transaction_costs': round(sell_costs, 2),
             'tax': round(tax, 2),
-            'net_pnl': round(pnl, 2),
+            'net_pnl': round(gross_pnl - sell_costs - tax, 2),
             'reason': reason
         }
         
         # Record and remove
-        self.risk_monitor.record_trade({'type': 'SELL', 'symbol': symbol, 'pnl': pnl})
+        self.risk_monitor.record_trade({'type': 'SELL', 'symbol': symbol, 'pnl': gross_pnl})
         del self.positions[symbol]
         
         return action
@@ -233,23 +235,28 @@ class WeeklyBacktester:
     
     def rebalance_portfolio(self, week_date: date, top_rankings: List[dict],
                             score_lookup: Dict[str, float],
-                            price_lookup: Dict[str, float]) -> List[dict]:
+                            price_lookup: Dict[str, float],
+                            low_price_lookup: Dict[str, float] = None) -> List[dict]:
         """
         Rebalance portfolio using shared TradingEngine.
         
         Delegates SELL/BUY/SWAP decisions to TradingEngine.generate_decisions(),
         then executes each decision.
         """
-        # Update trailing stops before decision-making
+        # Update trailing stops using weekly low for stop-loss trigger (matches live fetch_low)
+        if low_price_lookup is None:
+            low_price_lookup = price_lookup
+        
         for symbol, pos in self.positions.items():
             current_price = price_lookup.get(symbol, pos.entry_price)
+            low_price = low_price_lookup.get(symbol, current_price)
             current_atr = self.data.get_indicator('atrr_14', symbol, week_date)
             if current_atr is None:
                 current_atr = current_price * 0.02  # 2% fallback
             
             stops = calculate_effective_stop(
                 buy_price=pos.entry_price,
-                current_price=current_price,
+                current_price=low_price,
                 current_atr=current_atr,
                 initial_stop=pos.initial_stop_loss,
                 stop_multiplier=self.config.stop_multiplier,
@@ -378,8 +385,15 @@ class WeeklyBacktester:
                     if price:
                         price_lookup[symbol] = price
             
+            # Build low price lookup for stop-loss triggers (D2: matches live fetch_low)
+            low_price_lookup = {}
+            for symbol in self.positions:
+                low = self.data.get_low_price(symbol, week_date)
+                if low:
+                    low_price_lookup[symbol] = low
+            
             # Rebalance
-            actions = self.rebalance_portfolio(week_date, rankings, score_lookup, price_lookup)
+            actions = self.rebalance_portfolio(week_date, rankings, score_lookup, price_lookup, low_price_lookup)
             
             # Calculate metrics
             portfolio_value = self.calculate_portfolio_value(price_lookup)
@@ -399,8 +413,16 @@ class WeeklyBacktester:
             )
             self.weekly_results.append(result)
             
-            # Persist to backtest database
-            self._persist_weekly_result(week_date, actions, portfolio_value)
+            # Calculate weekly sold value from sell actions
+            weekly_sold = 0.0
+            for a in actions:
+                if a.get('action_type') == 'SELL':
+                    weekly_sold += a.get('units', 0) * a.get('price', 0)
+                elif a.get('action_type') == 'SWAP':
+                    sell_d = a.get('sell_details', {})
+                    weekly_sold += sell_d.get('units', 0) * sell_d.get('price', 0)
+            
+            self._persist_weekly_result(week_date, actions, portfolio_value, price_lookup, weekly_sold)
         
         logger.info(f"Backtest complete. Final value: {self.weekly_results[-1].portfolio_value if self.weekly_results else 0}")
         logger.info(f"Total transaction costs: {self.total_transaction_costs:.2f}")
@@ -409,7 +431,8 @@ class WeeklyBacktester:
         return self.weekly_results
     
     def _persist_weekly_result(self, week_date: date, actions: List[dict], 
-                               portfolio_value: float):
+                               portfolio_value: float, price_lookup: Dict[str, float] = None,
+                               weekly_sold: float = 0.0):
         """
         Persist weekly results to backtest database.
         
@@ -427,7 +450,7 @@ class WeeklyBacktester:
                 buy = action.get('buy_details', {})
                 action_records.extend([
                     {
-                        'working_date': week_date,
+                        'action_date': week_date,
                         'type': 'sell',
                         'symbol': sell.get('tradingsymbol', ''),
                         'units': sell.get('units', 0),
@@ -438,7 +461,7 @@ class WeeklyBacktester:
                         'status': 'Approved'
                     },
                     {
-                        'working_date': week_date,
+                        'action_date': week_date,
                         'type': 'buy',
                         'symbol': buy.get('tradingsymbol', ''),
                         'units': buy.get('units', 0),
@@ -451,7 +474,7 @@ class WeeklyBacktester:
                 ])
             else:
                 action_records.append({
-                    'working_date': week_date,
+                    'action_date': week_date,
                     'type': action.get('action_type', '').lower(),
                     'symbol': action.get('tradingsymbol', ''),
                     'units': action.get('units', 0),
@@ -478,7 +501,7 @@ class WeeklyBacktester:
                 'atr': pos.atr_at_entry,
                 'score': pos.composite_score,
                 'entry_sl': pos.initial_stop_loss,
-                'current_price': pos.entry_price,  # Will be updated with actual
+                'current_price': price_lookup.get(pos.tradingsymbol, pos.entry_price) if price_lookup else pos.entry_price,
                 'current_sl': pos.current_stop_loss
             })
         
@@ -494,7 +517,7 @@ class WeeklyBacktester:
         summary = {
             'date': week_date,
             'starting_capital': round(starting_capital, 2),
-            'sold': round(self.total_transaction_costs, 2),  # Approx
+            'sold': round(weekly_sold, 2),
             'bought': 0,
             'capital_risk': 0,
             'portfolio_value': round(portfolio_value, 2),
@@ -514,18 +537,19 @@ class WeeklyBacktester:
         return risk_summary
 
 
-def run_backtest(start_date: date, end_date: date):
+def run_backtest(start_date: date, end_date: date, strategy_name: str = "momentum_strategy_one"):
     """
     Convenience function to run a backtest.
     
     Parameters:
         start_date: Start date for backtest
         end_date: End date for backtest
+        strategy_name: Strategy name for config lookup
         
     Returns:
         Tuple of (results, summary)
     """
-    backtester = WeeklyBacktester(start_date, end_date)
+    backtester = WeeklyBacktester(start_date, end_date, strategy_name)
     results = backtester.run()
     summary = backtester.get_summary()
     return results, summary

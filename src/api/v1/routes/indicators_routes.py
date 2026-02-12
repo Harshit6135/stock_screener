@@ -56,7 +56,6 @@ class IndicatorsMaxDate(MethodView):
 class IndicatorsQueryAll(MethodView):
     @blp.doc(tags=["Indicators"])
     @blp.arguments(IndicatorsSchema, location="json")
-    @blp.response(200, IndicatorsSchema(many=True))
     def get(self, filter_data):
         """Fetch indicators by instrument_token or tradingsymbol within a date range"""
         response=indicators_repository.get_indicators_for_all_stocks(filter_data)
@@ -87,7 +86,7 @@ class IndicatorsUpdateAll(MethodView):
         """Calculate indicators for all instruments"""
         indicators_service = IndicatorsService()
         indicators_service.calculate_indicators()
-        return "Calculation of Indicators completed."
+        return {"message": "Calculation of Indicators completed."}
 
 
 @blp.route("/<string:indicator_name>")

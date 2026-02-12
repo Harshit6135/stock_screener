@@ -92,7 +92,7 @@ class MarketDataService:
                     marketdata_repository.delete_by_tradingsymbol(tradingsymbol)
                     indicators_repository.delete_by_tradingsymbol(tradingsymbol)
                     
-                    sleep(max(0, 0.34 - (time() + start_time)))
+                    sleep(max(0, 0.34 - (time() - start_time)))
                     start_date = yesterday - timedelta(days=HISTORY_LOOKBACK)
                     records, start_time = self.get_latest_data_by_token(instr_token, start_date, yesterday)
                 else:
@@ -153,4 +153,4 @@ class MarketDataService:
 
         except Exception as e:
             self.logger.error(f"Failed to fetch long-term history for {ticker}: {e}")
-            return None
+            return None, None

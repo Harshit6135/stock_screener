@@ -15,6 +15,8 @@ from config import setup_logger
 from utils.transaction_costs_utils import calculate_round_trip_cost
 from utils.tax_utils import calculate_capital_gains_tax
 from utils.sizing_utils import calculate_position_size
+from utils.stoploss_utils import calculate_initial_stop_loss, calculate_effective_stop
+from config.strategies_config import PositionSizingConfig
 from services.trading_engine import TradingEngine, HoldingSnapshot, CandidateInfo
 
 logger = setup_logger(name="ActionsService")
@@ -66,10 +68,28 @@ class ActionsService:
         new_actions = []
 
         if not current_holdings:
-            # No holdings — buy all top-N
+            # Route through TradingEngine for consistency with backtesting
+            candidates = [
+                CandidateInfo(symbol=item.tradingsymbol, score=item.composite_score)
+                for item in top_n
+            ]
+            prices = {}
             for item in top_n:
-                action = self.buy_action(item.tradingsymbol, action_date, 'top N buys')
-                new_actions.append(action)
+                md = marketdata.get_marketdata_by_trading_symbol(item.tradingsymbol, action_date)
+                if md:
+                    prices[item.tradingsymbol] = float(md.close)
+            decisions = TradingEngine.generate_decisions(
+                holdings=[],
+                candidates=candidates,
+                prices=prices,
+                max_positions=self.config.max_positions,
+                swap_buffer=1 + self.config.buffer_percent,
+                exit_threshold=self.config.exit_threshold,
+            )
+            for d in decisions:
+                if d.action_type == 'BUY':
+                    action = self.buy_action(d.symbol, action_date, d.reason)
+                    new_actions.append(action)
         else:
             # Build normalized inputs for TradingEngine
             holdings_snap = []
@@ -163,8 +183,7 @@ class ActionsService:
             actions_repo.update_action(action_data)
         return len(actions_list)
 
-    @staticmethod
-    def process_actions(action_date: date) -> Optional[List[Dict]]:
+    def process_actions(self, action_date: date) -> Optional[List[Dict]]:
         """
         Process approved actions and update holdings.
         
@@ -222,12 +241,11 @@ class ActionsService:
         investment.insert_summary(summary)
         return  week_holdings
 
-    @staticmethod
-    def get_summary(week_holdings, sold):
+    def get_summary(self, week_holdings, sold):
         prev_summary = investment.get_summary()
         starting_capital = prev_summary.remaining_capital if prev_summary else self.config.initial_capital
         starting_capital = Decimal(starting_capital)
-        day0_cap = self.config.initial_capital
+
         # Convert list of holdings to DataFrame for fast/vectorized calculations
         df = pd.DataFrame(week_holdings)
         # Bought: sum(entry_price * units) where entry_date == action_date
@@ -287,8 +305,7 @@ class ActionsService:
         return low
 
 
-    @staticmethod
-    def buy_action(symbol: str, action_date: date, reason: str) -> Dict:
+    def buy_action(self, symbol: str, action_date: date, reason: str) -> Dict:
         """
         Generate a BUY action with position sizing.
         
@@ -402,15 +419,16 @@ class ActionsService:
         Returns:
             float: Total sold value (units * execution_price)
         """
-        action_data = investment.get_action_by_symbol(symbol)
+        action_data = actions_repo.get_action_by_symbol(symbol)
         sold_value = action_data.units * action_data.execution_price
         return sold_value
 
 
-    @staticmethod
-    def buy_holding(symbol: str) -> Dict:
+    def buy_holding(self, symbol: str) -> Dict:
         """
         Create holding record from a BUY action.
+        
+        Uses shared calculate_initial_stop_loss for consistency with backtesting.
         
         Parameters:
             symbol (str): Trading symbol
@@ -418,30 +436,39 @@ class ActionsService:
         Returns:
             Dict: Holding data with entry price, units, stop-loss
         """
-        action_data = investment.get_action_by_symbol(symbol)
+        action_data = actions_repo.get_action_by_symbol(symbol)
         action_date = action_data.action_date
-        atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, action_date),2)
-        sl_multiplier = Decimal(str(self.config.sl_multiplier))
-        atr_decimal = Decimal(str(atr))
+        atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, action_date), 2)
+        entry_price = float(action_data.execution_price)
+        
+        # Use shared stop-loss calculation (same as backtesting)
+        initial_stop = calculate_initial_stop_loss(
+            buy_price=entry_price,
+            atr=atr,
+            stop_multiplier=self.config.sl_multiplier
+        )
+        
         holding_data = {
-            'symbol' : symbol,
-            'date' : action_date,
-            'entry_date' : action_date,
-            'entry_price' : action_data.execution_price,
-            'units' : action_data.units,
-            'atr' : atr,
-            'score' : round(ranking.get_rankings_by_date_and_symbol(action_date, symbol).composite_score,2),
-            'entry_sl' : action_data.execution_price - (sl_multiplier * atr_decimal),
-            'current_price' : action_data.execution_price,
-            'current_sl' : Decimal(action_data.execution_price) - (sl_multiplier * atr_decimal)
+            'symbol': symbol,
+            'date': action_date,
+            'entry_date': action_date,
+            'entry_price': action_data.execution_price,
+            'units': action_data.units,
+            'atr': atr,
+            'score': round(ranking.get_rankings_by_date_and_symbol(action_date, symbol).composite_score, 2),
+            'entry_sl': round(initial_stop, 2),
+            'current_price': action_data.execution_price,
+            'current_sl': round(initial_stop, 2)
         }
         return holding_data
 
 
-    @staticmethod
-    def update_holding(symbol: str, action_date: date) -> Dict:
+    def update_holding(self, symbol: str, action_date: date) -> Dict:
         """
         Update an existing holding with current prices.
+        
+        Uses shared calculate_effective_stop for consistency with backtesting.
+        Uses weekly low price for stop-loss trigger check.
         
         Parameters:
             symbol (str): Trading symbol
@@ -450,21 +477,31 @@ class ActionsService:
         Returns:
             Dict: Updated holding data with new price/stop-loss
         """
-        holding_data = investment.get_holdings_by_symbol(symbol)
-        atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, action_date),2)
-        sl_multiplier = Decimal(str(self.config.sl_multiplier))
-        atr_decimal = Decimal(str(atr))
+        holding = investment.get_holdings_by_symbol(symbol)
+        atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, action_date), 2)
         current_price = marketdata.get_marketdata_by_trading_symbol(symbol, action_date).close
+        
+        # Use shared stop-loss calculation (same as backtesting)
+        stops = calculate_effective_stop(
+            buy_price=float(holding.entry_price),
+            current_price=float(current_price),
+            current_atr=atr,
+            initial_stop=float(holding.entry_sl),
+            stop_multiplier=self.config.sl_multiplier,
+            sl_step_percent=PositionSizingConfig().sl_step_percent,
+            previous_stop=float(holding.current_sl) if holding.current_sl else float(holding.entry_sl)
+        )
+        
         holding_data = {
-            'symbol' : symbol,
-            'date' : action_date,
-            'entry_date' : holding_data.entry_date,
-            'entry_price' : holding_data.entry_price,
-            'units' : holding_data.units,
-            'atr' : atr,
-            'score' : round(ranking.get_rankings_by_date_and_symbol(action_date, symbol).composite_score,2),
-            'entry_sl' : holding_data.entry_sl,
-            'current_price' : current_price,
-            'current_sl' : Decimal(current_price) - (sl_multiplier * atr_decimal)
+            'symbol': symbol,
+            'date': action_date,
+            'entry_date': holding.entry_date,
+            'entry_price': holding.entry_price,
+            'units': holding.units,
+            'atr': atr,
+            'score': round(ranking.get_rankings_by_date_and_symbol(action_date, symbol).composite_score, 2),
+            'entry_sl': holding.entry_sl,
+            'current_price': current_price,
+            'current_sl': stops['effective_stop']
         }
         return holding_data

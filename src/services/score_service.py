@@ -2,12 +2,12 @@
 Score Service - Calculates weighted composite scores from percentiles
 
 Composite Score Formula (from Strategy1Parameters):
-  final_trend_score = trend_rank*0.6 + trend_extension_rank*0.2 + trend_start_rank*0.2
-  final_momentum_score = momentum_rsi_rank*0.5 + momentum_ppo_rank*0.3 + momentum_ppoh_rank*0.2
+  final_trend_score = trend_rank*0.6 + trend_extension_rank*0.4
+  final_momentum_score = momentum_rsi_rank*0.6 + momentum_ppo_rank*0.25 + momentum_ppoh_rank*0.15
   final_vol_score = rvolume_rank*0.7 + price_vol_corr_rank*0.3
   final_structure_score = structure_rank*0.5 + structure_bb_rank*0.5
   
-  composite_score = trend*0.30 + momentum*0.25 + efficiency*0.20 + vol*0.15 + structure*0.10
+  composite_score = trend*0.30 + momentum*0.30 + efficiency*0.20 + vol*0.15 + structure*0.05
 """
 
 import pandas as pd
