@@ -77,6 +77,29 @@ class WeeklyBacktester:
             current += timedelta(weeks=1)
         return mondays
     
+    @staticmethod
+    def _get_ranking_friday(monday_date: date) -> date:
+        """Get the previous Friday for ranking lookup.
+
+        Rankings are always stored on calendar Fridays.
+        Given a Monday, returns the Friday 3 days prior.
+
+        Parameters:
+            monday_date: A Monday date from the backtest loop
+
+        Returns:
+            The previous Friday date
+        """
+        weekday = monday_date.weekday()
+        if weekday == 4:  # Already Friday
+            return monday_date
+        elif weekday < 4:  # Mon-Thu: go back to last Friday
+            days_back = weekday + 3
+            return monday_date - timedelta(days=days_back)
+        else:  # Sat=5, Sun=6
+            days_back = weekday - 4
+            return monday_date - timedelta(days=days_back)
+    
     def calculate_position_size(self, atr: Optional[float], current_price: float) -> Dict:
         """
         Calculate position size using shared sizing util.
@@ -236,13 +259,26 @@ class WeeklyBacktester:
     def rebalance_portfolio(self, week_date: date, top_rankings: List[dict],
                             score_lookup: Dict[str, float],
                             price_lookup: Dict[str, float],
-                            low_price_lookup: Dict[str, float] = None) -> List[dict]:
+                            low_price_lookup: Dict[str, float] = None,
+                            execution_price_lookup: Dict[str, float] = None) -> List[dict]:
         """
         Rebalance portfolio using shared TradingEngine.
         
         Delegates SELL/BUY/SWAP decisions to TradingEngine.generate_decisions(),
         then executes each decision.
+        
+        Parameters:
+            week_date: Current Monday date
+            top_rankings: Top ranked stocks from Friday
+            score_lookup: Composite scores by symbol
+            price_lookup: Close prices for valuation/stop-loss
+            low_price_lookup: Low prices for stop-loss triggers
+            execution_price_lookup: Monday open prices for trade execution
         """
+        # Use open prices for execution, fall back to close prices
+        if execution_price_lookup is None:
+            execution_price_lookup = price_lookup
+        
         # Update trailing stops using weekly low for stop-loss trigger (matches live fetch_low)
         if low_price_lookup is None:
             low_price_lookup = price_lookup
@@ -297,31 +333,49 @@ class WeeklyBacktester:
         actions = []
         for d in decisions:
             if d.action_type == 'SELL':
-                current_price = price_lookup.get(d.symbol, 0)
-                action = self.execute_sell(d.symbol, current_price, week_date, d.reason)
+                exec_price = execution_price_lookup.get(d.symbol, 0)
+                action = self.execute_sell(
+                    d.symbol, exec_price, week_date, d.reason
+                )
                 actions.append(action)
                 
             elif d.action_type == 'BUY':
-                price = price_lookup.get(d.symbol, 0)
-                score = next((c.score for c in candidates if c.symbol == d.symbol), 0)
-                atr = self.data.get_indicator('atrr_14', d.symbol, week_date)
+                exec_price = execution_price_lookup.get(d.symbol, 0)
+                score = next(
+                    (c.score for c in candidates
+                     if c.symbol == d.symbol), 0
+                )
+                atr = self.data.get_indicator(
+                    'atrr_14', d.symbol, week_date
+                )
                 buy_action = self.execute_buy(
-                    d.symbol, price, score, atr or 0, week_date, d.reason
+                    d.symbol, exec_price, score,
+                    atr or 0, week_date, d.reason
                 )
                 if buy_action:
                     actions.append(buy_action)
                     
             elif d.action_type == 'SWAP':
-                # Sell incumbent
-                sell_price = price_lookup.get(d.symbol, 0)
-                sell_act = self.execute_sell(d.symbol, sell_price, week_date, d.reason)
+                # Sell incumbent at Monday open
+                sell_price = execution_price_lookup.get(d.symbol, 0)
+                sell_act = self.execute_sell(
+                    d.symbol, sell_price, week_date, d.reason
+                )
                 
-                # Buy challenger
-                buy_price = price_lookup.get(d.swap_for, 0)
-                buy_score = next((c.score for c in candidates if c.symbol == d.swap_for), 0)
-                buy_atr = self.data.get_indicator('atrr_14', d.swap_for, week_date)
+                # Buy challenger at Monday open
+                buy_price = execution_price_lookup.get(
+                    d.swap_for, 0
+                )
+                buy_score = next(
+                    (c.score for c in candidates
+                     if c.symbol == d.swap_for), 0
+                )
+                buy_atr = self.data.get_indicator(
+                    'atrr_14', d.swap_for, week_date
+                )
                 buy_act = self.execute_buy(
-                    d.swap_for, buy_price, buy_score, buy_atr or 0, week_date, d.reason
+                    d.swap_for, buy_price, buy_score,
+                    buy_atr or 0, week_date, d.reason
                 )
                 
                 if buy_act:
@@ -364,39 +418,81 @@ class WeeklyBacktester:
         for week_date in mondays:
             logger.info(f"Processing week: {week_date}")
             
-            # Fetch rankings from API
-            rankings = self.data.get_top_rankings(self.config.max_positions, week_date)
+            # Compute Friday for ranking lookup
+            ranking_friday = self._get_ranking_friday(week_date)
+            logger.info(
+                f"Using rankings from: {ranking_friday}"
+            )
+            
+            # Fetch rankings using Friday date
+            rankings = self.data.get_top_rankings(
+                self.config.max_positions, ranking_friday
+            )
             if not rankings:
-                logger.warning(f"No rankings for {week_date}, skipping")
+                logger.warning(
+                    f"No rankings for {ranking_friday}, "
+                    f"skipping week {week_date}"
+                )
                 continue
             
             # Build lookups
-            score_lookup = {r['tradingsymbol']: r['composite_score'] for r in rankings}
-            price_lookup = {}
+            score_lookup = {
+                r['tradingsymbol']: r['composite_score']
+                for r in rankings
+            }
+            
+            # Monday open prices for trade execution
+            open_price_lookup = {}
             for r in rankings:
-                price = self.data.get_close_price(r['tradingsymbol'], week_date)
+                price = self.data.get_open_price(
+                    r['tradingsymbol'], week_date
+                )
                 if price:
-                    price_lookup[r['tradingsymbol']] = price
+                    open_price_lookup[r['tradingsymbol']] = price
             
-            # Add current holdings to price lookup
+            # Monday close prices for portfolio valuation
+            close_price_lookup = {}
+            for r in rankings:
+                price = self.data.get_close_price(
+                    r['tradingsymbol'], week_date
+                )
+                if price:
+                    close_price_lookup[r['tradingsymbol']] = price
+            
+            # Add current holdings to price lookups
             for symbol in self.positions:
-                if symbol not in price_lookup:
-                    price = self.data.get_close_price(symbol, week_date)
+                if symbol not in open_price_lookup:
+                    price = self.data.get_open_price(
+                        symbol, week_date
+                    )
                     if price:
-                        price_lookup[symbol] = price
+                        open_price_lookup[symbol] = price
+                if symbol not in close_price_lookup:
+                    price = self.data.get_close_price(
+                        symbol, week_date
+                    )
+                    if price:
+                        close_price_lookup[symbol] = price
             
-            # Build low price lookup for stop-loss triggers (D2: matches live fetch_low)
+            # Build low price lookup for stop-loss triggers
             low_price_lookup = {}
             for symbol in self.positions:
                 low = self.data.get_low_price(symbol, week_date)
                 if low:
                     low_price_lookup[symbol] = low
             
-            # Rebalance
-            actions = self.rebalance_portfolio(week_date, rankings, score_lookup, price_lookup, low_price_lookup)
+            # Rebalance: use open prices for execution,
+            # close prices for valuation
+            actions = self.rebalance_portfolio(
+                week_date, rankings, score_lookup,
+                close_price_lookup, low_price_lookup,
+                execution_price_lookup=open_price_lookup
+            )
             
             # Calculate metrics
-            portfolio_value = self.calculate_portfolio_value(price_lookup)
+            portfolio_value = self.calculate_portfolio_value(
+                close_price_lookup
+            )
             self.risk_monitor.update(portfolio_value)
             
 
@@ -422,7 +518,10 @@ class WeeklyBacktester:
                     sell_d = a.get('sell_details', {})
                     weekly_sold += sell_d.get('units', 0) * sell_d.get('price', 0)
             
-            self._persist_weekly_result(week_date, actions, portfolio_value, price_lookup, weekly_sold)
+            self._persist_weekly_result(
+                week_date, actions, portfolio_value,
+                close_price_lookup, weekly_sold
+            )
         
         logger.info(f"Backtest complete. Final value: {self.weekly_results[-1].portfolio_value if self.weekly_results else 0}")
         logger.info(f"Total transaction costs: {self.total_transaction_costs:.2f}")

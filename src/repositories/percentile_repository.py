@@ -96,3 +96,20 @@ class PercentileRepository:
         except SQLAlchemyError as e:
             db.session.rollback()
             return -1
+
+    @staticmethod
+    def get_all_distinct_dates():
+        """Get all distinct percentile dates, ordered ascending.
+
+        Returns:
+            List[date]: Sorted list of unique percentile dates.
+
+        Example:
+            >>> dates = PercentileRepository.get_all_distinct_dates()
+        """
+        result = db.session.query(
+            PercentileModel.percentile_date
+        ).distinct().order_by(
+            PercentileModel.percentile_date
+        ).all()
+        return [r[0] for r in result]

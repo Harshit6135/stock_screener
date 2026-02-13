@@ -6,7 +6,7 @@ sort by score descending, and assign rank (1 = highest).
 """
 
 import pandas as pd
-from datetime import date, timedelta
+from datetime import timedelta
 
 from config import setup_logger
 from repositories import ScoreRepository, RankingRepository
@@ -48,10 +48,7 @@ class RankingService:
             current_friday = get_friday(last_ranking_date) + timedelta(days=7)
         else:
             # Start from first available Friday after earliest score
-            from db import db
-            from models import ScoreModel
-            result = db.session.query(ScoreModel.score_date).distinct().order_by(ScoreModel.score_date).all()
-            distinct_dates = [r[0] for r in result]
+            distinct_dates = score_repo.get_all_distinct_dates()
             if not distinct_dates:
                 return {"message": "No score dates available", "weeks": 0}
             first_date = distinct_dates[0]

@@ -93,6 +93,29 @@ class BacktestDataProvider:
             logger.warning(f"Failed to fetch close price for {tradingsymbol}: {e}")
             return None
     
+    def get_open_price(self, tradingsymbol: str, as_of_date: date) -> Optional[float]:
+        """Get opening price for a stock on a date.
+
+        Parameters:
+            tradingsymbol: Stock symbol
+            as_of_date: Date for price lookup
+
+        Returns:
+            Opening price or None if not found
+        """
+        try:
+            result = marketdata_repo.get_marketdata_by_trading_symbol(
+                tradingsymbol, as_of_date
+            )
+            if result and hasattr(result, 'open'):
+                return float(result.open)
+            return None
+        except Exception as e:
+            logger.warning(
+                f"Failed to fetch open price for {tradingsymbol}: {e}"
+            )
+            return None
+
     def get_low_price(self, tradingsymbol: str, as_of_date: date) -> Optional[float]:
         """Get low price for a stock on a date"""
         try:

@@ -50,11 +50,11 @@ class ActionsService:
         
         Parameters:
             action_date (date): Date to generate actions for
-        
+
         Returns:
             Union[str, List[Dict]]: Error message if actions pending, 
                                     otherwise list of action dictionaries
-        
+
         Raises:
             ValueError: If action_date is None
         """
@@ -73,10 +73,12 @@ class ActionsService:
             CandidateInfo(symbol=item.tradingsymbol, score=item.composite_score)
             for item in top_n
         ]
+
         swap_buffer = 1 + self.config.buffer_percent
         exit_threshold = self.config.exit_threshold
         holdings_snap = []
         prices = {}
+
         if not current_holdings:
             for item in top_n:
                 md = marketdata.get_marketdata_by_trading_symbol(item.tradingsymbol, action_date)
@@ -96,6 +98,7 @@ class ActionsService:
                     stop_loss=float(h.current_sl),
                     score=score,
                 ))
+
         decisions = TradingEngine.generate_decisions(
             holdings=holdings_snap,
             candidates=candidates,
@@ -105,7 +108,6 @@ class ActionsService:
             exit_threshold=exit_threshold,
         )
 
-        # Convert decisions to action dicts
         for d in decisions:
             if d.action_type == 'SELL':
                 action = self.sell_action(d.symbol, action_date, d.units, d.reason)
@@ -128,19 +130,19 @@ class ActionsService:
     def approve_all_actions(action_date: date) -> int:
         """
         Approve all pending actions for a given date.
-        
+
         Parameters:
             action_date (date): Date of actions to approve
-        
+
         Returns:
             int: Number of actions approved
-        
+
         Raises:
             ValueError: If action_date is None
         """
         if action_date is None:
             raise ValueError("action_date cannot be None")
-            
+
         actions_list = actions_repo.get_actions(action_date)
         for item in actions_list:
             execution_price = marketdata.get_marketdata_next_day(item.symbol, action_date).open
@@ -162,13 +164,13 @@ class ActionsService:
     def process_actions(self, action_date: date) -> Optional[List[Dict]]:
         """
         Process approved actions and update holdings.
-        
+
         Parameters:
             action_date (date): Date of actions to process
-        
+
         Returns:
             Optional[List[Dict]]: List of updated holdings, or None if error
-        
+
         Raises:
             ValueError: If action_date is None
         """

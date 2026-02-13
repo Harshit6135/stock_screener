@@ -64,3 +64,20 @@ class ScoreRepository:
             ScoreModel.score_date >= start_date,
             ScoreModel.score_date <= end_date
         ).all()
+
+    @staticmethod
+    def get_all_distinct_dates():
+        """Get all distinct score dates, ordered ascending.
+
+        Returns:
+            List[date]: Sorted list of unique score dates.
+
+        Example:
+            >>> dates = ScoreRepository.get_all_distinct_dates()
+        """
+        result = db.session.query(
+            ScoreModel.score_date
+        ).distinct().order_by(
+            ScoreModel.score_date
+        ).all()
+        return [r[0] for r in result]
