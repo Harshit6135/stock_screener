@@ -77,9 +77,6 @@ class IndicatorsService:
         df['rvol'] = df['volume']/df['VOL_SMA_20']
         df['atr_spike'] = self.calculate_atr_spike(df['ATRr_14'])
 
-        # Pure return momentum (skip last week to avoid short-term reversal)
-        # 3-month: price 5 days ago / price 65 days ago - 1
-        # 6-month: price 5 days ago / price 130 days ago - 1
         df['momentum_3m'] = (df['close'].shift(5) / df['close'].shift(65)) - 1
         df['momentum_6m'] = (df['close'].shift(5) / df['close'].shift(130)) - 1
 

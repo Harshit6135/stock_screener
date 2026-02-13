@@ -1,7 +1,7 @@
 import pandas as pd
 from datetime import datetime, date
 from config import *
-from config import Strategy1Parameters as StrategyParams
+from config import StrategyParameters as StrategyParams
 from repositories import IndicatorsRepository, MarketDataRepository, PercentileRepository
 from utils import percentile_rank
 from services.factors_service import FactorsService
@@ -138,6 +138,7 @@ class PercentileService:
         # 3. Create DataFrames
         stocks_df = pd.DataFrame(price_data_list)
         metrics_df = pd.DataFrame(indicators_data_list)
+        metrics_df = metrics_df.fillna(0)
 
         if len(stocks_df) == 0 or len(metrics_df) == 0:
             logger.info("No data found for date: {}".format(date))

@@ -1,5 +1,5 @@
+from .trading_engine import TradingEngine, HoldingSnapshot, CandidateInfo
 from .init_service import InitService
-
 from .indicators_service import IndicatorsService
 from .marketdata_service import MarketDataService
 from .percentile_service import PercentileService
@@ -8,9 +8,12 @@ from .ranking_service import RankingService
 from .actions_service import ActionsService
 from .factors_service import FactorsService
 from .portfolio_controls_service import PortfolioControlsService
-from .trading_engine import TradingEngine
+
 
 __all__ = [
+    "TradingEngine",
+    "HoldingSnapshot",
+    "CandidateInfo",
     "InitService",
     "IndicatorsService",
     "MarketDataService",
@@ -20,5 +23,4 @@ __all__ = [
     "ActionsService",
     "FactorsService",
     "PortfolioControlsService",
-    "TradingEngine"
 ]

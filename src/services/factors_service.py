@@ -1,11 +1,5 @@
 import pandas as pd
-from config import setup_logger
-from config.strategies_config import (
-    GoldilocksConfig,
-    RSIRegimeConfig,
-    PenaltyBoxConfig,
-    Strategy1Parameters
-)
+from config import setup_logger, GoldilocksConfig, RSIRegimeConfig, PenaltyBoxConfig, StrategyParameters
 
 logger = setup_logger(name="FactorsService")
 
@@ -17,7 +11,7 @@ class FactorsService:
         self.goldilocks = GoldilocksConfig()
         self.rsi_regime = RSIRegimeConfig()
         self.penalty = PenaltyBoxConfig()
-        self.weights = Strategy1Parameters()
+        self.weights = StrategyParameters()
     
     def calculate_trend_factor(self, close: pd.Series, ema_50: pd.Series, 
                                 ema_200: pd.Series) -> pd.Series:
@@ -174,8 +168,8 @@ class FactorsService:
                         roc_60, roc_125, roc_20, atrr_14, atr_spike, rvol,
                         price_vol_correlation, percent_b, bbb_20_2_2
         """
-        df = df.copy()
-        
+        # df = df[df['ema_200'].notnull()]
+
         df['factor_trend'] = self.calculate_trend_factor(
             df['close'], df['ema_50'], df['ema_200'])
         

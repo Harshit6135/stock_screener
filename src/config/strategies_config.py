@@ -1,4 +1,4 @@
-class Strategy1Parameters:
+class StrategyParameters:
     """Configuration for factor weights in composite score"""
     trend_strength_weight: float = 0.30
     momentum_velocity_weight: float = 0.30

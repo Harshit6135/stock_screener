@@ -4,29 +4,31 @@ Actions Service
 Handles investment action generation, approval, and processing.
 Renames from strategy_service.py - all methods are action-related.
 """
-from datetime import timedelta, date
-from decimal import Decimal
-from typing import Dict, List, Optional, Union
 import pandas as pd
+
+from decimal import Decimal
+from datetime import timedelta, date
+from typing import Dict, List, Optional, Union
 
 from repositories import (RankingRepository, IndicatorsRepository, MarketDataRepository, 
                           InvestmentRepository, ConfigRepository, ActionsRepository)
-from config import setup_logger
-from utils.transaction_costs_utils import calculate_round_trip_cost
-from utils.tax_utils import calculate_capital_gains_tax
-from utils.sizing_utils import calculate_position_size
-from utils.stoploss_utils import calculate_initial_stop_loss, calculate_effective_stop
-from config.strategies_config import PositionSizingConfig
-from services.trading_engine import TradingEngine, HoldingSnapshot, CandidateInfo
+
+from utils import (calculate_round_trip_cost, calculate_capital_gains_tax, 
+                   calculate_position_size, calculate_initial_stop_loss, 
+                   calculate_effective_stop)
+from services import TradingEngine, HoldingSnapshot, CandidateInfo
+
+from config import setup_logger, PositionSizingConfig
+
 
 logger = setup_logger(name="ActionsService")
 
+config = ConfigRepository()
 ranking = RankingRepository()
+actions_repo = ActionsRepository()
 indicators = IndicatorsRepository()
 marketdata = MarketDataRepository()
 investment = InvestmentRepository()
-config = ConfigRepository()
-actions_repo = ActionsRepository()
 
 
 class ActionsService:
@@ -67,39 +69,24 @@ class ActionsService:
         current_holdings = investment.get_holdings()
         new_actions = []
 
+        candidates = [
+            CandidateInfo(symbol=item.tradingsymbol, score=item.composite_score)
+            for item in top_n
+        ]
+        swap_buffer = 1 + self.config.buffer_percent
+        exit_threshold = self.config.exit_threshold
+        holdings_snap = []
+        prices = {}
         if not current_holdings:
-            # Route through TradingEngine for consistency with backtesting
-            candidates = [
-                CandidateInfo(symbol=item.tradingsymbol, score=item.composite_score)
-                for item in top_n
-            ]
-            prices = {}
             for item in top_n:
                 md = marketdata.get_marketdata_by_trading_symbol(item.tradingsymbol, action_date)
                 if md:
                     prices[item.tradingsymbol] = float(md.close)
-            decisions = TradingEngine.generate_decisions(
-                holdings=[],
-                candidates=candidates,
-                prices=prices,
-                max_positions=self.config.max_positions,
-                swap_buffer=1 + self.config.buffer_percent,
-                exit_threshold=self.config.exit_threshold,
-            )
-            for d in decisions:
-                if d.action_type == 'BUY':
-                    action = self.buy_action(d.symbol, action_date, d.reason)
-                    new_actions.append(action)
         else:
-            # Build normalized inputs for TradingEngine
-            holdings_snap = []
-            prices = {}
             for h in current_holdings:
-                # Fetch weekly low for stop-loss check
                 low = self.fetch_low(h.symbol, action_date)
                 prices[h.symbol] = low
 
-                # Fetch current score
                 rank_data = ranking.get_rankings_by_date_and_symbol(action_date, h.symbol)
                 score = rank_data.composite_score if rank_data else 0
 
@@ -109,40 +96,30 @@ class ActionsService:
                     stop_loss=float(h.current_sl),
                     score=score,
                 ))
+        decisions = TradingEngine.generate_decisions(
+            holdings=holdings_snap,
+            candidates=candidates,
+            prices=prices,
+            max_positions=self.config.max_positions,
+            swap_buffer=swap_buffer,
+            exit_threshold=exit_threshold,
+        )
 
-            candidates = [
-                CandidateInfo(symbol=item.tradingsymbol, score=item.composite_score)
-                for item in top_n
-            ]
-
-            # Use config-driven swap buffer and exit threshold
-            swap_buffer = 1 + self.config.buffer_percent
-            exit_threshold = self.config.exit_threshold
-
-            decisions = TradingEngine.generate_decisions(
-                holdings=holdings_snap,
-                candidates=candidates,
-                prices=prices,
-                max_positions=self.config.max_positions,
-                swap_buffer=swap_buffer,
-                exit_threshold=exit_threshold,
-            )
-
-            # Convert decisions to action dicts
-            for d in decisions:
-                if d.action_type == 'SELL':
-                    action = self.sell_action(d.symbol, action_date, d.units, d.reason)
-                    new_actions.append(action)
-                elif d.action_type == 'BUY':
-                    action = self.buy_action(d.symbol, action_date, d.reason)
-                    new_actions.append(action)
-                elif d.action_type == 'SWAP':
-                    # Sell incumbent
-                    sell_act = self.sell_action(d.symbol, action_date, d.swap_sell_units, d.reason)
-                    new_actions.append(sell_act)
-                    # Buy challenger
-                    buy_act = self.buy_action(d.swap_for, action_date, d.reason)
-                    new_actions.append(buy_act)
+        # Convert decisions to action dicts
+        for d in decisions:
+            if d.action_type == 'SELL':
+                action = self.sell_action(d.symbol, action_date, d.units, d.reason)
+                new_actions.append(action)
+            elif d.action_type == 'BUY':
+                action = self.buy_action(d.symbol, action_date, d.reason)
+                new_actions.append(action)
+            elif d.action_type == 'SWAP':
+                # Sell incumbent
+                sell_act = self.sell_action(d.symbol, action_date, d.swap_sell_units, d.reason)
+                new_actions.append(sell_act)
+                # Buy challenger
+                buy_act = self.buy_action(d.swap_for, action_date, d.reason)
+                new_actions.append(buy_act)
 
         actions_repo.bulk_insert_actions(new_actions)
         return new_actions
@@ -174,7 +151,6 @@ class ActionsService:
                 'execution_price' : execution_price
             }
 
-            # Populate sell_cost and tax for SELL actions
             if item.type == 'sell':
                 costs = calculate_round_trip_cost(float(item.units * execution_price))
                 action_data['sell_cost'] = costs.get('sell_costs', 0)
@@ -207,7 +183,7 @@ class ActionsService:
         if not holdings:
             holdings_date = date(2000,1,1)
         else:
-            holdings_date = holdings[0].action_date
+            holdings_date = holdings[0].date
         if holdings_date >= action_date:
             logger.warning(f'Holdings {holdings_date} have data beyond the actions {action_date}')
             return None

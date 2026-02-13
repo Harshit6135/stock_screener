@@ -3,7 +3,7 @@ from flask_smorest import Api
 from flask_migrate import Migrate
 from flask import Flask, render_template
 
-from config import Config
+from src.config import Config
 from src.api.v1.routes import (
     instruments_bp,
     marketdata_bp,

@@ -1,7 +1,7 @@
 """
 Score Service - Calculates weighted composite scores from percentiles
 
-Composite Score Formula (from Strategy1Parameters):
+Composite Score Formula (from StrategyParameters):
   final_trend_score = trend_rank*0.6 + trend_extension_rank*0.4
   final_momentum_score = momentum_rsi_rank*0.6 + momentum_ppo_rank*0.25 + momentum_ppoh_rank*0.15
   final_vol_score = rvolume_rank*0.7 + price_vol_corr_rank*0.3
@@ -13,7 +13,7 @@ Composite Score Formula (from Strategy1Parameters):
 import pandas as pd
 from datetime import date, timedelta
 
-from config import setup_logger, Strategy1Parameters
+from config import setup_logger, StrategyParameters
 from repositories import ScoreRepository, PercentileRepository
 
 score_repo = ScoreRepository()
@@ -25,7 +25,7 @@ class ScoreService:
     """Service for calculating composite scores from percentiles"""
     
     def __init__(self):
-        self.params = Strategy1Parameters()
+        self.params = StrategyParameters()
     
     def _calculate_composite_for_df(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply weighted formula using factor-based percentile ranks"""
@@ -98,7 +98,7 @@ class ScoreService:
             
             # Calculate composite scores
             df = self._calculate_composite_for_df(df)
-            
+            print(df)
             # Prepare records for insertion
             score_records = df[[
                 'tradingsymbol', 'percentile_date',

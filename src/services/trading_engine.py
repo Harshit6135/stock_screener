@@ -115,7 +115,7 @@ class TradingEngine:
             price = prices.get(h.symbol, 0)
 
             # Stop-loss hit: price breached the stop level
-            if h.stop_loss > 0 and price > 0 and h.stop_loss >= price:
+            if h.stop_loss >= price:
                 decisions.append(TradingDecision(
                     action_type='SELL',
                     symbol=h.symbol,
@@ -146,12 +146,8 @@ class TradingEngine:
 
         # ========== PHASE 2: BUY ==========
         # Count current holdings that survived phase 1
-        surviving_count = len(holdings) - len(decisions) - len(remaining_holdings) + len(remaining_holdings)
-        # More accurately: holdings that aren't sold and aren't in remaining
-        # = holdings in top-N candidates (kept but no action)
-        kept_count = len(holdings) - len(decisions) - len(remaining_holdings)
-        active_count = kept_count + len(remaining_holdings)
-        vacancies = max_positions - active_count
+        current_count = len(holdings) - len(decisions)
+        vacancies = max_positions - current_count
 
         # Build set of symbols already held (surviving)
         sold_symbols = {d.symbol for d in decisions if d.action_type == 'SELL'}
@@ -177,7 +173,7 @@ class TradingEngine:
         # Remaining candidates not yet bought
         swap_candidates = [
             c for c in candidates
-            if c.symbol not in held_symbols and c.symbol not in buy_candidates
+            if c.symbol not in held_symbols
         ]
 
         for challenger in swap_candidates:
