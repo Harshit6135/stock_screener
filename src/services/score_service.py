@@ -7,9 +7,11 @@ import pandas as pd
 from config import setup_logger, StrategyParameters
 from repositories import ScoreRepository, PercentileRepository
 
+
 score_repo = ScoreRepository()
 percentile_repo = PercentileRepository()
 logger = setup_logger(name="ScoreService")
+pd.set_option('future.no_silent_downcasting', True)
 
 
 class ScoreService:

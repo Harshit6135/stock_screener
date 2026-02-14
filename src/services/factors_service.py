@@ -4,6 +4,7 @@ from utils import goldilocks_score, rsi_regime_score, score_percent_b
 
 
 logger = setup_logger(name="FactorsService")
+pd.set_option('future.no_silent_downcasting', True)
 
 
 class FactorsService:
@@ -24,13 +25,12 @@ class FactorsService:
         ema_slope_norm = ema_50_slope.clip(-5, 5) / 5 * 50 + 50
 
         trend = (
-             self.weights.trend_above_200_ema_weight * above_200 * 100 +
              self.weights.trend_distance_200_weight * dist_score +
              self.weights.trend_slope_weight * ema_slope_norm
         )
         return trend
 
-    def calculate_momentum_factor(self, rsi_smooth: pd.Series, ppo: pd.Series,
+    def calculate_momentum_factor(self, rsi_smooth: pd.Series, ppo: pd.Series, ppoh: pd.Series,
                                    momentum_3m: pd.Series, momentum_6m: pd.Series) -> pd.Series:
         """
         RSI regime + PPO + pure skip-week momentum
@@ -41,12 +41,13 @@ class FactorsService:
         """
         rsi_score = rsi_smooth.apply(rsi_regime_score)
         ppo_norm = ppo.clip(-5, 5) / 5 * 50 + 50
-        
+        ppoh_norm = ppoh.clip(-5, 5) / 5 * 50 + 50
         pure_momentum = ((momentum_3m + momentum_6m) / 2).clip(-50, 50) / 50 * 50 + 50
         
         momentum = (
             self.weights.momentum_rsi_weight * rsi_score +
             self.weights.momentum_ppo_weight * ppo_norm +
+            self.weights.momentum_ppoh_weight * ppoh_norm +
             self.weights.pure_momentum_weight * pure_momentum
         )
         return momentum
@@ -105,7 +106,7 @@ class FactorsService:
             df['distance_from_ema_200'], df['ema_50_slope'])
         
         df['factor_momentum'] = self.calculate_momentum_factor(
-            df['rsi_signal_ema_3'], df['ppo_12_26_9'], 
+            df['rsi_signal_ema_3'], df['ppo_12_26_9'], df['ppoh_12_26_9'],
             df['momentum_3m'], df['momentum_6m'])
         
         df['factor_efficiency'] = self.calculate_risk_efficiency_factor(

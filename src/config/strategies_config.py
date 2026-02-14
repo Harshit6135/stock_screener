@@ -1,33 +1,33 @@
 class StrategyParameters:
     """Configuration for factor weights in composite score"""
     trend_strength_weight: float = 0.30
-    momentum_velocity_weight: float = 0.30
+    momentum_velocity_weight: float = 0.25
     risk_efficiency_weight: float = 0.20
     conviction_weight: float = 0.15
-    structure_weight: float = 0.05
+    structure_weight: float = 0.10
     
     # ATR spike threshold for penalty box (ratio of current ATR / lagged ATR)
     atr_threshold: float = 2.0
     
     # Sub-factor weights for trend
-    trend_slope_weight: float = 0.2
-    trend_distance_200_weight: float = 0.5
-    trend_above_200_ema_weight: float = 0.3
+    trend_extension_rank_weight: float = 0.4
+    trend_slope_weight: float = 0.6
+    trend_distance_200_weight: float = 0.4
+    # trend_above_200_ema_weight: float = 0.0
     
     # Sub-factor weights for momentum
-    momentum_rsi_weight: float = 0.40
-    momentum_ppo_weight: float = 0.30
-    pure_momentum_weight: float = 0.30
-    #momentum_ppoh_rank_weight: float = 0.15
+    momentum_rsi_weight: float = 0.60
+    momentum_ppo_weight: float = 0.20
+    momentum_ppoh_weight: float = 0.10
+    pure_momentum_weight: float = 0.10
     
     # Sub-factor weights for volume
-    rvolume_weight: float = 0.6
-    price_vol_corr_weight: float = 0.4
-    
-    # Sub-factor weights for structure
-    percent_b_weight: float = 0.7
-    bollinger_width_weight: float = 0.3
+    rvolume_weight: float = 0.7
+    price_vol_corr_weight: float = 0.3
 
+    # Sub-factor weights for structure
+    percent_b_weight: float = 0.5
+    bollinger_width_weight: float = 0.5
 
 class TransactionCostConfig:
     """

@@ -12,6 +12,7 @@ logger = setup_logger(name='Orchestrator')
 instr_repository = InstrumentsRepository()
 marketdata_repository = MarketDataRepository()
 indicators_repository = IndicatorsRepository()
+pd.set_option('future.no_silent_downcasting', True)
 
 
 class MarketDataService:

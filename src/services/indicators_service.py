@@ -1,5 +1,4 @@
 
-import json
 import pandas as pd
 import pandas_ta as ta
 
@@ -14,6 +13,7 @@ instr_repo = InstrumentsRepository()
 indicators_repo = IndicatorsRepository()
 marketdata_repo = MarketDataRepository()
 logger = setup_logger(name="Orchestrator")
+pd.set_option('future.no_silent_downcasting', True)
 
 
 class IndicatorsService:

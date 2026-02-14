@@ -11,9 +11,11 @@ from datetime import date, timedelta
 from config import setup_logger
 from repositories import ScoreRepository, RankingRepository
 
+
 score_repo = ScoreRepository()
 ranking_repo = RankingRepository()
 logger = setup_logger(name="RankingService")
+pd.set_option('future.no_silent_downcasting', True)
 
 
 def get_friday(d):

@@ -5,10 +5,12 @@ from repositories import IndicatorsRepository, MarketDataRepository, PercentileR
 from utils import percentile_rank
 from services import FactorsService
 
+
 percentile_repo = PercentileRepository()
 indicators_repo = IndicatorsRepository()
 marketdata_repo = MarketDataRepository()
 logger = setup_logger(name="Orchestrator")
+pd.set_option('future.no_silent_downcasting', True)
 
 
 class PercentileService:
@@ -41,13 +43,12 @@ class PercentileService:
     def _apply_universe_penalties(self, percentile_df) -> pd.DataFrame:
         """Apply penalty box rules across universe"""
         percentile_df['penalty'] = 1
-        percentile_df.loc[percentile_df['ema_200'] < percentile_df['close'], 'penalty'] = 0
+        percentile_df.loc[percentile_df['ema_200'] > percentile_df['close'], 'penalty'] = 0
         percentile_df.loc[percentile_df['atr_spike'] > self.strategy_params.atr_threshold, 'penalty'] = 0
-        percentile_df.loc[percentile_df['ema_50'] < percentile_df['close'], 'penalty'] = 0
-        percentile_df.loc[percentile_df['rvol'] < 0.5, 'penalty'] = 0
+        percentile_df.loc[percentile_df['ema_50'] > percentile_df['close'], 'penalty'] = 0
         return percentile_df
 
-    def _validate_count(self, indicators_count: int, date) -> None:
+    def _validate_count(self, indicators_count: int, date, last_percentile_date) -> None:
         """Compare indicator row count vs last percentile date's count.
 
         Args:
@@ -60,10 +61,6 @@ class PercentileService:
         Example:
             >>> svc._validate_count(200, date(2025, 1, 10))
         """
-        last_percentile_date = percentile_repo.get_max_percentile_date()
-        if not last_percentile_date:
-            logger.info("No prior percentile data — skipping count validation")
-            return
 
         last_percentile_rows = percentile_repo.get_percentiles_by_date(
             last_percentile_date
@@ -120,9 +117,6 @@ class PercentileService:
             logger.info("No data found for date: {}".format(date))
             return None
 
-        # Count validation: halt if indicator count drifts >5%
-        self._validate_count(len(metrics_df), date)
-
         metrics_df = pd.merge(metrics_df, stocks_df, on='tradingsymbol', how='inner')
         
         # Add percentile date
@@ -169,6 +163,8 @@ class PercentileService:
         """
         Generates percentiles for all dates since the last updated date in the percentile table.
         If no percentiles exist, starts from the earliest available market data date.
+
+        Runs count validation once at the start before iterating.
         """
         last_percentile_date = percentile_repo.get_max_percentile_date()
 
@@ -177,11 +173,21 @@ class PercentileService:
         else:
             start_date = marketdata_repo.get_min_date_from_table()
 
-        current_date = pd.Timestamp.now().normalize()
         if isinstance(start_date, (datetime, date)):
             start_date = pd.Timestamp(start_date)
 
-        while start_date <= current_date:
+        # One-time count validation at start of run
+        max_date = marketdata_repo.get_max_date_from_table()
+        latest_indicators = indicators_repo.get_indicators_for_all_stocks(
+            {"start_date": max_date, "end_date": max_date}
+        )
+
+        self._validate_count(len(latest_indicators), max_date, last_percentile_date)
+
+        if isinstance(max_date, (datetime, date)):
+            max_date = pd.Timestamp(max_date)
+
+        while start_date <= max_date:
             self.generate_percentile(start_date)
             start_date += pd.Timedelta(days=1)
     
@@ -190,4 +196,4 @@ class PercentileService:
         return [
             {c.name: getattr(row, c.name) for c in row.__table__.columns}
             for row in results
-        ] 
+        ]

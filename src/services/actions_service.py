@@ -29,7 +29,7 @@ actions_repo = ActionsRepository()
 indicators = IndicatorsRepository()
 marketdata = MarketDataRepository()
 investment = InvestmentRepository()
-
+pd.set_option('future.no_silent_downcasting', True)
 
 class ActionsService:
     """
