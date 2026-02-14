@@ -8,7 +8,7 @@ from .percentile_schema import PercentileSchema, PercentileAllSchema
 from .ranking_schema import TopNSchema, RankingSchema
 from .config_schema import ConfigSchema
 
-from .app_schema import CleanupQuerySchema
+from .app_schema import CleanupQuerySchema, PipelineQuerySchema, RecalculateQuerySchema
 from .backtest_schema import BacktestInputSchema
 
 # Actions schemas (new dedicated module)
@@ -37,6 +37,8 @@ __all__ = [
     "RankingSchema",
     "RiskConfigSchema",
     "CleanupQuerySchema",
+    "PipelineQuerySchema",
+    "RecalculateQuerySchema",
     "BacktestInputSchema",
     "ActionDateSchema",
     "ActionQuerySchema",

@@ -47,6 +47,45 @@ class PercentileService:
         percentile_df.loc[percentile_df['rvol'] < 0.5, 'penalty'] = 0
         return percentile_df
 
+    def _validate_count(self, indicators_count: int, date) -> None:
+        """Compare indicator row count vs last percentile date's count.
+
+        Args:
+            indicators_count: Number of indicator rows for the new date.
+            date: The date being processed.
+
+        Raises:
+            ValueError: If the count difference exceeds 5%.
+
+        Example:
+            >>> svc._validate_count(200, date(2025, 1, 10))
+        """
+        last_percentile_date = percentile_repo.get_max_percentile_date()
+        if not last_percentile_date:
+            logger.info("No prior percentile data — skipping count validation")
+            return
+
+        last_percentile_rows = percentile_repo.get_percentiles_by_date(
+            last_percentile_date
+        )
+        last_count = len(last_percentile_rows)
+        if last_count == 0:
+            return
+
+        diff_pct = abs(indicators_count - last_count) / last_count
+        logger.info(
+            f"Count validation: indicators={indicators_count}, "
+            f"last_percentile({last_percentile_date})={last_count}, "
+            f"diff={diff_pct:.1%}"
+        )
+        if diff_pct > 0.05:
+            raise ValueError(
+                f"Count validation failed for {date}: "
+                f"indicators={indicators_count}, "
+                f"last_percentile={last_count}, "
+                f"diff={diff_pct:.1%} (threshold=5%)"
+            )
+
     def generate_percentile(self, date=None):
         """
         Orchestrates the percentile calculation process:
@@ -80,6 +119,9 @@ class PercentileService:
         if len(stocks_df) == 0 or len(metrics_df) == 0:
             logger.info("No data found for date: {}".format(date))
             return None
+
+        # Count validation: halt if indicator count drifts >5%
+        self._validate_count(len(metrics_df), date)
 
         metrics_df = pd.merge(metrics_df, stocks_df, on='tradingsymbol', how='inner')
         

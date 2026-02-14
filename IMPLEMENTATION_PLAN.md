@@ -1,69 +1,138 @@
-# Fix Backtest: Friday Rankings + Monday Open Execution
+# Configurable App Orchestration Endpoints
 
-## Problem
-
-Rankings are stored for **every Friday** (always calendar Friday, even if Friday is a market holiday — confirmed in `ranking_service.py` line 87). The backtest `run()` loop iterates over **Mondays** and passes the Monday date to `get_top_rankings()`. Since `RankingRepository.get_top_n_by_date()` uses **exact date match** (`ranking_date == date`), passing a Monday date returns **no results**, causing all weeks to be skipped.
-
-Additionally, trade execution currently uses **closing prices** (`get_close_price`), but should use **Monday opening prices** to simulate real-world execution.
-
-## Key Findings
-
-1. **Rankings are always stored on calendar Fridays** — `ranking_service.py` line 87: `weekly_avg['ranking_date'] = current_friday`. The `get_friday()` function computes the calendar Friday regardless of holidays.
-2. **`get_prev_friday()` already exists** in `ranking_routes.py` — normalizes any date to the previous Friday. We'll reuse this logic.
-3. **Market data `open` column exists** — `MarketDataModel` has `open`, `high`, `low`, `close` fields.
-4. **`get_marketdata_by_trading_symbol()` uses `>= date`** — If Monday is a holiday, it auto-finds the next available trading day's data. This already handles Monday holidays gracefully.
+Add boolean toggle flags to the existing cleanup and pipeline endpoints, create a new "recalculate from date" endpoint, and add count validation to the percentile service.
 
 ## Proposed Changes
 
-### 1. `src/backtesting/data_provider.py` — Add Open Price Method
+### Schema Layer
 
-**Complexity: 2/10**
+#### [MODIFY] [app_schema.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/schemas/app_schema.py)
 
-#### Add `get_open_price()` method
-- Mirrors existing `get_close_price()` but returns `result.open` instead of `result.close`
-- Since `get_marketdata_by_trading_symbol` uses `>= date`, if Monday is a holiday, it automatically returns the next trading day's open
+Add boolean flags to `CleanupQuerySchema` and create two new schemas:
+
+```python
+class CleanupQuerySchema(Schema):
+    """Schema for cleanup query parameters"""
+    start_date = fields.Date(required=True, ...)
+    marketdata = fields.Boolean(load_default=True, ...)
+    indicators = fields.Boolean(load_default=True, ...)
+    percentile = fields.Boolean(load_default=True, ...)
+    score = fields.Boolean(load_default=True, ...)
+    ranking = fields.Boolean(load_default=True, ...)
+
+class PipelineQuerySchema(Schema):
+    """Schema for pipeline run toggles"""
+    init = fields.Boolean(load_default=True, ...)
+    marketdata = fields.Boolean(load_default=True, ...)
+    indicators = fields.Boolean(load_default=True, ...)
+    percentile = fields.Boolean(load_default=True, ...)
+    score = fields.Boolean(load_default=True, ...)
+    ranking = fields.Boolean(load_default=True, ...)
+
+class RecalculateQuerySchema(Schema):
+    """Schema for recalculate-from-date"""
+    start_date = fields.Date(required=True, ...)
+    percentile = fields.Boolean(load_default=True, ...)
+    score = fields.Boolean(load_default=True, ...)
+    ranking = fields.Boolean(load_default=True, ...)
+```
+
+> [!NOTE]
+> `RecalculateQuerySchema` only covers percentile/score/ranking because marketdata and indicators aren't "recalculated" — they're fetched from external sources.
 
 ---
 
-### 2. `src/backtesting/runner.py` — Core Logic Fix
+### Schema Exports
 
-**Complexity: 5/10**
+#### [MODIFY] [__init__.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/schemas/__init__.py)
 
-#### a. Add `_get_ranking_friday()` helper method
-- Reuses the same logic from `ranking_routes.get_prev_friday()`: given a Monday (weekday=0), compute `monday - 3 days` = previous Friday
-- This always yields the **calendar Friday**, which matches how rankings are stored (even if Friday was a market holiday)
+Export `PipelineQuerySchema` and `RecalculateQuerySchema`.
 
-#### b. Modify `run()` method (lines 362–426)
-- Compute `ranking_friday = self._get_ranking_friday(week_date)` before fetching rankings
-- Pass `ranking_friday` to `self.data.get_top_rankings()` 
-- Add log: `"Using rankings from: {ranking_friday}"`
-- Build **open price lookup** for trade execution (using `get_open_price` with Monday date)
-- Keep close price lookup for portfolio valuation
-- Pass open prices to `rebalance_portfolio()` for execution
+---
 
-#### c. Modify `rebalance_portfolio()` signature
-- Add `execution_price_lookup` parameter (Monday opens) for buy/sell execution
-- Keep existing `price_lookup` for stop-loss/ valuation
-- Execute trades at open prices, evaluate portfolio at close prices
+### Percentile Count Validation
 
-## Summary of Data Flow After Fix
+#### [MODIFY] [percentile_service.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/services/percentile_service.py)
 
+Add a `_validate_count` method and call it inside `generate_percentile` **before** proceeding with calculation:
+
+```python
+def _validate_count(self, indicators_count: int, date) -> None:
+    """
+    Compare indicator row count for the new date vs the last
+    percentile date's row count. If diff > 5%, raise an error.
+    """
+    last_percentile_date = percentile_repo.get_max_percentile_date()
+    if not last_percentile_date:
+        return  # First run, no baseline to compare
+
+    last_percentile_rows = percentile_repo.get_percentiles_by_date(
+        last_percentile_date
+    )
+    last_count = len(last_percentile_rows)
+    if last_count == 0:
+        return
+
+    diff_pct = abs(indicators_count - last_count) / last_count
+    if diff_pct > 0.05:
+        raise ValueError(
+            f"Count validation failed for {date}: "
+            f"indicators={indicators_count}, "
+            f"last_percentile={last_count}, "
+            f"diff={diff_pct:.1%} (threshold=5%)"
+        )
 ```
-Monday (week_date)
-  ├── ranking_friday = get_prev_friday(week_date) → always calendar Friday
-  │   └── get_top_rankings(ranking_friday) → Friday's rankings ✓
-  │       (works even if Friday was a market holiday — rankings stored on calendar Friday)
-  ├── open_price = get_open_price(symbol, week_date) → Monday open (or next trading day)
-  │   └── Used for BUY/SELL execution prices ✓
-  │       (auto-handles Monday holidays via >= date query)
-  └── close_price = get_close_price(symbol, week_date) → Monday close
-      └── Used for portfolio valuation & stop-loss checks ✓
+
+**Injection point** in `generate_percentile` — after building `indicators_data_list` and before merging DataFrames:
+```python
+# After line: metrics_df = metrics_df.fillna(0).infer_objects(copy=False)
+self._validate_count(len(metrics_df), date)
 ```
+
+> [!IMPORTANT]
+> This ensures that if indicators suddenly has significantly fewer/more stocks than the last percentile run (e.g. partial updates, missing data), the pipeline halts early instead of producing skewed percentiles.
+
+---
+
+### Route Layer
+
+#### [MODIFY] [app_routes.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/api/v1/routes/app_routes.py)
+
+**1. `CleanupAfterDate.delete`** — Use the boolean flags from `args` to conditionally delete:
+```python
+if args.get('marketdata', True):
+    deleted_counts['marketdata'] = marketdata_repo.delete_after_date(start_date)
+# ... same pattern for indicators, percentile, score, ranking
+```
+
+**2. `RunPipeline.post`** — Accept `PipelineQuerySchema` as JSON body input and conditionally run each step:
+```python
+if args.get('init', True):
+    # run init
+if args.get('marketdata', True):
+    # run marketdata
+# ... etc.
+```
+
+**3. New `RecalculateFromDate` class** at `/api/v1/app/recalculate`:
+- Accepts `RecalculateQuerySchema` as query params
+- For each enabled table: delete data ≥ `start_date`, then regenerate
+- Order: percentile → score → ranking (respecting the dependency chain)
+- Uses existing `delete_after_date` + `backfill_percentiles` / `generate_composite_scores` / `generate_rankings`
+
+---
 
 ## Verification Plan
 
 ### Manual Verification
-- User to run the backtest endpoint and verify:
-  1. Logs show `"Using rankings from: {friday_date}"` with correct Friday dates
-  2. Rankings are no longer skipped (`"No rankings for..."` should not appear for valid weeks)
-  3. Buy/sell action prices in the DB should reflect Monday opening prices
+
+Since there are no existing tests in this project, verification will be manual via Swagger UI:
+
+1. **Start the app** and navigate to Swagger at `/swagger-ui`
+2. **Cleanup endpoint**: Call `DELETE /api/v1/app/cleanup` with `start_date` and `marketdata=false` — verify only non-marketdata tables are affected
+3. **Pipeline endpoint**: Call `POST /api/v1/app/run-pipeline` with `{"init": false, "marketdata": false}` — verify only indicators/percentile/score/ranking steps run
+4. **Recalculate endpoint**: Call `POST /api/v1/app/recalculate?start_date=2025-01-01&score=false` — verify only percentile+ranking are recalculated
+5. **All-defaults**: Call each endpoint with no boolean flags — should behave exactly like current behavior (all `true`)
+
+> [!IMPORTANT]
+> I'd recommend you test these against your actual running instance. Would you like to suggest a specific date range for testing, or shall I use a recent date?
