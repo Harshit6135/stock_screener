@@ -1,5 +1,5 @@
 """
-Trading Engine
+Trading Service
 
 Core trading decision logic shared between live and backtesting.
 Implements the SELL → BUY → SWAP rebalancing algorithm.
@@ -136,22 +136,15 @@ class TradingEngine:
                 logger.info(f"SELL {h.symbol}: score {h.score:.1f} < threshold {exit_threshold}")
                 continue
 
-            # Still in top-N candidates — keep, no action needed
-            if h.symbol in candidate_symbols:
-                # Will not be considered for swaps
-                continue
-
-            # Not sold, not in top-N — eligible for swap
             remaining_holdings.append(h)
 
         # ========== PHASE 2: BUY ==========
         # Count current holdings that survived phase 1
-        current_count = len(holdings) - len(decisions)
+        current_count = len(remaining_holdings)
         vacancies = max_positions - current_count
 
         # Build set of symbols already held (surviving)
-        sold_symbols = {d.symbol for d in decisions if d.action_type == 'SELL'}
-        held_symbols = {h.symbol for h in holdings if h.symbol not in sold_symbols}
+        held_symbols = {h.symbol for h in remaining_holdings}
 
         buy_count = 0
         buy_candidates = []
@@ -175,13 +168,14 @@ class TradingEngine:
             c for c in candidates
             if c.symbol not in held_symbols
         ]
+        non_top_n_holdings = [c for c in candidates if c.symbol not in held_symbols]
 
         for challenger in swap_candidates:
             if not remaining_holdings:
                 break
 
             # Find weakest incumbent among remaining holdings
-            weakest = min(remaining_holdings, key=lambda h: h.score)
+            weakest = min(non_top_n_holdings, key=lambda h: h.score)
 
             if challenger.score > swap_buffer * weakest.score:
                 decisions.append(TradingDecision(
@@ -192,7 +186,7 @@ class TradingEngine:
                     swap_for=challenger.symbol,
                     swap_sell_units=weakest.units,
                 ))
-                remaining_holdings.remove(weakest)
+                non_top_n_holdings.remove(weakest)
                 held_symbols.discard(weakest.symbol)
                 held_symbols.add(challenger.symbol)
                 logger.info(
@@ -200,7 +194,5 @@ class TradingEngine:
                     f"{challenger.score:.1f} > {swap_buffer} × {weakest.score:.1f}"
                 )
             else:
-                # If top challenger can't beat weakest incumbent, no more swaps
                 break
-
         return decisions

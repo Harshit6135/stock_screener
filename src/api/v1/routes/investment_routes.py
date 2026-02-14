@@ -7,6 +7,7 @@ from datetime import datetime
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 import marshmallow as ma
+from typing import List
 
 from config import setup_logger
 from schemas import (
@@ -33,7 +34,9 @@ class ManualBuySchema(ma.Schema):
     symbol = ma.fields.String(required=True, metadata={"description": "Trading symbol"})
     date = ma.fields.Date(required=True, metadata={"description": "Action date (YYYY-MM-DD)"})
     reason = ma.fields.String(load_default="Manual buy", metadata={"description": "Reason for trade"})
-    strategy_name = ma.fields.String(load_default="momentum_strategy_one", metadata={"description": "Strategy name for config"})
+    config_name = ma.fields.String(load_default="momentum_config", metadata={"description": "Config name for config"})
+    units = ma.fields.Integer(required=True, metadata={"description": "Number of units to buy"})
+    price = ma.fields.Decimal(required=True, metadata={"description": "Price of the stock"})
 
 
 class ManualSellSchema(ma.Schema):
@@ -41,6 +44,8 @@ class ManualSellSchema(ma.Schema):
     date = ma.fields.Date(required=True, metadata={"description": "Action date (YYYY-MM-DD)"})
     units = ma.fields.Integer(required=True, metadata={"description": "Number of units to sell"})
     reason = ma.fields.String(load_default="Manual sell", metadata={"description": "Reason for trade"})
+    price = ma.fields.Float(required=True, metadata={"description": "Price of the stock"})
+
 
 
 @blp.route("/holdings/dates")
@@ -82,7 +87,7 @@ class Summary(MethodView):
 @blp.route("/manual/buy")
 class ManualBuy(MethodView):
     @blp.doc(tags=["Investments"])
-    @blp.arguments(ManualBuySchema)
+    @blp.arguments(ManualBuySchema(many=True))
     @blp.response(201, MessageSchema)
     def post(self, data):
         """
@@ -95,13 +100,17 @@ class ManualBuy(MethodView):
             symbol: Trading symbol
             date: Action date
             reason: Trade reason
-            strategy_name: Strategy config to use
+            config_name: Config to use
         """
         try:
-            service = ActionsService(data['strategy_name'])
-            action = service.buy_action(data['symbol'], data['date'], data['reason'])
-            actions_repo.bulk_insert_actions([action])
-            return {"message": f"Manual BUY action created for {data['symbol']}: {action.get('units', 0)} units"}
+            print(data)
+            actions = []
+            for stock in data:
+                service = ActionsService(stock['config_name'])
+                action = service.buy_action(stock['symbol'], stock['date'], stock['reason'], stock['units'], stock['price'])
+                actions.append(action)
+            actions_repo.bulk_insert_actions(actions)
+            return {"message": f"Manual BUY actions created for {[stock['symbol'] for stock in data]}"}
         except ValueError as e:
             logger.error(f"Validation error: {e}")
             abort(400, message=str(e))

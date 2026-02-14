@@ -17,70 +17,70 @@ blp = Blueprint(
 )
 
 
-@blp.route("/<string:strategy_name>")
-class StrategyConfigResource(MethodView):
+@blp.route("/<string:config_name>")
+class ConfigResource(MethodView):
     """Runtime configuration for trading strategies"""
 
     @blp.doc(tags=["Configuration"])
     @blp.response(200, ConfigSchema)
-    def get(self, strategy_name: str):
+    def get(self, config_name: str):
         """
         Get current strategy configuration.
 
         Parameters:
-            strategy_name (str): Strategy identifier (e.g., 'momentum_strategy_one')
+            config_name (str): Strategy identifier (e.g., 'momentum_strategy_one')
 
         Returns:
-            RiskConfigSchema: Current configuration values
+            ConfigSchema: Current configuration values
         """
         config_repo = ConfigRepository()
-        config = config_repo.get_config(strategy_name)
+        config = config_repo.get_config(config_name)
         if config is None:
-            abort(404, message=f"Configuration not found for {strategy_name}")
+            abort(404, message=f"Configuration not found for {config_name}")
         return config
 
     @blp.doc(tags=["Configuration"])
     @blp.arguments(ConfigSchema)
     @blp.response(200, ConfigSchema)
-    def put(self, data: dict, strategy_name: str):
+    def put(self, data: dict, config_name: str):
         """
         Update strategy configuration at runtime.
 
         Parameters:
-            strategy_name (str): Strategy identifier
+            config_name (str): Strategy identifier
             data (dict): Configuration values to update
 
         Returns:
-            RiskConfigSchema: Updated configuration
+            ConfigSchema: Updated configuration
         """
         config_repo = ConfigRepository()
-        existing = config_repo.get_config(strategy_name)
+        existing = config_repo.get_config(config_name)
         if existing is None:
-            abort(404, message=f"Configuration not found for {strategy_name}")
+            abort(404, message=f"Configuration not found for {config_name}")
         
         # Update only provided fields
         config_repo.update_config(data)
-        return config_repo.get_config(strategy_name)
+        return config_repo.get_config(config_name)
 
     @blp.doc(tags=["Configuration"])
     @blp.arguments(ConfigSchema)
     @blp.response(201, ConfigSchema)
-    def post(self, data: dict, strategy_name: str):
+    def post(self, data: dict, config_name: str):
         """
-        Create a new strategy configuration.
+        Create a new configuration.
 
         Parameters:
-            strategy_name (str): Strategy identifier (e.g., 'momentum_strategy_one')
+            config_name (str): Configuration identifier (e.g., 'momentum_config')
             data (dict): Configuration values to create
 
         Returns:
             ConfigSchema: Newly created configuration
         """
         config_repo = ConfigRepository()
-        existing = config_repo.get_config(strategy_name)
+        existing = config_repo.get_config(config_name)
         if existing is not None:
-            return {"message": f"Configuration already exists for {strategy_name}"}, 409
+            return {"message": f"Configuration already exists for {config_name}"}, 409
 
-        data["strategy_name"] = strategy_name
+        data["config_name"] = config_name
         config_repo.post_config(data)
-        return config_repo.get_config(strategy_name)
+        return config_repo.get_config(config_name)

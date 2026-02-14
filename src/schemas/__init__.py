@@ -35,7 +35,7 @@ __all__ = [
     "PercentileAllSchema",
     "ScoreSchema",
     "RankingSchema",
-    "RiskConfigSchema",
+    "ConfigSchema",
     "CleanupQuerySchema",
     "PipelineQuerySchema",
     "RecalculateQuerySchema",

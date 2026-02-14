@@ -38,7 +38,7 @@ class GenerateActions(MethodView):
         Generate trading actions for current week.
         
         Parameters:
-            strategy_name: Query param - Strategy name (default: momentum_strategy_one)
+            config_name: Query param - Strategy name (default: momentum_config)
         
         Returns:
             dict: Message with generated actions
@@ -47,10 +47,11 @@ class GenerateActions(MethodView):
             HTTPException: 400 for validation errors, 500 for failures
         """
         try:
-            strategy_name = args.get('strategy_name', 'momentum_strategy_one')
-            actions = ActionsService(strategy_name)
-            working_date = datetime.now().date()
-            new_actions = actions.generate_actions(working_date)
+            config_name = args.get('config_name', 'momentum_config')
+            actions = ActionsService(config_name)
+            action_date = args.get('date', datetime.now().date())
+            print(action_date)
+            new_actions = actions.generate_actions(action_date)
             return {"message": f"Generated {len(new_actions)} actions"}
         except ValueError as e:
             logger.error(f"Validation error: {e}")
@@ -168,7 +169,7 @@ class ProcessActions(MethodView):
         
         Parameters:
             date: Query param - Action date (YYYY-MM-DD)
-            strategy_name: Query param - Strategy name (default: momentum_strategy_one)
+            config_name: Query param - Strategy name (default: momentum_config)
             
         Returns:
             Message with processing result
@@ -177,8 +178,8 @@ class ProcessActions(MethodView):
             working_date = args.get('date')
             if not working_date:
                 abort(400, message="date query parameter is required")
-            strategy_name = args.get('strategy_name', 'momentum_strategy_one')
-            service = ActionsService(strategy_name)
+            config_name = args.get('config_name', 'momentum_config')
+            service = ActionsService(config_name)
             holdings = service.process_actions(working_date)
             if holdings is None:
                 abort(400, message="Processing failed - check pending actions or date conflicts")

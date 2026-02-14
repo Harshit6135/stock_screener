@@ -17,7 +17,6 @@ from utils import (calculate_round_trip_cost, calculate_capital_gains_tax,
                    calculate_position_size, calculate_initial_stop_loss, 
                    calculate_effective_stop)
 from services import TradingEngine, HoldingSnapshot, CandidateInfo
-
 from config import setup_logger, PositionSizingConfig
 
 
@@ -38,8 +37,8 @@ class ActionsService:
     Renamed from Strategy class to better reflect its purpose.
     """
 
-    def __init__(self, strategy_name: str):
-        self.config = config.get_config(strategy_name)
+    def __init__(self, config_name: str):
+        self.config = config.get_config(config_name)
 
     def generate_actions(self, action_date: date) -> Union[str, List[Dict]]:
         """
@@ -65,10 +64,10 @@ class ActionsService:
         if pending_actions:
             return 'Actions pending from another date, please take action before proceeding'
 
-        top_n = ranking.get_top_n_by_date(self.config.max_positions, action_date)
+        ranking_date = action_date - timedelta(days=3)
+        top_n = ranking.get_top_n_by_date(self.config.max_positions, ranking_date)
         current_holdings = investment.get_holdings()
         new_actions = []
-
         candidates = [
             CandidateInfo(symbol=item.tradingsymbol, score=item.composite_score)
             for item in top_n
@@ -81,15 +80,15 @@ class ActionsService:
 
         if not current_holdings:
             for item in top_n:
-                md = marketdata.get_marketdata_by_trading_symbol(item.tradingsymbol, action_date)
+                md = marketdata.get_marketdata_by_trading_symbol(item.tradingsymbol, ranking_date)
                 if md:
                     prices[item.tradingsymbol] = float(md.close)
         else:
             for h in current_holdings:
-                low = self.fetch_low(h.symbol, action_date)
+                low = self.fetch_low(h.symbol, ranking_date)
                 prices[h.symbol] = low
 
-                rank_data = ranking.get_rankings_by_date_and_symbol(action_date, h.symbol)
+                rank_data = ranking.get_rankings_by_date_and_symbol(ranking_date, h.symbol)
                 score = rank_data.composite_score if rank_data else 0
 
                 holdings_snap.append(HoldingSnapshot(
@@ -123,7 +122,8 @@ class ActionsService:
                 buy_act = self.buy_action(d.swap_for, action_date, d.reason)
                 new_actions.append(buy_act)
 
-        actions_repo.bulk_insert_actions(new_actions)
+        if new_actions:
+            actions_repo.bulk_insert_actions(new_actions)
         return new_actions
 
     @staticmethod
@@ -145,7 +145,10 @@ class ActionsService:
 
         actions_list = actions_repo.get_actions(action_date)
         for item in actions_list:
-            execution_price = marketdata.get_marketdata_next_day(item.symbol, action_date).open
+            if item.execution_price:
+                execution_price = item.execution_price
+            else:
+                execution_price = marketdata.get_marketdata_next_day(item.symbol, action_date).open
 
             action_data = {
                 'action_id' : item.action_id,
@@ -181,7 +184,6 @@ class ActionsService:
 
         holdings = investment.get_holdings()
         actions_list = actions_repo.get_actions(action_date)
-
         if not holdings:
             holdings_date = date(2000,1,1)
         else:
@@ -214,6 +216,7 @@ class ActionsService:
             week_holdings.append(self.buy_holding(item))
         for item in holdings:
             week_holdings.append(self.update_holding(item.symbol, action_date))
+        print(week_holdings)
         investment.bulk_insert_holdings(week_holdings)
         summary = self.get_summary(week_holdings, sold)
         investment.insert_summary(summary)
@@ -226,18 +229,23 @@ class ActionsService:
 
         # Convert list of holdings to DataFrame for fast/vectorized calculations
         df = pd.DataFrame(week_holdings)
+        # Ensure numeric columns are float (avoids Decimal/float mismatch)
+        for col in ['entry_price', 'units', 'current_sl', 'current_price']:
+            df[col] = df[col].astype(float)
         # Bought: sum(entry_price * units) where entry_date == action_date
         bought_mask = df['entry_date'] == df['date']
+        
         bought = (df.loc[bought_mask, 'entry_price'] * df.loc[bought_mask, 'units']).sum()
         # Capital risk: sum(units * (entry_price - current_sl))
         capital_risk = (df['units'] * (df['entry_price'] - df['current_sl'])).sum()
         # Portfolio value: sum(units * current_price)
         portfolio_value = Decimal((df['units'] * df['current_price']).sum())
+        print(portfolio_value)
         # Portfolio risk: sum(units * (current_price - current_sl))
         portfolio_risk = (df['units'] * (df['current_price'] - df['current_sl'])).sum()
         # Prepare summary with rounded numbers
         summary = {
-            'date': week_holdings[0]['action_date'],
+            'date': week_holdings[0]['date'],
             'starting_capital': round(starting_capital, 2),
             'sold': round(sold, 2),
             'bought': round(float(bought), 2),
@@ -283,7 +291,7 @@ class ActionsService:
         return low
 
 
-    def buy_action(self, symbol: str, action_date: date, reason: str) -> Dict:
+    def buy_action(self, symbol: str, action_date: date, reason: str, units: int = None, price: float = None) -> Dict:
         """
         Generate a BUY action with position sizing.
         
@@ -310,8 +318,8 @@ class ActionsService:
         if atr is None:
             raise ValueError(f"ATR not available for {symbol} on {action_date}")
         atr = round(atr, 2)
-        
-        closing_price = marketdata.get_marketdata_by_trading_symbol(symbol, action_date).close
+        ranking_date = action_date - timedelta(days=3)
+        closing_price = marketdata.get_marketdata_by_trading_symbol(symbol, ranking_date).close
 
         summary = investment.get_summary()
         if not summary:
@@ -319,16 +327,20 @@ class ActionsService:
         else:
             portfolio_value = float(summary.portfolio_value) + float(summary.remaining_capital)
 
-        # Use shared position sizing util
-        sizing = calculate_position_size(
-            atr=atr,
-            current_price=float(closing_price),
-            portfolio_value=portfolio_value
-        )
-        
-        units = sizing['shares']
-        capital_needed = units * closing_price
-        risk_per_unit = sizing.get('stop_distance', atr * self.config.sl_multiplier)
+        if not units:
+            # Use shared position sizing util
+            sizing = calculate_position_size(
+                atr=atr,
+                current_price=float(closing_price),
+                portfolio_value=portfolio_value
+            )
+            units = sizing['shares']
+
+        if price:
+            capital_needed = units * price
+        else:
+            capital_needed = units * closing_price
+        risk_per_unit = atr * self.config.sl_multiplier
 
         action = {
             'action_date' : action_date,
@@ -341,6 +353,8 @@ class ActionsService:
             'prev_close' : closing_price,
             'capital' : capital_needed
         }
+        if price:
+            action['execution_price'] = price
         return action
 
 
@@ -416,6 +430,7 @@ class ActionsService:
         """
         action_data = actions_repo.get_action_by_symbol(symbol)
         action_date = action_data.action_date
+        rank_date = action_date - timedelta(days=3)
         atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, action_date), 2)
         entry_price = float(action_data.execution_price)
         
@@ -433,7 +448,7 @@ class ActionsService:
             'entry_price': action_data.execution_price,
             'units': action_data.units,
             'atr': atr,
-            'score': round(ranking.get_rankings_by_date_and_symbol(action_date, symbol).composite_score, 2),
+            'score': round(ranking.get_rankings_by_date_and_symbol(rank_date, symbol).composite_score, 2),
             'entry_sl': round(initial_stop, 2),
             'current_price': action_data.execution_price,
             'current_sl': round(initial_stop, 2)
@@ -469,7 +484,7 @@ class ActionsService:
             sl_step_percent=PositionSizingConfig().sl_step_percent,
             previous_stop=float(holding.current_sl) if holding.current_sl else float(holding.entry_sl)
         )
-        
+        rank_date = action_date - timedelta(days=3)
         holding_data = {
             'symbol': symbol,
             'date': action_date,
@@ -477,7 +492,7 @@ class ActionsService:
             'entry_price': holding.entry_price,
             'units': holding.units,
             'atr': atr,
-            'score': round(ranking.get_rankings_by_date_and_symbol(action_date, symbol).composite_score, 2),
+            'score': round(ranking.get_rankings_by_date_and_symbol( rank_date, symbol).composite_score, 2),
             'entry_sl': holding.entry_sl,
             'current_price': current_price,
             'current_sl': stops['effective_stop']

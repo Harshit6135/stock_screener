@@ -15,7 +15,7 @@ class ActionDateSchema(Schema):
 class ActionQuerySchema(Schema):
     """Schema for querying actions by date and strategy"""
     date = fields.Date(required=False, load_default=None)
-    strategy_name = fields.String(required=False, load_default="momentum_strategy_one")
+    config_name = fields.String(required=False, load_default="momentum_config")
 
 
 class ActionSchema(Schema):

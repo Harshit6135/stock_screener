@@ -1,4 +1,4 @@
-from .trading_engine import TradingEngine, HoldingSnapshot, CandidateInfo
+from .trading_service import TradingEngine, HoldingSnapshot, CandidateInfo
 from .init_service import InitService
 from .indicators_service import IndicatorsService
 from .marketdata_service import MarketDataService
@@ -10,9 +10,6 @@ from .actions_service import ActionsService
 
 
 __all__ = [
-    "TradingEngine",
-    "HoldingSnapshot",
-    "CandidateInfo",
     "InitService",
     "IndicatorsService",
     "MarketDataService",
@@ -21,4 +18,7 @@ __all__ = [
     "RankingService",
     "ActionsService",
     "FactorsService",
+    "TradingEngine",
+    "HoldingSnapshot",
+    "CandidateInfo",
 ]

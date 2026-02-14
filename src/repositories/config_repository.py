@@ -5,8 +5,8 @@ from models import ConfigModel
 class ConfigRepository:
 
     @staticmethod
-    def get_config(strategy_name):
-        return ConfigModel.query.filter(ConfigModel.strategy_name == strategy_name).first()
+    def get_config(config_name):
+        return ConfigModel.query.filter(ConfigModel.config_name == config_name).first()
 
     @staticmethod
     def post_config(config_data):

@@ -3,7 +3,7 @@ from marshmallow import Schema, fields
 
 class ConfigSchema(Schema):
     id = fields.Int(dump_only=True)
-    strategy_name = fields.Str(dump_only=True)
+    config_name = fields.Str(dump_only=True)
 
     initial_capital = fields.Float(load_default=100000.0)
     risk_threshold = fields.Float(load_default=1.0)

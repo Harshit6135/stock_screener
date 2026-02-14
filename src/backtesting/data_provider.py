@@ -13,8 +13,8 @@ from repositories import (
     RankingRepository, IndicatorsRepository,
     MarketDataRepository
 )
-from utils.transaction_costs_utils import calculate_round_trip_cost
-from utils.tax_utils import calculate_capital_gains_tax
+# from utils.transaction_costs_utils import calculate_round_trip_cost
+# from utils.tax_utils import calculate_capital_gains_tax
 
 logger = setup_logger(name="BacktestDataProvider")
 
@@ -115,6 +115,43 @@ class BacktestDataProvider:
                 f"Failed to fetch open price for {tradingsymbol}: {e}"
             )
             return None
+
+    def get_daily_lows_in_range(self, tradingsymbol: str, start_date: date,
+                                end_date: date) -> List[tuple]:
+        """Get daily low prices for a stock across a date range.
+
+        Returns a list of (date, low) tuples sorted ascending by date.
+        Used for intra-week stop-loss checking.
+
+        Parameters:
+            tradingsymbol: Stock symbol
+            start_date: Start of range (inclusive)
+            end_date: End of range (inclusive)
+
+        Returns:
+            List of (date, low) tuples, sorted by date
+        """
+        try:
+            results = marketdata_repo.query({
+                'tradingsymbol': tradingsymbol,
+                'start_date': start_date,
+                'end_date': end_date,
+            })
+            if not results:
+                return []
+            daily_lows = [
+                (r.date, float(r.low))
+                for r in results
+                if hasattr(r, 'low') and r.low is not None
+            ]
+            daily_lows.sort(key=lambda x: x[0])
+            return daily_lows
+        except Exception as e:
+            logger.warning(
+                f"Failed to fetch daily lows for {tradingsymbol} "
+                f"({start_date} to {end_date}): {e}"
+            )
+            return []
 
     def get_low_price(self, tradingsymbol: str, as_of_date: date) -> Optional[float]:
         """Get low price for a stock on a date"""

@@ -7,7 +7,7 @@ class ConfigModel(db.Model):
     __bind_key__ = "personal"
 
     id = db.Column(db.Integer, primary_key=True, autoincrement = True)
-    strategy_name = db.Column(db.String, nullable=False)
+    config_name = db.Column(db.String, nullable=False)
     initial_capital = db.Column(db.Float, nullable=False, default=100000.0)
     risk_threshold = db.Column(db.Float, nullable=False, default=1.0)
     max_positions = db.Column(db.Integer, nullable=False, default=15)
@@ -18,4 +18,4 @@ class ConfigModel(db.Model):
     updated_at = db.Column(db.DateTime, onupdate=db.func.now())
 
     def __repr__(self):
-        return f"<RiskConfig capital={self.initial_capital}>"
+        return f"<Config Name={self.config_name}>"

@@ -15,16 +15,12 @@ from config.strategies_config import PositionSizingConfig
 from backtesting.models import Position, BacktestResult, BacktestRiskMonitor
 from backtesting.config import BacktestConfigLoader
 from backtesting.data_provider import BacktestDataProvider
-from utils.stoploss_utils import (
-    calculate_initial_stop_loss,
-    calculate_effective_stop
-)
-from utils.transaction_costs_utils import calculate_round_trip_cost
-from utils.sizing_utils import calculate_position_size as shared_calculate_position_size, calculate_equal_weight_position
-from utils.tax_utils import calculate_capital_gains_tax
-from utils.database_manager import DatabaseManager
-from services.trading_engine import TradingEngine, HoldingSnapshot, CandidateInfo
+from utils import (calculate_initial_stop_loss, calculate_effective_stop, calculate_round_trip_cost,
+                   calculate_position_size as shared_calculate_position_size, calculate_equal_weight_position,
+                   calculate_capital_gains_tax, DatabaseManager)
 from repositories import InvestmentRepository, ActionsRepository
+from services import TradingEngine, HoldingSnapshot, CandidateInfo
+
 
 logger = setup_logger(name="BacktestRunner")
 
@@ -42,21 +38,21 @@ class WeeklyBacktester:
     for consistency with live ActionsService.
     """
     
-    def __init__(self, start_date: date, end_date: date, strategy_name: str = "momentum_strategy_one"):
+    def __init__(self, start_date: date, end_date: date, strategy_name: str):
         self.start_date = start_date
         self.end_date = end_date
         
         # Load config from repository
-        self.config_loader = BacktestConfigLoader()
-        self.config = self.config_loader.fetch(strategy_name)
+        self.config_loader = BacktestConfigLoader(strategy_name)
+        self.config = self.config_loader.fetch()
         
         # Data provider for direct DB access
         self.data = BacktestDataProvider()
         
         # Portfolio state
-        self.current_capital = self.config.initial_capital
+        self.current_capital = self.config['initial_capital']
         self.positions: Dict[str, Position] = {}
-        self.risk_monitor = BacktestRiskMonitor(self.config.initial_capital)
+        self.risk_monitor = BacktestRiskMonitor(self.config['initial_capital'])
         self.weekly_results: List[BacktestResult] = []
         
         # Cumulative costs and taxes
@@ -133,8 +129,6 @@ class WeeklyBacktester:
             portfolio_value=portfolio_value
         )
         return result
-    
-
     
     def calculate_portfolio_value(self, current_prices: Dict[str, float]) -> float:
         """Calculate total portfolio value"""
@@ -390,6 +384,50 @@ class WeeklyBacktester:
         
         return actions
     
+    def _check_intraweek_stoploss(self, prev_monday: date, prev_friday: date) -> List[dict]:
+        """
+        Check intra-week stop-loss triggers for all held positions.
+        
+        Iterates each trading day of the prior week (Mon-Fri). On the
+        first day where a stock's daily low breaches its stop-loss,
+        sells the stock at the SL price and frees the slot.
+        
+        Parameters:
+            prev_monday: Monday of the prior week
+            prev_friday: Friday of the prior week
+            
+        Returns:
+            List of sell action dicts from SL triggers
+        """
+        sl_actions = []
+        # Snapshot symbol list — we'll mutate self.positions during iteration
+        symbols_to_check = list(self.positions.keys())
+        
+        for symbol in symbols_to_check:
+            if symbol not in self.positions:
+                continue  # Already sold in this pass
+            
+            pos = self.positions[symbol]
+            daily_lows = self.data.get_daily_lows_in_range(
+                symbol, prev_monday, prev_friday
+            )
+            
+            for day_date, day_low in daily_lows:
+                if day_low <= pos.current_stop_loss:
+                    # SL breached — sell at the stop-loss price on this day
+                    logger.info(
+                        f"INTRA-WEEK SL: {symbol} low {day_low:.2f} <= "
+                        f"SL {pos.current_stop_loss:.2f} on {day_date}"
+                    )
+                    action = self.execute_sell(
+                        symbol, pos.current_stop_loss, day_date,
+                        f'intra-week stoploss hit on {day_date}'
+                    )
+                    sl_actions.append(action)
+                    break  # First breach — stop checking further days
+        
+        return sl_actions
+    
     def run(self) -> List[BacktestResult]:
         """
         Execute the backtest.
@@ -398,9 +436,9 @@ class WeeklyBacktester:
             List of weekly BacktestResult objects
         """
         logger.info(f"Starting backtest: {self.start_date} to {self.end_date}")
-        logger.info(f"Config: capital={self.config.initial_capital}, "
-                   f"max_positions={self.config.max_positions}, "
-                   f"exit_threshold={self.config.exit_threshold}")
+        logger.info(f"Config: capital={self.config['initial_capital']}, "
+                   f"max_positions={self.config['max_positions']}, "
+                   f"exit_threshold={self.config['exit_threshold']}")
         
         # Initialize backtest database
         try:
@@ -417,6 +455,22 @@ class WeeklyBacktester:
         
         for week_date in mondays:
             logger.info(f"Processing week: {week_date}")
+            
+            # ========== INTRA-WEEK SL CHECK ==========
+            # Check daily lows of the prior week for SL breaches.
+            # On the first day a stock's low <= SL, sell at SL price
+            # and free the slot before the weekly rebalance.
+            prev_friday = week_date - timedelta(days=3)   # Friday before this Monday
+            prev_monday = prev_friday - timedelta(days=4)  # Monday of prior week
+            
+            sl_actions = []
+            if self.positions:  # Only check if we hold something
+                sl_actions = self._check_intraweek_stoploss(prev_monday, prev_friday)
+                if sl_actions:
+                    logger.info(
+                        f"Intra-week SL triggered {len(sl_actions)} sell(s) "
+                        f"for week ending {prev_friday}"
+                    )
             
             # Compute Friday for ranking lookup
             ranking_friday = self._get_ranking_friday(week_date)
@@ -489,14 +543,15 @@ class WeeklyBacktester:
                 execution_price_lookup=open_price_lookup
             )
             
+            # Prepend intra-week SL sells to this week's actions
+            actions = sl_actions + actions
+            
             # Calculate metrics
             portfolio_value = self.calculate_portfolio_value(
                 close_price_lookup
             )
             self.risk_monitor.update(portfolio_value)
-            
 
-            
             # Record result
             result = BacktestResult(
                 week_date=week_date,
