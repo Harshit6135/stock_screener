@@ -6,7 +6,7 @@ sort by score descending, and assign rank (1 = highest).
 """
 
 import pandas as pd
-from datetime import timedelta
+from datetime import date, timedelta
 
 from config import setup_logger
 from repositories import ScoreRepository, RankingRepository
@@ -33,6 +33,12 @@ class RankingService:
         Generate weekly rankings incrementally.
         For each Friday, calculate average of that week's (Mon-Fri) daily scores,
         sort by score descending, and assign rank (1 = highest).
+
+        Incomplete week guard: skips a week if today <= that Friday,
+        because T-1 pipeline means Friday's data isn't ready until
+        Saturday at the earliest. If Friday is a holiday the week is
+        still considered complete once Saturday arrives — we simply
+        average whatever trading-day scores exist in Mon-Fri range.
         """
         logger.info("Starting incremental ranking generation...")
         
@@ -60,8 +66,25 @@ class RankingService:
         end_friday = get_friday(last_score_date)
         weeks_processed = 0
         all_ranking_records = []
+        today = date.today()
         
         while current_friday <= end_friday:
+            # Skip incomplete weeks — don't rank until we're past Friday
+            # Handles T-1 lag: running ON Friday only has data up to Thu
+            # Handles holidays: once Saturday arrives, use available days
+            friday_as_date = (
+                current_friday.date()
+                if hasattr(current_friday, 'date')
+                else current_friday
+            )
+            if friday_as_date >= today:
+                logger.info(
+                    f"Skipping week ending {current_friday} — "
+                    f"week not yet complete (today={today})"
+                )
+                current_friday += timedelta(days=7)
+                continue
+
             # Week range: Monday to Friday (inclusive)
             week_monday = current_friday - timedelta(days=4)  # Friday - 4 = Monday
             week_friday = current_friday
