@@ -104,17 +104,16 @@ class TradingEngine:
             List[TradingDecision]: Ordered list of SELL, BUY, SWAP decisions
         """
         decisions: List[TradingDecision] = []
+        remaining_holdings: List[HoldingSnapshot] = []
+        top_n_held_symbols = set()
         candidate_symbols = {c.symbol for c in candidates}
 
         # Track which holdings remain after sells
-        remaining_holdings: List[HoldingSnapshot] = []
 
         # ========== PHASE 1: SELL ==========
         # Check stop-loss and score degradation for each holding
         for h in holdings:
             price = prices.get(h.symbol, 0)
-
-            # Stop-loss hit: price breached the stop level
             if h.stop_loss >= price:
                 decisions.append(TradingDecision(
                     action_type='SELL',
@@ -123,10 +122,7 @@ class TradingEngine:
                     units=h.units,
                 ))
                 logger.info(f"SELL {h.symbol}: stop-loss {h.stop_loss:.2f} >= price {price:.2f}")
-                continue
-
-            # Score degradation: score fell below exit threshold
-            if h.score < exit_threshold:
+            elif h.score < exit_threshold:
                 decisions.append(TradingDecision(
                     action_type='SELL',
                     symbol=h.symbol,
@@ -134,48 +130,44 @@ class TradingEngine:
                     units=h.units,
                 ))
                 logger.info(f"SELL {h.symbol}: score {h.score:.1f} < threshold {exit_threshold}")
+            elif h.symbol in candidate_symbols:
+                top_n_held_symbols.add(h.symbol)
                 continue
-
-            remaining_holdings.append(h)
+            else:
+                remaining_holdings.append(h)
 
         # ========== PHASE 2: BUY ==========
         # Count current holdings that survived phase 1
-        current_count = len(remaining_holdings)
+        current_count = len(holdings) - len(decisions)
         vacancies = max_positions - current_count
 
-        # Build set of symbols already held (surviving)
-        held_symbols = {h.symbol for h in remaining_holdings}
-
         buy_count = 0
-        buy_candidates = []
         for c in candidates:
             if buy_count >= vacancies:
                 break
-            if c.symbol not in held_symbols:
+            if c.symbol not in top_n_held_symbols: 
                 decisions.append(TradingDecision(
                     action_type='BUY',
                     symbol=c.symbol,
                     reason='top N buys',
                 ))
-                held_symbols.add(c.symbol)
                 buy_count += 1
-                buy_candidates.append(c.symbol)
+                top_n_held_symbols.add(c.symbol)
                 logger.info(f"BUY {c.symbol}: vacancy fill (score {c.score:.1f})")
 
         # ========== PHASE 3: SWAP ==========
         # Remaining candidates not yet bought
         swap_candidates = [
             c for c in candidates
-            if c.symbol not in held_symbols
+            if c.symbol not in top_n_held_symbols
         ]
-        non_top_n_holdings = [c for c in candidates if c.symbol not in held_symbols]
 
         for challenger in swap_candidates:
             if not remaining_holdings:
                 break
 
             # Find weakest incumbent among remaining holdings
-            weakest = min(non_top_n_holdings, key=lambda h: h.score)
+            weakest = min(remaining_holdings, key=lambda h: h.score)
 
             if challenger.score > swap_buffer * weakest.score:
                 decisions.append(TradingDecision(
@@ -186,9 +178,8 @@ class TradingEngine:
                     swap_for=challenger.symbol,
                     swap_sell_units=weakest.units,
                 ))
-                non_top_n_holdings.remove(weakest)
-                held_symbols.discard(weakest.symbol)
-                held_symbols.add(challenger.symbol)
+                remaining_holdings.remove(weakest)
+                top_n_held_symbols.add(challenger.symbol)
                 logger.info(
                     f"SWAP {weakest.symbol} → {challenger.symbol}: "
                     f"{challenger.score:.1f} > {swap_buffer} × {weakest.score:.1f}"

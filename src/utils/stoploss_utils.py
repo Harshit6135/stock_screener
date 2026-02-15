@@ -1,17 +1,16 @@
 """
 Stop-loss calculation utilities.
 
-All configuration values come from PositionSizingConfig - no hardcoding.
+All configuration values come from ConfigModel - no hardcoding.
 """
 from typing import Optional
-from config.strategies_config import PositionSizingConfig
 
 
 def calculate_initial_stop_loss(
     buy_price: float, 
     atr: Optional[float], 
     stop_multiplier: float,
-    config: PositionSizingConfig = None
+    config = None
 ) -> float:
     """
     Calculate initial ATR-based stop-loss at entry.
@@ -20,7 +19,7 @@ def calculate_initial_stop_loss(
         buy_price (float): Entry price
         atr (float): Average True Range (14-period)
         stop_multiplier (float): ATR multiplier from config
-        config (PositionSizingConfig): Config with fallback percent
+        config: Config object with sl_fallback_percent
 
     Returns:
         float: Initial stop-loss price
@@ -29,11 +28,13 @@ def calculate_initial_stop_loss(
         >>> calculate_initial_stop_loss(100.0, 5.0, 2.0)
         90.0
     """
-    if config is None:
-        config = PositionSizingConfig()
+    if config is None or not hasattr(config, 'sl_fallback_percent'):
+        sl_fallback = 0.06  # default 6%
+    else:
+        sl_fallback = config.sl_fallback_percent
     
     if atr is None or atr <= 0:
-        return buy_price * (1 - config.sl_fallback_percent)
+        return buy_price * (1 - sl_fallback)
 
     stop_loss = buy_price - (stop_multiplier * atr)
     return max(stop_loss, 0)

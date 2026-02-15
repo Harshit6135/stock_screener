@@ -4,7 +4,7 @@ Backtesting Module
 Exports all backtesting components for easy import.
 """
 from .models import Position, BacktestResult, BacktestRiskMonitor
-from .config import BacktestConfigLoader, FetchedConfig
+from .config import BacktestConfigLoader
 from .data_provider import BacktestDataProvider
 from .runner import WeeklyBacktester, run_backtest
 
@@ -13,7 +13,6 @@ __all__ = [
     "BacktestResult",
     "BacktestRiskMonitor",
     "BacktestConfigLoader",
-    "FetchedConfig",
     "BacktestDataProvider",
     "WeeklyBacktester",
     "run_backtest"

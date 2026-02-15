@@ -99,11 +99,11 @@ class MarketDataRepository:
         return db.session.query(func.min(MarketDataModel.date)).scalar()
 
     @staticmethod
-    def get_marketdata_next_day(tradingsymbol:str, date):
+    def get_marketdata_first_day(tradingsymbol:str, date):
         """Fetch market data for a tradingsymbol, on a specific date"""
         return MarketDataModel.query.filter(
             MarketDataModel.tradingsymbol == tradingsymbol,
-            MarketDataModel.date > date,
+            MarketDataModel.date >= date,
             MarketDataModel.date <= datetime.now().date()
         ).order_by(MarketDataModel.date.asc()).first()
 
@@ -112,9 +112,9 @@ class MarketDataRepository:
         """Fetch market data for a tradingsymbol, on a specific date"""
         query = MarketDataModel.query.filter(
             MarketDataModel.tradingsymbol == tradingsymbol,
-            MarketDataModel.date >= date
+            MarketDataModel.date <= date
         )
-        return query.order_by(MarketDataModel.date.asc()).first()
+        return query.order_by(MarketDataModel.date.desc()).first()
 
     @staticmethod
     def delete_after_date(date):

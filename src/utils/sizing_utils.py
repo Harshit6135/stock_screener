@@ -24,9 +24,6 @@ def calculate_position_size(atr: float, current_price: float,
     Returns:
         dict with shares, position_value, constraints applied
     """
-    if config is None:
-        config = PositionSizingConfig()
-    
     if atr is None or atr <= 0 or current_price <= 0:
         return {
             "shares": 0,
@@ -39,51 +36,49 @@ def calculate_position_size(atr: float, current_price: float,
     constraints = {}
     
     # 1. ATR risk parity
-    risk_amount = portfolio_value * config.risk_per_trade_percent
-    stop_distance = atr * config.stop_multiplier
-    atr_shares = int(risk_amount / stop_distance)
-    atr_position = atr_shares * current_price
-    constraints['atr_risk'] = atr_position
+    risk_amount = portfolio_value * (config.risk_threshold / 100)
+    stop_distance = atr * config.sl_multiplier
+    shares = int(risk_amount / stop_distance)
+    # atr_shares = int(risk_amount / stop_distance)
+    # atr_position = atr_shares * current_price
+    # constraints['atr_risk'] = atr_position
     
     # 2. Liquidity constraint
-    if avg_daily_volume_value and avg_daily_volume_value > 0:
-        liquidity_limit = avg_daily_volume_value * config.max_adv_percent * config.max_adv_days
-        constraints['liquidity'] = liquidity_limit
-    else:
-        constraints['liquidity'] = float('inf')
+    # if avg_daily_volume_value and avg_daily_volume_value > 0:
+    #     liquidity_limit = avg_daily_volume_value * config.max_adv_percent * config.max_adv_days
+    #     constraints['liquidity'] = liquidity_limit
+    # else:
+    #     constraints['liquidity'] = float('inf')
     
     # 3. Concentration limit
-    concentration_limit = portfolio_value * config.concentration_limit
-    constraints['concentration'] = concentration_limit
+    # concentration_limit = portfolio_value * config.concentration_limit
+    # constraints['concentration'] = concentration_limit
     
     # 4. Minimum position check
-    min_position = portfolio_value * config.min_position_percent
+    # min_position = portfolio_value * config.min_position_percent
     
-    # Apply most restrictive constraint
-    max_position_value = min(constraints.values())
-    applied_constraint = min(constraints, key=constraints.get)
-    
-    shares = int(max_position_value / current_price)
-    shares = max(1, shares)
     position_value = shares * current_price
+    if position_value > portfolio_value:
+        position_value = portfolio_value
+        shares = int(position_value / current_price)
     
     # Check minimum
-    if position_value < min_position:
-        return {
-            "shares": 0,
-            "position_value": 0,
-            "stop_distance": round(stop_distance, 2),
-            "error": f"Below minimum position {config.min_position_percent*100}%",
-            "constraint_applied": "minimum"
-        }
+    # if position_value < min_position:
+    #     return {
+    #         "shares": 0,
+    #         "position_value": 0,
+    #         "stop_distance": round(stop_distance, 2),
+    #         "error": f"Below minimum position {config.min_position_percent*100}%",
+    #         "constraint_applied": "minimum"
+    #     }
     
     return {
         "shares": shares,
         "position_value": round(position_value, 2),
         "stop_distance": round(stop_distance, 2),
         "risk_amount": round(shares * stop_distance, 2),
-        "constraint_applied": applied_constraint,
-        "constraints": {k: round(v, 2) for k, v in constraints.items() if v != float('inf')}
+        # "constraint_applied": applied_constraint,
+        # "constraints": {k: round(v, 2) for k, v in constraints.items() if v != float('inf')}
     }
 
 

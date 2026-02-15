@@ -82,8 +82,6 @@ class RankingRepository:
         ).order_by(
             RankingModel.rank.asc()
         ).limit(n).all()
-        print(rankings)
-
         return rankings
 
     @staticmethod

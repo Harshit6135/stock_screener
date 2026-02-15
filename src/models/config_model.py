@@ -14,6 +14,8 @@ class ConfigModel(db.Model):
     buffer_percent = db.Column(db.Float, nullable=False, default=0.25)
     exit_threshold = db.Column(db.Float, nullable=False, default=40.0)
     sl_multiplier = db.Column(db.Float, nullable=False, default=2.0)
+    sl_step_percent = db.Column(db.Float, nullable=False, default=0.10)
+    sl_fallback_percent = db.Column(db.Float, nullable=False, default=0.06)
     created_at = db.Column(db.DateTime, server_default=db.func.now())
     updated_at = db.Column(db.DateTime, onupdate=db.func.now())
 
