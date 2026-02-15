@@ -45,7 +45,7 @@ class BacktestConfigLoader:
                     c.name: getattr(data, c.name)
                     for c in data.__table__.columns
                 }
-            return self._config
+            return data
         except Exception as e:
             logger.warning(f"Could not fetch config from repository: {e}")
             return None

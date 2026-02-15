@@ -1,9 +1,9 @@
-# Fix Summary Table Calculations
+# Daily Stop-Loss Processing + Bug Fixes
 
-- [x] Fix `portfolio_value` to include remaining cash (holdings + cash)
-- [x] Fix `portfolio_risk` to use holdings_value - stop_value
-- [x] Fix `gain` to use `initial_capital` as baseline
-- [x] Fix `gain_percentage` to divide by `initial_capital`
-- [x] Verified `capital_risk` formula is correct (no change needed)
-- [x] Syntax check passed
-- [ ] Re-run backtest and verify summary table values
+## Files to Modify
+- [x] `stoploss_utils.py` — Bug 6: trailing stop guard
+- [ ] `actions_repository.py` — `get_pending_actions()`, `insert_action()`
+- [ ] `actions_service.py` — capital-aware approval, `reject_pending_actions()`, Bug 1/2/4
+- [ ] `runner.py` — daily SL loop, rewrite `run()`
+- [ ] Verification — re-run backtest, validate DB data
+- [ ] Cleanup — remove `debug_db.py`, `debug_db_output.txt`

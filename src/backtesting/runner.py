@@ -47,13 +47,18 @@ class WeeklyBacktester:
         self.data = BacktestDataProvider()
         
         # Risk monitor and results tracking
-        self.risk_monitor = BacktestRiskMonitor(self.config['initial_capital'])
+        self.risk_monitor = BacktestRiskMonitor(self.config.initial_capital)
         self.weekly_results: List[BacktestResult] = []
-        
+       
         # Database session for backtest writes (set in run())
-        self.backtest_session = None
-        self.actions_service = None
-    
+        app = current_app._get_current_object()
+        DatabaseManager.init_backtest_db(app)
+        DatabaseManager.clear_backtest_db(app)
+        self.backtest_session = DatabaseManager.get_backtest_session()
+        self.actions_service = ActionsService(config_name=self.config_name, session=self.backtest_session, config_info=self.config)
+        self.inv_repo = InvestmentRepository(session=self.backtest_session)
+        self.actions_repo = ActionsRepository(session=self.backtest_session)
+
     def get_week_mondays(self) -> List[date]:
         """Get all Mondays between start and end dates"""
         mondays = []
@@ -67,43 +72,35 @@ class WeeklyBacktester:
     
     def run(self) -> List[BacktestResult]:
         """
-        Execute the backtest using ActionsService.
+        Execute the backtest using ActionsService with daily stop-loss processing.
         
         For each Monday:
         1. generate_actions(monday) — creates Pending actions in backtest DB
-        2. approve_all_actions(monday) — sets execution prices (Monday open)
+        2. approve_all_actions(monday) — capital-aware: sells always, buys if budget allows
         3. process_actions(monday) — updates holdings and summary
-        4. Track risk metrics
+        4. Daily SL check Mon→Fri — sells at SL price, fills pending buys at close
+        5. Reject remaining pending actions
+        6. Track risk metrics
         
         Returns:
             List of weekly BacktestResult objects
         """
         logger.info(f"Starting backtest: {self.start_date} to {self.end_date}")
-        logger.info(f"Config: capital={self.config['initial_capital']}, "
-                   f"max_positions={self.config['max_positions']}, "
-                   f"exit_threshold={self.config['exit_threshold']}")
-        
-        # Initialize backtest database
-        try:
-            app = current_app._get_current_object()
-            DatabaseManager.init_backtest_db(app)
-            DatabaseManager.clear_backtest_db(app)
-            self.backtest_session = DatabaseManager.get_backtest_session()
-            logger.info("Backtest database initialized and cleared")
-        except RuntimeError as e:
-            logger.warning(f"No Flask app context, DB writes disabled: {e}")
-            self.backtest_session = None
-        
-        # Create ActionsService with backtest session injection
-        self.actions_service = ActionsService(self.config_name, self.backtest_session)
-        inv_repo = InvestmentRepository(session=self.backtest_session)
+        logger.info(f"Config: capital={self.config.initial_capital}, "
+                   f"max_positions={self.config.max_positions}, "
+                   f"exit_threshold={self.config.exit_threshold}")
         
         mondays = self.get_week_mondays()
         
         for week_date in mondays:
             logger.info(f"Processing week: {week_date}")
             
-            # 1. Generate actions (SELL/BUY/SWAP decisions)
+            # 0. Reject any leftover pending actions from previous week
+            rejected = self.actions_service.reject_pending_actions()
+            if rejected:
+                logger.info(f"Rejected {rejected} pending actions from previous week")
+            
+            # 1. Generate actions (SELL/BUY/SWAP decisions from Friday rankings)
             actions = self.actions_service.generate_actions(
                 week_date, skip_pending_check=True
             )
@@ -115,28 +112,40 @@ class WeeklyBacktester:
             if not actions:
                 logger.info(f"No actions for {week_date}")
             
-            # 2. Approve all actions (sets execution prices from Monday open)
+            # 2. Capital-aware approval (sells always, buys if budget allows)
+            monday_sold_symbols = set()
             if actions:
                 approved_count = self.actions_service.approve_all_actions(week_date)
                 logger.info(f"Approved {approved_count} actions for {week_date}")
                 
-                # 3. Process actions (updates holdings, creates summary)
+                # 3. Process approved actions (updates holdings, creates summary)
                 week_holdings = self.actions_service.process_actions(week_date)
                 if week_holdings:
                     logger.info(f"Processed {len(week_holdings)} holdings for {week_date}")
+                
+                # Collect symbols sold on Monday (by generate_actions)
+                monday_actions = self.actions_repo.get_actions(week_date)
+                if monday_actions:
+                    monday_sold_symbols = {
+                        a.symbol for a in monday_actions
+                        if a.type == 'sell' and a.status == 'Approved'
+                    }
             
-            # 4. Track risk metrics
-            # Read portfolio value from the summary just written by process_actions
-            summary = inv_repo.get_summary(week_date)
+            # 4. Daily SL check Mon → Fri
+            friday = week_date + timedelta(days=4)
+            self._process_daily_stoploss(week_date, friday, monday_sold_symbols)
+            
+            # 5. Track risk metrics from latest summary
+            summary = self.inv_repo.get_summary()
             if summary:
                 portfolio_value = float(summary.portfolio_value)
             else:
-                portfolio_value = self.config['initial_capital']
+                portfolio_value = self.config.initial_capital
             
             self.risk_monitor.update(portfolio_value)
             
-            # 5. Get current holdings for result snapshot
-            current_holdings = inv_repo.get_holdings(week_date)
+            # 6. Get current holdings for result snapshot
+            current_holdings = self.inv_repo.get_holdings()
             holdings_snapshot = []
             if current_holdings:
                 holdings_snapshot = [
@@ -150,14 +159,14 @@ class WeeklyBacktester:
                     for h in current_holdings
                 ]
             
-            # 6. Fetch top rankings for the result record
+            # 7. Fetch top rankings for the result record
             ranking_friday = week_date - timedelta(days=3)
             rankings = self.data.get_top_rankings(
-                self.config['max_positions'], ranking_friday
+                self.config.max_positions, ranking_friday
             )
             top_stocks = [r['tradingsymbol'] for r in rankings] if rankings else []
             
-            # 7. Record result
+            # 8. Record result
             result = BacktestResult(
                 week_date=week_date,
                 portfolio_value=portfolio_value,
@@ -175,6 +184,203 @@ class WeeklyBacktester:
             logger.info("Backtest complete. No weekly results generated.")
         
         return self.weekly_results
+    
+    def _get_business_days(self, start_date: date, end_date: date) -> List[date]:
+        """Get business days (Mon-Fri) between start and end dates inclusive."""
+        days = []
+        current = start_date
+        while current <= end_date:
+            if current.weekday() < 5:  # Mon=0 .. Fri=4
+                days.append(current)
+            current += timedelta(days=1)
+        return days
+    
+    def _process_daily_stoploss(self, monday: date, friday: date,
+                                 already_sold: set = None):
+        """
+        Process daily stop-loss checks for all held positions.
+        
+        For each business day (Mon-Fri):
+        1. Check each holding's daily low against current_sl
+        2. If breached: sell at SL price, record action
+        3. After sells: try to fill pending buys at that day's close
+        4. Update all remaining holdings with day's close and recalculated trailing SL
+        
+        Parameters:
+            monday: Monday of the current week
+            friday: Friday of the current week
+            inv_repo: InvestmentRepository instance for DB access
+            already_sold: Symbols already sold by Monday's generate_actions (skip these)
+        """
+        business_days = self._get_business_days(monday, friday)
+        
+        # Track all symbols sold this week to prevent duplicate SL sells
+        sold_this_week = set(already_sold) if already_sold else set()
+        
+        for day in business_days:
+            # Get latest holdings
+            current_holdings = self.inv_repo.get_holdings()
+            if not current_holdings:
+                continue
+            
+            sold_value = 0.0
+            sold_today = set()
+            
+            # Check each holding's daily low against SL
+            for h in current_holdings:
+                # Skip stocks already sold this week (by Monday actions or earlier daily SL)
+                if h.symbol in sold_this_week:
+                    continue
+                
+                daily_low = self.data.get_low_price(h.symbol, day)
+                if daily_low is None:
+                    continue
+                
+                current_sl = float(h.current_sl)
+                if daily_low <= current_sl:
+                    # SL breached — sell at SL price
+                    logger.info(f"DAILY SL: {h.symbol} low {daily_low:.2f} <= SL {current_sl:.2f} on {day}")
+                    
+                    sell_action = {
+                        'action_date': day,
+                        'type': 'sell',
+                        'reason': f'stoploss hit on {day}',
+                        'symbol': h.symbol,
+                        'units': h.units,
+                        'prev_close': float(h.current_price),
+                        'execution_price': current_sl,
+                        'capital': float(h.units) * current_sl,
+                        'status': 'Approved',
+                        'sell_cost': calculate_round_trip_cost(float(h.units) * current_sl).get('sell_costs', 0),
+                        'tax': 0
+                    }
+                    self.actions_repo.insert_action(sell_action)
+                    sold_value += float(h.units) * current_sl
+                    sold_today.add(h.symbol)
+                    sold_this_week.add(h.symbol)
+            
+            # After sells: try to fill pending buys with freed capital
+            if sold_today:
+                pending_buys = self.actions_repo.get_pending_actions()
+                if pending_buys:
+                    # Calculate available capital
+                    summary = self.inv_repo.get_summary()
+                    if summary:
+                        available = float(summary.remaining_capital) + sold_value
+                    else:
+                        available = sold_value
+                    
+                    for pending in pending_buys:
+                        if pending.type != 'buy':
+                            continue
+                        
+                        # Get that day's close for execution price
+                        close_price = self.data.get_close_price(pending.symbol, day)
+                        if close_price is None:
+                            continue
+                        
+                        cost = pending.units * close_price
+                        if cost <= available:
+                            # Approve and fill the pending buy at today's close
+                            self.actions_repo.update_action({
+                                'action_id': pending.action_id,
+                                'status': 'Approved',
+                                'execution_price': close_price,
+                                'buy_cost': calculate_round_trip_cost(cost).get('buy_costs', 0),
+                                'tax': 0
+                            })
+                            available -= cost
+                            logger.info(f"DAILY FILL: {pending.symbol} {pending.units} units @ {close_price:.2f} on {day}")
+            
+            # Update all remaining holdings with current day's data
+            remaining_holdings = self.inv_repo.get_holdings()
+            if not remaining_holdings:
+                continue
+            
+            updated = []
+            for h in remaining_holdings:
+                if h.symbol in sold_this_week:
+                    continue  # Skip stocks sold this week (Monday actions + daily SL)
+                
+                close_price = self.data.get_close_price(h.symbol, day)
+                if close_price is None:
+                    close_price = float(h.current_price)  # Fallback
+                
+                atr = self.data.get_indicator('atrr_14', h.symbol, day)
+                if atr is None:
+                    atr = float(h.atr) if h.atr else close_price * 0.02
+                
+                # Recalculate trailing stop
+                stops = calculate_effective_stop(
+                    buy_price=float(h.entry_price),
+                    current_price=close_price,
+                    current_atr=atr,
+                    initial_stop=float(h.entry_sl),
+                    stop_multiplier=self.config.sl_multiplier,
+                    sl_step_percent=self.config.sl_step_percent,
+                    previous_stop=float(h.current_sl) if h.current_sl else float(h.entry_sl)
+                )
+                
+                updated.append({
+                    'symbol': h.symbol,
+                    'date': day,
+                    'entry_date': h.entry_date,
+                    'entry_price': float(h.entry_price),
+                    'units': h.units,
+                    'atr': round(atr, 2),
+                    'score': float(h.score) if h.score else 0,
+                    'entry_sl': float(h.entry_sl),
+                    'current_price': close_price,
+                    'current_sl': stops['effective_stop']
+                })
+            
+            # Also add newly bought stocks (from pending fill) to holdings
+            if sold_today:
+                pending_filled = self.actions_repo.get_actions(day)
+                if pending_filled is None:
+                    pending_filled = []
+                for pf in pending_filled:
+                    if pf.type == 'buy' and pf.status == 'Approved':
+                        # Check if already in updated list
+                        existing_symbols = {u['symbol'] for u in updated}
+                        if pf.symbol not in existing_symbols:
+                            initial_sl = round(float(pf.execution_price) - float(pf.risk), 2)
+                            updated.append({
+                                'symbol': pf.symbol,
+                                'date': day,
+                                'entry_date': day,
+                                'entry_price': float(pf.execution_price),
+                                'units': pf.units,
+                                'atr': float(pf.atr) if pf.atr else 0,
+                                'score': 0,
+                                'entry_sl': initial_sl,
+                                'current_price': float(pf.execution_price),
+                                'current_sl': initial_sl
+                            })
+            
+            if updated:
+                self.inv_repo.bulk_insert_holdings(updated)
+                
+                # Update summary with sells/buys from this day
+                # Check if summary already exists for this day (e.g., from process_actions)
+                existing_summary = self.inv_repo.get_summary(day)
+                
+                start_cap_override = None
+                total_sold = sold_value
+                
+                if existing_summary:
+                    # If summary exists, preserve its starting capital and add to its sold value
+                    # This prevents double-counting buy costs when re-calculating
+                    start_cap_override = float(existing_summary.starting_capital)
+                    total_sold += float(existing_summary.sold)
+                
+                summary_data = self.actions_service.get_summary(
+                    updated, 
+                    total_sold, 
+                    override_starting_capital=start_cap_override
+                )
+                summary_data['date'] = day
+                self.inv_repo.insert_summary(summary_data)
     
     def get_summary(self) -> dict:
         """Get comprehensive backtest summary"""
@@ -553,13 +759,13 @@ class WeeklyBacktester:
     #         return  # DB writes disabled (no Flask context)
     #     
     #     # Convert actions to database format
-    #     action_records = []
+    #     actions_records = []
     #     for action in actions:
     #         if action.get('action_type') == 'SWAP':
     #             # Swap contains nested sell/buy
     #             sell = action.get('sell_details', {})
     #             buy = action.get('buy_details', {})
-    #             action_records.extend([
+    #             actions_records.extend([
     #                 {
     #                     'action_date': week_date,
     #                     'type': 'sell',
@@ -584,7 +790,7 @@ class WeeklyBacktester:
     #                 }
     #             ])
     #         else:
-    #             action_records.append({
+    #             actions_records.append({
     #                 'action_date': week_date,
     #                 'type': action.get('action_type', '').lower(),
     #                 'symbol': action.get('tradingsymbol', ''),
@@ -596,9 +802,9 @@ class WeeklyBacktester:
     #                 'status': 'Approved'
     #             })
     #     
-    #     if action_records:
+    #     if actions_records:
     #         actions_repo = ActionsRepository(session=self.backtest_session)
-    #         actions_repo.bulk_insert_actions(action_records)
+    #         actions_repo.bulk_insert_actions(actions_records)
     #     
     #     # Convert holdings to database format
     #     holding_records = []
@@ -658,20 +864,3 @@ def run_backtest(start_date: date, end_date: date, config_name: str = "momentum_
     summary = backtester.get_summary()
     return results, summary
 
-
-if __name__ == "__main__":
-    # Example usage
-    from datetime import date
-    from config import setup_logger
-    
-    logger = setup_logger(name="BacktestRunner")
-    
-    start = date(2024, 1, 1)
-    end = date(2024, 12, 31)
-    
-    results, summary = run_backtest(start, end)
-    logger.info(f"\n{'='*50}")
-    logger.info("BACKTEST SUMMARY")
-    logger.info(f"{'='*50}")
-    for key, value in summary.items():
-        logger.info(f"  {key}: {value}")

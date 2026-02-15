@@ -1,0 +1,38 @@
+
+=== EQUITY CURVE (Monthly) ===
+            portfolio_value  remaining_capital
+date                                          
+2025-01-31         87695.59           69737.17
+2025-02-28         74688.11           48004.71
+2025-03-31         72680.94           34916.27
+2025-04-30         70951.23           35121.48
+2025-05-31         73019.06           47887.23
+2025-06-30         73195.57           42277.62
+2025-07-31         74058.69           37141.31
+2025-08-31         71188.47           43759.72
+2025-09-30         72663.61           32894.72
+2025-10-31         56122.58           27616.48
+2025-11-30         55335.39           40285.73
+2025-12-31         47036.77           21788.82
+2026-01-31         44416.97           30290.79
+2026-02-28         44893.74           25205.03
+
+Initial: 107,862.96 | Final: 44,893.74 | Return: -58.38%
+
+=== TRADE PERFORMANCE ===
+Total Buys: 312
+Total Sells: 274
+Total Buy Value: 1,326,790.07
+Total Sell Value: 1,181,972.63
+Net Cash Flow: -144,817.44
+Total Transaction Costs: 2,700.54
+Stop-Loss Sells: 245 (89.4% of sells)
+Sample SL Sells:
+   action_date      symbol  execution_price                      reason
+10  2025-01-06    LLOYDSME          1340.26  stoploss hit on 2025-01-06
+11  2025-01-09  BAJAJHCARE           552.08  stoploss hit on 2025-01-09
+12  2025-01-10       EPACK           590.18  stoploss hit on 2025-01-10
+13  2025-01-10  SHAKTIPUMP          1221.50  stoploss hit on 2025-01-10
+14  2025-01-13    INDOTHAI           173.40                stoploss hit
+
+[OK] Capital remained positive.

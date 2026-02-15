@@ -103,7 +103,6 @@ class ManualBuy(MethodView):
             config_name: Config to use
         """
         try:
-            print(data)
             actions = []
             for stock in data:
                 service = ActionsService(stock['config_name'])

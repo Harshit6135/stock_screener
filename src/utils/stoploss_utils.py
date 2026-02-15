@@ -136,7 +136,7 @@ def calculate_effective_stop(
         buy_price, current_price, initial_stop, sl_step_percent
     )
 
-    effective_stop = min(atr_stop, hard_stop)
+    effective_stop = max(atr_stop, previous_stop)
 
     return {
         "atr_stop": round(atr_stop, 2),

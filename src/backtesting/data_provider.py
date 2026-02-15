@@ -166,6 +166,42 @@ class BacktestDataProvider:
             logger.warning(f"Failed to fetch low price for {tradingsymbol}: {e}")
             return None
     
+    def get_trading_days(self, start_date: date, end_date: date) -> List[date]:
+        """Get actual trading days from market data between start and end dates.
+        
+        Queries distinct dates from the market data table to get only days
+        when the market was actually open (excludes weekends and holidays).
+        Uses NIFTY 50 as reference since it trades every session.
+        
+        Parameters:
+            start_date: Start of range (inclusive)
+            end_date: End of range (inclusive)
+            
+        Returns:
+            List of dates sorted ascending
+        """
+        try:
+            from models import MarketDataModel
+            from db import db
+            results = db.session.query(
+                MarketDataModel.date
+            ).filter(
+                MarketDataModel.tradingsymbol == 'NIFTY 50',
+                MarketDataModel.date >= start_date,
+                MarketDataModel.date <= end_date
+            ).distinct().order_by(MarketDataModel.date.asc()).all()
+            return [r[0] for r in results]
+        except Exception as e:
+            logger.warning(f"Failed to fetch trading days: {e}, falling back to business days")
+            # Fallback: return Mon-Fri calendar days
+            days = []
+            current = start_date
+            while current <= end_date:
+                if current.weekday() < 5:
+                    days.append(current)
+                current += timedelta(days=1)
+            return days
+
     def get_score(self, tradingsymbol: str, as_of_date: date) -> Optional[float]:
         """Get composite score for a stock on a date"""
         try:

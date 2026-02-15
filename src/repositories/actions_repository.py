@@ -153,6 +153,38 @@ class ActionsRepository:
             self.session.rollback()
             return None
 
+    def get_pending_actions(self):
+        """
+        Get all pending actions across all dates.
+        
+        Returns:
+            list: Pending ActionsModel instances
+        """
+        return self.session.query(ActionsModel).filter(
+            ActionsModel.status == 'Pending'
+        ).all()
+
+    def insert_action(self, action_dict):
+        """
+        Insert a single action without deleting existing actions for that date.
+        Used for mid-week SL sells and pending buy fills.
+        
+        Parameters:
+            action_dict (dict): Action data dictionary
+        
+        Returns:
+            ActionsModel: Inserted action or None on error
+        """
+        try:
+            action = ActionsModel(**action_dict)
+            self.session.add(action)
+            self.session.commit()
+            return action
+        except Exception as e:
+            logger.error(f"Error insert_action: {e}")
+            self.session.rollback()
+            return None
+
     def delete_all_actions(self):
         """
         Delete all actions (used in cleanup operations).

@@ -32,8 +32,11 @@ class ActionsService:
     """
     Investment action service for SELL/SWAP/BUY decisions.
     """
-    def __init__(self, config_name: str,  session: Optional[Session] = None):
-        self.config = config.get_config(config_name)
+    def __init__(self, config_name: str,  session: Optional[Session] = None, config_info = None):
+        if not config_info:
+            self.config = config.get_config(config_name)
+        else:
+            self.config = config_info
         self.actions_repo = ActionsRepository(session)
         self.investment_repo = InvestmentRepository(session)
     
@@ -63,9 +66,10 @@ class ActionsService:
         if not reason:
             reason = "Unknown reason"
             
-        atr = indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, action_date)
+        ranking_date = action_date - timedelta(days=3)
+        atr = indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, ranking_date)
         if atr is None:
-            raise ValueError(f"ATR not available for {symbol} on {action_date}")
+            raise ValueError(f"ATR not available for {symbol} on {ranking_date}")
         atr = round(atr, 2)
 
         # Use shared position sizing util
@@ -183,7 +187,25 @@ class ActionsService:
         else:
             for h in current_holdings:
                 low = self.fetch_low(h.symbol, ranking_date)
-                prices[h.symbol] = h.current_sl if low <= h.current_sl else low
+
+                # Bug 4 fix: compute fresh trailing stop using Friday data before SL check
+                md_h = marketdata.get_marketdata_by_trading_symbol(h.symbol, ranking_date)
+                atr_h = indicators.get_indicator_by_tradingsymbol('atrr_14', h.symbol, ranking_date)
+                if md_h and atr_h:
+                    stops = calculate_effective_stop(
+                        buy_price=float(h.entry_price),
+                        current_price=float(md_h.close),
+                        current_atr=round(float(atr_h), 2),
+                        initial_stop=float(h.entry_sl),
+                        stop_multiplier=self.config.sl_multiplier,
+                        sl_step_percent=self.config.sl_step_percent,
+                        previous_stop=float(h.current_sl) if h.current_sl else float(h.entry_sl)
+                    )
+                    fresh_sl = stops['effective_stop']
+                else:
+                    fresh_sl = float(h.current_sl)
+
+                prices[h.symbol] = fresh_sl if low <= fresh_sl else low
 
                 rank_data = ranking.get_rankings_by_date_and_symbol(ranking_date, h.symbol)
                 score = rank_data.composite_score if rank_data else 0
@@ -191,7 +213,7 @@ class ActionsService:
                 holdings_snap.append(HoldingSnapshot(
                     symbol=h.symbol,
                     units=h.units,
-                    stop_loss=float(h.current_sl),
+                    stop_loss=fresh_sl,
                     score=score,
                 ))
 
@@ -243,7 +265,11 @@ class ActionsService:
 
     def approve_all_actions(self, action_date: date) -> int:
         """
-        Approve all pending actions for a given date.
+        Approve actions for a given date with capital awareness.
+
+        Approves ALL sell actions first (always), then approves buy actions
+        only if remaining capital allows. Buys that exceed available capital
+        stay as Pending for potential mid-week fill.
 
         Parameters:
             action_date (date): Date of actions to approve
@@ -258,28 +284,47 @@ class ActionsService:
             raise ValueError("action_date cannot be None")
 
         actions_list = self.actions_repo.get_actions(action_date)
+        approved_count = 0
+
+        # Track remaining capital
+        summary = self.investment_repo.get_summary()
+        remaining_capital = float(summary.remaining_capital) if summary else float(self.config.initial_capital)
+
+        # Phase 1: Approve ALL sells first (always approved, at Monday open)
         for item in actions_list:
-            if item.execution_price:
-                execution_price = item.execution_price
-            else:
-                execution_price = marketdata.get_marketdata_first_day(item.symbol, action_date).open
-
-            action_data = {
-                'action_id' : item.action_id,
-                'status' : 'Approved',
-                'execution_price' : execution_price
-            }
-            if item.type == 'buy':
-                costs = calculate_transaction_costs(float(item.units * execution_price), 'buy')
-                action_data['buy_cost'] = costs.get('buy_costs', 0)
-                action_data['tax'] = 0  # Tax calculated at processing time
-            elif item.type == 'sell':
+            if item.type == 'sell' and item.status == 'Pending':
+                execution_price = item.execution_price or marketdata.get_marketdata_first_day(item.symbol, action_date).open
                 costs = calculate_transaction_costs(float(item.units * execution_price), 'sell')
-                action_data['sell_cost'] = costs.get('sell_costs', 0)
-                action_data['tax'] = 0  # Tax calculated at processing time
+                self.actions_repo.update_action({
+                    'action_id': item.action_id,
+                    'status': 'Approved',
+                    'execution_price': execution_price,
+                    'sell_cost': costs.get('sell_costs', 0),
+                    'tax': 0
+                })
+                remaining_capital += float(item.units * execution_price)
+                approved_count += 1
 
-            self.actions_repo.update_action(action_data)
-        return len(actions_list)
+        # Phase 2: Approve buys only if capital allows (at Monday open)
+        for item in actions_list:
+            if item.type == 'buy' and item.status == 'Pending':
+                execution_price = item.execution_price or marketdata.get_marketdata_first_day(item.symbol, action_date).open
+                cost = float(item.units * execution_price)
+                if cost <= remaining_capital:
+                    costs = calculate_transaction_costs(cost, 'buy')
+                    self.actions_repo.update_action({
+                        'action_id': item.action_id,
+                        'status': 'Approved',
+                        'execution_price': execution_price,
+                        'buy_cost': costs.get('buy_costs', 0),
+                        'tax': 0
+                    })
+                    remaining_capital -= cost
+                    approved_count += 1
+                else:
+                    logger.info(f"Pending BUY {item.symbol}: insufficient capital ({cost:.0f} > {remaining_capital:.0f})")
+
+        return approved_count
 
     def process_actions(self, action_date: date) -> Optional[List[Dict]]:
         """
@@ -312,14 +357,12 @@ class ActionsService:
         buy_symbols = {}
         sell_symbols = {}
         for items in actions_list:
-            if items.status == 'Pending':
-                logger.warning(f'Pending Actions for {items.symbol} on {items.action_date}. Please approve/reject before proceeding')
-                return None
-            elif items.status == 'Approved':
+            if items.status == 'Approved':
                 if items.type == 'sell':
                     sell_symbols[items.symbol] = items
                 elif items.type == 'buy':
                     buy_symbols[items.symbol] = items
+            # Skip Pending/Rejected actions (Pending buys may fill mid-week)
         sold = 0
         i = 0
         held_symbols = {h.symbol for h in holdings}
@@ -366,8 +409,10 @@ class ActionsService:
             Dict: Updated holding data with new price/stop-loss
         """
         holding = self.investment_repo.get_holdings_by_symbol(symbol)
-        atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, action_date), 2)
-        current_price = marketdata.get_marketdata_by_trading_symbol(symbol, action_date).close
+        # Bug 1 fix: use rank_date (Friday) for ATR and price, not action_date (Monday)
+        rank_date = action_date - timedelta(days=3)
+        atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, rank_date), 2)
+        current_price = marketdata.get_marketdata_by_trading_symbol(symbol, rank_date).close
         
         # Use shared stop-loss calculation (same as backtesting)
         stops = calculate_effective_stop(
@@ -394,22 +439,27 @@ class ActionsService:
         }
         return holding_data
 
-    def get_summary(self, week_holdings, sold):
+    def get_summary(self, week_holdings, sold, override_starting_capital=None):
         """
         Build weekly portfolio summary from holdings data.
 
         Parameters:
             week_holdings (List[Dict]): Current week's holdings
             sold (float): Total value of sold positions
+            override_starting_capital (float): Optional override to prevent double-counting 
+                                            when updating same-day summary
 
         Returns:
             Dict: Summary with capital, risk, and P&L metrics
         """
-        prev_summary = self.investment_repo.get_summary()
-        starting_capital = float(
-            prev_summary.remaining_capital
-            if prev_summary else self.config.initial_capital
-        )
+        if override_starting_capital is not None:
+            starting_capital = float(override_starting_capital)
+        else:
+            prev_summary = self.investment_repo.get_summary()
+            starting_capital = float(
+                prev_summary.remaining_capital
+                if prev_summary else self.config.initial_capital
+            )
         sold = float(sold)
         initial = float(self.config.initial_capital)
 
@@ -497,3 +547,17 @@ class ActionsService:
             elif item.low < low:
                 low = item.low
         return low
+
+    def reject_pending_actions(self) -> int:
+        """Reject all pending actions (unfilled buys at end of week).
+
+        Returns:
+            int: Number of actions rejected
+        """
+        pending = self.actions_repo.get_pending_actions()
+        for action in pending:
+            self.actions_repo.update_action({
+                'action_id': action.action_id,
+                'status': 'Rejected'
+            })
+        return len(pending)
