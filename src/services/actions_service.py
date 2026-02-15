@@ -260,6 +260,7 @@ class ActionsService:
 
         new_actions = [a for a in new_actions if a is not None]
         if new_actions:
+            self.actions_repo.delete_actions(new_actions[0]['action_date'])
             self.actions_repo.bulk_insert_actions(new_actions)
         return new_actions
 
@@ -389,6 +390,7 @@ class ActionsService:
             week_holdings.append(holding_data)
         for symbol in held_symbols:
             week_holdings.append(self.update_holding(symbol, action_date))
+        self.investment_repo.delete_holdings(action_date)
         self.investment_repo.bulk_insert_holdings(week_holdings)
         summary = self.get_summary(week_holdings, sold)
         self.investment_repo.insert_summary(summary)

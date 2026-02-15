@@ -46,6 +46,8 @@ class PercentileService:
         percentile_df.loc[percentile_df['ema_200'] > percentile_df['close'], 'penalty'] = 0
         percentile_df.loc[percentile_df['atr_spike'] > self.strategy_params.atr_threshold, 'penalty'] = 0
         percentile_df.loc[percentile_df['ema_50'] > percentile_df['close'], 'penalty'] = 0
+        percentile_df.loc[percentile_df['close'] < self.strategy_params.min_price, 'penalty'] = 0
+        percentile_df.loc[percentile_df['avg_turnover'] < self.strategy_params.min_turnover, 'penalty'] = 0
         return percentile_df
 
     def _validate_count(self, indicators_count: int, date, last_percentile_date) -> None:
@@ -117,6 +119,7 @@ class PercentileService:
             logger.info("No data found for date: {}".format(date))
             return None
 
+        stocks_df['avg_turnover'] = stocks_df['close']*stocks_df['volume'] / 10000000
         metrics_df = pd.merge(metrics_df, stocks_df, on='tradingsymbol', how='inner')
         
         # Add percentile date
@@ -182,7 +185,7 @@ class PercentileService:
             {"start_date": max_date, "end_date": max_date}
         )
 
-        self._validate_count(len(latest_indicators), max_date, last_percentile_date)
+        # self._validate_count(len(latest_indicators), max_date, last_percentile_date)
 
         if isinstance(max_date, (datetime, date)):
             max_date = pd.Timestamp(max_date)

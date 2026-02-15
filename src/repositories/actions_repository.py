@@ -79,7 +79,7 @@ class ActionsRepository:
 
     def bulk_insert_actions(self, actions):
         """
-        Insert actions with optional session injection for backtest.
+        Bulk insert action records.
         
         Parameters:
             actions (list): List of action dictionaries
@@ -87,15 +87,8 @@ class ActionsRepository:
         Returns:
             bool: True if successful, None otherwise
         """
-        try:
-            self.session.query(ActionsModel).filter(
-                ActionsModel.action_date == actions[0]['action_date']
-            ).delete()
-            self.session.commit()
-        except Exception as e:
-            logger.error(f"Error bulk_insert_actions (delete) {e}")
-            self.session.rollback()
-
+        if not actions:
+            return True
         try:
             self.session.bulk_insert_mappings(ActionsModel, actions, return_defaults=True)
             self.session.commit()
@@ -104,6 +97,22 @@ class ActionsRepository:
             self.session.rollback()
             return None
         return True
+
+    def delete_actions(self, action_date):
+        """
+        Delete actions for a specific date.
+        
+        Parameters:
+            action_date: Date to delete actions for
+        """
+        try:
+            self.session.query(ActionsModel).filter(
+                ActionsModel.action_date == action_date
+            ).delete()
+            self.session.commit()
+        except Exception as e:
+            logger.error(f"Error delete_actions {e}")
+            self.session.rollback()
 
     def check_other_pending_actions(self, action_date):
         """

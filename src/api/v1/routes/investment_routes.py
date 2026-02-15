@@ -108,6 +108,7 @@ class ManualBuy(MethodView):
                 service = ActionsService(stock['config_name'])
                 action = service.buy_action(stock['symbol'], stock['date'], stock['reason'], stock['units'], stock['price'])
                 actions.append(action)
+            actions_repo.delete_actions(data[0]['date'])
             actions_repo.bulk_insert_actions(actions)
             return {"message": f"Manual BUY actions created for {[stock['symbol'] for stock in data]}"}
         except ValueError as e:
@@ -140,6 +141,7 @@ class ManualSell(MethodView):
             action = ActionsService.sell_action(
                 data['symbol'], data['date'], data['units'], data['reason']
             )
+            actions_repo.delete_actions(data['date'])
             actions_repo.bulk_insert_actions([action])
             return {"message": f"Manual SELL action created for {data['symbol']}: {data['units']} units"}
         except ValueError as e:

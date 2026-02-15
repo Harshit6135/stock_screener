@@ -93,7 +93,7 @@ class InvestmentRepository:
 
     def bulk_insert_holdings(self, holdings):
         """
-        Insert holdings with optional session injection for backtest.
+        Bulk insert holdings records.
         
         Parameters:
             holdings (list): List of holding dictionaries
@@ -101,15 +101,8 @@ class InvestmentRepository:
         Returns:
             bool: True if successful, None otherwise
         """
-        try:
-            self.session.query(InvestmentsHoldingsModel).filter(
-                InvestmentsHoldingsModel.date == holdings[0]['date']
-            ).delete()
-            self.session.commit()
-        except Exception as e:
-            logger.error(f"Error bulk_insert_holdings (delete) {e}")
-            self.session.rollback()
-
+        if not holdings:
+            return True
         try:
             self.session.bulk_insert_mappings(InvestmentsHoldingsModel, holdings, return_defaults=True)
             self.session.commit()

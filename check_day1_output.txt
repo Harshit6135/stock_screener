@@ -1,0 +1,40 @@
+=== Day 1 Buy Actions ===
+date         symbol        units   prev_close   exec_price      capital
+2021-01-04   SHRJAGP          17       541.95       566.00      9755.10
+2021-01-04   HNDFDS           22       322.50       324.00      7417.50
+2021-01-04   HBLENGINE       139        39.75        40.30      5604.75
+2021-01-04   MINDTECK        182        47.20        49.50      9015.20
+2021-01-04   FREDUN           10       405.30       405.00      4053.00
+2021-01-04   PILANIINVS        3      2066.35      2060.00      6199.05
+2021-01-04   FSL              47       100.20       101.40      4809.60
+2021-01-04   IFGLEXPOR        24       138.30       143.00      3457.50
+2021-01-04   USHAMART        107        37.10        37.30      4006.80
+2021-01-04   PRECOT           49        89.05        92.90      4630.60
+
+Total units*exec_price = 58331.70
+Total units*prev_close = 57037.60
+Total capital column   = 58949.10
+
+=== Day 1 Holdings ===
+  SHRJAGP      units=   17 entry_price=    566.00 entry_date=2021-01-04 current=    560.70 date=2021-01-04
+  HNDFDS       units=   22 entry_price=    324.00 entry_date=2021-01-04 current=    320.20 date=2021-01-04
+  HBLENGINE    units=  139 entry_price=     40.30 entry_date=2021-01-04 current=     39.25 date=2021-01-04
+  FREDUN       units=   10 entry_price=    405.00 entry_date=2021-01-04 current=    407.55 date=2021-01-04
+  PILANIINVS   units=    3 entry_price=   2060.00 entry_date=2021-01-04 current=   1987.25 date=2021-01-04
+  FSL          units=   47 entry_price=    101.40 entry_date=2021-01-04 current=    101.45 date=2021-01-04
+  IFGLEXPOR    units=   24 entry_price=    143.00 entry_date=2021-01-04 current=    134.85 date=2021-01-04
+  USHAMART     units=  107 entry_price=     37.30 entry_date=2021-01-04 current=     37.85 date=2021-01-04
+  PRECOT       units=   49 entry_price=     92.90 entry_date=2021-01-04 current=     86.45 date=2021-01-04
+  MINDTECK     units=  182 entry_price=     49.50 entry_date=2021-01-04 current=     49.50 date=2021-01-04
+  SHRJAGP      units=   17 entry_price=    566.00 entry_date=2021-01-04 current=    564.45 date=2021-01-05
+  HNDFDS       units=   22 entry_price=    324.00 entry_date=2021-01-04 current=    313.55 date=2021-01-05
+  HBLENGINE    units=  139 entry_price=     40.30 entry_date=2021-01-04 current=     39.15 date=2021-01-05
+  FREDUN       units=   10 entry_price=    405.00 entry_date=2021-01-04 current=    401.00 date=2021-01-05
+  PILANIINVS   units=    3 entry_price=   2060.00 entry_date=2021-01-04 current=   1956.70 date=2021-01-05
+  FSL          units=   47 entry_price=    101.40 entry_date=2021-01-04 current=    100.70 date=2021-01-05
+  IFGLEXPOR    units=   24 entry_price=    143.00 entry_date=2021-01-04 current=    132.40 date=2021-01-05
+  USHAMART     units=  107 entry_price=     37.30 entry_date=2021-01-04 current=     37.65 date=2021-01-05
+  PRECOT       units=   49 entry_price=     92.90 entry_date=2021-01-04 current=     90.30 date=2021-01-05
+  SHRJAGP      units=   17 entry_price=    566.00 entry_date=2021-01-04 current=    592.65 date=2021-01-06
+
+Total bought (entry_date==date): 58331.70

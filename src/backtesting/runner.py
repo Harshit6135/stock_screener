@@ -335,15 +335,16 @@ class WeeklyBacktester:
                 })
             
             # Also add newly bought stocks (from pending fill) to holdings
+            filled_today = False
             if sold_today:
                 pending_filled = self.actions_repo.get_actions(day)
                 if pending_filled is None:
                     pending_filled = []
                 for pf in pending_filled:
                     if pf.type == 'buy' and pf.status == 'Approved':
-                        # Check if already in updated list
+                        # Check if already in updated list OR was sold this week
                         existing_symbols = {u['symbol'] for u in updated}
-                        if pf.symbol not in existing_symbols:
+                        if pf.symbol not in existing_symbols and pf.symbol not in sold_this_week:
                             initial_sl = round(float(pf.execution_price) - float(pf.risk), 2)
                             updated.append({
                                 'symbol': pf.symbol,
@@ -357,30 +358,33 @@ class WeeklyBacktester:
                                 'current_price': float(pf.execution_price),
                                 'current_sl': initial_sl
                             })
+                            filled_today = True
             
             if updated:
+                self.inv_repo.delete_holdings(day)
                 self.inv_repo.bulk_insert_holdings(updated)
                 
-                # Update summary with sells/buys from this day
-                # Check if summary already exists for this day (e.g., from process_actions)
-                existing_summary = self.inv_repo.get_summary(day)
-                
-                start_cap_override = None
-                total_sold = sold_value
-                
-                if existing_summary:
-                    # If summary exists, preserve its starting capital and add to its sold value
-                    # This prevents double-counting buy costs when re-calculating
-                    start_cap_override = float(existing_summary.starting_capital)
-                    total_sold += float(existing_summary.sold)
-                
-                summary_data = self.actions_service.get_summary(
-                    updated, 
-                    total_sold, 
-                    override_starting_capital=start_cap_override
-                )
-                summary_data['date'] = day
-                self.inv_repo.insert_summary(summary_data)
+                # Only update summary when an actual transaction occurred
+                # (SL sell or pending buy fill) — NOT on daily price-only updates.
+                # Writing summary every day causes the bought mask (entry_date == date)
+                # to miscount, because date changes daily but entry_date stays original.
+                if sold_today or filled_today:
+                    existing_summary = self.inv_repo.get_summary(day)
+                    
+                    start_cap_override = None
+                    total_sold = sold_value
+                    
+                    if existing_summary:
+                        start_cap_override = float(existing_summary.starting_capital)
+                        total_sold += float(existing_summary.sold)
+                    
+                    summary_data = self.actions_service.get_summary(
+                        updated, 
+                        total_sold, 
+                        override_starting_capital=start_cap_override
+                    )
+                    summary_data['date'] = day
+                    self.inv_repo.insert_summary(summary_data)
     
     def get_summary(self) -> dict:
         """Get comprehensive backtest summary"""
