@@ -38,3 +38,8 @@ class SummarySchema(Schema):
     gain = fields.Decimal(as_string=True, dump_only=True)
     gain_percentage = fields.Decimal(as_string=True, dump_only=True)
     remaining_capital = fields.Decimal(as_string=True, dump_only=True)
+    invested_value = fields.Decimal(as_string=True, dump_only=True)
+    unrealized_gain = fields.Decimal(as_string=True, dump_only=True)
+    realized_gain = fields.Decimal(as_string=True, dump_only=True)
+    absolute_return_pct = fields.Float(dump_only=True)
+    xirr = fields.Float(dump_only=True)

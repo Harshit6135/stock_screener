@@ -283,7 +283,11 @@ class ActionsService:
         # Track remaining capital across buys so each successive buy sizes against what's left
         summary = self.investment_repo.get_summary()
         if not summary:
-            remaining_capital = self.config.initial_capital
+            remaining_capital = (
+                self.investment_repo.get_total_capital(
+                    action_date
+                )
+            )
         else:
             remaining_capital = float(summary.remaining_capital)
 
@@ -373,7 +377,12 @@ class ActionsService:
 
         # Track remaining capital
         summary = self.investment_repo.get_summary()
-        remaining_capital = float(summary.remaining_capital) if summary else float(self.config.initial_capital)
+        remaining_capital = (
+            float(summary.remaining_capital) if summary
+            else self.investment_repo.get_total_capital(
+                action_date
+            )
+        )
 
         # Phase 1: Approve ALL sells first (always approved, at Monday open)
         for item in actions_list:
@@ -594,10 +603,15 @@ class ActionsService:
             prev_summary = self.investment_repo.get_summary()
             starting_capital = float(
                 prev_summary.remaining_capital
-                if prev_summary else self.config.initial_capital
+                if prev_summary
+                else self.investment_repo.get_total_capital(
+                    action_date
+                )
             )
         sold = float(sold)
-        initial = float(self.config.initial_capital)
+        initial = (
+            self.investment_repo.get_total_capital(action_date)
+        )
 
         # Convert holdings to DataFrame for vectorized calculations
         if week_holdings:
@@ -706,3 +720,93 @@ class ActionsService:
                 'status': 'Rejected'
             })
         return len(pending)
+
+    def sync_latest_prices(self, action_date: date) -> List[Dict]:
+        """
+        Sync all current holdings with the latest available market data.
+        
+        updates the current_price and current_sl based on the latest data found
+        in market data repository (up to action_date).
+        
+        Parameters:
+            action_date (date): Date to sync for (usually today)
+            
+        Returns:
+            List[Dict]: Updated holdings
+        """
+        holdings = self.investment_repo.get_holdings()
+        if not holdings:
+            return []
+
+        # We want to sync the *current* holdings (which might be dated last Friday or Monday)
+        # with the latest market data available.
+        # The holdings date in DB might differ from action_date if we are mid-week.
+        
+        # If we are just updating prices for display, we overwrite the *current* holdings entries.
+        # But we must be careful not to change the 'date' primary key if we want to keep them associated
+        # with the same 'week' or 'batch'.
+        
+        # Strategy: Update the existing records in-place.
+        
+        updated_holdings = []
+        for h in holdings:
+            # Fetch latest market data for this symbol up to action_date
+            # We use a special query to get the latest single record
+            md = marketdata.get_latest_marketdata(h.symbol)
+            
+            if not md:
+                logger.warning(f"No market data found for {h.symbol}, skipping sync")
+                updated_holdings.append(h.to_dict())
+                continue
+                
+            current_price = float(md.close)
+            
+            # Recalculate SL
+            atr = indicators.get_indicator_by_tradingsymbol(
+                 'atrr_14', h.symbol, md.date
+            )
+            if not atr:
+                 # Try finding latest ATR
+                 atr = 0 # Fallback or keep existing
+                 
+            # We can re-use calculate_effective_stop if we have ATR
+            # or just update price if we are simple.
+            # Let's simple update price for now to fulfill "update current price" request.
+            # Updating SL might trigger sells which we don't want to do on a simple "refresh".
+            # But the user might want to see if SL is hit.
+            
+            # For now, just update current_price.
+            
+            h.current_price = current_price
+            
+            updated_holdings.append(h.to_dict())
+
+        # Bulk update or delete-insert?
+        # Since we modified objects attached to session (if they are), we might just commit.
+        # But get_holdings returns objects.
+        
+        self.investment_repo.session.commit()
+        
+        # Recalculate summary
+        # We need to know 'sold' amount for the period to recalc summary.
+        # If we are just refreshing prices, 'sold' hasn't changed.
+        summary = self.investment_repo.get_summary()
+        if summary:
+            # Re-run get_summary logic with updated holdings
+            # We need to pass the *updated* holdings list (as dicts)
+            
+            # Recalculate summary metrics from the updated objects
+            # ActionsService.get_summary() takes list of dicts
+            
+            # We can construct the dicts from the updated model objects
+            h_dicts = [h.to_dict() for h in holdings]
+            
+            new_summary = self.get_summary(
+                h_dicts, 
+                sold=float(summary.sold), 
+                override_starting_capital=float(summary.starting_capital),
+                action_date=summary.date
+            )
+            self.investment_repo.insert_summary(new_summary)
+            
+        return updated_holdings

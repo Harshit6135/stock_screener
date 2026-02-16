@@ -8,7 +8,11 @@ from typing import Optional
 from db import db
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from models import InvestmentsHoldingsModel, InvestmentsSummaryModel
+from models import (
+    InvestmentsHoldingsModel,
+    InvestmentsSummaryModel,
+    CapitalEventModel,
+)
 from config import setup_logger
 
 logger = setup_logger(name="InvestmentRepository")
@@ -90,6 +94,17 @@ class InvestmentRepository:
         return self.session.query(InvestmentsSummaryModel).filter(
             InvestmentsSummaryModel.date == date
         ).first()
+
+    def get_all_summaries(self):
+        """
+        Get all summary records ordered by date ascending.
+        
+        Returns:
+            list: InvestmentsSummaryModel instances
+        """
+        return self.session.query(InvestmentsSummaryModel).order_by(
+            InvestmentsSummaryModel.date.asc()
+        ).all()
 
     def bulk_insert_holdings(self, holdings):
         """
@@ -211,4 +226,70 @@ class InvestmentRepository:
             self.session.commit()
         except Exception as e:
             logger.error(f"Error deleting all summary {e}")
+            self.session.rollback()
+
+    # ── Capital Events ──────────────────────────────────
+
+    def get_all_capital_events(self):
+        """
+        Get all capital events ordered by date ascending.
+
+        Returns:
+            list: CapitalEventModel instances
+        """
+        return self.session.query(CapitalEventModel).order_by(
+            CapitalEventModel.date.asc()
+        ).all()
+
+    def get_total_capital(self, target_date=None):
+        """
+        Sum of all capital event amounts up to target_date.
+
+        Parameters:
+            target_date: Cut-off date (inclusive). None = all.
+
+        Returns:
+            float: Total capital infused/withdrawn
+        """
+        query = self.session.query(
+            func.sum(CapitalEventModel.amount)
+        )
+        if target_date:
+            query = query.filter(
+                CapitalEventModel.date <= target_date
+            )
+        result = query.scalar()
+        return float(result) if result else 0.0
+
+    def insert_capital_event(self, event_dict):
+        """
+        Insert a capital event record.
+
+        Parameters:
+            event_dict (dict): Keys date, amount, event_type, note
+
+        Returns:
+            bool: True if successful, None otherwise
+        """
+        try:
+            obj = CapitalEventModel(**event_dict)
+            self.session.add(obj)
+            self.session.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error inserting capital event: {e}")
+            self.session.rollback()
+            return None
+
+    def delete_all_capital_events(self):
+        """
+        Delete all capital events (used in cleanup).
+        """
+        try:
+            self.session.query(CapitalEventModel).delete()
+            self.session.commit()
+        except Exception as e:
+            logger.error(
+                f"Error deleting all capital events: {e}"
+            )
             self.session.rollback()

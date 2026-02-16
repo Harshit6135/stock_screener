@@ -613,9 +613,75 @@ class WeeklyBacktester:
     # handled by generate_actions on the following Monday via TradingEngine.
     
     def get_summary(self) -> dict:
-        """Get comprehensive backtest summary"""
-        risk_summary = self.risk_monitor.get_summary()
-        return risk_summary
+        """Get comprehensive backtest summary including costs and tax"""
+        summary = self.risk_monitor.get_summary()
+        
+        # --- Transaction Costs ---
+        sell_trades = [t for t in self.risk_monitor.trades if t.get('type') == 'SELL']
+        total_buy_cost = 0.0
+        total_sell_cost = 0.0
+        total_stt = 0.0
+        total_gst = 0.0
+        total_stamp = 0.0
+        total_brokerage = 0.0
+        
+        for t in sell_trades:
+            buy_value = t.get('price', 0) * t.get('units', 0)
+            sell_value = t.get('exit_price', 0) * t.get('units', 0)
+            
+            bc = calculate_transaction_costs(buy_value, 'buy')
+            sc = calculate_transaction_costs(sell_value, 'sell')
+            total_buy_cost += bc['total']
+            total_sell_cost += sc['total']
+            total_stt += bc['stt'] + sc['stt']
+            total_gst += bc['gst'] + sc['gst']
+            total_stamp += bc['stamp'] + sc['stamp']
+            total_brokerage += bc['brokerage'] + sc['brokerage']
+        
+        total_costs = total_buy_cost + total_sell_cost
+
+        # --- Capital Gains Tax ---
+        stcg_total = 0.0
+        ltcg_total = 0.0
+        
+        for t in sell_trades:
+            if t.get('pnl', 0) <= 0:
+                continue
+            tax_info = calculate_capital_gains_tax(
+                purchase_price=t.get('price', 0),
+                current_price=t.get('exit_price', 0),
+                purchase_date=t.get('entry_date'),
+                current_date=t['exit_date'],
+                quantity=t.get('units', 0)
+            )
+            if tax_info['tax_type'] == 'STCG':
+                stcg_total += tax_info['tax']
+            elif tax_info['tax_type'] == 'LTCG':
+                ltcg_total += tax_info['tax']
+        
+        total_tax = stcg_total + ltcg_total
+        final_value = summary.get('final_value', 0)
+        initial_capital = summary.get('initial_capital', self.config.initial_capital)
+        total_return_abs = final_value - initial_capital
+        
+        net_post_tax_return = total_return_abs - total_costs - total_tax
+
+        summary.update({
+            'total_buy_cost': round(total_buy_cost, 2),
+            'total_sell_cost': round(total_sell_cost, 2),
+            'total_transaction_costs': round(total_costs, 2),
+            'total_brokerage': round(total_brokerage, 2),
+            'total_stt': round(total_stt, 2),
+            'total_gst': round(total_gst, 2),
+            'total_stamp': round(total_stamp, 2),
+            'total_tax': round(total_tax, 2),
+            'stcg_tax': round(stcg_total, 2),
+            'ltcg_tax': round(ltcg_total, 2),
+            'net_post_tax_return': round(net_post_tax_return, 2),
+            'net_post_tax_return_pct': round((net_post_tax_return / initial_capital) * 100, 2)
+        })
+        
+        return summary
 
     def _build_trades_from_db(self) -> None:
         """
@@ -895,6 +961,7 @@ class WeeklyBacktester:
             f.write(report_content)
         
         logger.info(f"Report saved: {filepath}")
+        self.report_path = filepath
         return filepath
     
     # ============================================================
@@ -1410,10 +1477,21 @@ def run_backtest(start_date: date, end_date: date, config_name: str = "momentum_
         mid_week_buy: Enable mid-week vacancy fills
         
     Returns:
-        Tuple of (results, summary)
+        Tuple of (results, summary, risk_monitor_data, report_path)
     """
     backtester = WeeklyBacktester(start_date, end_date, config_name, check_daily_sl, mid_week_buy)
     results = backtester.run()
     summary = backtester.get_summary()
-    return results, summary
+    
+    # Expose risk monitor data for charts/tables
+    risk_monitor_data = {
+        'trades': backtester.risk_monitor.trades,
+        'portfolio_values': backtester.risk_monitor.portfolio_values
+    }
+    
+    # The report path is returned by _generate_report, but that method is internal and called inside run().
+    # We need to capture it. Let's make _generate_report store it in self.report_path
+    report_path = getattr(backtester, 'report_path', None)
+    
+    return results, summary, risk_monitor_data, report_path
 

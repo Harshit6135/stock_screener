@@ -173,6 +173,20 @@ class ActionsRepository:
             ActionsModel.status == 'Pending'
         ).all()
 
+    def get_all_approved_actions(self):
+        """
+        Get all approved actions ordered by date descending.
+        Used for trade journal.
+        
+        Returns:
+            list: Approved ActionsModel instances
+        """
+        return self.session.query(ActionsModel).filter(
+            ActionsModel.status == 'Approved'
+        ).order_by(
+            ActionsModel.action_date.desc()
+        ).all()
+
     def insert_action(self, action_dict):
         """
         Insert a single action without deleting existing actions for that date.

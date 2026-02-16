@@ -26,7 +26,6 @@ blp = Blueprint(
 class RunBacktest(MethodView):
     @blp.doc(tags=["Backtest"])
     @blp.arguments(BacktestInputSchema)
-    @blp.response(200, MessageSchema)
     def post(self, data):
         """
         Run backtesting strategy using new backtesting module.
@@ -37,7 +36,7 @@ class RunBacktest(MethodView):
             data: BacktestInputSchema with start_date and end_date
             
         Returns:
-            dict: Message with backtest results summary
+            dict: Rich backtest results including summary, trades, equity curve, and full report text.
         """
         try:
             start_date = datetime.strptime(str(data['start_date']), '%Y-%m-%d').date()
@@ -46,18 +45,36 @@ class RunBacktest(MethodView):
             check_daily_sl = data.get('check_daily_sl', True)
             mid_week_buy = data.get('mid_week_buy', True)
             
-            results, summary = run_backtest(
+            # Now returns 4 values
+            results, summary, risk_data, report_path = run_backtest(
                 start_date, end_date, config_name,
                 check_daily_sl, mid_week_buy
             )
             
+            # Read report content
+            report_text = ""
+            if report_path:
+                try:
+                    with open(report_path, 'r', encoding='utf-8') as f:
+                        report_text = f.read()
+                except Exception as e:
+                    logger.error(f"Failed to read report file {report_path}: {e}")
+                    report_text = f"Error reading report file: {e}"
+            
             return {
-                "message": f"Backtest completed. Final value: {summary.get('final_value', 0)}, "
-                          f"Total return: {summary.get('total_return', 0):.2f}%"
+                "message": f"Backtest completed. Final: {summary.get('final_value', 0):.2f}",
+                "summary": summary,
+                "trades": risk_data.get('trades', []),
+                "equity_curve": risk_data.get('portfolio_values', []),
+                "report_text": report_text,
+                "report_path": report_path
             }
         except ValueError as e:
             logger.error(f"Validation error: {e}")
             abort(400, message=str(e))
         except Exception as e:
             logger.error(f"Backtest failed: {e}")
+            # Log full traceback for debugging
+            import traceback
+            logger.error(traceback.format_exc())
             abort(500, message=f"Backtest failed: {str(e)}")

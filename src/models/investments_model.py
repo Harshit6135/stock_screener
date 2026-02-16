@@ -76,3 +76,33 @@ class InvestmentsSummaryModel(db.Model):
 
     def to_dict(self):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+
+class CapitalEventModel(db.Model):
+    """Tracks capital infusions and withdrawals over time."""
+    __tablename__ = 'capital_events'
+    __bind_key__ = 'personal'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    date = db.Column(db.Date, nullable=False)
+    amount = db.Column(db.Numeric(12, 2), nullable=False)
+    event_type = db.Column(
+        db.String(20), nullable=False
+    )  # 'initial' | 'infusion' | 'withdrawal'
+    note = db.Column(db.String(200), nullable=True)
+
+    __table_args__ = (
+        Index("idx_capital_events_date", "date"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<CapitalEvent {self.event_type} "
+            f"{self.amount} on {self.date}>"
+        )
+
+    def to_dict(self):
+        return {
+            c.name: getattr(self, c.name)
+            for c in self.__table__.columns
+        }
