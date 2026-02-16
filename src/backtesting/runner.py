@@ -6,20 +6,17 @@ All trading logic (generate/approve/process actions) is delegated to ActionsServ
 for consistency with live trading. Writes results to backtest.db.
 """
 from datetime import date, timedelta
-from typing import Dict, List, Optional
-from dataclasses import asdict
+from typing import List
 from flask import current_app
 
 from config import setup_logger
-from config.strategies_config import PositionSizingConfig
-from backtesting.models import Position, BacktestResult, BacktestRiskMonitor
+from backtesting.models import BacktestResult, BacktestRiskMonitor
 from backtesting.config import BacktestConfigLoader
 from backtesting.data_provider import BacktestDataProvider
-from utils import (calculate_initial_stop_loss, calculate_effective_stop, calculate_round_trip_cost,
-                   calculate_position_size as shared_calculate_position_size, calculate_equal_weight_position,
-                   calculate_capital_gains_tax, DatabaseManager)
+from utils import (calculate_effective_stop, calculate_round_trip_cost,
+                   DatabaseManager)
 from repositories import InvestmentRepository, ActionsRepository
-from services import TradingEngine, HoldingSnapshot, CandidateInfo, ActionsService
+from services import ActionsService
 
 
 logger = setup_logger(name="BacktestRunner")
@@ -34,10 +31,11 @@ class WeeklyBacktester:
     and result tracking.
     """
     
-    def __init__(self, start_date: date, end_date: date, config_name: str):
+    def __init__(self, start_date: date, end_date: date, config_name: str, check_daily_sl: bool = True):
         self.start_date = start_date
         self.end_date = end_date
         self.config_name = config_name
+        self.check_daily_sl = check_daily_sl
         
         # Load config from repository
         self.config_loader = BacktestConfigLoader(config_name)
@@ -85,12 +83,15 @@ class WeeklyBacktester:
         Returns:
             List of weekly BacktestResult objects
         """
-        logger.info(f"Starting backtest: {self.start_date} to {self.end_date}")
+        logger.info(f"Starting backtest: {self.start_date} to {self.end_date} (Daily SL: {self.check_daily_sl})")
         logger.info(f"Config: capital={self.config.initial_capital}, "
                    f"max_positions={self.config.max_positions}, "
                    f"exit_threshold={self.config.exit_threshold}")
         
         mondays = self.get_week_mondays()
+        
+        # Track close-based SL sells pending from Friday → execute on next Monday
+        pending_close_sl_sells: set = set()
         
         for week_date in mondays:
             logger.info(f"Processing week: {week_date}")
@@ -100,10 +101,29 @@ class WeeklyBacktester:
             if rejected:
                 logger.info(f"Rejected {rejected} pending actions from previous week")
             
+            # 0a. Execute any pending close-based SL sells from last Friday
+            if pending_close_sl_sells:
+                self._execute_pending_sl_sells(
+                    pending_close_sl_sells, week_date
+                )
+                pending_close_sl_sells = set()
+            
             # 1. Generate actions (SELL/BUY/SWAP decisions from Friday rankings)
+            # CRITICAL FIX: Pass check_daily_sl=False even for Daily Backtest.
+            # Rationale: ActionsService checks "Last Week's Low" against "This Week's SL".
+            # unique to backtesting. If we let it check daily SL, it retroactively sells
+            # stocks that dipped last week, even if runner.py successfully navigated that week.
+            # We want runner.py to handle ALL daily checks during the week loop.
             actions = self.actions_service.generate_actions(
-                week_date, skip_pending_check=True
+                week_date, skip_pending_check=True, check_daily_sl=False
             )
+            
+            # For Weekly SL, correct execution prices to Monday Open (realistic fill)
+            # preventing artificial gains from Friday Close fills before Monday gaps
+            # NOTE: We now do this for ALL backtests because generate_actions(False)
+            # returns close-based fills.
+            if actions:
+                self._correct_execution_prices(week_date)
             
             if isinstance(actions, str):
                 logger.warning(f"generate_actions returned message: {actions}")
@@ -131,9 +151,12 @@ class WeeklyBacktester:
                         if a.type == 'sell' and a.status == 'Approved'
                     }
             
-            # 4. Daily SL check Mon → Fri
-            friday = week_date + timedelta(days=4)
-            self._process_daily_stoploss(week_date, friday, monday_sold_symbols)
+            # 4. Daily SL check Mon → Fri (hybrid: close-based + hard intraday)
+            if self.check_daily_sl:
+                friday = week_date + timedelta(days=4)
+                pending_close_sl_sells = self._process_daily_stoploss(
+                    week_date, friday, monday_sold_symbols
+                )
             
             # 5. Track risk metrics from latest summary
             summary = self.inv_repo.get_summary()
@@ -196,26 +219,42 @@ class WeeklyBacktester:
         return days
     
     def _process_daily_stoploss(self, monday: date, friday: date,
-                                 already_sold: set = None):
+                                 already_sold: set = None) -> set:
         """
-        Process daily stop-loss checks for all held positions.
+        Process hybrid daily stop-loss checks for all held positions.
         
-        For each business day (Mon-Fri):
-        1. Check each holding's daily low against current_sl
-        2. If breached: sell at SL price, record action
-        3. After sells: try to fill pending buys at that day's close
-        4. Update all remaining holdings with day's close and recalculated trailing SL
+        Two-tier SL logic:
+        1. Hard SL (intraday): If daily low < SL * (1 - hard_sl_percent)
+           → immediate disaster exit at the hard SL price.
+        2. Close-based SL: If daily close < SL
+           → queue for sell at next trading day's open.
+        
+        Pending close-based sells from the previous day are executed
+        at today's open before new checks run.
         
         Parameters:
             monday: Monday of the current week
             friday: Friday of the current week
-            inv_repo: InvestmentRepository instance for DB access
-            already_sold: Symbols already sold by Monday's generate_actions (skip these)
+            already_sold: Symbols already sold by Monday's
+                generate_actions (skip these)
+        
+        Returns:
+            Set of symbols with pending close-based SL sells
+            from the last day (Friday) that need to be executed
+            at next Monday's open.
         """
         business_days = self._get_business_days(monday, friday)
         
         # Track all symbols sold this week to prevent duplicate SL sells
         sold_this_week = set(already_sold) if already_sold else set()
+        
+        # Symbols pending close-based SL sell (execute at next day's open)
+        pending_close_sl: set = set()
+        
+        # Read hard_sl_percent from config, fallback to 5%
+        hard_sl_pct = getattr(
+            self.config, 'hard_sl_percent', 0.05
+        )
         
         for day in business_days:
             # Get latest holdings
@@ -226,9 +265,62 @@ class WeeklyBacktester:
             sold_value = 0.0
             sold_today = set()
             
-            # Check each holding's daily low against SL
+            # --- Phase 1: Execute pending close-based SL sells ---
+            # These were triggered by yesterday's close < SL.
+            # Sell at today's open price.
+            if pending_close_sl:
+                for h in current_holdings:
+                    if h.symbol not in pending_close_sl:
+                        continue
+                    if h.symbol in sold_this_week:
+                        continue
+                    
+                    open_price = self.data.get_open_price(
+                        h.symbol, day
+                    )
+                    if open_price is None:
+                        # No open price — fallback to previous close
+                        open_price = float(h.current_price)
+                    
+                    logger.info(
+                        f"PENDING SL SELL: {h.symbol} "
+                        f"sold @ open {open_price:.2f} on {day} "
+                        f"(close-based SL triggered previous day)"
+                    )
+                    
+                    sell_action = {
+                        'action_date': day,
+                        'type': 'sell',
+                        'reason': (
+                            f'close-based stoploss sell at open on '
+                            f'{day}'
+                        ),
+                        'symbol': h.symbol,
+                        'units': h.units,
+                        'prev_close': float(h.current_price),
+                        'execution_price': open_price,
+                        'capital': float(h.units) * open_price,
+                        'status': 'Approved',
+                        'sell_cost': calculate_round_trip_cost(
+                            float(h.units) * open_price
+                        ).get('sell_costs', 0),
+                        'tax': 0
+                    }
+                    self.actions_repo.insert_action(sell_action)
+                    sold_value += float(h.units) * open_price
+                    sold_today.add(h.symbol)
+                    sold_this_week.add(h.symbol)
+                
+                pending_close_sl = set()  # Clear after processing
+            
+            # --- Phase 2: Check each holding for SL breaches ---
+            # Refresh holdings after pending sells
+            if sold_today:
+                current_holdings = self.inv_repo.get_holdings()
+                if not current_holdings:
+                    continue
+            
             for h in current_holdings:
-                # Skip stocks already sold this week (by Monday actions or earlier daily SL)
                 if h.symbol in sold_this_week:
                     continue
                 
@@ -237,36 +329,71 @@ class WeeklyBacktester:
                     continue
                 
                 current_sl = float(h.current_sl)
-                if daily_low <= current_sl:
-                    # SL breached — sell at SL price
-                    logger.info(f"DAILY SL: {h.symbol} low {daily_low:.2f} <= SL {current_sl:.2f} on {day}")
+                hard_sl_price = round(
+                    current_sl * (1 - hard_sl_pct), 2
+                )
+                
+                # Tier 1: Hard SL — intraday disaster exit
+                if daily_low <= hard_sl_price:
+                    logger.info(
+                        f"HARD SL: {h.symbol} low "
+                        f"{daily_low:.2f} <= hard SL "
+                        f"{hard_sl_price:.2f} "
+                        f"(SL={current_sl:.2f}, "
+                        f"{hard_sl_pct*100:.0f}% buffer) on {day}"
+                    )
                     
                     sell_action = {
                         'action_date': day,
                         'type': 'sell',
-                        'reason': f'stoploss hit on {day}',
+                        'reason': (
+                            f'hard stoploss hit on {day} '
+                            f'(low={daily_low:.2f})'
+                        ),
                         'symbol': h.symbol,
                         'units': h.units,
                         'prev_close': float(h.current_price),
-                        'execution_price': current_sl,
-                        'capital': float(h.units) * current_sl,
+                        'execution_price': hard_sl_price,
+                        'capital': (
+                            float(h.units) * hard_sl_price
+                        ),
                         'status': 'Approved',
-                        'sell_cost': calculate_round_trip_cost(float(h.units) * current_sl).get('sell_costs', 0),
+                        'sell_cost': calculate_round_trip_cost(
+                            float(h.units) * hard_sl_price
+                        ).get('sell_costs', 0),
                         'tax': 0
                     }
                     self.actions_repo.insert_action(sell_action)
-                    sold_value += float(h.units) * current_sl
+                    sold_value += float(h.units) * hard_sl_price
                     sold_today.add(h.symbol)
                     sold_this_week.add(h.symbol)
+                    continue  # Skip close check — already sold
+                
+                # Tier 2: Close-based SL — sell at next day's open
+                    daily_close = self.data.get_close_price(
+                        h.symbol, day
+                    )
+                if daily_close is not None and (
+                    daily_close < current_sl
+                ):
+                    logger.info(
+                        f"CLOSE-BASED SL: {h.symbol} close "
+                        f"{daily_close:.2f} < SL "
+                        f"{current_sl:.2f} on {day} "
+                        f"→ queued for sell at next open"
+                    )
+                    pending_close_sl.add(h.symbol)
             
-            # After sells: try to fill pending buys with freed capital
+            # --- Phase 3: Fill pending buys with freed capital ---
             if sold_today:
                 pending_buys = self.actions_repo.get_pending_actions()
                 if pending_buys:
-                    # Calculate available capital
                     summary = self.inv_repo.get_summary()
                     if summary:
-                        available = float(summary.remaining_capital) + sold_value
+                        available = (
+                            float(summary.remaining_capital)
+                            + sold_value
+                        )
                     else:
                         available = sold_value
                     
@@ -274,25 +401,33 @@ class WeeklyBacktester:
                         if pending.type != 'buy':
                             continue
                         
-                        # Get that day's close for execution price
-                        close_price = self.data.get_close_price(pending.symbol, day)
+                        close_price = self.data.get_close_price(
+                            pending.symbol, day
+                        )
                         if close_price is None:
                             continue
                         
                         cost = pending.units * close_price
                         if cost <= available:
-                            # Approve and fill the pending buy at today's close
                             self.actions_repo.update_action({
                                 'action_id': pending.action_id,
                                 'status': 'Approved',
                                 'execution_price': close_price,
-                                'buy_cost': calculate_round_trip_cost(cost).get('buy_costs', 0),
+                                'buy_cost': (
+                                    calculate_round_trip_cost(
+                                        cost
+                                    ).get('buy_costs', 0)
+                                ),
                                 'tax': 0
                             })
                             available -= cost
-                            logger.info(f"DAILY FILL: {pending.symbol} {pending.units} units @ {close_price:.2f} on {day}")
+                            logger.info(
+                                f"DAILY FILL: {pending.symbol} "
+                                f"{pending.units} units @ "
+                                f"{close_price:.2f} on {day}"
+                            )
             
-            # Update all remaining holdings with current day's data
+            # --- Phase 4: Update holdings with day's close + trailing SL ---
             remaining_holdings = self.inv_repo.get_holdings()
             if not remaining_holdings:
                 continue
@@ -300,26 +435,27 @@ class WeeklyBacktester:
             updated = []
             for h in remaining_holdings:
                 if h.symbol in sold_this_week:
-                    continue  # Skip stocks sold this week (Monday actions + daily SL)
+                    continue
                 
-                close_price = self.data.get_close_price(h.symbol, day)
-                if close_price is None:
-                    close_price = float(h.current_price)  # Fallback
-                
-                atr = self.data.get_indicator('atrr_14', h.symbol, day)
-                if atr is None:
-                    atr = float(h.atr) if h.atr else close_price * 0.02
-                
-                # Recalculate trailing stop
-                stops = calculate_effective_stop(
-                    buy_price=float(h.entry_price),
-                    current_price=close_price,
-                    current_atr=atr,
-                    initial_stop=float(h.entry_sl),
-                    stop_multiplier=self.config.sl_multiplier,
-                    sl_step_percent=self.config.sl_step_percent,
-                    previous_stop=float(h.current_sl) if h.current_sl else float(h.entry_sl)
+                close_price = self.data.get_close_price(
+                    h.symbol, day
                 )
+                if close_price is None:
+                    close_price = float(h.current_price)
+                
+                atr = self.data.get_indicator(
+                    'atrr_14', h.symbol, day
+                )
+                if atr is None:
+                    atr = (
+                        float(h.atr) if h.atr
+                        else close_price * 0.02
+                    )
+                
+                # MODIFIED: Do NOT update stop-loss daily.
+                # Keep the same SL throughout the week (from Monday's update).
+                # This aligns with Weekly Backtest logic while keeping Daily CHECKS.
+                current_sl = float(h.current_sl) if h.current_sl else float(h.entry_sl)
                 
                 updated.append({
                     'symbol': h.symbol,
@@ -328,34 +464,53 @@ class WeeklyBacktester:
                     'entry_price': float(h.entry_price),
                     'units': h.units,
                     'atr': round(atr, 2),
-                    'score': float(h.score) if h.score else 0,
+                    'score': (
+                        float(h.score) if h.score else 0
+                    ),
                     'entry_sl': float(h.entry_sl),
                     'current_price': close_price,
-                    'current_sl': stops['effective_stop']
+                    'current_sl': current_sl
                 })
             
-            # Also add newly bought stocks (from pending fill) to holdings
+            # Also add newly bought stocks (from pending fill)
             filled_today = False
             if sold_today:
                 pending_filled = self.actions_repo.get_actions(day)
                 if pending_filled is None:
                     pending_filled = []
                 for pf in pending_filled:
-                    if pf.type == 'buy' and pf.status == 'Approved':
-                        # Check if already in updated list OR was sold this week
-                        existing_symbols = {u['symbol'] for u in updated}
-                        if pf.symbol not in existing_symbols and pf.symbol not in sold_this_week:
-                            initial_sl = round(float(pf.execution_price) - float(pf.risk), 2)
+                    if (
+                        pf.type == 'buy'
+                        and pf.status == 'Approved'
+                    ):
+                        existing_symbols = {
+                            u['symbol'] for u in updated
+                        }
+                        if (
+                            pf.symbol not in existing_symbols
+                            and pf.symbol not in sold_this_week
+                        ):
+                            initial_sl = round(
+                                float(pf.execution_price)
+                                - float(pf.risk), 2
+                            )
                             updated.append({
                                 'symbol': pf.symbol,
                                 'date': day,
                                 'entry_date': day,
-                                'entry_price': float(pf.execution_price),
+                                'entry_price': float(
+                                    pf.execution_price
+                                ),
                                 'units': pf.units,
-                                'atr': float(pf.atr) if pf.atr else 0,
+                                'atr': (
+                                    float(pf.atr)
+                                    if pf.atr else 0
+                                ),
                                 'score': 0,
                                 'entry_sl': initial_sl,
-                                'current_price': float(pf.execution_price),
+                                'current_price': float(
+                                    pf.execution_price
+                                ),
                                 'current_sl': initial_sl
                             })
                             filled_today = True
@@ -364,27 +519,147 @@ class WeeklyBacktester:
                 self.inv_repo.delete_holdings(day)
                 self.inv_repo.bulk_insert_holdings(updated)
                 
-                # Only update summary when an actual transaction occurred
-                # (SL sell or pending buy fill) — NOT on daily price-only updates.
-                # Writing summary every day causes the bought mask (entry_date == date)
-                # to miscount, because date changes daily but entry_date stays original.
                 if sold_today or filled_today:
-                    existing_summary = self.inv_repo.get_summary(day)
+                    existing_summary = self.inv_repo.get_summary(
+                        day
+                    )
                     
                     start_cap_override = None
                     total_sold = sold_value
                     
                     if existing_summary:
-                        start_cap_override = float(existing_summary.starting_capital)
-                        total_sold += float(existing_summary.sold)
+                        start_cap_override = float(
+                            existing_summary.starting_capital
+                        )
+                        total_sold += float(
+                            existing_summary.sold
+                        )
                     
-                    summary_data = self.actions_service.get_summary(
-                        updated, 
-                        total_sold, 
-                        override_starting_capital=start_cap_override
+                    summary_data = (
+                        self.actions_service.get_summary(
+                            updated,
+                            total_sold,
+                            override_starting_capital=(
+                                start_cap_override
+                            )
+                        )
                     )
                     summary_data['date'] = day
                     self.inv_repo.insert_summary(summary_data)
+        
+        # Return any pending close-based SL sells from Friday
+        # These will be executed at next Monday's open by run()
+        return pending_close_sl
+    
+    def _execute_pending_sl_sells(
+        self, pending_symbols: set, execution_date: date
+    ) -> None:
+        """
+        Execute pending close-based SL sells from previous Friday.
+        
+        Sells at the opening price of execution_date (Monday).
+        
+        Parameters:
+            pending_symbols: Symbols queued for sell
+            execution_date: Date to execute (Monday open)
+        """
+        current_holdings = self.inv_repo.get_holdings()
+        if not current_holdings:
+            return
+        
+        sold_value = 0.0
+        sold_symbols = set()
+        
+        for h in current_holdings:
+            if h.symbol not in pending_symbols:
+                continue
+            
+            open_price = self.data.get_open_price(
+                h.symbol, execution_date
+            )
+            if open_price is None:
+                open_price = float(h.current_price)
+            
+            logger.info(
+                f"PENDING SL SELL (cross-week): {h.symbol} "
+                f"sold @ open {open_price:.2f} on "
+                f"{execution_date} "
+                f"(close-based SL triggered last Friday)"
+            )
+            
+            sell_action = {
+                'action_date': execution_date,
+                'type': 'sell',
+                'reason': (
+                    f'close-based stoploss sell at open on '
+                    f'{execution_date} (from Friday)'
+                ),
+                'symbol': h.symbol,
+                'units': h.units,
+                'prev_close': float(h.current_price),
+                'execution_price': open_price,
+                'capital': float(h.units) * open_price,
+                'status': 'Approved',
+                'sell_cost': calculate_round_trip_cost(
+                    float(h.units) * open_price
+                ).get('sell_costs', 0),
+                'tax': 0
+            }
+            self.actions_repo.insert_action(sell_action)
+            sold_value += float(h.units) * open_price
+            sold_symbols.add(h.symbol)
+        
+        if sold_symbols:
+            # Delete previous holdings (e.g. Friday) so
+            # process_actions can't fall back to stale data
+            previous_date = current_holdings[0].date
+            if previous_date != execution_date:
+                self.inv_repo.delete_holdings(previous_date)
+
+            # Update holdings: remove sold positions
+            remaining = self.inv_repo.get_holdings()
+            updated = []
+            for h in remaining:
+                if h.symbol in sold_symbols:
+                    continue
+                updated.append({
+                    'symbol': h.symbol,
+                    'date': execution_date,
+                    'entry_date': h.entry_date,
+                    'entry_price': float(h.entry_price),
+                    'units': h.units,
+                    'atr': float(h.atr) if h.atr else 0,
+                    'score': (
+                        float(h.score) if h.score else 0
+                    ),
+                    'entry_sl': float(h.entry_sl),
+                    'current_price': float(h.current_price),
+                    'current_sl': float(h.current_sl)
+                })
+            
+            self.inv_repo.delete_holdings(execution_date)
+            if updated:
+                self.inv_repo.bulk_insert_holdings(updated)
+            
+            # Update summary
+            existing_summary = self.inv_repo.get_summary(
+                execution_date
+            )
+            start_cap_override = None
+            total_sold = sold_value
+            if existing_summary:
+                start_cap_override = float(
+                    existing_summary.starting_capital
+                )
+                total_sold += float(existing_summary.sold)
+            
+            summary_data = self.actions_service.get_summary(
+                updated,
+                total_sold,
+                override_starting_capital=start_cap_override
+            )
+            summary_data['date'] = execution_date
+            self.inv_repo.insert_summary(summary_data)
     
     def get_summary(self) -> dict:
         """Get comprehensive backtest summary"""
@@ -851,7 +1126,48 @@ class WeeklyBacktester:
     #     inv_repo.insert_summary(summary)
 
 
-def run_backtest(start_date: date, end_date: date, config_name: str = "momentum_config"):
+    def _correct_execution_prices(self, week_date: date) -> None:
+        """
+        Update pending actions to use Monday Open price instead of Friday Close.
+        This provides more realistic backtest results for Weekly SL mode.
+        """
+        pending_actions = self.actions_repo.get_actions(week_date)
+        if not pending_actions:
+            return
+
+        for action in pending_actions:
+            if action.status != 'Pending':
+                continue
+            
+            # Fetch Monday Open
+            open_price = self.data.get_open_price(action.symbol, week_date)
+            if open_price is None:
+                continue # Keep Friday Close fallback
+            
+            updates = {
+                'action_id': action.action_id,
+                'status': action.status,
+                'execution_price': open_price,
+            }
+            
+            # Update derived fields
+            # Note: For current logic, we update capital/cost but keep RISK constant (ATR based)
+            # This means initial_sl will shift to (open - risk), maintaining volatility distance
+            
+            value = float(action.units) * open_price
+            updates['capital'] = value
+            
+            costs = calculate_round_trip_cost(value)
+            if action.type == 'buy':
+                updates['buy_cost'] = costs.get('buy_costs', 0)
+            elif action.type == 'sell':
+                updates['sell_cost'] = costs.get('sell_costs', 0)
+                
+            self.actions_repo.update_action(updates)
+            logger.info(f"Updated {action.symbol} {action.type}: price {action.execution_price} -> {open_price}")
+
+
+def run_backtest(start_date: date, end_date: date, config_name: str = "momentum_config", check_daily_sl: bool = True):
     """
     Convenience function to run a backtest.
     
@@ -863,7 +1179,7 @@ def run_backtest(start_date: date, end_date: date, config_name: str = "momentum_
     Returns:
         Tuple of (results, summary)
     """
-    backtester = WeeklyBacktester(start_date, end_date, config_name)
+    backtester = WeeklyBacktester(start_date, end_date, config_name, check_daily_sl)
     results = backtester.run()
     summary = backtester.get_summary()
     return results, summary

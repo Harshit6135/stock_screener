@@ -79,7 +79,6 @@ class IndicatorsService:
 
         df['momentum_3m'] = (df['close'].shift(5) / df['close'].shift(65)) - 1
         df['momentum_6m'] = (df['close'].shift(5) / df['close'].shift(130)) - 1
-
         return df
 
     def calculate_indicators(self):
@@ -134,7 +133,7 @@ class IndicatorsService:
             df_for_ind.sort_index(inplace=True)
             
             logger.info("Calculating indicators...")
-
+            df_for_ind['avg_turnover'] = df_for_ind['close'] * df_for_ind['volume']
             ind_df = self.apply_study(df_for_ind, last_ind_date)
             try:
                 ind_df = self._calculate_derived_indicators(ind_df)

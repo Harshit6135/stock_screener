@@ -8,8 +8,9 @@ class StrategyParameters:
     
     # ATR spike threshold for penalty box (ratio of current ATR / lagged ATR)
     atr_threshold: float = 2.0
-    min_price: float = 75.0
-    min_turnover: float = 10.0
+    min_price: float = 50.0
+    min_turnover: float = 0.5
+    hard_sl_percent: float = 0.05  # 5% below SL = intraday disaster exit
     
     # Sub-factor weights for trend
     trend_extension_rank_weight: float = 0.4

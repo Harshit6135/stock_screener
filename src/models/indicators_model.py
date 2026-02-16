@@ -46,6 +46,7 @@ class IndicatorsModel(db.Model):
     atr_spike = db.Column(db.Float, nullable=True)
     momentum_3m = db.Column(db.Float, nullable=True)
     momentum_6m = db.Column(db.Float, nullable=True)
+    avg_turnover_ema_20 = db.Column(db.Float, nullable=True)
 
     __table_args__ = (
         # composite primary key

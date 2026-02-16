@@ -113,3 +113,29 @@ class PercentileRepository:
             PercentileModel.percentile_date
         ).all()
         return [r[0] for r in result]
+
+    @staticmethod
+    def get_percentiles_after_date(after_date=None):
+        """Fetch all percentile records after a given date.
+
+        Parameters:
+            after_date: Date to start from (exclusive).
+                If None, returns all records.
+
+        Returns:
+            List of PercentileModel records.
+
+        Example:
+            >>> records = PercentileRepository.get_percentiles_after_date(
+            ...     date(2025, 1, 1)
+            ... )
+        """
+        query = PercentileModel.query
+        if after_date is not None:
+            query = query.filter(
+                PercentileModel.percentile_date > after_date
+            )
+        return query.order_by(
+            PercentileModel.percentile_date
+        ).all()
+

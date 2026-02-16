@@ -8,8 +8,11 @@ class ScoreModel(db.Model):
 
     tradingsymbol = db.Column(db.String(50), nullable=False)
     score_date = db.Column(db.Date, nullable=False)
-
+    initial_composite_score = db.Column(db.Float, nullable=False)
+    penalty = db.Column(db.Float, nullable=True)
+    penalty_reason = db.Column(db.String(255), nullable=True)
     composite_score = db.Column(db.Float, nullable=False)
+    
 
     __table_args__ = (
         PrimaryKeyConstraint("tradingsymbol", "score_date"),

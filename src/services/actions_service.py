@@ -139,7 +139,7 @@ class ActionsService:
         }
         return action
 
-    def generate_actions(self, action_date: date, skip_pending_check: bool = False) -> Union[str, List[Dict]]:
+    def generate_actions(self, action_date: date, skip_pending_check: bool = False, check_daily_sl: bool = True) -> Union[str, List[Dict]]:
         """
         Generate trading actions (BUY/SELL/SWAP) for a given date.
         
@@ -205,7 +205,22 @@ class ActionsService:
                 else:
                     fresh_sl = float(h.current_sl)
 
-                prices[h.symbol] = fresh_sl if low <= fresh_sl else low
+                # Price logic for SL checks:
+                # Daily SL (True): Use Weekly Low to simulate intraday hit -> force price=SL if hit
+                # Weekly SL (False): Use Friday Close -> check against SL, use Close as price
+                
+                if check_daily_sl:
+                    # Daily SL: check against weekly low (intraday simulation)
+                    price_to_check = low if low > 0 else float(h.current_price)
+                    prices[h.symbol] = fresh_sl if price_to_check <= fresh_sl else price_to_check
+                else:
+                    # Weekly SL: check Friday Close against SL
+                    if md_h:
+                        prices[h.symbol] = float(md_h.close)
+                    elif low > 0:
+                         prices[h.symbol] = low
+                    else:
+                         prices[h.symbol] = float(h.current_price)
 
                 rank_data = ranking.get_rankings_by_date_and_symbol(ranking_date, h.symbol)
                 score = rank_data.composite_score if rank_data else 0
@@ -370,6 +385,15 @@ class ActionsService:
         for symbol, action in sell_symbols.items():
             sold += action.units * action.execution_price
             held_symbols.remove(symbol)
+
+        # Skip buys for symbols already held (prevent duplicate inserts)
+        for symbol in list(buy_symbols.keys()):
+            if symbol in held_symbols:
+                logger.warning(
+                    f"Skipping BUY {symbol}: already held, "
+                    f"keeping existing position"
+                )
+                del buy_symbols[symbol]
 
         week_holdings = []
         for symbol, action in buy_symbols.items():

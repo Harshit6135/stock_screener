@@ -28,6 +28,7 @@ momentum_strategy = ta.Study(
         {"kind": "bbands", "length": 20, "std": 2},
         {"kind": "atr", "length": 14},
         {"kind": "sma", "length": 20, "close":"volume", "prefix": "VOL"},
+        {"kind": "ema", "length": 20, "close": "avg_turnover", "prefix": "AVG_TURNOVER"}
 
     ]
 )

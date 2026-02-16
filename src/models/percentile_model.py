@@ -19,7 +19,6 @@ class PercentileModel(db.Model):
     volume_percentile = db.Column(db.Float, nullable=True)
     factor_structure = db.Column(db.Float, nullable=True)
     structure_percentile = db.Column(db.Float, nullable=True)
-    penalty = db.Column(db.Float, nullable=True)
 
     __table_args__ = (
         PrimaryKeyConstraint("tradingsymbol", "percentile_date"),
