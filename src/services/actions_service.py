@@ -75,9 +75,16 @@ class ActionsService:
             'atrr_14', symbol, data_date
         )
         if atr is None:
-            raise ValueError(
-                f"ATR not available for {symbol} on {data_date}"
+            # Fallback if ATR is missing: assume 6% volatility (or config value)
+            sl_fallback = getattr(self.config, 'sl_fallback_percent', 0.06)
+            logger.warning(
+                f"ATR not available for {symbol} on {data_date}. "
+                f"Using fallback SL {sl_fallback*100}%"
             )
+            # Reverse calculate ATR so that risk = price * fallback
+            # risk = atr * multiplier  =>  atr = risk / multiplier
+            # risk = price * fallback
+            atr = (float(prev_close) * sl_fallback) / self.config.sl_multiplier
         atr = round(atr, 2)
 
         # Use shared position sizing util or manual units
