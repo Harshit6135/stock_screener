@@ -157,6 +157,24 @@ class InvestmentRepository:
             logger.error(f"Error delete_holdings {e}")
             self.session.rollback()
 
+    def delete_holding(self, symbol, date):
+        """
+        Delete a single holding for a specific symbol and date.
+        
+        Parameters:
+            symbol (str): Trading symbol
+            date (date): Date of the holding
+        """
+        try:
+            self.session.query(InvestmentsHoldingsModel).filter(
+                InvestmentsHoldingsModel.date == date,
+                InvestmentsHoldingsModel.symbol == symbol
+            ).delete()
+            self.session.commit()
+        except Exception as e:
+            logger.error(f"Error delete_holding {e}")
+            self.session.rollback()
+
     def delete_summary(self, date):
         """
         Delete summary for a specific date.

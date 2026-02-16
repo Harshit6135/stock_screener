@@ -16,6 +16,7 @@ from repositories import (RankingRepository, IndicatorsRepository, MarketDataRep
 from utils import (calculate_round_trip_cost, calculate_capital_gains_tax, 
                    calculate_position_size, calculate_initial_stop_loss, 
                    calculate_effective_stop, calculate_transaction_costs)
+from utils.date_utils import get_prev_friday
 from services import TradingEngine, HoldingSnapshot, CandidateInfo
 from config import setup_logger
 
@@ -65,11 +66,16 @@ class ActionsService:
             raise ValueError("Symbol cannot be empty")
         if not reason:
             reason = "Unknown reason"
-            
-        ranking_date = action_date - timedelta(days=3)
-        atr = indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, ranking_date)
+
+        # Resolve Friday for indicator lookup
+        data_date = get_prev_friday(action_date)
+        atr = indicators.get_indicator_by_tradingsymbol(
+            'atrr_14', symbol, data_date
+        )
         if atr is None:
-            raise ValueError(f"ATR not available for {symbol} on {ranking_date}")
+            raise ValueError(
+                f"ATR not available for {symbol} on {data_date}"
+            )
         atr = round(atr, 2)
 
         # Use shared position sizing util
@@ -82,7 +88,19 @@ class ActionsService:
         units = sizing['shares']
         if units <= 0:
             logger.warning(f"Skipping BUY {symbol}: insufficient capital (shares={units})")
-            return None
+            # Return with units=0 so caller can save as Pending for mid-week fill
+            action = {
+                'action_date': action_date,
+                'type': 'buy',
+                'reason': reason,
+                'symbol': symbol,
+                'risk': round(atr * self.config.sl_multiplier, 2),
+                'atr': atr,
+                'units': 0,
+                'prev_close': prev_close,
+                'capital': 0
+            }
+            return action
 
         capital_needed = sizing['position_value']
         risk_per_unit = sizing['stop_distance']
@@ -165,8 +183,13 @@ class ActionsService:
             if pending_actions:
                 return 'Actions pending from another date, please take action before proceeding'
 
-        ranking_date = action_date - timedelta(days=3)
-        top_n = ranking.get_top_n_by_date(self.config.max_positions, ranking_date)
+        # Resolve Friday for all data lookups (rankings,
+        # market data, indicators). Actions are stamped
+        # with action_date (Monday) for execution.
+        data_date = get_prev_friday(action_date)
+        top_n = ranking.get_top_n_by_date(
+            self.config.max_positions, data_date
+        )
         current_holdings = self.investment_repo.get_holdings()
         new_actions = []
         candidates = [
@@ -181,16 +204,21 @@ class ActionsService:
 
         if not current_holdings:
             for item in top_n:
-                md = marketdata.get_marketdata_by_trading_symbol(item.tradingsymbol, ranking_date)
+                md = marketdata.get_marketdata_by_trading_symbol(
+                    item.tradingsymbol, data_date
+                )
                 if md:
                     prices[item.tradingsymbol] = float(md.close)
         else:
             for h in current_holdings:
-                low = self.fetch_low(h.symbol, ranking_date)
-
-                # Bug 4 fix: compute fresh trailing stop using Friday data before SL check
-                md_h = marketdata.get_marketdata_by_trading_symbol(h.symbol, ranking_date)
-                atr_h = indicators.get_indicator_by_tradingsymbol('atrr_14', h.symbol, ranking_date)
+                # Compute fresh trailing stop using Friday
+                # data before SL check
+                md_h = marketdata.get_marketdata_by_trading_symbol(
+                    h.symbol, data_date
+                )
+                atr_h = indicators.get_indicator_by_tradingsymbol(
+                    'atrr_14', h.symbol, data_date
+                )
                 if md_h and atr_h:
                     stops = calculate_effective_stop(
                         buy_price=float(h.entry_price),
@@ -199,31 +227,29 @@ class ActionsService:
                         initial_stop=float(h.entry_sl),
                         stop_multiplier=self.config.sl_multiplier,
                         sl_step_percent=self.config.sl_step_percent,
-                        previous_stop=float(h.current_sl) if h.current_sl else float(h.entry_sl)
+                        previous_stop=(
+                            float(h.current_sl)
+                            if h.current_sl
+                            else float(h.entry_sl)
+                        )
                     )
                     fresh_sl = stops['effective_stop']
                 else:
                     fresh_sl = float(h.current_sl)
 
-                # Price logic for SL checks:
-                # Daily SL (True): Use Weekly Low to simulate intraday hit -> force price=SL if hit
-                # Weekly SL (False): Use Friday Close -> check against SL, use Close as price
-                
-                if check_daily_sl:
-                    # Daily SL: check against weekly low (intraday simulation)
-                    price_to_check = low if low > 0 else float(h.current_price)
-                    prices[h.symbol] = fresh_sl if price_to_check <= fresh_sl else price_to_check
+                # Friday Close for decision engine
+                if md_h:
+                    prices[h.symbol] = float(md_h.close)
                 else:
-                    # Weekly SL: check Friday Close against SL
-                    if md_h:
-                        prices[h.symbol] = float(md_h.close)
-                    elif low > 0:
-                         prices[h.symbol] = low
-                    else:
-                         prices[h.symbol] = float(h.current_price)
+                    prices[h.symbol] = float(h.current_price)
 
-                rank_data = ranking.get_rankings_by_date_and_symbol(ranking_date, h.symbol)
-                score = rank_data.composite_score if rank_data else 0
+                rank_data = ranking.get_rankings_by_date_and_symbol(
+                    data_date, h.symbol
+                )
+                score = (
+                    rank_data.composite_score
+                    if rank_data else 0
+                )
 
                 holdings_snap.append(HoldingSnapshot(
                     symbol=h.symbol,
@@ -249,26 +275,49 @@ class ActionsService:
             remaining_capital = float(summary.remaining_capital)
 
         for d in decisions:
-            md = marketdata.get_marketdata_by_trading_symbol(d.symbol, ranking_date)
+            md = marketdata.get_marketdata_by_trading_symbol(
+                d.symbol, data_date
+            )
             if d.action_type == 'SELL':
-                action = self.sell_action(d.symbol, action_date, md.close, d.units, d.reason)
+                action = self.sell_action(
+                    d.symbol, action_date, md.close,
+                    d.units, d.reason
+                )
                 new_actions.append(action)
-                remaining_capital += d.units * float(md.close)  # Freed capital from sell
+                remaining_capital += (
+                    d.units * float(md.close)
+                )
             elif d.action_type == 'BUY':
-                action = self.buy_action(d.symbol, action_date, md.close, d.reason,
-                                         remaining_capital=remaining_capital)
+                action = self.buy_action(
+                    d.symbol, action_date, md.close,
+                    d.reason,
+                    remaining_capital=remaining_capital
+                )
                 new_actions.append(action)
                 if action:
                     remaining_capital -= action['capital']
             elif d.action_type == 'SWAP':
                 # Sell incumbent
-                sell_act = self.sell_action(d.symbol, action_date, md.close, d.swap_sell_units, d.reason)
+                sell_act = self.sell_action(
+                    d.symbol, action_date, md.close,
+                    d.swap_sell_units, d.reason
+                )
                 new_actions.append(sell_act)
-                remaining_capital += d.swap_sell_units * float(md.close)
+                remaining_capital += (
+                    d.swap_sell_units * float(md.close)
+                )
                 # Buy challenger
-                md_swap_for = marketdata.get_marketdata_by_trading_symbol(d.swap_for, ranking_date)
-                buy_act = self.buy_action(d.swap_for, action_date, md_swap_for.close, d.reason,
-                                          remaining_capital=remaining_capital)
+                md_swap_for = (
+                    marketdata
+                    .get_marketdata_by_trading_symbol(
+                        d.swap_for, data_date
+                    )
+                )
+                buy_act = self.buy_action(
+                    d.swap_for, action_date,
+                    md_swap_for.close, d.reason,
+                    remaining_capital=remaining_capital
+                )
                 new_actions.append(buy_act)
                 if buy_act:
                     remaining_capital -= buy_act['capital']
@@ -277,7 +326,14 @@ class ActionsService:
         if new_actions:
             self.actions_repo.delete_actions(new_actions[0]['action_date'])
             self.actions_repo.bulk_insert_actions(new_actions)
-        return new_actions
+            # Log capital-constrained buys that will stay Pending
+            pending_buys = [a for a in new_actions if a.get('units', 1) == 0]
+            if pending_buys:
+                logger.info(
+                    f"Saved {len(pending_buys)} capital-constrained buys as Pending: "
+                    f"{[a['symbol'] for a in pending_buys]}"
+                )
+        return [a for a in new_actions if a.get('units', 1) > 0]
 
     def approve_all_actions(self, action_date: date) -> int:
         """
@@ -309,7 +365,7 @@ class ActionsService:
         # Phase 1: Approve ALL sells first (always approved, at Monday open)
         for item in actions_list:
             if item.type == 'sell' and item.status == 'Pending':
-                execution_price = item.execution_price or marketdata.get_marketdata_first_day(item.symbol, action_date).open
+                execution_price = item.execution_price or marketdata.get_marketdata_first_day(item.symbol, action_date + timedelta(days=1)).open
                 costs = calculate_transaction_costs(float(item.units * execution_price), 'sell')
                 self.actions_repo.update_action({
                     'action_id': item.action_id,
@@ -324,7 +380,12 @@ class ActionsService:
         # Phase 2: Approve buys only if capital allows (at Monday open)
         for item in actions_list:
             if item.type == 'buy' and item.status == 'Pending':
-                execution_price = item.execution_price or marketdata.get_marketdata_first_day(item.symbol, action_date).open
+                # Skip capital-constrained buys (units=0) — they stay Pending
+                # for Phase 3 mid-week fill when SL sells free capital
+                if item.units == 0:
+                    logger.info(f"Keeping BUY {item.symbol} as Pending (capital-constrained, units=0)")
+                    continue
+                execution_price = item.execution_price or marketdata.get_marketdata_first_day(item.symbol, action_date + timedelta(days=1)).open
                 cost = float(item.units * execution_price)
                 if cost <= remaining_capital:
                     costs = calculate_transaction_costs(cost, 'buy')
@@ -395,10 +456,23 @@ class ActionsService:
                 )
                 del buy_symbols[symbol]
 
+        # Resolve Friday for ranking/data lookups
+        data_date = get_prev_friday(action_date)
+
         week_holdings = []
         for symbol, action in buy_symbols.items():
-            rank_date = action_date - timedelta(days=3)
-            initial_sl = round(action.execution_price - action.risk, 2)
+            initial_sl = round(
+                action.execution_price - action.risk, 2
+            )
+            rank_data = (
+                ranking.get_rankings_by_date_and_symbol(
+                    data_date, symbol
+                )
+            )
+            score = (
+                round(rank_data.composite_score, 2)
+                if rank_data else 0
+            )
             holding_data = {
                 'symbol': symbol,
                 'date': action_date,
@@ -406,14 +480,16 @@ class ActionsService:
                 'entry_price': action.execution_price,
                 'units': action.units,
                 'atr': action.atr,
-                'score': round(ranking.get_rankings_by_date_and_symbol(rank_date, symbol).composite_score, 2),
+                'score': score,
                 'entry_sl': initial_sl,
                 'current_price': action.execution_price,
                 'current_sl': initial_sl
             }
             week_holdings.append(holding_data)
         for symbol in held_symbols:
-            week_holdings.append(self.update_holding(symbol, action_date))
+            week_holdings.append(
+                self.update_holding(symbol, action_date)
+            )
         self.investment_repo.delete_holdings(action_date)
         self.investment_repo.bulk_insert_holdings(week_holdings)
         summary = self.get_summary(week_holdings, sold)
@@ -434,13 +510,25 @@ class ActionsService:
         Returns:
             Dict: Updated holding data with new price/stop-loss
         """
-        holding = self.investment_repo.get_holdings_by_symbol(symbol)
-        # Bug 1 fix: use rank_date (Friday) for ATR and price, not action_date (Monday)
-        rank_date = action_date - timedelta(days=3)
-        atr = round(indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, rank_date), 2)
-        current_price = marketdata.get_marketdata_by_trading_symbol(symbol, rank_date).close
-        
-        # Use shared stop-loss calculation (same as backtesting)
+        holding = self.investment_repo.get_holdings_by_symbol(
+            symbol
+        )
+        # Resolve Friday for data lookups
+        data_date = get_prev_friday(action_date)
+        atr = round(
+            indicators.get_indicator_by_tradingsymbol(
+                'atrr_14', symbol, data_date
+            ), 2
+        )
+        current_price = (
+            marketdata.get_marketdata_by_trading_symbol(
+                symbol, data_date
+            ).close
+        )
+
+        # Use shared stop-loss calculation (same as
+        # backtesting). Supports both hard SL (intraday)
+        # and close-based SL (trailing).
         stops = calculate_effective_stop(
             buy_price=float(holding.entry_price),
             current_price=float(current_price),
@@ -448,9 +536,19 @@ class ActionsService:
             initial_stop=float(holding.entry_sl),
             stop_multiplier=self.config.sl_multiplier,
             sl_step_percent=self.config.sl_step_percent,
-            previous_stop=float(holding.current_sl) if holding.current_sl else float(holding.entry_sl)
+            previous_stop=(
+                float(holding.current_sl)
+                if holding.current_sl
+                else float(holding.entry_sl)
+            )
         )
-        rank_date = action_date - timedelta(days=3)
+        rank_data = ranking.get_rankings_by_date_and_symbol(
+            data_date, symbol
+        )
+        score = (
+            round(rank_data.composite_score, 2)
+            if rank_data else 0
+        )
         holding_data = {
             'symbol': symbol,
             'date': action_date,
@@ -458,7 +556,7 @@ class ActionsService:
             'entry_price': holding.entry_price,
             'units': holding.units,
             'atr': atr,
-            'score': round(ranking.get_rankings_by_date_and_symbol( rank_date, symbol).composite_score, 2),
+            'score': score,
             'entry_sl': holding.entry_sl,
             'current_price': current_price,
             'current_sl': stops['effective_stop']

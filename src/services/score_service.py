@@ -6,6 +6,7 @@ pandas operations. Applies penalty box rules and tracks penalty
 reasons for transparency.
 """
 
+import time
 import pandas as pd
 
 from config import setup_logger, StrategyParameters
@@ -57,61 +58,70 @@ class ScoreService:
         )
         return percentile_df
 
-    def _apply_universe_penalties(
+    def _apply_soft_penalties(
         self, df: pd.DataFrame
     ) -> pd.DataFrame:
-        """Apply penalty box rules using indicator data.
+        """Apply soft penalty multipliers using indicator data.
 
-        Sets penalty=0 and records reason for stocks that fail
-        any disqualification rule:
-        1. Price below 200 EMA
-        2. Price below 50 EMA
-        3. ATR spike above threshold
-        4. EMA 50 below min_price (proxy for penny stocks)
-        5. Average turnover below minimum
+        applies multipliers score for stocks that fail checks:
+        1. Price below 200 EMA -> * 0.5
+        2. Price below 50 EMA -> * 0.7
+        3. ATR spike above threshold -> * 0.8
+        4. EMA 50 below min_price -> * 0.0 (Hard exclusion)
+        5. Average turnover below minimum -> * 0.0 (Hard exclusion)
 
         Parameters:
             df: DataFrame with indicator columns merged in.
 
         Returns:
-            DataFrame with `penalty` and `penalty_reason` columns.
-
-        Example:
-            >>> df = svc._apply_universe_penalties(merged_df)
-            >>> df[df['penalty'] == 0]['penalty_reason']
+            DataFrame with `penalty` (multiplier) and `penalty_reason` columns.
         """
         reasons = pd.Series(
             [''] * len(df), index=df.index
         )
+        
+        # Start with neutral penalty multiplier
+        penalties = pd.Series([1.0] * len(df), index=df.index)
 
+        # Soft Penalty: Price < EMA 200
         mask_200 = df['ema_200'] > df['close']
         reasons[mask_200] += 'below_ema_200; '
+        # penalties[mask_200] *= self.params.ema_200_penalty
+        penalties[mask_200] *= 0
 
+        # Soft Penalty: Price < EMA 50
         mask_50 = df['ema_50'] > df['close']
         reasons[mask_50] += 'below_ema_50; '
+        # penalties[mask_50] *= self.params.ema_50_penalty
+        penalties[mask_50] *= 0
 
+        # Soft Penalty: High Volatility (ATR Spike)
         mask_atr = (
             df['atr_spike'] > self.params.atr_threshold
         )
         reasons[mask_atr] += 'atr_spike; '
+        # penalties[mask_atr] *= self.params.atr_spike_penalty
+        penalties[mask_atr] *= 0
 
+        # Hard Penalty: Penny Stocks (Multiplier = 0.0)
         mask_price = df['ema_50'] < self.params.min_price
         reasons[mask_price] += 'penny_stock; '
+        penalties[mask_price] = 0.0
 
+        # Hard Penalty: Low Liquidity (Multiplier = 0.0)
         mask_turnover = (
             df['avg_turnover_ema_20']
             < self.params.min_turnover
         )
         reasons[mask_turnover] += 'low_turnover; '
+        penalties[mask_turnover] = 0.0
 
         df['penalty_reason'] = reasons.str.rstrip('; ')
         df['penalty_reason'] = (
             df['penalty_reason'].replace('', None)
         )
-        # penalty=0 when reason exists, penalty=1 when clean
-        df['penalty'] = df['penalty_reason'].apply(
-            lambda x: 0 if x else 1
-        )
+        
+        df['penalty'] = penalties
         return df
 
     def generate_composite_scores(self):
@@ -129,6 +139,7 @@ class ScoreService:
             >>> print(result['records'])
         """
         try:
+            t_start = time.time()
             logger.info(
                 "Starting batch composite score generation..."
             )
@@ -139,7 +150,9 @@ class ScoreService:
                     f"Last score date: {last_score_date}"
                 )
 
-            # Batch fetch: all percentiles after last score date
+            # Step 1: Fetch percentiles
+            t0 = time.time()
+            logger.info("[1/6] Fetching percentiles from DB...")
             percentiles = (
                 percentile_repo.get_percentiles_after_date(
                     last_score_date
@@ -151,7 +164,14 @@ class ScoreService:
                     "message": "No new percentiles to process",
                     "records": 0
                 }
+            logger.info(
+                f"[1/6] Fetched {len(percentiles)} percentile "
+                f"rows in {time.time() - t0:.2f}s"
+            )
 
+            # Step 2: Build percentiles DataFrame
+            t0 = time.time()
+            logger.info("[2/6] Building percentiles DataFrame...")
             percentiles_df = pd.DataFrame([
                 {
                     c.name: getattr(r, c.name)
@@ -163,13 +183,17 @@ class ScoreService:
                 'percentile_date'
             ].nunique()
             logger.info(
-                f"Fetched {len(percentiles_df)} percentile "
-                f"records across {n_dates} dates"
+                f"[2/6] Built DataFrame: {len(percentiles_df)} rows, "
+                f"{n_dates} dates in {time.time() - t0:.2f}s"
             )
 
-            # Batch fetch: indicators for the same date range
+            # Step 3: Fetch indicators
+            t0 = time.time()
             date_min = percentiles_df['percentile_date'].min()
             date_max = percentiles_df['percentile_date'].max()
+            logger.info(
+                f"[3/6] Fetching indicators ({date_min} → {date_max})..."
+            )
             indicators = (
                 indicators_repo.get_indicators_for_all_stocks(
                     {
@@ -188,22 +212,29 @@ class ScoreService:
                     for r in indicators
                 ])
                 logger.info(
-                    f"Fetched {len(indicators_df)} indicator "
-                    f"records for penalty checks"
+                    f"[3/6] Fetched {len(indicators_df)} indicator "
+                    f"rows in {time.time() - t0:.2f}s"
                 )
             else:
                 indicators_df = pd.DataFrame()
                 logger.warning(
-                    "No indicators found — "
+                    f"[3/6] No indicators found in {time.time() - t0:.2f}s — "
                     "skipping penalties"
                 )
 
-            # Calculate composite scores (vectorised)
+            # Step 4: Calculate composite scores (vectorised)
+            t0 = time.time()
+            logger.info("[4/6] Calculating composite scores (vector multiply)...")
             scores_df = self.calculate_composite_scores(
                 percentiles_df
             )
+            logger.info(
+                f"[4/6] Scores calculated in {time.time() - t0:.2f}s"
+            )
 
-            # Merge indicators and apply penalties
+            # Step 5: Merge indicators and apply penalties
+            t0 = time.time()
+            logger.info("[5/6] Merging indicators & applying penalties...")
             if not indicators_df.empty:
                 penalty_cols = [
                     'tradingsymbol', 'date',
@@ -223,18 +254,28 @@ class ScoreService:
                     right_on=['tradingsymbol', 'date'],
                     how='left'
                 )
-                scores_df = self._apply_universe_penalties(
+                scores_df = self._apply_soft_penalties(
                     scores_df
                 )
                 scores_df['composite_score'] = (
                     scores_df['initial_composite_score']
                     * scores_df['penalty']
                 )
+                penalized = (scores_df['penalty'] < 1).sum()
+                excluded = (scores_df['penalty'] == 0).sum()
+                logger.info(
+                    f"[5/6] Penalties applied in {time.time() - t0:.2f}s — "
+                    f"{penalized} penalized, {excluded} excluded"
+                )
             else:
                 scores_df['penalty'] = 1
                 scores_df['penalty_reason'] = None
                 scores_df['composite_score'] = (
                     scores_df['initial_composite_score']
+                )
+                logger.info(
+                    f"[5/6] No penalties applied (no indicators) "
+                    f"in {time.time() - t0:.2f}s"
                 )
 
             # Select output columns
@@ -248,14 +289,20 @@ class ScoreService:
                 inplace=True
             )
 
-            # Bulk insert all at once
+            # Step 6: Bulk insert
+            t0 = time.time()
+            logger.info(f"[6/6] Bulk inserting {len(scores_df)} score records...")
             records = scores_df.to_dict('records')
             result = score_repo.bulk_insert(records)
             count = len(result) if result else 0
 
             logger.info(
-                f"Inserted {count} score records "
-                f"across {n_dates} dates (batch)"
+                f"[6/6] Inserted {count} records "
+                f"across {n_dates} dates in {time.time() - t0:.2f}s"
+            )
+            logger.info(
+                f"Score generation complete — "
+                f"total elapsed: {time.time() - t_start:.2f}s"
             )
         except Exception as e:
             logger.error(f"Error generating composite scores: {e}")

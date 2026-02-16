@@ -18,13 +18,7 @@ logger = setup_logger(name="RankingService")
 pd.set_option('future.no_silent_downcasting', True)
 
 
-def get_friday(d):
-    """Get the Friday of the week containing date d (Friday = weekday 4)"""
-    days_until_friday = (4 - d.weekday()) % 7
-    if d.weekday() > 4:  # If Saturday or Sunday, go to previous Friday
-        days_until_friday = d.weekday() - 4
-        return d - timedelta(days=days_until_friday)
-    return d + timedelta(days=days_until_friday)
+from utils.date_utils import get_friday_of_week
 
 
 class RankingService:
@@ -53,19 +47,19 @@ class RankingService:
         
         # Determine starting Friday
         if last_ranking_date:
-            current_friday = get_friday(last_ranking_date) + timedelta(days=7)
+            current_friday = get_friday_of_week(last_ranking_date) + timedelta(days=7)
         else:
             # Start from first available Friday after earliest score
             distinct_dates = score_repo.get_all_distinct_dates()
             if not distinct_dates:
                 return {"message": "No score dates available", "weeks": 0}
             first_date = distinct_dates[0]
-            current_friday = get_friday(first_date)
+            current_friday = get_friday_of_week(first_date)
             if current_friday < first_date:
                 current_friday += timedelta(days=7)
         
         # End at latest score date's Friday
-        end_friday = get_friday(last_score_date)
+        end_friday = get_friday_of_week(last_score_date)
         weeks_processed = 0
         all_ranking_records = []
         today = date.today()

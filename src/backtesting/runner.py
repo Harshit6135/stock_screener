@@ -5,16 +5,21 @@ Simplified backtest engine that reuses ActionsService with DB injection.
 All trading logic (generate/approve/process actions) is delegated to ActionsService
 for consistency with live trading. Writes results to backtest.db.
 """
-from datetime import date, timedelta
+import os
+from datetime import date, datetime, timedelta
 from typing import List
 from flask import current_app
+import pandas as pd
 
 from config import setup_logger
 from backtesting.models import BacktestResult, BacktestRiskMonitor
 from backtesting.config import BacktestConfigLoader
 from backtesting.data_provider import BacktestDataProvider
 from utils import (calculate_effective_stop, calculate_round_trip_cost,
-                   DatabaseManager)
+                   calculate_position_size, DatabaseManager)
+from utils.transaction_costs_utils import calculate_transaction_costs
+from utils.metrics import calculate_all_metrics
+from utils.tax_utils import calculate_capital_gains_tax
 from repositories import InvestmentRepository, ActionsRepository
 from services import ActionsService
 
@@ -31,11 +36,12 @@ class WeeklyBacktester:
     and result tracking.
     """
     
-    def __init__(self, start_date: date, end_date: date, config_name: str, check_daily_sl: bool = True):
+    def __init__(self, start_date: date, end_date: date, config_name: str, check_daily_sl: bool = True, mid_week_buy: bool = True):
         self.start_date = start_date
         self.end_date = end_date
         self.config_name = config_name
         self.check_daily_sl = check_daily_sl
+        self.mid_week_buy = mid_week_buy
         
         # Load config from repository
         self.config_loader = BacktestConfigLoader(config_name)
@@ -72,26 +78,31 @@ class WeeklyBacktester:
         """
         Execute the backtest using ActionsService with daily stop-loss processing.
         
-        For each Monday:
-        1. generate_actions(monday) — creates Pending actions in backtest DB
-        2. approve_all_actions(monday) — capital-aware: sells always, buys if budget allows
-        3. process_actions(monday) — updates holdings and summary
-        4. Daily SL check Mon→Fri — sells at SL price, fills pending buys at close
-        5. Reject remaining pending actions
-        6. Track risk metrics
+        Two modes controlled by check_daily_sl:
+        
+        Daily SL mode (check_daily_sl=True):
+            1. generate_actions(monday) — creates Pending actions (sells from Friday close SL + new buys)
+            2. approve_all_actions(monday) — capital-aware: sells always, buys if budget allows
+            3. process_actions(monday) — updates holdings and summary
+            4. Daily SL check Mon→Fri:
+               - Hard SL: low <= SL * (1 - hard_sl_pct) → sell immediately at hard SL price
+               - Close SL: close < SL → queue for sell at next day's open
+               - Mid-week vacancy fill (if mid_week_buy=True): fill pending buys if slots open (with 3% stale guard)
+            5. Reject remaining pending actions at week end
+        
+        Weekly SL mode (check_daily_sl=False):
+            1-3 same as above (generate_actions handles SL via TradingEngine)
+            No intra-week checks
         
         Returns:
             List of weekly BacktestResult objects
         """
-        logger.info(f"Starting backtest: {self.start_date} to {self.end_date} (Daily SL: {self.check_daily_sl})")
+        logger.info(f"Starting backtest: {self.start_date} to {self.end_date} (Daily SL: {self.check_daily_sl}, Mid-week Buy: {self.mid_week_buy})")
         logger.info(f"Config: capital={self.config.initial_capital}, "
                    f"max_positions={self.config.max_positions}, "
                    f"exit_threshold={self.config.exit_threshold}")
         
         mondays = self.get_week_mondays()
-        
-        # Track close-based SL sells pending from Friday → execute on next Monday
-        pending_close_sl_sells: set = set()
         
         for week_date in mondays:
             logger.info(f"Processing week: {week_date}")
@@ -100,13 +111,6 @@ class WeeklyBacktester:
             rejected = self.actions_service.reject_pending_actions()
             if rejected:
                 logger.info(f"Rejected {rejected} pending actions from previous week")
-            
-            # 0a. Execute any pending close-based SL sells from last Friday
-            if pending_close_sl_sells:
-                self._execute_pending_sl_sells(
-                    pending_close_sl_sells, week_date
-                )
-                pending_close_sl_sells = set()
             
             # 1. Generate actions (SELL/BUY/SWAP decisions from Friday rankings)
             # CRITICAL FIX: Pass check_daily_sl=False even for Daily Backtest.
@@ -154,7 +158,7 @@ class WeeklyBacktester:
             # 4. Daily SL check Mon → Fri (hybrid: close-based + hard intraday)
             if self.check_daily_sl:
                 friday = week_date + timedelta(days=4)
-                pending_close_sl_sells = self._process_daily_stoploss(
+                self._process_daily_stoploss(
                     week_date, friday, monday_sold_symbols
                 )
             
@@ -201,10 +205,16 @@ class WeeklyBacktester:
             )
             self.weekly_results.append(result)
         
+        # Build trade list from DB for trade-level metrics
+        self._build_trades_from_db()
+        
         if self.weekly_results:
             logger.info(f"Backtest complete. Final value: {self.weekly_results[-1].portfolio_value}")
         else:
             logger.info("Backtest complete. No weekly results generated.")
+        
+        # Generate report file
+        self._generate_report()
         
         return self.weekly_results
     
@@ -219,29 +229,31 @@ class WeeklyBacktester:
         return days
     
     def _process_daily_stoploss(self, monday: date, friday: date,
-                                 already_sold: set = None) -> set:
+                                 already_sold: set = None) -> None:
         """
         Process hybrid daily stop-loss checks for all held positions.
         
         Two-tier SL logic:
-        1. Hard SL (intraday): If daily low < SL * (1 - hard_sl_percent)
+        1. Hard SL (intraday): If daily low <= SL * (1 - hard_sl_percent)
            → immediate disaster exit at the hard SL price.
-        2. Close-based SL: If daily close < SL
+        2. Close-based SL (Mon-Thu only): If daily close < SL
            → queue for sell at next trading day's open.
+        
+        Friday close-based SL is NOT handled here — it is handled by
+        generate_actions on the following Monday (TradingEngine detects
+        fresh_sl >= Friday close and produces a SELL decision).
         
         Pending close-based sells from the previous day are executed
         at today's open before new checks run.
+        
+        Mid-week vacancy fills happen every day if there are pending
+        buys and open portfolio slots, with a 3% stale buy guard.
         
         Parameters:
             monday: Monday of the current week
             friday: Friday of the current week
             already_sold: Symbols already sold by Monday's
                 generate_actions (skip these)
-        
-        Returns:
-            Set of symbols with pending close-based SL sells
-            from the last day (Friday) that need to be executed
-            at next Monday's open.
         """
         business_days = self._get_business_days(monday, friday)
         
@@ -370,62 +382,109 @@ class WeeklyBacktester:
                     continue  # Skip close check — already sold
                 
                 # Tier 2: Close-based SL — sell at next day's open
+                # Skip on Friday — generate_actions handles Friday close SL
+                is_friday = (day.weekday() == 4)
+                if not is_friday:
                     daily_close = self.data.get_close_price(
                         h.symbol, day
                     )
-                if daily_close is not None and (
-                    daily_close < current_sl
-                ):
-                    logger.info(
-                        f"CLOSE-BASED SL: {h.symbol} close "
-                        f"{daily_close:.2f} < SL "
-                        f"{current_sl:.2f} on {day} "
-                        f"→ queued for sell at next open"
-                    )
-                    pending_close_sl.add(h.symbol)
+                    if daily_close is not None and (
+                        daily_close < current_sl
+                    ):
+                        logger.info(
+                            f"CLOSE-BASED SL: {h.symbol} close "
+                            f"{daily_close:.2f} < SL "
+                            f"{current_sl:.2f} on {day} "
+                            f"→ queued for sell at next open"
+                        )
+                        pending_close_sl.add(h.symbol)
             
-            # --- Phase 3: Fill pending buys with freed capital ---
-            if sold_today:
-                pending_buys = self.actions_repo.get_pending_actions()
-                if pending_buys:
-                    summary = self.inv_repo.get_summary()
-                    if summary:
-                        available = (
-                            float(summary.remaining_capital)
-                            + sold_value
-                        )
-                    else:
-                        available = sold_value
-                    
-                    for pending in pending_buys:
-                        if pending.type != 'buy':
-                            continue
-                        
-                        close_price = self.data.get_close_price(
-                            pending.symbol, day
-                        )
-                        if close_price is None:
-                            continue
-                        
-                        cost = pending.units * close_price
-                        if cost <= available:
-                            self.actions_repo.update_action({
-                                'action_id': pending.action_id,
-                                'status': 'Approved',
-                                'execution_price': close_price,
-                                'buy_cost': (
-                                    calculate_round_trip_cost(
-                                        cost
-                                    ).get('buy_costs', 0)
-                                ),
-                                'tax': 0
-                            })
-                            available -= cost
-                            logger.info(
-                                f"DAILY FILL: {pending.symbol} "
-                                f"{pending.units} units @ "
-                                f"{close_price:.2f} on {day}"
+            # --- Phase 3: Fill pending buys if vacancy exists ---
+            # Only when mid_week_buy is enabled.
+            # Check every day, not just on sell days — vacancy may exist
+            # from a previous day's sell that wasn't filled yet.
+            if self.mid_week_buy:
+                current_holding_count = len([
+                    h for h in (self.inv_repo.get_holdings() or [])
+                    if h.symbol not in sold_this_week
+                ])
+                has_vacancy = current_holding_count < self.config.max_positions
+            
+                if has_vacancy:
+                    pending_buys = self.actions_repo.get_pending_actions()
+                    if pending_buys:
+                        summary = self.inv_repo.get_summary()
+                        if summary:
+                            available = (
+                                float(summary.remaining_capital)
+                                + sold_value
                             )
+                        else:
+                            available = sold_value
+                        
+                        for pending in pending_buys:
+                            if pending.type != 'buy':
+                                continue
+                            
+                            close_price = self.data.get_close_price(
+                                pending.symbol, day
+                            )
+                            if close_price is None:
+                                continue
+                            
+                            # 3% stale buy guard: skip if price rallied
+                            # too far above the signal price (prev_close
+                            # from when the action was generated)
+                            signal_price = float(pending.prev_close)
+                            if signal_price > 0 and close_price > signal_price * 1.03:
+                                logger.info(
+                                    f"STALE BUY SKIP: {pending.symbol} "
+                                    f"close {close_price:.2f} > "
+                                    f"signal {signal_price:.2f} * 1.03 "
+                                    f"= {signal_price * 1.03:.2f} on {day}"
+                                )
+                                continue
+                            
+                            
+                            # Re-size if capital-constrained (units=0)
+                            if pending.units == 0:
+                                sizing = calculate_position_size(
+                                    atr=float(pending.atr),
+                                    current_price=float(close_price),
+                                    portfolio_value=available,
+                                    config=self.config
+                                )
+                                fill_units = sizing['shares']
+                                if fill_units <= 0:
+                                    continue
+                                cost = fill_units * close_price
+                            else:
+                                fill_units = pending.units
+                                cost = fill_units * close_price
+                            
+                            if cost <= available:
+                                self.actions_repo.update_action({
+                                    'action_id': pending.action_id,
+                                    'status': 'Approved',
+                                    'execution_price': close_price,
+                                    'units': fill_units,
+                                    'buy_cost': (
+                                        calculate_round_trip_cost(
+                                            cost
+                                        ).get('buy_costs', 0)
+                                    ),
+                                    'tax': 0
+                                })
+                                available -= cost
+                                current_holding_count += 1
+                                logger.info(
+                                    f"DAILY FILL: {pending.symbol} "
+                                    f"{fill_units} units @ "
+                                    f"{close_price:.2f} on {day}"
+                                )
+                                # Stop filling if no more vacancies
+                                if current_holding_count >= self.config.max_positions:
+                                    break
             
             # --- Phase 4: Update holdings with day's close + trailing SL ---
             remaining_holdings = self.inv_repo.get_holdings()
@@ -474,7 +533,7 @@ class WeeklyBacktester:
             
             # Also add newly bought stocks (from pending fill)
             filled_today = False
-            if sold_today:
+            if self.mid_week_buy:
                 pending_filled = self.actions_repo.get_actions(day)
                 if pending_filled is None:
                     pending_filled = []
@@ -547,124 +606,296 @@ class WeeklyBacktester:
                     summary_data['date'] = day
                     self.inv_repo.insert_summary(summary_data)
         
-        # Return any pending close-based SL sells from Friday
-        # These will be executed at next Monday's open by run()
-        return pending_close_sl
+        # Friday close-based SL is handled by generate_actions on next Monday
+        # No cross-week carry needed
     
-    def _execute_pending_sl_sells(
-        self, pending_symbols: set, execution_date: date
-    ) -> None:
-        """
-        Execute pending close-based SL sells from previous Friday.
-        
-        Sells at the opening price of execution_date (Monday).
-        
-        Parameters:
-            pending_symbols: Symbols queued for sell
-            execution_date: Date to execute (Monday open)
-        """
-        current_holdings = self.inv_repo.get_holdings()
-        if not current_holdings:
-            return
-        
-        sold_value = 0.0
-        sold_symbols = set()
-        
-        for h in current_holdings:
-            if h.symbol not in pending_symbols:
-                continue
-            
-            open_price = self.data.get_open_price(
-                h.symbol, execution_date
-            )
-            if open_price is None:
-                open_price = float(h.current_price)
-            
-            logger.info(
-                f"PENDING SL SELL (cross-week): {h.symbol} "
-                f"sold @ open {open_price:.2f} on "
-                f"{execution_date} "
-                f"(close-based SL triggered last Friday)"
-            )
-            
-            sell_action = {
-                'action_date': execution_date,
-                'type': 'sell',
-                'reason': (
-                    f'close-based stoploss sell at open on '
-                    f'{execution_date} (from Friday)'
-                ),
-                'symbol': h.symbol,
-                'units': h.units,
-                'prev_close': float(h.current_price),
-                'execution_price': open_price,
-                'capital': float(h.units) * open_price,
-                'status': 'Approved',
-                'sell_cost': calculate_round_trip_cost(
-                    float(h.units) * open_price
-                ).get('sell_costs', 0),
-                'tax': 0
-            }
-            self.actions_repo.insert_action(sell_action)
-            sold_value += float(h.units) * open_price
-            sold_symbols.add(h.symbol)
-        
-        if sold_symbols:
-            # Delete previous holdings (e.g. Friday) so
-            # process_actions can't fall back to stale data
-            previous_date = current_holdings[0].date
-            if previous_date != execution_date:
-                self.inv_repo.delete_holdings(previous_date)
-
-            # Update holdings: remove sold positions
-            remaining = self.inv_repo.get_holdings()
-            updated = []
-            for h in remaining:
-                if h.symbol in sold_symbols:
-                    continue
-                updated.append({
-                    'symbol': h.symbol,
-                    'date': execution_date,
-                    'entry_date': h.entry_date,
-                    'entry_price': float(h.entry_price),
-                    'units': h.units,
-                    'atr': float(h.atr) if h.atr else 0,
-                    'score': (
-                        float(h.score) if h.score else 0
-                    ),
-                    'entry_sl': float(h.entry_sl),
-                    'current_price': float(h.current_price),
-                    'current_sl': float(h.current_sl)
-                })
-            
-            self.inv_repo.delete_holdings(execution_date)
-            if updated:
-                self.inv_repo.bulk_insert_holdings(updated)
-            
-            # Update summary
-            existing_summary = self.inv_repo.get_summary(
-                execution_date
-            )
-            start_cap_override = None
-            total_sold = sold_value
-            if existing_summary:
-                start_cap_override = float(
-                    existing_summary.starting_capital
-                )
-                total_sold += float(existing_summary.sold)
-            
-            summary_data = self.actions_service.get_summary(
-                updated,
-                total_sold,
-                override_starting_capital=start_cap_override
-            )
-            summary_data['date'] = execution_date
-            self.inv_repo.insert_summary(summary_data)
+    # _execute_pending_sl_sells removed — Friday close SL is now
+    # handled by generate_actions on the following Monday via TradingEngine.
     
     def get_summary(self) -> dict:
         """Get comprehensive backtest summary"""
         risk_summary = self.risk_monitor.get_summary()
         return risk_summary
+
+    def _build_trades_from_db(self) -> None:
+        """
+        Build trade list from backtest DB actions.
+        
+        Matches each Approved sell to its corresponding buy (same symbol,
+        nearest earlier date). Populates self.risk_monitor.trades for
+        trade-level metrics (win rate, profit factor, XIRR, etc.).
+        """
+        from models import ActionsModel
+        all_actions = (
+            self.backtest_session.query(ActionsModel)
+            .filter(ActionsModel.status == 'Approved')
+            .order_by(ActionsModel.action_date)
+            .all()
+        )
+        
+        # Index buys by symbol (most recent first for matching)
+        buy_pool = {}  # symbol -> list of buy actions
+        for a in all_actions:
+            if a.type == 'buy':
+                buy_pool.setdefault(a.symbol, []).append(a)
+        
+        trades = []
+        for a in all_actions:
+            if a.type != 'sell':
+                continue
+            
+            # Find matching buy (earliest unmatched buy for same symbol)
+            buys = buy_pool.get(a.symbol, [])
+            matched_buy = None
+            for i, b in enumerate(buys):
+                if b.action_date <= a.action_date:
+                    matched_buy = buys.pop(i)
+                    break
+            
+            entry_price = float(matched_buy.execution_price) if matched_buy else 0
+            exit_price = float(a.execution_price) if a.execution_price else 0
+            units = int(a.units)
+            entry_date = matched_buy.action_date if matched_buy else a.action_date
+            exit_date = a.action_date
+            pnl = (exit_price - entry_price) * units
+            
+            trades.append({
+                'type': 'SELL',
+                'symbol': a.symbol,
+                'entry_date': entry_date,
+                'exit_date': exit_date,
+                'price': entry_price,
+                'exit_price': exit_price,
+                'units': units,
+                'pnl': round(pnl, 2),
+                'reason': a.reason or '',
+            })
+            
+            # Also record the BUY leg for XIRR cash flow
+            if matched_buy:
+                trades.append({
+                    'type': 'BUY',
+                    'symbol': a.symbol,
+                    'entry_date': entry_date,
+                    'price': entry_price,
+                    'units': units,
+                })
+        
+        self.risk_monitor.trades = trades
+        logger.info(f"Built {len([t for t in trades if t['type'] == 'SELL'])} completed trades from DB")
+
+    def _generate_report(self) -> None:
+        """
+        Generate comprehensive backtest report and save to backtesting_results/.
+        
+        Includes: config, all metrics, transaction costs, trade log.
+        """
+        # Create output directory
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        report_dir = os.path.join(project_root, 'backtesting_results')
+        os.makedirs(report_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        sl_tag = 'daily_sl' if self.check_daily_sl else 'weekly_sl'
+        mwb_tag = 'mwb_on' if self.mid_week_buy else 'mwb_off'
+        filename = f"{self.config_name}_{self.start_date}_{self.end_date}_{sl_tag}_{mwb_tag}_{timestamp}.txt"
+        filepath = os.path.join(report_dir, filename)
+        
+        lines = []
+        sep = '=' * 70
+        lines.append(sep)
+        lines.append('  BACKTEST RESULTS REPORT')
+        lines.append(f'  Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
+        lines.append(sep)
+        
+        # --- Section 1: Configuration ---
+        lines.append('')
+        lines.append('[ CONFIGURATION ]')
+        lines.append(f'  Config Name       : {self.config_name}')
+        lines.append(f'  Start Date        : {self.start_date}')
+        lines.append(f'  End Date          : {self.end_date}')
+        lines.append(f'  Daily SL          : {self.check_daily_sl}')
+        lines.append(f'  Mid-Week Buy      : {self.mid_week_buy}')
+        lines.append(f'  Initial Capital   : {self.config.initial_capital:>15,.2f}')
+        lines.append(f'  Max Positions     : {self.config.max_positions}')
+        lines.append(f'  Risk Threshold    : {self.config.risk_threshold}')
+        lines.append(f'  Buffer Percent    : {self.config.buffer_percent}')
+        lines.append(f'  Exit Threshold    : {self.config.exit_threshold}')
+        lines.append(f'  SL Multiplier     : {self.config.sl_multiplier}')
+        lines.append(f'  SL Step Percent   : {self.config.sl_step_percent}')
+        lines.append(f'  SL Fallback Pct   : {self.config.sl_fallback_percent}')
+        
+        # --- Section 2: Performance Metrics ---
+        equity_curve = pd.Series(self.risk_monitor.portfolio_values)
+        sell_trades = [t for t in self.risk_monitor.trades if t.get('type') == 'SELL']
+        
+        # Calculate duration in years
+        total_days = (self.end_date - self.start_date).days
+        years = max(total_days / 365.25, 0.01)
+        
+        metrics = calculate_all_metrics(
+            equity_curve=equity_curve,
+            trades=self.risk_monitor.trades,
+            initial_value=self.config.initial_capital,
+            years=years
+        )
+        
+        final_value = self.risk_monitor.portfolio_values[-1] if self.risk_monitor.portfolio_values else self.config.initial_capital
+        total_return_abs = final_value - self.config.initial_capital
+        
+        lines.append('')
+        lines.append('[ PERFORMANCE METRICS ]')
+        lines.append(f'  Final Portfolio   : {final_value:>15,.2f}')
+        lines.append(f'  Total Return      : {total_return_abs:>+15,.2f}  ({metrics.get("total_return", 0):+.2f}%)')
+        lines.append(f'  CAGR              : {metrics.get("cagr", 0):>+10.2f}%')
+        lines.append(f'  XIRR              : {metrics.get("xirr", 0):>+10.2f}%')
+        lines.append(f'  Max Drawdown      : {metrics.get("max_drawdown", 0):>10.2f}%')
+        lines.append(f'  Sharpe Ratio      : {metrics.get("sharpe_ratio", 0):>10.2f}')
+        lines.append(f'  Sortino Ratio     : {metrics.get("sortino_ratio", 0):>10.2f}')
+        lines.append(f'  Calmar Ratio      : {metrics.get("calmar_ratio", 0):>10.2f}')
+        
+        # --- Section 3: Trade Statistics ---
+        lines.append('')
+        lines.append('[ TRADE STATISTICS ]')
+        lines.append(f'  Total Trades      : {len(sell_trades)}')
+        lines.append(f'  Win Rate          : {metrics.get("win_rate", 0):>10.2f}%')
+        lines.append(f'  Profit Factor     : {metrics.get("profit_factor", 0):>10.2f}')
+        lines.append(f'  Expectancy/Trade  : {metrics.get("expectancy", 0):>+10.2f}')
+        lines.append(f'  Avg Holding Days  : {metrics.get("avg_holding_period_days", 0):>10.1f}')
+        
+        if sell_trades:
+            winning = [t for t in sell_trades if t['pnl'] > 0]
+            losing = [t for t in sell_trades if t['pnl'] <= 0]
+            avg_win = sum(t['pnl'] for t in winning) / len(winning) if winning else 0
+            avg_loss = sum(t['pnl'] for t in losing) / len(losing) if losing else 0
+            best_trade = max(sell_trades, key=lambda t: t['pnl'])
+            worst_trade = min(sell_trades, key=lambda t: t['pnl'])
+            
+            lines.append(f'  Winners           : {len(winning)}')
+            lines.append(f'  Losers            : {len(losing)}')
+            lines.append(f'  Avg Win           : {avg_win:>+15,.2f}')
+            lines.append(f'  Avg Loss          : {avg_loss:>+15,.2f}')
+            lines.append(f'  Best Trade        : {best_trade["symbol"]} {best_trade["pnl"]:>+,.2f}')
+            lines.append(f'  Worst Trade       : {worst_trade["symbol"]} {worst_trade["pnl"]:>+,.2f}')
+        
+        # --- Section 4: Transaction Costs (calculated from trades) ---
+        total_buy_cost = 0.0
+        total_sell_cost = 0.0
+        total_buy_value = 0.0
+        total_sell_value = 0.0
+        total_stt = 0.0
+        total_gst = 0.0
+        total_stamp = 0.0
+        total_brokerage = 0.0
+        
+        for t in sell_trades:
+            buy_value = t['price'] * t['units']
+            sell_value = t['exit_price'] * t['units']
+            total_buy_value += buy_value
+            total_sell_value += sell_value
+            
+            bc = calculate_transaction_costs(buy_value, 'buy')
+            sc = calculate_transaction_costs(sell_value, 'sell')
+            total_buy_cost += bc['total']
+            total_sell_cost += sc['total']
+            total_stt += bc['stt'] + sc['stt']
+            total_gst += bc['gst'] + sc['gst']
+            total_stamp += bc['stamp'] + sc['stamp']
+            total_brokerage += bc['brokerage'] + sc['brokerage']
+        
+        total_costs = total_buy_cost + total_sell_cost
+        
+        lines.append('')
+        lines.append('[ TRANSACTION COSTS ]')
+        lines.append(f'  Total Buy Value   : {total_buy_value:>15,.2f}')
+        lines.append(f'  Total Sell Value  : {total_sell_value:>15,.2f}')
+        lines.append(f'  Total Turnover    : {(total_buy_value + total_sell_value):>15,.2f}')
+        lines.append(f'  ---')
+        lines.append(f'  Buy Side Costs    : {total_buy_cost:>15,.2f}')
+        lines.append(f'  Sell Side Costs   : {total_sell_cost:>15,.2f}')
+        lines.append(f'  Total Costs       : {total_costs:>15,.2f}')
+        lines.append(f'  ---')
+        lines.append(f'  Brokerage         : {total_brokerage:>15,.2f}')
+        lines.append(f'  STT               : {total_stt:>15,.2f}')
+        lines.append(f'  GST               : {total_gst:>15,.2f}')
+        lines.append(f'  Stamp Duty        : {total_stamp:>15,.2f}')
+        lines.append(f'  Cost as % Return  : {(total_costs / max(abs(total_return_abs), 1) * 100):>10.2f}%')
+        
+        # --- Section 5: Capital Gains Tax ---
+        stcg_total = 0.0
+        ltcg_total = 0.0
+        stcg_gains = 0.0
+        ltcg_gains = 0.0
+        stcg_count = 0
+        ltcg_count = 0
+        
+        for t in sell_trades:
+            if t['pnl'] <= 0:
+                continue
+            tax_info = calculate_capital_gains_tax(
+                purchase_price=t['price'],
+                current_price=t['exit_price'],
+                purchase_date=t['entry_date'],
+                current_date=t['exit_date'],
+                quantity=t['units']
+            )
+            if tax_info['tax_type'] == 'STCG':
+                stcg_total += tax_info['tax']
+                stcg_gains += tax_info['gain']
+                stcg_count += 1
+            elif tax_info['tax_type'] == 'LTCG':
+                ltcg_total += tax_info['tax']
+                ltcg_gains += tax_info['gain']
+                ltcg_count += 1
+        
+        total_tax = stcg_total + ltcg_total
+        net_post_tax_return = total_return_abs - total_costs - total_tax
+        
+        lines.append('')
+        lines.append('[ CAPITAL GAINS TAX ]')
+        lines.append(f'  STCG Trades       : {stcg_count}')
+        lines.append(f'  STCG Gains        : {stcg_gains:>15,.2f}')
+        lines.append(f'  STCG Tax (20%)    : {stcg_total:>15,.2f}')
+        lines.append(f'  ---')
+        lines.append(f'  LTCG Trades       : {ltcg_count}')
+        lines.append(f'  LTCG Gains        : {ltcg_gains:>15,.2f}')
+        lines.append(f'  LTCG Tax (12.5%)  : {ltcg_total:>15,.2f}')
+        lines.append(f'  ---')
+        lines.append(f'  Total Tax         : {total_tax:>15,.2f}')
+        lines.append(f'  Total Costs+Tax   : {(total_costs + total_tax):>15,.2f}')
+        lines.append(f'  Net Post-Tax Ret  : {net_post_tax_return:>+15,.2f}')
+        
+        # --- Section 6: Trade Log ---
+        lines.append('')
+        lines.append('[ TRADE LOG ]')
+        lines.append(f'  {"Symbol":<20} {"Entry":>12} {"Exit":>12} {"Entry ₹":>10} {"Exit ₹":>10} {"Units":>6} {"PnL":>12} {"Reason"}')
+        lines.append(f'  {"-"*20} {"-"*12} {"-"*12} {"-"*10} {"-"*10} {"-"*6} {"-"*12} {"-"*20}')
+        
+        for t in sorted(sell_trades, key=lambda x: x['exit_date']):
+            lines.append(
+                f'  {t["symbol"]:<20} '
+                f'{str(t["entry_date"]):>12} '
+                f'{str(t["exit_date"]):>12} '
+                f'{t["price"]:>10,.2f} '
+                f'{t["exit_price"]:>10,.2f} '
+                f'{t["units"]:>6} '
+                f'{t["pnl"]:>+12,.2f} '
+                f'{t.get("reason", "")}'
+            )
+        
+        lines.append('')
+        lines.append(sep)
+        lines.append(f'  Weeks Simulated: {len(self.weekly_results)} | '
+                     f'Duration: {total_days} days ({years:.2f} years)')
+        lines.append(sep)
+        
+        # Write file
+        report_content = '\n'.join(lines)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(report_content)
+        
+        logger.info(f"Report saved: {filepath}")
+        return filepath
     
     # ============================================================
     # COMMENTED OUT: Old methods replaced by ActionsService
@@ -1167,7 +1398,7 @@ class WeeklyBacktester:
             logger.info(f"Updated {action.symbol} {action.type}: price {action.execution_price} -> {open_price}")
 
 
-def run_backtest(start_date: date, end_date: date, config_name: str = "momentum_config", check_daily_sl: bool = True):
+def run_backtest(start_date: date, end_date: date, config_name: str = "momentum_config", check_daily_sl: bool = True, mid_week_buy: bool = True):
     """
     Convenience function to run a backtest.
     
@@ -1175,11 +1406,13 @@ def run_backtest(start_date: date, end_date: date, config_name: str = "momentum_
         start_date: Start date for backtest
         end_date: End date for backtest
         config_name: config name for config lookup
+        check_daily_sl: Enable daily stop-loss checks
+        mid_week_buy: Enable mid-week vacancy fills
         
     Returns:
         Tuple of (results, summary)
     """
-    backtester = WeeklyBacktester(start_date, end_date, config_name, check_daily_sl)
+    backtester = WeeklyBacktester(start_date, end_date, config_name, check_daily_sl, mid_week_buy)
     results = backtester.run()
     summary = backtester.get_summary()
     return results, summary

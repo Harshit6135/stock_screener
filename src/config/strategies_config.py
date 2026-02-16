@@ -12,6 +12,12 @@ class StrategyParameters:
     min_turnover: float = 0.5
     hard_sl_percent: float = 0.05  # 5% below SL = intraday disaster exit
     
+    # Soft Penalty Multipliers (1.0 = No Penalty)
+    ema_200_penalty: float = 0.5   # 50% score reduction if below EMA200
+    ema_50_penalty: float = 0.7    # 30% score reduction if below EMA50
+    atr_spike_penalty: float = 0.8 # 20% score reduction if ATR spike
+
+    
     # Sub-factor weights for trend
     trend_extension_rank_weight: float = 0.4
     trend_slope_weight: float = 0.6

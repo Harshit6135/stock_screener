@@ -14,21 +14,7 @@ ranking_repo = RankingRepository()
 marketdata_repo = MarketDataRepository()
 
 
-def get_prev_friday(d):
-    """
-    Get the Friday for ranking lookup:
-    - If d is Friday, return d
-    - Otherwise, return the previous Friday before d
-    """
-    weekday = d.weekday()  # Monday=0, Friday=4
-    if weekday == 4:  # Friday
-        return d
-    elif weekday < 4:  # Mon-Thu: go back to last Friday
-        days_back = weekday + 3  # Mon=3, Tue=4, Wed=5, Thu=6
-        return d - timedelta(days=days_back)
-    else:  # Sat=5, Sun=6: go back to Friday
-        days_back = weekday - 4  # Sat=1, Sun=2
-        return d - timedelta(days=days_back)
+from utils.date_utils import get_prev_friday
 
 
 # ========== Ranking Generation Endpoints ==========

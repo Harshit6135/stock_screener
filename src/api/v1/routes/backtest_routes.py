@@ -44,8 +44,12 @@ class RunBacktest(MethodView):
             end_date = datetime.strptime(str(data['end_date']), '%Y-%m-%d').date()
             config_name = data.get('config_name', 'momentum_config')
             check_daily_sl = data.get('check_daily_sl', True)
+            mid_week_buy = data.get('mid_week_buy', True)
             
-            results, summary = run_backtest(start_date, end_date, config_name, check_daily_sl)
+            results, summary = run_backtest(
+                start_date, end_date, config_name,
+                check_daily_sl, mid_week_buy
+            )
             
             return {
                 "message": f"Backtest completed. Final value: {summary.get('final_value', 0)}, "
