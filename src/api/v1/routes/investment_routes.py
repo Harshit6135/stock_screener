@@ -106,7 +106,14 @@ class ManualBuy(MethodView):
             actions = []
             for stock in data:
                 service = ActionsService(stock['config_name'])
-                action = service.buy_action(stock['symbol'], stock['date'], stock['reason'], stock['units'], stock['price'])
+                action = service.buy_action(
+                    symbol=stock['symbol'],
+                    action_date=stock['date'],
+                    prev_close=float(stock['price']),
+                    reason=stock['reason'],
+                    units=stock['units']
+                )
+                action['execution_price'] = float(stock['price'])
                 actions.append(action)
             actions_repo.delete_actions(data[0]['date'])
             actions_repo.bulk_insert_actions(actions)
@@ -139,8 +146,9 @@ class ManualSell(MethodView):
         """
         try:
             action = ActionsService.sell_action(
-                data['symbol'], data['date'], data['units'], data['reason']
+                data['symbol'], data['date'], float(data['price']), data['units'], data['reason']
             )
+            action['execution_price'] = float(data['price'])
             actions_repo.delete_actions(data['date'])
             actions_repo.bulk_insert_actions([action])
             return {"message": f"Manual SELL action created for {data['symbol']}: {data['units']} units"}

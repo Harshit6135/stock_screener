@@ -42,7 +42,7 @@ class ActionsService:
         self.investment_repo = InvestmentRepository(session)
     
     def buy_action(self, symbol: str, action_date: date, prev_close: float, reason: str,
-                   remaining_capital: float = None) -> Dict:
+                   remaining_capital: float = None, units: int = 0) -> Dict:
         """
         Generate a BUY action with position sizing.
         
@@ -52,9 +52,11 @@ class ActionsService:
         Parameters:
             symbol (str): Trading symbol
             action_date (date): Action date
+            prev_close (float): Current price/Previous close
             reason (str): Action reason (e.g., 'top 10 buys')
             remaining_capital (float): Override portfolio value with remaining capital
                                        (used by generate_actions to track across batch)
+            units (int): Optional explicit units override (default 0 = auto-calculate)
         
         Returns:
             Dict: BUY action with units, risk, ATR, capital needed
@@ -78,14 +80,21 @@ class ActionsService:
             )
         atr = round(atr, 2)
 
-        # Use shared position sizing util
-        sizing = calculate_position_size(
-            atr=atr,
-            current_price=float(prev_close),
-            portfolio_value=remaining_capital,
-            config=self.config
-        )
-        units = sizing['shares']
+        # Use shared position sizing util or manual units
+        if units > 0:
+            capital_needed = units * float(prev_close)
+            risk_per_unit = round(atr * self.config.sl_multiplier, 2)
+        else:
+            sizing = calculate_position_size(
+                atr=atr,
+                current_price=float(prev_close),
+                portfolio_value=remaining_capital,
+                config=self.config
+            )
+            units = sizing['shares']
+            capital_needed = sizing['position_value']
+            risk_per_unit = sizing['stop_distance']
+
         if units <= 0:
             logger.warning(f"Skipping BUY {symbol}: insufficient capital (shares={units})")
             # Return with units=0 so caller can save as Pending for mid-week fill
@@ -101,9 +110,6 @@ class ActionsService:
                 'capital': 0
             }
             return action
-
-        capital_needed = sizing['position_value']
-        risk_per_unit = sizing['stop_distance']
 
         action = {
             'action_date' : action_date,
@@ -458,7 +464,6 @@ class ActionsService:
 
         # Resolve Friday for ranking/data lookups
         data_date = get_prev_friday(action_date)
-
         week_holdings = []
         for symbol, action in buy_symbols.items():
             initial_sl = round(
@@ -492,7 +497,7 @@ class ActionsService:
             )
         self.investment_repo.delete_holdings(action_date)
         self.investment_repo.bulk_insert_holdings(week_holdings)
-        summary = self.get_summary(week_holdings, sold)
+        summary = self.get_summary(week_holdings, sold, action_date=action_date)
         self.investment_repo.insert_summary(summary)
         return  week_holdings
 
@@ -563,7 +568,7 @@ class ActionsService:
         }
         return holding_data
 
-    def get_summary(self, week_holdings, sold, override_starting_capital=None):
+    def get_summary(self, week_holdings, sold, override_starting_capital=None, action_date=None):
         """
         Build weekly portfolio summary from holdings data.
 
@@ -588,9 +593,18 @@ class ActionsService:
         initial = float(self.config.initial_capital)
 
         # Convert holdings to DataFrame for vectorized calculations
-        df = pd.DataFrame(week_holdings)
+        if week_holdings:
+            df = pd.DataFrame(week_holdings)
+        else:
+            # Create empty DataFrame with required columns to avoid KeyErrors
+            df = pd.DataFrame(columns=[
+                'entry_price', 'units', 'current_sl', 'current_price', 
+                'entry_date', 'date'
+            ])
+
         for col in ['entry_price', 'units', 'current_sl', 'current_price']:
-            df[col] = df[col].astype(float)
+            if col in df.columns:
+                df[col] = df[col].astype(float)
 
         # Bought: cost of new positions this week
         bought_mask = df['entry_date'] == df['date']
@@ -628,7 +642,7 @@ class ActionsService:
         )
 
         summary = {
-            'date': week_holdings[0]['date'],
+            'date': week_holdings[0]['date'] if week_holdings else action_date,
             'starting_capital': round(starting_capital, 2),
             'sold': round(sold, 2),
             'bought': round(bought, 2),

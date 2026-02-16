@@ -145,7 +145,10 @@ class ApproveActions(MethodView):
             working_date = args.get('date')
             if not working_date:
                 abort(400, message="date query parameter is required")
-            count = ActionsService.approve_all_actions(working_date)
+            
+            config_name = args.get('config_name', 'momentum_config')
+            service = ActionsService(config_name)
+            count = service.approve_all_actions(working_date)
             return {"message": f"Approved {count} actions"}
         except ValueError as e:
             logger.error(f"Validation error: {e}")
