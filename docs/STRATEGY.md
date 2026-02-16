@@ -1,292 +1,195 @@
-# Stock Screener - Strategy & Indicators Documentation
+# Strategy Guide
 
-> **Last Updated:** 2026-02-08
+> **Last Updated:** 2026-02-16
 
-A momentum-based multi-factor scoring system for Indian equity markets.
+Comprehensive guide to the momentum-based multi-factor scoring system, trading logic, and risk controls.
 
 ---
 
-## Strategy Architecture
+## 🧠 Strategy Philosophy
+
+The core philosophy is **"Goldilocks Momentum"**:
+1. **Trend**: Buy stocks in a steady uptrend (not too steep, not too flat).
+2. **Momentum**: Buy when RSI is in the "sweet spot" (50-70), avoiding overbought extremes (>85).
+3. **Efficiency**: Prefer smooth curves (low volatility) over jagged spikes.
+4. **Volume**: Ensure price moves are supported by volume conviction.
+5. **Structure**: Use Bollinger Band structure to time entries.
+
+---
+
+## 📊 Factor Scoring Model
+
+The composite score (0-100) is a weighted sum of 5 factors.
+
+**Weights:**
+| Factor | Weight | Components |
+|--------|--------|------------|
+| **Trend** | **30%** | EMA Slope (60%), Trend Extension (40%) |
+| **Momentum** | **25%** | RSI (60%), PPO (20%), Pure Momentum (10%), PPO Hist (10%) |
+| **Risk Efficiency** | **20%** | ROC/ATR Ratio |
+| **Volume** | **15%** | Relative Volume (70%), Price-Vol Correlation (30%) |
+| **Structure** | **10%** | %B (50%), Bandwidth (50%) |
+
+### 1. Trend Factor (Goldilocks Scoring)
+We penalize price if it gets too far from the 200-day EMA (overextended).
+
+| Distance from EMA 200 | Score Zone | Logic |
+|-----------------------|------------|-------|
+| < 0% | 0 | **Bearish** (Below 200 EMA) |
+| 0% - 10% | 70 → 85 | **Early Trend** (Building up) |
+| **10% - 35%** | **85 → 100** | **Sweet Spot (Goldilocks)** |
+| 35% - 50% | 100 → 60 | **Extended** (Risk of mean reversion) |
+| > 50% | 60 → 0 | **Over-Extended** (Bubble territory) |
+
+### 2. Momentum Factor (RSI Regime)
+We map RSI levels to scores to capture sustainable momentum.
+
+| RSI (14) | Score Zone | Logic |
+|----------|------------|-------|
+| < 40 | 0 | **Bearish** |
+| 40 - 50 | 0 → 30 | **Recovery** |
+| **50 - 70** | **30 → 100** | **Bullish Sweet Spot** |
+| 70 - 85 | 100 → 90 | **Strong** (Watch for exhaustion) |
+| > 85 | 90 → 60 | **Overbought** (Capped at 60) |
+
+---
+
+## 🚫 Penalty Box Rules
+
+A stock is assigned a **Score of 0** (disqualified) if:
+
+1. **Below EMA 200**: Price < EMA 200 (Major trend is down).
+2. **ATR Spike**: Current ATR > 2.0x of 20-day average ATR (High volatility event / earnings shock).
+3. **Low Liquidity**: Average daily turnover < ₹1 Crore.
+
+**Soft Penalties (Score Multipliers):**
+- Below EMA 50: **0.7x** penalty
+- Below EMA 200 (if enabled): **0.5x** penalty
+
+---
+
+## 🔄 Trading Logic
+
+### Logic Flow
 
 ```mermaid
 flowchart TD
-    subgraph Data["Data Layer"]
-        MD[Market Data<br/>OHLCV]
+    Start[Weekly Review] --> GenActions[Generate Actions]
+    GenActions --> SellPhase[1. SELL Phase]
+    SellPhase --> SwapPhase[2. SWAP Phase]
+    SwapPhase --> BuyPhase[3. BUY Phase]
+    
+    subgraph SellLogic [SELL Rules]
+        SL_Hit{Stop Loss Hit?} -- Yes --> SELL
+        Score_Low{Score < 40?} -- Yes --> SELL
     end
-    
-    subgraph Indicators["Technical Indicators"]
-        EMA[EMA 50/200]
-        RSI[RSI 14]
-        PPO[PPO 12/26/9]
-        ROC[ROC 10/20/60/125]
-        BB[Bollinger Bands]
-        ATR[ATR 14]
-        VOL[Volume SMA 20]
+
+    subgraph SwapLogic [SWAP Rules]
+        Better{Challenger > Incumbent * 1.10?} -- Yes --> SWAP
     end
-    
-    subgraph Derived["Derived Metrics"]
-        DIST[Distance from EMA]
-        SLOPE[EMA Slope]
-        RVOL[Relative Volume]
-        CORR[Vol-Price Correlation]
-        RISK[Risk-Adjusted Return]
-        SPIKE[ATR Spike]
+
+    subgraph BuyLogic [BUY Rules]
+        Vacancy{Slots Available?} -- Yes --> BUY_Top_Ranked
     end
-    
-    subgraph Factors["Factor Scoring (0-100)"]
-        F1[Trend 30%<br/>Goldilocks Scoring]
-        F2[Momentum 30%<br/>RSI Regime + Pure Momentum]
-        F3[Risk Efficiency 20%<br/>Return/Risk Ratio]
-        F4[Volume 15%<br/>RVOL + Correlation]
-        F5[Structure 5%<br/>%B + Bandwidth]
-    end
-    
-    subgraph Composite["Composite Score"]
-        CS[Weighted Score 0-100]
-        PB{Penalty Box}
-    end
-    
-    subgraph Output["Portfolio Actions"]
-        RANK[Weekly Rankings]
-        ACT[SELL → SWAP → BUY]
-    end
-    
-    MD --> Indicators
-    Indicators --> Derived
-    EMA --> DIST & SLOPE
-    VOL --> RVOL
-    ATR --> SPIKE
-    
-    DIST & SLOPE --> F1
-    RSI & PPO & ROC --> F2
-    ROC & ATR & SPIKE --> F3
-    RVOL & CORR --> F4
-    BB --> F5
-    
-    F1 & F2 & F3 & F4 & F5 --> CS
-    CS --> PB
-    PB -->|Pass| RANK
-    PB -->|Fail| X[Score = 0]
-    RANK --> ACT
+
+    SellPhase --> SellLogic
+    SwapPhase --> SwapLogic
+    BuyPhase --> BuyLogic
 ```
+
+### 1. SELL Phase
+Close positions if:
+- **Stop Loss Hit**: Price < (Entry Price - 2x ATR) OR Hard SL hit.
+- **Score Degradation**: Composite Score drops below **40**.
+
+### 2. SWAP Phase (Champion vs Challenger)
+Replace an existing holding ("Incumbent") with a new candidate ("Challenger") only if:
+- **Challenger Score** > **Incumbent Score** + **10% Buffer**
+- *Example*: If held stock has score 80, new stock needs > 88 to swap.
+- Prevents over-trading (churn) for marginal gains.
+
+### 3. BUY Phase
+Fill any remaining empty slots in the portfolio (up to `max_positions`) with the highest-ranked available stocks.
 
 ---
 
-## Technical Indicators
+## 🛑 Stop-Loss System
 
-### Trend Indicators
+We use a **Hybrid Stop-Loss** system combining volatility and hard limits.
 
-| Indicator | Formula | Purpose |
-|-----------|---------|---------|
-| **EMA 50** | 50-day Exponential MA | Short-term trend |
-| **EMA 200** | 200-day Exponential MA | Long-term trend filter |
-| **EMA Slope** | (EMA50 - EMA50[5]) / EMA50[5] | Trend velocity |
-| **Distance from EMA** | (Close - EMA) / EMA | Trend extension |
+1. **ATR Trailing Stop**:
+   - `Initial SL = Entry Price - (2.0 × ATR)`
+   - Trails up only, never moves down.
 
-### Momentum Indicators
+2. **Hard Trailing Step (10%)**:
+   - Locks in profit every 10% gain.
+   - `Hard SL = Entry Price × (1 + 0.10 × N)`
 
-| Indicator | Formula | Purpose |
-|-----------|---------|---------|
-| **RSI 14** | Relative Strength Index | Momentum strength |
-| **RSI Signal** | 3-day EMA of RSI | Smoothed for regime |
-| **PPO 12/26/9** | (EMA12 - EMA26) / EMA26 × 100 | Price oscillator |
-| **ROC 10/20** | Rate of change | Short-term momentum |
-| **ROC 60** | ~3 month return | Pure momentum |
-| **ROC 125** | ~6 month return | Pure momentum |
-
-### Volatility Indicators
-
-| Indicator | Formula | Purpose |
-|-----------|---------|---------|
-| **ATR 14** | Average True Range | Position sizing, stops |
-| **ATR Spike** | ATR / ATR_20_avg | Earnings/news detection |
-| **BBands 20/2** | 20-period, 2 std dev | Volatility bands |
-| **BBB (Bandwidth)** | (Upper - Lower) / Middle | Volatility regime |
-| **%B** | (Close - Lower) / (Upper - Lower) | Band position |
-
-### Volume Indicators
-
-| Indicator | Formula | Purpose |
-|-----------|---------|---------|
-| **VOL SMA 20** | 20-day volume average | Baseline |
-| **RVOL** | Volume / VOL_SMA_20 | Relative volume |
-| **Vol-Price Corr** | 10-day correlation | Accumulation/distribution |
+3. **Intraday Hard SL (Disaster Exit)**:
+   - If `Low` touches `SL × 0.95` (5% below SL), exit immediately intraday.
 
 ---
 
-## Factor Calculations
+## ⚖️ Position Sizing
 
-### 1. Trend Factor (30%)
+Position size is calculated based on **Risk Management**:
 
-**Goldilocks Scoring** - Non-linear distance from 200 EMA:
+`Shares = (Total Capital × Risk Per Trade %) / (ATR × Stop Multiplier)`
 
-| Distance | Score | Interpretation |
-|----------|-------|----------------|
-| < 0% | 0 | Below EMA (bearish) |
-| 0-10% | 70→85 | Early breakout |
-| 10-35% | 85→100 | **Sweet spot** |
-| 35-50% | 100→60 | Extended |
-| > 50% | 60→0 | Over-extended |
-
-### 2. Momentum Factor (30%)
-
-**RSI Regime Mapping:**
-
-| RSI | Score | Interpretation |
-|-----|-------|----------------|
-| < 40 | 0 | Weak |
-| 40-50 | 0→30 | Recovering |
-| 50-70 | 30→100 | **Sweet spot** |
-| 70-85 | 100→90 | Strong |
-| > 85 | 90→60 | Overbought |
-
-**Composition:** 40% RSI + 30% PPO + 30% Pure Momentum (avg ROC_60 + ROC_125)
-
-### 3. Risk Efficiency Factor (20%)
-
-```
-efficiency = (ROC_20 / (ATR/Price)) × spike_penalty
-spike_penalty = 0.5 if ATR_spike > 2.0 else 1.0
-```
-
-### 4. Volume Factor (15%)
-
-```
-volume_score = 60% × RVOL_norm + 40% × correlation_norm
-```
-
-### 5. Structure Factor (5%)
-
-**%B Scoring:**
-
-| %B | Score |
-|----|-------|
-| < 0.5 | 20 |
-| 0.5-0.7 | 20→60 |
-| 0.7-1.1 | 60→100 |
-| > 1.1 | 100→70 |
+**Constraints (Most Restrictive Wins):**
+1. **Risk-Based**: Max 1% of capital at risk per trade.
+2. **Liquidity Cap**: Max 5% of stock's 20-day Average Daily Volume (ADV).
+3. **Concentration Cap**: Max 12% of total portfolio value in one stock.
+4. **Minimum Size**: Trade rejected if position value < 2% of portfolio (avoids tiny positions).
 
 ---
 
-## Composite Score
+## 🛡️ Portfolio Controls
 
-```
-composite_score = Σ (factor_score × weight)
+Global risk switches to protect the entire portfolio:
 
-Weights:
-- Trend:      30%
-- Momentum:   30%
-- Efficiency: 20%
-- Volume:     15%
-- Structure:   5%
-```
+| Metric | Condition | Action |
+|--------|-----------|--------|
+| **Drawdown** | > 15% | **Pause New Entries** (Hold cash) |
+| **Drawdown** | > 20% | **Reduce Exposure** (Scale down positions by 30%) |
+| **Sector Exposure** | > 40% | **Block New Buys** in that sector |
+| **Correlation** | > 0.70 | Alert if >3 stocks are highly correlated |
 
 ---
 
-## Penalty Box Rules
+## 🇮🇳 Transaction Costs & Tax
 
-Score set to **0** if any condition met:
+The system models realistic Indian market costs:
 
-| Rule | Threshold | Reason |
-|------|-----------|--------|
-| Below EMA | Price < EMA_200 | Not in uptrend |
-| ATR Spike | ATR_spike > 2.0 | Volatility shock |
-| Illiquid | Turnover < ₹5 Cr | Low liquidity |
+### Transaction Costs
+- **Brokerage**: Flat/Percent (Configurable)
+- **STT**: 0.1% on Buy & Sell (Delivery)
+- **Exchange Txn**: 0.00345%
+- **SEBI Turnover**: ₹10/Crore
+- **Stamp Duty**: 0.015% (Buy only)
+- **GST**: 18% on (Brokerage + Exchange + SEBI)
+- **DP Charges**: ₹13 + GST per Sell unit (CN)
 
----
-
-## Trading Strategy
-
-### Weekly Rebalancing Phases
-
-```mermaid
-flowchart LR
-    subgraph Weekly["Weekly Process"]
-        R[Rankings] --> S[SELL Phase]
-        S --> SW[SWAP Phase]
-        SW --> B[BUY Phase]
-    end
-    
-    subgraph Controls["Risk Controls"]
-        DD[Drawdown Check]
-        SEC[Sector Limits]
-        VIX[VIX Scaling]
-    end
-    
-    B --> DD --> SEC --> VIX --> POS[Position Sizing]
-```
-
-1. **SELL Phase:** Exit if stop-loss hit or score < exit_threshold
-2. **SWAP Phase:** Replace incumbent if challenger_score > incumbent × 1.10
-3. **BUY Phase:** Fill vacancies from top-ranked
-
-### Stop-Loss System (Hybrid)
-
-**ATR Trailing:**
-```
-new_stop = current_price - (ATR × sl_multiplier)
-effective_stop = max(new_stop, previous_stop)  # Only moves up
-```
-
-**Hard Trailing (10% increments):**
-```
-tiers = floor(gain_percent / 0.10)
-hard_stop = initial_stop × (1 + 0.10 × tiers)
-```
-
-**Combined:** `effective_stop = MAX(atr_stop, hard_stop)`
-
-### Champion vs Challenger
-
-```
-Swap if: challenger_score > incumbent_score × (1 + buffer_percent)
-Default buffer: 10%
-```
+### Tax Optimization
+- **STCG**: 20% (Short Term < 1 Year)
+- **LTCG**: 12.5% (Long Term > 1 Year)
+- **Exemption**: First ₹1.25 Lakh LTCG tax-free per year.
+- **Hold Bias**: Logic encourages holding winners approaching the 1-year mark to benefit from lower tax.
 
 ---
 
-## Position Sizing
+## 🔧 Configuration
 
-Multi-constraint sizing (most restrictive wins):
-
-1. **ATR Risk:** `shares = (portfolio × risk%) / (ATR × stop_mult)`
-2. **Liquidity:** max 5% of 20-day ADV
-3. **Concentration:** max 12% of portfolio
-4. **Minimum:** skip if < 2% of portfolio
-
----
-
-## Portfolio Controls
-
-| Control | Threshold | Action |
-|---------|-----------|--------|
-| Drawdown 15% | Pause | No new entries |
-| Drawdown 20% | Reduce | Scale to 70% |
-| Sector | 40% max | Diversify |
-| VIX 20-25 | Elevated | Scale to 85% |
-| VIX > 25 | High | Scale to 70% |
-
----
-
-## Configuration Parameters
+All parameters are adjustable in `src/config/strategies_config.py`.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `initial_capital` | ₹100,000 | Starting capital |
-| `risk_per_trade` | 1% | Per-trade risk |
-| `max_positions` | 15 | Max holdings |
-| `buffer_percent` | 10% | Swap threshold |
-| `exit_threshold` | 40 | Sell if score below |
-| `sl_multiplier` | 2 | ATR × multiplier |
+| `trend_strength_weight` | 0.30 | Weight for Trend factor |
+| `momentum_velocity_weight` | 0.25 | Weight for Momentum factor |
+| `atr_threshold` | 2.0 | Multiplier for ATR Spike penalty |
+| `risk_per_trade_percent` | 0.01 | 1% Portfolio Risk |
+| `max_positions` | 10 | Max number of stocks |
+| `exit_threshold` | 40 | Score exit trigger |
+| `buffer_percent` | 0.10 | Swap buffer (10%) |
 
----
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `indicators_service.py` | Calculate 20+ indicators |
-| `factors_service.py` | Goldilocks/RSI scoring |
-| `score_service.py` | Composite score |
-| `strategy_service.py` | Trading logic |
-| `portfolio_controls_service.py` | Risk controls |
+You can also update these at runtime via the `/api/v1/config/` endpoint.

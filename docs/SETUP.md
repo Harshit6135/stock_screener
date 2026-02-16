@@ -1,123 +1,188 @@
 # Setup Guide
 
-## Prerequisites
+> **Last Updated:** 2026-02-16
 
-- **Python 3.13+**
-- **Poetry** (package manager)
-- **Kite Connect API** credentials from [Zerodha Developers](https://kite.trade/)
+Complete guide to setting up the Stock Screener V2 environment on Windows, Linux, or macOS.
 
 ---
 
-## Installation
+## ✅ Prerequisites
 
-### 1. Install Poetry
+Before starting, ensure you have:
 
-```bash
-# Windows (PowerShell)
-(Invoke-WebRequest -Uri https://install.python-poetry.org -UseBasicParsing).Content | python -
+1. **Python 3.13+**: [Download Python](https://www.python.org/downloads/)
+2. **Poetry**: [Install Poetry](https://python-poetry.org/docs/#installation)
+3. **Git**: [Download Git](https://git-scm.com/downloads)
+4. **Kite Connect API Account**: 
+   - API Key & Secret from [Zerodha Developers](https://kite.trade/)
+   - Active subscription (₹2000/month) required for market data
 
-# Linux/macOS
-curl -sSL https://install.python-poetry.org | python3 -
-```
+---
 
-### 2. Clone Repository
+## 🛠️ Installation
+
+### 1. Clone Repository
 
 ```bash
 git clone <repo-url>
 cd stocks_screener_v2
 ```
 
-### 3. Install Dependencies
+### 2. Install Dependencies
+
+Using **Poetry** (recommended):
 
 ```bash
-# Install all dependencies
+# Install production + dev dependencies
 poetry install
 
-# Activate virtual environment
+# SQLCipher support (optional, if needed for encrypted DBs)
+# poetry install --extras "sqlcipher"
+```
+
+### 3. Activate Virtual Environment
+
+```bash
 poetry shell
 ```
 
-### 4. Configure Secrets
+---
+
+## 🔐 Configuration
+
+### 1. Secrets File
+
+Create a `local_secrets.py` file in the project root. This file is `.gitignore`d to prevent accidental commits.
 
 ```bash
-# Create secrets file
+# Copy example template
 cp local_secrets.example.py local_secrets.py
-
-# Edit with your credentials
 ```
 
-**local_secrets.py:**
+Edit `local_secrets.py`:
+
 ```python
-KITE_API_KEY = "your_api_key_here"
-KITE_API_SECRET = "your_api_secret_here"
+# local_secrets.py
+
+KITE_API_KEY = "your_zm_api_key_here"
+KITE_API_SECRET = "your_zm_api_secret_here"
+
+# Optional: TOTP secret for auto-login (if implemented)
+KITE_TOTP_SECRET = ""
 ```
 
-### 5. Initialize Database
+---
+
+## 🗄️ Database Setup
+
+The project uses **SQLite** by default. You need to initialize the migrations folder and apply the schema.
+
+### Using Makefile (Recommended)
 
 ```bash
-# Set Flask app
-$env:FLASK_APP = "run.py"  # Windows
-export FLASK_APP=run.py     # Linux/Mac
+# Initialize DB, migrate, and upgrade in one go
+make setup
 
-# Initialize migrations
+# OR step-by-step:
+make db-init      # Create migrations/ folder
+make db-migrate   # Generate migration script
+make db-upgrade   # Apply to instance/stocks.db
+```
+
+### Manual Setup
+
+```bash
+# Set FLASK_APP environment variable
+# Windows PowerShell
+$env:FLASK_APP = "run.py"
+
+# Linux / Mac
+export FLASK_APP=run.py
+
+# Run Flask-Migrate commands
 flask db init
-flask db migrate -m "Initial"
+flask db migrate -m "Initial schema"
 flask db upgrade
 ```
 
-Or use Makefile:
-```bash
-make db-init
-```
+---
 
-### 6. Run Application
+## 🚀 Running the Application
+
+### Development Server
+
+Starts the Flask server with hot-reloading enabled.
 
 ```bash
-# Development server
+# Using Makefile
+make dev
+
+# OR using Poetry
 poetry run python run.py
-
-# Or with make
-make run
 ```
 
-Server runs at: http://127.0.0.1:5000
+Server will be available at: **http://127.0.0.1:5000**
 
----
+### Production Server
 
-## Verify Installation
+For production deployment (e.g., using Gunicorn):
 
 ```bash
-# Check risk config endpoint
-curl http://localhost:5000/risk_config
-
-# Expected response
-{
-  "initial_capital": 100000.0,
-  "risk_per_trade": 1000.0,
-  ...
-}
+# Example Gunicorn command
+gunicorn -w 4 -b 0.0.0.0:5000 run:app
 ```
 
 ---
 
-## Troubleshooting
+## ✅ Verification
 
-### Poetry not found
-Add Poetry to PATH:
-```bash
-# Windows
-$env:Path += ";$env:APPDATA\Python\Scripts"
-```
+Run these commands to verify everything is working:
 
-### Flask not found
-Ensure virtual environment is active:
-```bash
-poetry shell
-```
+1. **Check Status Endpoint**:
+   ```bash
+   curl http://localhost:5000/api/v1/init/
+   # Expected: 200 OK or 201 Created
+   ```
 
-### Database errors
-Delete and reinitialize:
-```bash
-rm -rf migrations instance
-make db-init
-```
+2. **Check Risk Config**:
+   ```bash
+   curl http://localhost:5000/api/v1/config/momentum_config
+   # Expected: JSON response with strategy parameters
+   ```
+
+---
+
+## 📋 Makefile Reference
+
+| Command | Description |
+|---------|-------------|
+| `make install` | Install dependencies via Poetry |
+| `make run` | Run Flask app (standard mode) |
+| `make dev` | Run Flask app (debug/reload mode) |
+| `make test` | Run pytest suite with coverage |
+| `make format` | Format code (Black + Isort) |
+| `make lint` | Check code style (Flake8) |
+| `make clean` | Remove `__pycache__` and artifacts |
+| `make db-reset` | **DANGER**: Wipes DB and re-initializes |
+
+---
+
+## ❓ Troubleshooting
+
+### 1. `Poetry not found`
+- Ensure Poetry bin directory is in your `PATH`.
+- Windows: `%APPDATA%\Python\Scripts`
+- Linux/Mac: `$HOME/.local/bin`
+
+### 2. `Kite Connect Error`
+- Verify API Key/Secret in `local_secrets.py`.
+- Ensure your Kite Connect app is active.
+- Check internet connection.
+
+### 3. Database Errors (`no such table`)
+- Run `make db-upgrade` to ensure migrations are applied.
+- Delete `instance/` folder and run `make db-reset` to start fresh.
+
+### 4. `ModuleNotFoundError: No module named 'src'`
+- Ensure you are running commands from the project root.
+- Ensure `poetry install` completed successfully.
