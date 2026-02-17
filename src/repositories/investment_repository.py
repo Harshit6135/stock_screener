@@ -241,12 +241,13 @@ class InvestmentRepository:
             CapitalEventModel.date.asc()
         ).all()
 
-    def get_total_capital(self, target_date=None):
+    def get_total_capital(self, target_date=None, include_realized=False):
         """
         Sum of all capital event amounts up to target_date.
 
         Parameters:
             target_date: Cut-off date (inclusive). None = all.
+            include_realized: Whether to include 'realized_gain' events.
 
         Returns:
             float: Total capital infused/withdrawn
@@ -254,6 +255,11 @@ class InvestmentRepository:
         query = self.session.query(
             func.sum(CapitalEventModel.amount)
         )
+        if not include_realized:
+            query = query.filter(
+                CapitalEventModel.event_type != 'realized_gain'
+            )
+            
         if target_date:
             query = query.filter(
                 CapitalEventModel.date <= target_date
@@ -280,6 +286,26 @@ class InvestmentRepository:
             logger.error(f"Error inserting capital event: {e}")
             self.session.rollback()
             return None
+
+    def delete_capital_events(self, date=None, event_type=None):
+        """
+        Delete capital events by date and/or type.
+        
+        Parameters:
+            date: Optional date to filter by
+            event_type: Optional event type to filter by
+        """
+        try:
+            query = self.session.query(CapitalEventModel)
+            if date:
+                query = query.filter(CapitalEventModel.date == date)
+            if event_type:
+                query = query.filter(CapitalEventModel.event_type == event_type)
+            query.delete()
+            self.session.commit()
+        except Exception as e:
+            logger.error(f"Error deleting capital events: {e}")
+            self.session.rollback()
 
     def delete_all_capital_events(self):
         """

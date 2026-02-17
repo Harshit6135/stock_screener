@@ -91,8 +91,8 @@ class InvestmentService:
         )
 
         absolute_return_pct = (
-            (total_gain / total_capital) * 100
-            if total_capital else 0
+            (total_gain / entry_value) * 100
+            if entry_value else 0
         )
 
         summary['portfolio_value'] = round(portfolio_value, 2)
@@ -219,27 +219,65 @@ class InvestmentService:
         trades = []
         for sell in sells:
             symbol = sell.symbol
-            if symbol in buys and buys[symbol]:
-                buy = buys[symbol].pop(0)  # FIFO matching
-                entry_price = float(buy.execution_price or buy.prev_close)
-                exit_price = float(sell.execution_price or sell.prev_close)
-                units = min(sell.units, buy.units)
-                pnl = (exit_price - entry_price) * units
-                return_pct = ((exit_price - entry_price) / entry_price) * 100 if entry_price else 0
-                days_held = (sell.action_date - buy.action_date).days
+            sell_units = sell.units
+            sell_price = float(sell.execution_price or sell.prev_close)
+            total_sell_value = sell_units * sell_price
+            
+            total_buy_cost = 0.0
+            buy_date = None
+            
+            # FIFO matching
+            matched_units = 0
+            while matched_units < sell_units:
+                if symbol in buys and buys[symbol]:
+                    buy = buys[symbol][0]
+                    buy_price = float(buy.execution_price or buy.prev_close)
+                    
+                    available = buy.units
+                    needed = sell_units - matched_units
+                    take = min(available, needed)
+                    
+                    total_buy_cost += take * buy_price
+                    matched_units += take
+                    
+                    if not buy_date:
+                        buy_date = buy.action_date
+                    
+                    # Update buy units or remove if fully consumed
+                    if take >= available:
+                        buys[symbol].pop(0)
+                    else:
+                        buy.units -= take
+                else:
+                    # No more buys (split/bonus shares) -> 0 cost basis
+                    # The remaining sell value is pure profit
+                    remaining = sell_units - matched_units
+                    matched_units += remaining
+                    # total_buy_cost += 0
+                    if not buy_date:
+                         buy_date = sell.action_date # Fallback
 
-                trades.append({
-                    'entry_date': str(buy.action_date),
-                    'exit_date': str(sell.action_date),
-                    'symbol': symbol,
-                    'units': units,
-                    'entry_price': round(entry_price, 2),
-                    'exit_price': round(exit_price, 2),
-                    'pnl': round(pnl, 2),
-                    'return_pct': round(return_pct, 2),
-                    'days_held': days_held,
-                    'reason': sell.reason or ''
-                })
+            pnl = total_sell_value - total_buy_cost
+            entry_price = total_buy_cost / sell_units if sell_units else 0
+            
+            return_pct = 0.0
+            if total_buy_cost > 0:
+                return_pct = (pnl / total_buy_cost) * 100
+
+            days_held = (sell.action_date - buy_date).days if buy_date else 0
+
+            trades.append({
+                'entry_date': str(buy_date) if buy_date else str(sell.action_date),
+                'exit_date': str(sell.action_date),
+                'symbol': symbol,
+                'units': sell.units,
+                'entry_price': round(entry_price, 2),
+                'exit_price': round(sell_price, 2),
+                'pnl': round(pnl, 2),
+                'return_pct': round(return_pct, 2),
+                'days_held': days_held,
+                'reason': sell.reason or ''
+            })
 
         # Sort by exit date descending
         trades.sort(key=lambda x: x['exit_date'], reverse=True)
@@ -259,6 +297,10 @@ class InvestmentService:
             ValueError: If validation fails
         """
         actions = []
+        # Get portfolio value (Total Risk Capital) for sizing
+        # For manual buy, we use the same base as generating actions (Net Worth)
+        portfolio_value = self.inv_repo.get_total_capital(include_realized=True)
+        
         for stock in stocks:
             service = ActionsService(stock['config_name'])
             action = service.buy_action(
@@ -266,6 +308,8 @@ class InvestmentService:
                 action_date=stock['date'],
                 prev_close=float(stock['price']),
                 reason=stock['reason'],
+                portfolio_value=portfolio_value,
+                remaining_capital=portfolio_value, # Manual buy might ignore checks, but param is needed
                 units=stock['units']
             )
             action['execution_price'] = float(stock['price'])
@@ -288,6 +332,18 @@ class InvestmentService:
         Raises:
             ValueError: If validation fails
         """
+        # Validate units against current holding
+        holding = self.inv_repo.get_holdings_by_symbol(data['symbol'])
+        if not holding:
+            raise ValueError(
+                f"Cannot sell {data['symbol']}: not in current holdings"
+            )
+        if data['units'] > holding.units:
+            raise ValueError(
+                f"Cannot sell {data['units']} units of {data['symbol']}: "
+                f"only {holding.units} held"
+            )
+
         action = ActionsService.sell_action(
             data['symbol'], data['date'], float(data['price']), data['units'], data['reason']
         )

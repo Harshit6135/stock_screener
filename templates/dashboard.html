@@ -459,6 +459,128 @@
         </div>
     </div>
 
+    <!-- Manual Buy Modal -->
+    <div id="manual-buy-modal" class="hidden"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;">
+        <div
+            style="background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;padding:30px;min-width:400px;max-width:500px;">
+            <h3 style="margin-bottom:20px; color:var(--success);">Manual Buy</h3>
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Symbol</label>
+                <input type="text" id="mb-symbol" style="width:100%;" placeholder="e.g. RELIANCE">
+            </div>
+            <div class="grid-2" style="margin-bottom:15px;">
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Date</label>
+                    <input type="date" id="mb-date" style="width:100%;">
+                </div>
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Price</label>
+                    <input type="number" step="0.05" id="mb-price" style="width:100%;" oninput="calcUnits()">
+                </div>
+            </div>
+            <div class="grid-2" style="margin-bottom:15px;">
+                <div>
+                    <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Capital
+                        (₹)</label>
+                    <input type="number" id="mb-capital" style="width:100%;" oninput="calcUnits()">
+                </div>
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Units</label>
+                    <input type="number" id="mb-units" style="width:100%;" oninput="calcCapital()">
+                </div>
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Reason</label>
+                <input type="text" id="mb-reason" value="Manual Buy" style="width:100%;">
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button class="btn" onclick="document.getElementById('manual-buy-modal').classList.add('hidden')"
+                    style="background:var(--bg-input);">Cancel</button>
+                <button class="btn btn-success" onclick="submitManualBuy()">Submit Buy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manual Sell Modal -->
+    <div id="manual-sell-modal" class="hidden"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;">
+        <div
+            style="background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;padding:30px;min-width:400px;max-width:500px;">
+            <h3 style="margin-bottom:20px; color:var(--danger);">Manual Sell</h3>
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Symbol</label>
+                <input type="text" id="ms-symbol" style="width:100%;" placeholder="e.g. RELIANCE">
+            </div>
+            <div class="grid-2" style="margin-bottom:15px;">
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Date</label>
+                    <input type="date" id="ms-date" style="width:100%;">
+                </div>
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Units</label>
+                    <input type="number" id="ms-units" style="width:100%;">
+                </div>
+            </div>
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Price</label>
+                <input type="number" step="0.05" id="ms-price" style="width:100%;">
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Reason</label>
+                <input type="text" id="ms-reason" value="Manual Sell" style="width:100%;">
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button class="btn" onclick="document.getElementById('manual-sell-modal').classList.add('hidden')"
+                    style="background:var(--bg-input);">Cancel</button>
+                <button class="btn btn-danger" onclick="submitManualSell()">Submit Sell</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Capital Event Modal -->
+    <div id="capital-event-modal" class="hidden"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;">
+        <div
+            style="background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;padding:30px;min-width:400px;max-width:500px;">
+            <h3 style="margin-bottom:20px; color:var(--warning);">Capital Event</h3>
+            <div class="grid-2" style="margin-bottom:15px;">
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Date</label>
+                    <input type="date" id="ce-date" style="width:100%;">
+                </div>
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Type</label>
+                    <select id="ce-type" style="width:100%;">
+                        <option value="infusion">Deposit (Infusion)</option>
+                        <option value="withdrawal">Withdrawal</option>
+                    </select>
+                </div>
+            </div>
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Amount
+                    (₹)</label>
+                <input type="number" step="1000" id="ce-amount" style="width:100%;">
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Note</label>
+                <input type="text" id="ce-note" placeholder="Optional note" style="width:100%;">
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button class="btn" onclick="document.getElementById('capital-event-modal').classList.add('hidden')"
+                    style="background:var(--bg-input);">Cancel</button>
+                <button class="btn btn-warning" onclick="submitCapitalEvent()">Submit</button>
+            </div>
+        </div>
+    </div>
+
     <header>
         <div class="logo">
             <span style="color:var(--accent)">ANTIGRAVITY</span> STOCK SCREENER
@@ -583,7 +705,15 @@
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                 <h3>Current Holdings</h3>
                 <div style="display:flex; gap:10px; align-items:center;">
-                    <button class="btn" onclick="refreshPortfolio()">Refresh Prices</button>
+                    <button class="btn btn-warning"
+                        style="font-size:0.85rem; padding:6px 12px; background:#f59e0b; color:black;"
+                        onclick="openCapitalEventModal()">💰 Capital Event</button>
+                    <button class="btn btn-success" style="font-size:0.85rem; padding:6px 12px;"
+                        onclick="openManualBuy()">+ Buy</button>
+                    <button class="btn btn-danger" style="font-size:0.85rem; padding:6px 12px;"
+                        onclick="openManualSell()">- Sell</button>
+                    <button class="btn" style="font-size:0.85rem; padding:6px 12px;" onclick="refreshPortfolio()">↻
+                        Prices</button>
                 </div>
             </div>
             <div style="overflow-x:auto;">
@@ -670,6 +800,10 @@
                     <input type="date" id="actions-date" onchange="loadActions()">
                 </div>
                 <div style="display:flex; gap:10px;">
+                    <button class="btn btn-success" style="font-size:0.85rem;" onclick="openManualBuy()">+ Manual
+                        Buy</button>
+                    <button class="btn btn-danger" style="font-size:0.85rem;" onclick="openManualSell()">- Manual
+                        Sell</button>
                     <button class="btn btn-warning" onclick="rejectPending()">Reject All Pending</button>
                     <button class="btn btn-success" onclick="approveAll()">Approve All</button>
                     <button class="btn" onclick="processActions()">Process Actions</button>
@@ -691,6 +825,7 @@
                         <th>Symbol</th>
                         <th>Units</th>
                         <th>Price</th>
+                        <th>SL</th>
                         <th>Status</th>
                         <th>Reason</th>
                         <th class="text-center">Action</th>
@@ -893,6 +1028,155 @@
             const time = new Date().toLocaleTimeString();
             el.innerHTML += `<div><span style="color:#555">[${time}]</span> ${msg}</div>`;
             el.scrollTop = el.scrollHeight;
+        }
+
+        // --- MANUAL TRADES ---
+        function openManualBuy() {
+            document.getElementById('mb-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('mb-symbol').value = '';
+            document.getElementById('mb-units').value = '';
+            document.getElementById('mb-price').value = '';
+            document.getElementById('mb-capital').value = '';
+            document.getElementById('manual-buy-modal').classList.remove('hidden');
+        }
+
+        function openManualSell() {
+            document.getElementById('ms-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('ms-symbol').value = '';
+            document.getElementById('ms-units').value = '';
+            document.getElementById('ms-price').value = '';
+            document.getElementById('manual-sell-modal').classList.remove('hidden');
+        }
+
+        async function submitManualBuy() {
+            const symbol = document.getElementById('mb-symbol').value.toUpperCase();
+            const date = document.getElementById('mb-date').value;
+            const units = parseInt(document.getElementById('mb-units').value);
+            const price = parseFloat(document.getElementById('mb-price').value);
+            const reason = document.getElementById('mb-reason').value;
+
+            if (!symbol || !units || !price) return alert('Fill all fields');
+
+            const payload = [{
+                symbol: symbol,
+                date: date,
+                units: units,
+                price: price,
+                reason: reason,
+                config_name: "momentum_config"
+            }];
+
+            showLoading('Processing Buy...');
+            try {
+                const res = await fetch('/api/v1/investment/manual/buy', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    alert('Success: ' + data.message);
+                    document.getElementById('manual-buy-modal').classList.add('hidden');
+                    loadPortfolio();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (e) { alert(e.message); }
+            hideLoading();
+        }
+
+        async function submitManualSell() {
+            const symbol = document.getElementById('ms-symbol').value.toUpperCase();
+            const date = document.getElementById('ms-date').value;
+            const units = parseInt(document.getElementById('ms-units').value);
+            const price = parseFloat(document.getElementById('ms-price').value);
+            const reason = document.getElementById('ms-reason').value;
+
+            if (!symbol || !units || !price) return alert('Fill all fields');
+
+            const payload = {
+                symbol: symbol,
+                date: date,
+                units: units,
+                price: price,
+                reason: reason
+            };
+
+            showLoading('Processing Sell...');
+            try {
+                const res = await fetch('/api/v1/investment/manual/sell', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    alert('Success: ' + data.message);
+                    document.getElementById('manual-sell-modal').classList.add('hidden');
+                    loadPortfolio();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (e) { alert(e.message); }
+            hideLoading();
+        }
+
+        // --- CAPITAL EVENTS ---
+        function openCapitalEventModal() {
+            document.getElementById('ce-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('ce-amount').value = '';
+            document.getElementById('ce-note').value = '';
+            document.getElementById('capital-event-modal').classList.remove('hidden');
+        }
+
+        async function submitCapitalEvent() {
+            const date = document.getElementById('ce-date').value;
+            const type = document.getElementById('ce-type').value;
+            const amount = parseFloat(document.getElementById('ce-amount').value);
+            const note = document.getElementById('ce-note').value;
+
+            if (!amount || amount <= 0) return alert('Enter valid amount');
+
+            showLoading('Processing Capital Event...');
+            try {
+                const res = await fetch('/api/v1/investment/capital-events', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: date,
+                        event_type: type,
+                        amount: amount,
+                        note: note
+                    })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    alert('Success: ' + data.message);
+                    document.getElementById('capital-event-modal').classList.add('hidden');
+                    loadPortfolio();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (e) { alert(e.message); }
+            hideLoading();
+        }
+
+
+        // --- CALCULATOR ---
+        function calcUnits() {
+            const capital = parseFloat(document.getElementById('mb-capital').value) || 0;
+            const price = parseFloat(document.getElementById('mb-price').value) || 0;
+            if (capital > 0 && price > 0) {
+                document.getElementById('mb-units').value = Math.floor(capital / price);
+            }
+        }
+
+        function calcCapital() {
+            const units = parseInt(document.getElementById('mb-units').value) || 0;
+            const price = parseFloat(document.getElementById('mb-price').value) || 0;
+            if (units > 0 && price > 0) {
+                document.getElementById('mb-capital').value = (units * price).toFixed(2);
+            }
         }
 
         // --- Init Helpers ---
@@ -1220,6 +1504,7 @@
                     <td><b>${a.symbol}</b></td>
                     <td>${a.units}</td>
                     <td>${a.execution_price || a.prev_close || '-'}</td>
+                    <td>${a.stop_loss ? '₹' + parseFloat(a.stop_loss).toFixed(2) : '-'}</td>
                     <td>${a.status}</td>
                     <td style="font-size:0.8rem; color:#aaa;">${a.reason || ''}</td>
                     <td class="text-center">${actionBtn}</td>
@@ -1588,19 +1873,17 @@
 
         async function refreshPortfolio() {
             // Always sync latest
-            showLoading();
+            showLoading('Syncing Prices...');
             try {
-                console.log("Syncing portfolio prices...");
                 const res = await fetch('/api/v1/investment/sync-prices', { method: 'POST' });
                 const dat = await res.json();
                 if (!res.ok) throw new Error(dat.message);
                 console.log("Sync complete:", dat.message);
             } catch (e) {
                 console.error("Failed to sync prices", e);
-                // Continue to load anyway
             }
-            hideLoading();
             await loadPortfolio();
+            hideLoading();
         }
 
     </script>

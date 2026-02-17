@@ -49,7 +49,9 @@ class GenerateActions(MethodView):
         try:
             config_name = args.get('config_name', 'momentum_config')
             actions = ActionsService(config_name)
-            action_date = args.get('date', datetime.now().date())
+            action_date = args.get('date')
+            if action_date is None:
+                action_date = datetime.now().date()
             new_actions = actions.generate_actions(action_date)
             return {"message": f"Generated {len(new_actions)} actions"}
         except ValueError as e:

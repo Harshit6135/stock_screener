@@ -20,6 +20,13 @@ class MarketDataService:
         self.kite_client = KiteAdaptor(KITE_CONFIG, logger)
         self.logger = logger
 
+    def _get_fetch_end_date(self):
+        now_ist = pd.Timestamp.now(tz='Asia/Kolkata')
+        if now_ist.hour >= 18:
+            return pd.Timestamp(now_ist.date())
+        else:
+            return pd.Timestamp(now_ist.date()) - pd.Timedelta(days=1)
+
     def get_latest_data_by_token(self, token, start_date, end_date=None):
         """
         Fetches data for a ticker from start_date to end_date.
@@ -45,7 +52,7 @@ class MarketDataService:
         instruments = instr_repository.get_all_instruments()
 
         logger.info("Fetching Historical Data for instruments via Kite API...")
-        yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
+        fetch_end_date = self._get_fetch_end_date()
         for i, instr in enumerate(instruments):
             tradingsymbol = instr.tradingsymbol
             instr_token = instr.instrument_token
@@ -62,16 +69,16 @@ class MarketDataService:
                 if historical:
                     start_date = historical_start_date
                 else:
-                    start_date = yesterday - timedelta(days=HISTORY_LOOKBACK)
+                    start_date = fetch_end_date - timedelta(days=HISTORY_LOOKBACK)
 
-            if start_date > yesterday:
+            if start_date > fetch_end_date:
                 logger.info(f"No data to fetch for {log_symb} as last data date is {last_date}")
                 continue
             else:
                 logger.info(f"Fetching from Kite for {log_symb}) starting {start_date.date()}...")
 
             if not historical:
-                records, start_time = self.get_latest_data_by_token(instr_token, start_date, yesterday)
+                records, start_time = self.get_latest_data_by_token(instr_token, start_date, fetch_end_date)
             else:
                 logger.info(f"Fetching Historical data from Kite for {log_symb}) starting {start_date.date()}...")
                 records, start_time = self.get_historical_data(instr_token, start_date)
@@ -94,8 +101,8 @@ class MarketDataService:
                     indicators_repository.delete_by_tradingsymbol(tradingsymbol)
                     
                     sleep(max(0, 0.34 - (time() - start_time)))
-                    start_date = yesterday - timedelta(days=HISTORY_LOOKBACK)
-                    records, start_time = self.get_latest_data_by_token(instr_token, start_date, yesterday)
+                    start_date = fetch_end_date - timedelta(days=HISTORY_LOOKBACK)
+                    records, start_time = self.get_latest_data_by_token(instr_token, start_date, fetch_end_date)
                 else:
                     records = records[1:]
 
@@ -119,7 +126,7 @@ class MarketDataService:
         all_records = []
         
         # We start from NOW and go backwards
-        current_end = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
+        current_end = self._get_fetch_end_date()
         chunk_days = 1900 
         
         try:

@@ -42,7 +42,7 @@ class ActionsService:
         self.investment_repo = InvestmentRepository(session)
     
     def buy_action(self, symbol: str, action_date: date, prev_close: float, reason: str,
-                   remaining_capital: float = None, units: int = 0) -> Dict:
+                   portfolio_value: float, remaining_capital: float = None, units: int = 0) -> Dict:
         """
         Generate a BUY action with position sizing.
         
@@ -54,8 +54,8 @@ class ActionsService:
             action_date (date): Action date
             prev_close (float): Current price/Previous close
             reason (str): Action reason (e.g., 'top 10 buys')
-            remaining_capital (float): Override portfolio value with remaining capital
-                                       (used by generate_actions to track across batch)
+            portfolio_value (float): Total Portfolio Value (Equity + Cash) for risk calculation
+            remaining_capital (float): Available Cash (to check affordability)
             units (int): Optional explicit units override (default 0 = auto-calculate)
         
         Returns:
@@ -95,7 +95,7 @@ class ActionsService:
             sizing = calculate_position_size(
                 atr=atr,
                 current_price=float(prev_close),
-                portfolio_value=remaining_capital,
+                portfolio_value=portfolio_value,
                 config=self.config
             )
             units = sizing['shares']
@@ -103,7 +103,7 @@ class ActionsService:
             risk_per_unit = sizing['stop_distance']
 
         if units <= 0:
-            logger.warning(f"Skipping BUY {symbol}: insufficient capital (shares={units})")
+            logger.warning(f"Skipping BUY {symbol}: calculated units <= 0")
             # Return with units=0 so caller can save as Pending for mid-week fill
             action = {
                 'action_date': action_date,
@@ -213,6 +213,7 @@ class ActionsService:
         swap_buffer = 1 + self.config.buffer_percent
         exit_threshold = self.config.exit_threshold
         holdings_snap = []
+        holdings_entry_prices = {}  # symbol → entry_price for realized gain calc
         prices = {}
 
         if not current_holdings:
@@ -224,6 +225,9 @@ class ActionsService:
                     prices[item.tradingsymbol] = float(md.close)
         else:
             for h in current_holdings:
+                holdings_entry_prices[h.symbol] = float(
+                    h.entry_price
+                )
                 # Compute fresh trailing stop using Friday
                 # data before SL check
                 md_h = marketdata.get_marketdata_by_trading_symbol(
@@ -280,14 +284,25 @@ class ActionsService:
             exit_threshold=exit_threshold,
         )
 
-        # Track remaining capital across buys so each successive buy sizes against what's left
+        # Track remaining capital across buys so each successive buy checks against what's left
         summary = self.investment_repo.get_summary()
-        if not summary:
-            remaining_capital = (
-                self.investment_repo.get_total_capital(
-                    action_date
-                )
+        # Sizing Base: Total Equity Risk Capital (Initial + Infusions + Realized Gains)
+        # We use the sum of capital_events table including realized gains.
+        # This gives us the Net Worth (Cost Basis) to size positions on.
+        total_risk_capital = self.investment_repo.get_total_capital(
+            action_date, include_realized=True
+        )
+        sizing_base = total_risk_capital
+        if sizing_base <= 0:
+            logger.warning(
+                f"sizing_base is {sizing_base} — no capital "
+                f"events found before {action_date}. "
+                f"Position sizes will be 0."
             )
+
+        if not summary:
+            # If no summary, Remaining Capital = Total Net Worth (assuming all cash)
+            remaining_capital = total_risk_capital
         else:
             remaining_capital = float(summary.remaining_capital)
 
@@ -304,15 +319,40 @@ class ActionsService:
                 remaining_capital += (
                     d.units * float(md.close)
                 )
+                if d.symbol in holdings_entry_prices:
+                    entry_price = holdings_entry_prices[
+                        d.symbol
+                    ]
+                    if entry_price > 0:
+                        realized_gain = (
+                            float(md.close) - entry_price
+                        ) * d.units
+                        sizing_base += realized_gain
             elif d.action_type == 'BUY':
                 action = self.buy_action(
                     d.symbol, action_date, md.close,
                     d.reason,
+                    portfolio_value=sizing_base,
                     remaining_capital=remaining_capital
                 )
+                
+                if action['units'] > 0:
+                     cost = action['units'] * float(md.close)
+                     if cost > remaining_capital:
+                         # Insufficient cash.
+                         # Option A: Reduce units to fit cash (Partial Fill)
+                         # Option B: Mark as Pending (Full size) - Current Logic favors this for "capital-constrained"
+                         logger.info(f"Buy {d.symbol}: Cost {cost} > Remaining {remaining_capital}. Marking Pending/0 units.")
+                         action['units'] = 0
+                         action['capital'] = 0
+                
                 new_actions.append(action)
-                if action:
+                if action and action['units'] > 0:
                     remaining_capital -= action['capital']
+                    # Buying converts Cash -> Invested.
+                    # sizing_base = Invested + Cash.
+                    # New Invested = Old Invested + Cost. New Cash = Old Cash - Cost.
+                    # New Base = Old Base. So buying does NOT change sizing_base. Correct.
             elif d.action_type == 'SWAP':
                 # Sell incumbent
                 sell_act = self.sell_action(
@@ -323,6 +363,17 @@ class ActionsService:
                 remaining_capital += (
                     d.swap_sell_units * float(md.close)
                 )
+
+                if d.symbol in holdings_entry_prices:
+                    entry_price = holdings_entry_prices[
+                        d.symbol
+                    ]
+                    if entry_price > 0:
+                        realized_gain = (
+                            float(md.close) - entry_price
+                        ) * d.swap_sell_units
+                        sizing_base += realized_gain
+
                 # Buy challenger
                 md_swap_for = (
                     marketdata
@@ -333,10 +384,18 @@ class ActionsService:
                 buy_act = self.buy_action(
                     d.swap_for, action_date,
                     md_swap_for.close, d.reason,
+                    portfolio_value=sizing_base,
                     remaining_capital=remaining_capital
                 )
+                
+                if buy_act['units'] > 0:
+                     cost = buy_act['units'] * float(md_swap_for.close)
+                     if cost > remaining_capital:
+                         buy_act['units'] = 0
+                         buy_act['capital'] = 0
+
                 new_actions.append(buy_act)
-                if buy_act:
+                if buy_act and buy_act['units'] > 0:
                     remaining_capital -= buy_act['capital']
 
         new_actions = [a for a in new_actions if a is not None]
@@ -453,6 +512,9 @@ class ActionsService:
             logger.warning(f'Holdings {holdings_date} have data beyond the actions {action_date}')
             return None
 
+        # Clear existing realized gains for this date (idempotency)
+        self.investment_repo.delete_capital_events(date=action_date, event_type='realized_gain')
+
         buy_symbols = {}
         sell_symbols = {}
         for items in actions_list:
@@ -465,9 +527,38 @@ class ActionsService:
         sold = 0
         i = 0
         held_symbols = {h.symbol for h in holdings}
+        holdings_map = {h.symbol: h for h in holdings}
+        
         for symbol, action in sell_symbols.items():
-            sold += action.units * action.execution_price
-            held_symbols.remove(symbol)
+            holding = holdings_map.get(symbol)
+            if not holding:
+                logger.warning(f"SELL {symbol}: not in current holdings, skipping")
+                continue
+
+            # Use action's own units for sell value (handles stock splits)
+            sell_value = float(action.units * action.execution_price)
+            sold += sell_value
+            held_symbols.discard(symbol)
+
+            # Realized Gain = total sell value - total buy value
+            # Each side uses its own units (sell units may differ from
+            # buy units due to stock splits, bonus issues, etc.)
+            buy_value = float(holding.entry_price) * holding.units
+            pnl = sell_value - buy_value
+            logger.info(
+                f"SELL {symbol}: buy={holding.units}u@{holding.entry_price}={buy_value:.2f}"
+                f" sell={action.units}u@{action.execution_price}={sell_value:.2f}"
+                f" pnl={pnl:.2f}"
+            )
+
+            self.investment_repo.insert_capital_event({
+                'date': action_date,
+                'amount': pnl,
+                'event_type': 'realized_gain',
+                'note': (
+                    f"Realized P&L for {symbol}"
+                )
+            })
 
         # Skip buys for symbols already held (prevent duplicate inserts)
         for symbol in list(buy_symbols.keys()):
@@ -536,16 +627,23 @@ class ActionsService:
         )
         # Resolve Friday for data lookups
         data_date = get_prev_friday(action_date)
-        atr = round(
-            indicators.get_indicator_by_tradingsymbol(
-                'atrr_14', symbol, data_date
-            ), 2
+        raw_atr = indicators.get_indicator_by_tradingsymbol(
+            'atrr_14', symbol, data_date
         )
-        current_price = (
-            marketdata.get_marketdata_by_trading_symbol(
-                symbol, data_date
-            ).close
+        atr = round(raw_atr, 2) if raw_atr is not None else 0.0
+        raw_atr = indicators.get_indicator_by_tradingsymbol(
+            'atrr_14', symbol, data_date
         )
+        atr = round(raw_atr, 2) if raw_atr is not None else 0.0
+        
+        md_obj = marketdata.get_marketdata_by_trading_symbol(
+            symbol, data_date
+        )
+        if md_obj:
+            current_price = md_obj.close
+        else:
+            logger.warning(f"Market data missing for {symbol} on {data_date}, using last known price")
+            current_price = holding.current_price
 
         # Use shared stop-loss calculation (same as
         # backtesting). Supports both hard SL (intraday)
@@ -600,14 +698,21 @@ class ActionsService:
         if override_starting_capital is not None:
             starting_capital = float(override_starting_capital)
         else:
-            prev_summary = self.investment_repo.get_summary()
-            starting_capital = float(
-                prev_summary.remaining_capital
-                if prev_summary
-                else self.investment_repo.get_total_capital(
-                    action_date
-                )
+            # Compute from scratch: total capital - all historical buys + all historical sells
+            # This avoids snowballing errors from chaining previous summary's remaining_capital
+            total_cap = float(self.investment_repo.get_total_capital(action_date))
+            all_approved = self.actions_repo.get_all_approved_actions()
+            total_bought_before = sum(
+                float(a.execution_price or a.prev_close) * a.units
+                for a in all_approved
+                if a.type == 'buy' and a.action_date < action_date
             )
+            total_sold_before = sum(
+                float(a.execution_price or a.prev_close) * a.units
+                for a in all_approved
+                if a.type == 'sell' and a.action_date < action_date
+            )
+            starting_capital = total_cap - total_bought_before + total_sold_before
         sold = float(sold)
         initial = (
             self.investment_repo.get_total_capital(action_date)
@@ -660,7 +765,7 @@ class ActionsService:
         gain = round(portfolio_value - initial, 2)
         gain_pct = round(
             (portfolio_value - initial) / initial * 100, 2
-        )
+        ) if initial else 0.0
 
         summary = {
             'date': week_holdings[0]['date'] if week_holdings else action_date,
