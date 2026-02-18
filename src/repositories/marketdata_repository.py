@@ -1,5 +1,5 @@
 from db import db
-from datetime import datetime, timedelta
+from datetime import datetime
 from sqlalchemy import and_, or_, func
 from sqlalchemy.exc import SQLAlchemyError
 

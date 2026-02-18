@@ -4,6 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from config import setup_logger
 from models import PercentileModel
 
+
 logger = setup_logger(name="PercentileRepository")
 
 
@@ -103,9 +104,6 @@ class PercentileRepository:
 
         Returns:
             List[date]: Sorted list of unique percentile dates.
-
-        Example:
-            >>> dates = PercentileRepository.get_all_distinct_dates()
         """
         result = db.session.query(
             PercentileModel.percentile_date
@@ -124,11 +122,6 @@ class PercentileRepository:
 
         Returns:
             List of PercentileModel records.
-
-        Example:
-            >>> records = PercentileRepository.get_percentiles_after_date(
-            ...     date(2025, 1, 1)
-            ... )
         """
         query = PercentileModel.query
         if after_date is not None:
@@ -138,4 +131,3 @@ class PercentileRepository:
         return query.order_by(
             PercentileModel.percentile_date
         ).all()
-

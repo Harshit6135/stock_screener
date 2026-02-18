@@ -8,6 +8,7 @@ reasons for transparency.
 
 import time
 import pandas as pd
+pd.set_option('future.no_silent_downcasting', True)
 
 from config import setup_logger, StrategyParameters
 from repositories import (
@@ -20,7 +21,6 @@ score_repo = ScoreRepository()
 percentile_repo = PercentileRepository()
 indicators_repo = IndicatorsRepository()
 logger = setup_logger(name="ScoreService")
-pd.set_option('future.no_silent_downcasting', True)
 
 
 class ScoreService:
@@ -39,22 +39,13 @@ class ScoreService:
 
         Returns:
             DataFrame with `initial_composite_score` added.
-
-        Example:
-            >>> svc = ScoreService()
-            >>> df = svc.calculate_composite_scores(pct_df)
         """
         percentile_df['initial_composite_score'] = (
-            self.params.trend_strength_weight
-            * percentile_df['trend_percentile']
-            + self.params.momentum_velocity_weight
-            * percentile_df['momentum_percentile']
-            + self.params.risk_efficiency_weight
-            * percentile_df['efficiency_percentile']
-            + self.params.conviction_weight
-            * percentile_df['volume_percentile']
-            + self.params.structure_weight
-            * percentile_df['structure_percentile']
+            self.params.trend_strength_weight * percentile_df['trend_percentile'] +
+            self.params.momentum_velocity_weight * percentile_df['momentum_percentile'] +
+            self.params.risk_efficiency_weight * percentile_df['efficiency_percentile'] +
+            self.params.conviction_weight * percentile_df['volume_percentile'] +
+            self.params.structure_weight * percentile_df['structure_percentile']
         )
         return percentile_df
 
@@ -76,52 +67,31 @@ class ScoreService:
         Returns:
             DataFrame with `penalty` (multiplier) and `penalty_reason` columns.
         """
-        reasons = pd.Series(
-            [''] * len(df), index=df.index
-        )
-        
-        # Start with neutral penalty multiplier
-        penalties = pd.Series([1.0] * len(df), index=df.index)
+        df['penalty_reason'] = ""
+        df['penalty'] = 1
 
-        # Soft Penalty: Price < EMA 200
         mask_200 = df['ema_200'] > df['close']
-        reasons[mask_200] += 'below_ema_200; '
-        # penalties[mask_200] *= self.params.ema_200_penalty
-        penalties[mask_200] *= 0
+        df[mask_200, 'penalty_reason'] += 'below_ema_200; '
+        df[mask_200] = 0
 
-        # Soft Penalty: Price < EMA 50
         mask_50 = df['ema_50'] > df['close']
-        reasons[mask_50] += 'below_ema_50; '
-        # penalties[mask_50] *= self.params.ema_50_penalty
-        penalties[mask_50] *= 0
+        df[mask_50] += 'below_ema_50; '
+        df[mask_50] = 0
 
-        # Soft Penalty: High Volatility (ATR Spike)
-        mask_atr = (
-            df['atr_spike'] > self.params.atr_threshold
-        )
-        reasons[mask_atr] += 'atr_spike; '
-        # penalties[mask_atr] *= self.params.atr_spike_penalty
-        penalties[mask_atr] *= 0
+        mask_atr = df['atr_spike'] > self.params.atr_threshold
+        df[mask_atr] += 'atr_spike; '
+        df[mask_atr] = 0
 
-        # Hard Penalty: Penny Stocks (Multiplier = 0.0)
         mask_price = df['ema_50'] < self.params.min_price
-        reasons[mask_price] += 'penny_stock; '
-        penalties[mask_price] = 0.0
+        df[mask_price] += 'penny_stock; '
+        df[mask_price] = 0.0
 
-        # Hard Penalty: Low Liquidity (Multiplier = 0.0)
-        mask_turnover = (
-            df['avg_turnover_ema_20']
-            < self.params.min_turnover
-        )
-        reasons[mask_turnover] += 'low_turnover; '
-        penalties[mask_turnover] = 0.0
+        mask_turnover = df['avg_turnover_ema_20'] < self.params.min_turnover
+        df[mask_turnover] += 'low_turnover; '
+        df[mask_turnover] = 0.0
 
-        df['penalty_reason'] = reasons.str.rstrip('; ')
-        df['penalty_reason'] = (
-            df['penalty_reason'].replace('', None)
-        )
-        
-        df['penalty'] = penalties
+        df['penalty_reason'] = df['penalty_reason'].str.rstrip('; ')
+        df['penalty_reason'] = df['penalty_reason'].replace('', None)
         return df
 
     def generate_composite_scores(self):
@@ -133,22 +103,14 @@ class ScoreService:
 
         Returns:
             Dict with message and record count.
-
-        Example:
-            >>> result = ScoreService().generate_composite_scores()
-            >>> print(result['records'])
         """
         try:
             t_start = time.time()
-            logger.info(
-                "Starting batch composite score generation..."
-            )
+            logger.info("Starting batch composite score generation...")
 
             last_score_date = score_repo.get_max_score_date()
             if last_score_date:
-                logger.info(
-                    f"Last score date: {last_score_date}"
-                )
+                logger.info(f"Last score date: {last_score_date}")
 
             # Step 1: Fetch percentiles
             t0 = time.time()
@@ -324,9 +286,6 @@ class ScoreService:
 
         Returns:
             Dict with message and record count.
-
-        Example:
-            >>> result = ScoreService().recalculate_all_scores()
         """
         logger.info(
             "Starting FULL score recalculation "

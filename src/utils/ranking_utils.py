@@ -6,7 +6,6 @@ from scipy import stats
 from config import GoldilocksConfig, RSIRegimeConfig
 
 
-
 def percentile_rank(series: pd.Series) -> pd.Series:
     """
     Calculate percentile rank (0-100) for a series

@@ -2,6 +2,7 @@ from time import time, sleep
 from datetime import timedelta
 
 import pandas as pd
+pd.set_option('future.no_silent_downcasting', True)
 
 from adaptors import KiteAdaptor
 from config import setup_logger, KITE_CONFIG, HISTORY_LOOKBACK
@@ -12,7 +13,6 @@ logger = setup_logger(name='Orchestrator')
 instr_repository = InstrumentsRepository()
 marketdata_repository = MarketDataRepository()
 indicators_repository = IndicatorsRepository()
-pd.set_option('future.no_silent_downcasting', True)
 
 
 class MarketDataService:
@@ -22,10 +22,11 @@ class MarketDataService:
 
     def _get_fetch_end_date(self):
         now_ist = pd.Timestamp.now(tz='Asia/Kolkata')
-        if now_ist.hour >= 18:
-            return pd.Timestamp(now_ist.date())
-        else:
-            return pd.Timestamp(now_ist.date()) - pd.Timedelta(days=1)
+        # if now_ist.hour >= 18:
+        #     return pd.Timestamp(now_ist.date())
+        # else:
+        #     return pd.Timestamp(now_ist.date()) - pd.Timedelta(days=1)
+        return pd.Timestamp(now_ist.date()) - pd.Timedelta(days=1)
 
     def get_latest_data_by_token(self, token, start_date, end_date=None):
         """

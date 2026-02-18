@@ -3,10 +3,10 @@ Backtesting Module
 
 Exports all backtesting components for easy import.
 """
-from .models import Position, BacktestResult, BacktestRiskMonitor
-from .config import BacktestConfigLoader
+from models.backtesting_model import Position, BacktestResult, BacktestRiskMonitor
+from config.backtesting_config import BacktestConfigLoader
 from .data_provider import BacktestDataProvider
-from .runner import WeeklyBacktester, run_backtest
+from services.backtesting_service import WeeklyBacktester, run_backtest
 
 __all__ = [
     "Position",

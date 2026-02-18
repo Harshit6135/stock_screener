@@ -33,7 +33,6 @@ class ActionSchema(Schema):
     capital = fields.Decimal(as_string=True, dump_only=True)
     status = fields.String(dump_only=True)
 
-
 class ActionUpdateSchema(Schema):
     """Schema for updating an action"""
     status = fields.String(

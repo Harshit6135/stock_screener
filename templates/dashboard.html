@@ -1777,7 +1777,7 @@
                     const metrics = sum.metrics || {}; // Depending on structure
 
                     // We need to parse summary correctly. 
-                    // Based on runner.py, get_summary returns risk_monitor.get_summary()
+                    // Based on backtesting_service.py, get_summary returns risk_monitor.get_summary()
                     // which has { metrics: {...}, final_value... }
 
                     document.getElementById('bt-return').innerText = (sum.total_return || 0).toFixed(2) + '%';

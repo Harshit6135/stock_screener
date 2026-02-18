@@ -18,7 +18,8 @@ from .actions_schema import (
 
 # Investment schemas (holdings and summary)
 from .investment_schema import (
-    HoldingDateSchema, HoldingSchema, SummarySchema
+    HoldingDateSchema, HoldingSchema, SummarySchema, ManualBuySchema, ManualSellSchema,
+CapitalEventSchema
 )
 
 __all__ = [
@@ -47,4 +48,6 @@ __all__ = [
     "HoldingDateSchema",
     "HoldingSchema",
     "SummarySchema",
+    "ManualBuySchema",
+    "ManualSellSchema",
 ]

@@ -43,3 +43,45 @@ class SummarySchema(Schema):
     realized_gain = fields.Decimal(as_string=True, dump_only=True)
     absolute_return_pct = fields.Float(dump_only=True)
     xirr = fields.Float(dump_only=True)
+
+class ManualBuySchema(Schema):
+    symbol = fields.String(required=True, metadata={"description": "Trading symbol"})
+    date = fields.Date(required=True, metadata={"description": "Action date (YYYY-MM-DD)"})
+    reason = fields.String(load_default="Manual buy", metadata={"description": "Reason for trade"})
+    config_name = fields.String(load_default="momentum_config", metadata={"description": "Config name for config"})
+    units = fields.Integer(required=True, metadata={"description": "Number of units to buy"})
+    price = fields.Decimal(required=True, metadata={"description": "Price of the stock"})
+
+
+class ManualSellSchema(Schema):
+    symbol = fields.String(required=True, metadata={"description": "Trading symbol"})
+    date = fields.Date(required=True, metadata={"description": "Action date (YYYY-MM-DD)"})
+    units = fields.Integer(required=True, metadata={"description": "Number of units to sell"})
+    reason = fields.String(load_default="Manual sell", metadata={"description": "Reason for trade"})
+    price = fields.Float(required=True, metadata={"description": "Price of the stock"})
+
+
+class CapitalEventSchema(Schema):
+    id = fields.Integer(dump_only=True)
+    date = fields.Date(
+        required=True,
+        metadata={"description": "Event date (YYYY-MM-DD)"}
+    )
+    amount = fields.Float(
+        required=True,
+        metadata={
+            "description": "Amount (positive=infusion)",
+            "example": 100000,
+        }
+    )
+    event_type = fields.String(
+        required=True,
+        metadata={
+            "description": "initial | infusion | withdrawal",
+            "example": "infusion",
+        }
+    )
+    note = fields.String(
+        load_default="",
+        metadata={"description": "Optional note"}
+    )

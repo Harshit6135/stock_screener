@@ -3,8 +3,9 @@ Date Utilities
 
 Consolidated date logic for backtesting and live trading services.
 """
-from datetime import date, timedelta
 from typing import List
+from datetime import date, timedelta
+
 
 def get_friday_of_week(d: date) -> date:
     """
@@ -34,10 +35,6 @@ def get_prev_friday(d: date) -> date:
 
     Returns:
         date: The resolved Friday
-
-    Example:
-        >>> get_prev_friday(date(2025, 1, 13))  # Monday
-        date(2025, 1, 10)  # Previous Friday
     """
     weekday = d.weekday()  # Monday=0, Friday=4
     if weekday == 4:  # Friday
@@ -61,6 +58,7 @@ def get_business_days(start_date: date, end_date: date) -> List[date]:
             days.append(current)
         current += timedelta(days=1)
     return days
+
 
 def get_next_business_day(d: date) -> date:
     """
@@ -94,3 +92,15 @@ def get_week_fridays(start_date: date, end_date: date) -> list[date]:
         fridays.append(current)
         current += timedelta(days=7)
     return fridays
+
+def get_week_mondays(start_date, end_date) -> List[date]:
+    """Get all Mondays between start and end dates"""
+    mondays = []
+    current = start_date
+    while current.weekday() != 0:
+        current += timedelta(days=1)
+    while current <= end_date:
+        mondays.append(current)
+        current += timedelta(weeks=1)
+    return mondays
+

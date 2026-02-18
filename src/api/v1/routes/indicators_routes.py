@@ -7,6 +7,7 @@ from repositories import IndicatorsRepository
 from schemas import IndicatorsSchema, MaxDateSchema, IndicatorSearchSchema
 from services import IndicatorsService
 
+
 blp = Blueprint("Indicators", __name__, url_prefix="/api/v1/indicators", description="Operations on indicators")
 indicators_repository = IndicatorsRepository()
 

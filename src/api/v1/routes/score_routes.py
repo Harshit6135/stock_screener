@@ -13,8 +13,6 @@ score_repo = ScoreRepository()
 ranking_repo = RankingRepository()
 
 
-# ========== Score Generation Endpoints ==========
-
 @blp.route("/generate")
 class GenerateScores(MethodView):
     @blp.doc(tags=["Scores"])
@@ -36,8 +34,6 @@ class RecalculateScores(MethodView):
         result = score_service.recalculate_all_scores()
         return {"message": result["message"]}
 
-
-# ========== Score Query Endpoints ==========
 
 @blp.route("/<string:tradingsymbol>")
 class ScoreBySymbol(MethodView):

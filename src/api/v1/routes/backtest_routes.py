@@ -8,7 +8,7 @@ from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 
 from config import setup_logger
-from schemas import MessageSchema, BacktestInputSchema
+from schemas import BacktestInputSchema
 from backtesting import run_backtest
 
 

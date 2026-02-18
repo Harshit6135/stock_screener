@@ -10,10 +10,12 @@ import marshmallow as ma
 
 from config import setup_logger
 from schemas import (
-    ActionQuerySchema, HoldingDateSchema, HoldingSchema, SummarySchema, MessageSchema
+    ActionQuerySchema, HoldingDateSchema, HoldingSchema, SummarySchema, MessageSchema,
+ManualBuySchema, ManualSellSchema, CapitalEventSchema
 )
 from repositories import InvestmentRepository
 from services import InvestmentService
+
 
 logger = setup_logger(name="InvestmentRoutes")
 inv_repo = InvestmentRepository()
@@ -26,25 +28,6 @@ blp = Blueprint(
     url_prefix="/api/v1/investment",
     description="Investment Operations"
 )
-
-
-# --- Schema for manual trade input ---
-class ManualBuySchema(ma.Schema):
-    symbol = ma.fields.String(required=True, metadata={"description": "Trading symbol"})
-    date = ma.fields.Date(required=True, metadata={"description": "Action date (YYYY-MM-DD)"})
-    reason = ma.fields.String(load_default="Manual buy", metadata={"description": "Reason for trade"})
-    config_name = ma.fields.String(load_default="momentum_config", metadata={"description": "Config name for config"})
-    units = ma.fields.Integer(required=True, metadata={"description": "Number of units to buy"})
-    price = ma.fields.Decimal(required=True, metadata={"description": "Price of the stock"})
-
-
-class ManualSellSchema(ma.Schema):
-    symbol = ma.fields.String(required=True, metadata={"description": "Trading symbol"})
-    date = ma.fields.Date(required=True, metadata={"description": "Action date (YYYY-MM-DD)"})
-    units = ma.fields.Integer(required=True, metadata={"description": "Number of units to sell"})
-    reason = ma.fields.String(load_default="Manual sell", metadata={"description": "Reason for trade"})
-    price = ma.fields.Float(required=True, metadata={"description": "Price of the stock"})
-
 
 
 @blp.route("/holdings/dates")
@@ -165,34 +148,6 @@ class RecalculateSummary(MethodView):
             abort(500, message=f"Recalculate failed: {str(e)}")
 
 
-# --- Capital Events ---
-
-class CapitalEventSchema(ma.Schema):
-    id = ma.fields.Integer(dump_only=True)
-    date = ma.fields.Date(
-        required=True,
-        metadata={"description": "Event date (YYYY-MM-DD)"}
-    )
-    amount = ma.fields.Float(
-        required=True,
-        metadata={
-            "description": "Amount (positive=infusion)",
-            "example": 100000,
-        }
-    )
-    event_type = ma.fields.String(
-        required=True,
-        metadata={
-            "description": "initial | infusion | withdrawal",
-            "example": "infusion",
-        }
-    )
-    note = ma.fields.String(
-        load_default="",
-        metadata={"description": "Optional note"}
-    )
-
-
 @blp.route("/capital-events")
 class CapitalEvents(MethodView):
     @blp.doc(tags=["Investments"])
@@ -225,4 +180,3 @@ class CapitalEvents(MethodView):
                 500,
                 message=f"Capital event failed: {str(e)}"
             )
-

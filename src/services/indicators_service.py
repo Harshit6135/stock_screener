@@ -1,19 +1,18 @@
 
 import pandas as pd
 import pandas_ta as ta
+pd.set_option('future.no_silent_downcasting', True)
 
 from datetime import timedelta
 
-from config import setup_logger
 from repositories import IndicatorsRepository, MarketDataRepository, InstrumentsRepository
-from config.indicators_config import ema_strategy, momentum_strategy, derived_strategy, additional_parameters
+from config import setup_logger, ema_strategy, momentum_strategy, derived_strategy, additional_parameters
 
 
 instr_repo = InstrumentsRepository()
 indicators_repo = IndicatorsRepository()
 marketdata_repo = MarketDataRepository()
 logger = setup_logger(name="Orchestrator")
-pd.set_option('future.no_silent_downcasting', True)
 
 
 class IndicatorsService:

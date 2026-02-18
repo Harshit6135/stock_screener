@@ -23,10 +23,6 @@ def calculate_initial_stop_loss(
 
     Returns:
         float: Initial stop-loss price
-
-    Example:
-        >>> calculate_initial_stop_loss(100.0, 5.0, 2.0)
-        90.0
     """
     if config is None or not hasattr(config, 'sl_fallback_percent'):
         sl_fallback = 0.06  # default 6%
@@ -67,51 +63,12 @@ def calculate_atr_trailing_stop(
     # Trail only upward
     return max(new_stop, previous_stop)
 
-
-def calculate_trailing_hard_stop(
-    buy_price: float, 
-    current_price: float, 
-    initial_stop: float, 
-    sl_step_percent: float
-) -> float:
-    """
-    Calculate trailing hard stop that moves up in increments.
-
-    Logic: For every sl_step_percent the stock gains, the stop moves up
-    by the same percentage of the INITIAL stop value.
-
-    Parameters:
-        buy_price (float): Original entry price
-        current_price (float): Current stock price
-        initial_stop (float): Initial stop-loss at entry
-        sl_step_percent (float): Step increment (e.g., 0.10 for 10%)
-
-    Returns:
-        float: Hard stop-loss level
-    """
-    if current_price <= buy_price:
-        return initial_stop
-
-    gain_percent = (current_price - buy_price) / buy_price
-    tiers = int(gain_percent // sl_step_percent)
-
-    # Move stop up for each tier
-    adjustment = 1 + (sl_step_percent * tiers)
-    hard_stop = initial_stop * adjustment
-
-    # Stop should never exceed entry price
-    return min(hard_stop, buy_price)
-
-
 def calculate_effective_stop(
-    buy_price: float, 
-    current_price: float, 
+    current_price: float,
     current_atr: Optional[float], 
-    initial_stop: float,
-    stop_multiplier: float, 
-    sl_step_percent: float, 
+    stop_multiplier: float,
     previous_stop: float = 0
-) -> dict:
+):
     """
     Calculate effective stop-loss using both ATR and hard trailing methods.
 
@@ -132,14 +89,4 @@ def calculate_effective_stop(
     atr_stop = calculate_atr_trailing_stop(
         current_price, current_atr, stop_multiplier, previous_stop
     )
-    hard_stop = calculate_trailing_hard_stop(
-        buy_price, current_price, initial_stop, sl_step_percent
-    )
-
-    effective_stop = max(atr_stop, previous_stop)
-
-    return {
-        "atr_stop": round(atr_stop, 2),
-        "hard_stop": round(hard_stop, 2),
-        "effective_stop": round(effective_stop, 2)
-    }
+    return  round(atr_stop, 2)

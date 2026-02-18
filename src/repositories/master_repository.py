@@ -4,6 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from models import MasterModel
 from config import setup_logger
 
+
 logger = setup_logger(name="MasterRepository")
 
 

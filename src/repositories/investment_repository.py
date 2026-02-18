@@ -15,6 +15,7 @@ from models import (
 )
 from config import setup_logger
 
+
 logger = setup_logger(name="InvestmentRepository")
 
 

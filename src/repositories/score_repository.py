@@ -1,9 +1,9 @@
-from datetime import date, timedelta
 from db import db
 from sqlalchemy.exc import SQLAlchemyError
 
 from config import setup_logger
 from models import ScoreModel
+
 
 logger = setup_logger(name="ScoreRepository")
 
@@ -71,9 +71,6 @@ class ScoreRepository:
 
         Returns:
             List[date]: Sorted list of unique score dates.
-
-        Example:
-            >>> dates = ScoreRepository.get_all_distinct_dates()
         """
         result = db.session.query(
             ScoreModel.score_date

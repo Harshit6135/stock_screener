@@ -1,5 +1,5 @@
 from datetime import date
-from config.strategies_config import TaxConfig
+from config import TaxConfig
 
 
 def calculate_capital_gains_tax(purchase_price: float, current_price: float,
