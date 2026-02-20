@@ -47,6 +47,7 @@ def calculate_transaction_costs(trade_value: float, side: str,
     
     total = brokerage + stt + exchange + sebi + stamp + gst + ipf + dp
     
+    
     return {
         "brokerage": round(brokerage, 2),
         "stt": round(stt, 2),

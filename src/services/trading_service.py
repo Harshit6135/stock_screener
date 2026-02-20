@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 
 from config import setup_logger
 
+
 logger = setup_logger(name="TradingEngine")
 
 
@@ -169,7 +170,7 @@ class TradingEngine:
             # Find weakest incumbent among remaining holdings
             weakest = min(remaining_holdings, key=lambda h: h.score)
 
-            if challenger.score > swap_buffer * weakest.score:
+            if challenger.score > swap_buffer * float(weakest.score):
                 decisions.append(TradingDecision(
                     action_type='SWAP',
                     symbol=weakest.symbol,

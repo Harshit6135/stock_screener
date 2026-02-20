@@ -28,6 +28,5 @@ __all__ = [
     "InvestmentsHoldingsModel",
     "InvestmentsSummaryModel",
     "CapitalEventModel",
-    "BacktestRiskMonitor",
     "BacktestResult"
 ]

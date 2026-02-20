@@ -60,6 +60,8 @@ class InvestmentRepository:
             date = self.session.query(func.max(InvestmentsHoldingsModel.date)).scalar()
         return self.session.query(InvestmentsHoldingsModel).filter(
             InvestmentsHoldingsModel.date == date
+        ).order_by(
+            InvestmentsHoldingsModel.score.desc()
         ).all()
 
     def get_holdings_by_symbol(self, symbol, date=None):
@@ -264,6 +266,31 @@ class InvestmentRepository:
         if target_date:
             query = query.filter(
                 CapitalEventModel.date <= target_date
+            )
+        result = query.scalar()
+        return float(result) if result else 0.0
+    
+    def get_total_capital_by_date(self, date, include_realized=False):
+        """
+        Sum of all capital event amounts after target_date.
+
+        Parameters: 
+            date: Cut-off date (inclusive). 
+            include_realized: Whether to include 'realized_gain' events.
+
+        Returns:
+            float: Total capital infused/withdrawn
+        """
+        query = self.session.query(
+            func.sum(CapitalEventModel.amount)
+        )
+        if date:
+            query = query.filter(
+                CapitalEventModel.date == date
+            )
+        if not include_realized:
+            query = query.filter(
+                CapitalEventModel.event_type != 'realized_gain'
             )
         result = query.scalar()
         return float(result) if result else 0.0

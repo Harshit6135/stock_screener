@@ -1,0 +1,72 @@
+======================================================================
+  BACKTEST RESULTS REPORT
+  Generated: 2026-02-20 17:43:52
+======================================================================
+
+[ CONFIGURATION ]
+  Config Name       : momentum_config
+  Start Date        : 2026-01-01
+  End Date          : 2026-01-30
+  Daily SL          : True
+  Mid-Week Buy      : True
+  Initial Capital   :      100,000.00
+  Max Positions     : 15
+  Risk Threshold    : 1.0
+  Buffer Percent    : 0.25
+  Exit Threshold    : 40.0
+  SL Multiplier     : 2.0
+  SL Step Percent   : 0.1
+  ATR Fallback Pct   : 0.06
+
+[ PERFORMANCE METRICS ]
+  Final Portfolio   :       95,373.47
+  Total Return      :       -4,626.53  (-4.63%)
+  CAGR              :     -44.93%
+  XIRR              :      +0.00%
+  Max Drawdown      :       7.92%
+  Sharpe Ratio      :      -1.91
+  Sortino Ratio     :      -1.98
+  Calmar Ratio      :      -5.67
+
+[ TRADE STATISTICS ]
+  Total Trades      : 0
+  Win Rate          :       0.00%
+  Profit Factor     :       0.00
+  Expectancy/Trade  :      +0.00
+  Avg Holding Days  :        0.0
+
+[ TRANSACTION COSTS ]
+  Total Buy Value   :            0.00
+  Total Sell Value  :            0.00
+  Total Turnover    :            0.00
+  ---
+  Buy Side Costs    :            0.00
+  Sell Side Costs   :            0.00
+  Total Costs       :            0.00
+  ---
+  Brokerage         :            0.00
+  STT               :            0.00
+  GST               :            0.00
+  Stamp Duty        :            0.00
+  Cost as % Return  :       0.00%
+
+[ CAPITAL GAINS TAX ]
+  STCG Trades       : 0
+  STCG Gains        :            0.00
+  STCG Tax (20%)    :            0.00
+  ---
+  LTCG Trades       : 0
+  LTCG Gains        :            0.00
+  LTCG Tax (12.5%)  :            0.00
+  ---
+  Total Tax         :            0.00
+  Total Costs+Tax   :            0.00
+  Net Post-Tax Ret  :       -4,626.53
+
+[ TRADE LOG ]
+  Symbol                      Entry         Exit    Entry ₹     Exit ₹  Units          PnL Reason
+  -------------------- ------------ ------------ ---------- ---------- ------ ------------ --------------------
+
+======================================================================
+  Weeks Simulated: 4 | Duration: 29 days (0.08 years)
+======================================================================

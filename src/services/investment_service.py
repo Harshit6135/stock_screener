@@ -12,16 +12,11 @@ from sqlalchemy.orm import Session
 from datetime import datetime, date
 from typing import Dict, List, Optional
 
+from repositories import *
 from config import setup_logger
-from repositories import InvestmentRepository, ActionsRepository, ConfigRepository
-from services import MarketDataService, IndicatorsService, RankingService
-from services.actions_service import indicators
 from utils import calculate_xirr, get_prev_friday, calculate_effective_stop
 
 
-marketdata_service = MarketDataService()
-indicators_service = IndicatorsService()
-ranking_service = RankingService()
 logger = setup_logger(name="InvestmentService")
 
 
@@ -33,7 +28,11 @@ class InvestmentService:
         self.actions_repo = ActionsRepository(session)
         self.config_repo = ConfigRepository()
 
-    def _ensure_capital_events_seeded(self) -> None:
+        self.indicators_repo = IndicatorsRepository()
+        self.marketdata_repo = MarketDataRepository()
+        self.ranking_repo = RankingRepository()
+
+    def ensure_capital_events_seeded(self, seed_date = None) -> None:
         """
         If capital_events table is empty, auto-seed
         with config.initial_capital at the earliest
@@ -50,10 +49,11 @@ class InvestmentService:
 
         # Use earliest summary date, or today
         summaries = self.inv_repo.get_all_summaries()
-        seed_date = (
-            summaries[0].date if summaries
-            else datetime.now().date()
-        )
+        if not seed_date:
+            seed_date = (
+                summaries[0].date if summaries
+                else datetime.now().date()
+            )
 
         self.inv_repo.insert_capital_event({
             'date': seed_date,
@@ -135,7 +135,7 @@ class InvestmentService:
         summary = summary_FROM_DB.to_dict()
         summary_date = summary['date']
 
-        self._ensure_capital_events_seeded()
+        self.ensure_capital_events_seeded()
         total_capital = self.inv_repo.get_total_capital(summary_date, include_realized=True)
         total_invested_captial = self.inv_repo.get_total_capital(summary_date, include_realized=False)
 
@@ -317,7 +317,7 @@ class InvestmentService:
         events = self.inv_repo.get_all_capital_events()
         return [e.to_dict() for e in events]
 
-    def update_holding(self, symbol: str, action_date: date, mid_week: bool = False) -> Dict:
+    def update_holding(self, symbol: str, action_date: date, mid_week: bool = False, holding = None) -> Dict:
         """
         Update an existing holding with current prices.
 
@@ -331,11 +331,15 @@ class InvestmentService:
         Returns:
             Dict: Updated holding data with new price/stop-loss
         """
-        holding = self.investment_repo.get_holdings_by_symbol(symbol)
+        config = self.config_repo.get_config(
+            'momentum_config'
+        )
+        if not holding:
+            holding = self.inv_repo.get_holdings_by_symbol(symbol)
         data_date = get_prev_friday(action_date)
-        raw_atr = indicators.get_indicator_by_tradingsymbol('atrr_14', symbol, data_date)
+        raw_atr = self.indicators_repo.get_indicator_by_tradingsymbol('atrr_14', symbol, data_date)
 
-        md_obj = marketdata_service.get_marketdata_by_trading_symbol(symbol, data_date)
+        md_obj = self.marketdata_repo.get_marketdata_by_trading_symbol(symbol, data_date)
         if md_obj:
             current_price = md_obj.close
         else:
@@ -347,14 +351,14 @@ class InvestmentService:
             stoploss = calculate_effective_stop(
                 current_price=float(current_price),
                 current_atr=atr,
-                stop_multiplier=self.config.sl_multiplier,
+                stop_multiplier=config.sl_multiplier,
                 previous_stop=(
                     float(holding.current_sl)
                     if holding.current_sl
                     else float(holding.entry_sl)
                 )
             )
-            rank_data = ranking_service.get_rankings_by_date_and_symbol(data_date, symbol)
+            rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
             score = round(rank_data.composite_score, 2) if rank_data else 0
         else:
             stoploss = holding.current_sl
@@ -391,7 +395,7 @@ class InvestmentService:
         if override_starting_capital is not None:
             total_cap = float(override_starting_capital)
         else:
-            total_cap = float(self.investment_repo.get_total_capital(action_date, include_realized=True))
+            total_cap = float(self.inv_repo.get_total_capital(action_date, include_realized=True))
 
         if week_holdings:
             df = pd.DataFrame(week_holdings)
@@ -404,16 +408,22 @@ class InvestmentService:
         for col in ['entry_price', 'units', 'current_sl', 'current_price']:
             if col in df.columns:
                 df[col] = df[col].astype(float)
+        
+        new_capital_addition = 0
+        prev_summary = self.inv_repo.get_summary()
+        if not prev_summary:
+            prev_remaining_capital = total_cap
+        else:
+            prev_remaining_capital = prev_summary.remaining_capital
+            new_capital_addition = self.inv_repo.get_total_capital_by_date(prev_summary.date)
 
         bought_mask = df['entry_date'] == df['date']
-        bought_before_mask = df['entry_date'] < df['date']
         bought = float((df.loc[bought_mask, 'entry_price']* df.loc[bought_mask, 'units']).sum())
-        prev_bought = float((df.loc[bought_before_mask, 'entry_price']* df.loc[bought_before_mask, 'units']).sum())
-        starting_capital = total_cap - prev_bought
+        starting_capital = float(prev_remaining_capital) + new_capital_addition
 
         capital_risk = float((df['units'] * (df['entry_price'] - df['current_sl'])).sum())
         holdings_value = float((df['units'] * df['current_price']).sum())
-        remaining_capital = starting_capital - (df['entry_price']* df['units']).sum()
+        remaining_capital = starting_capital - bought + sold
         portfolio_value = holdings_value + remaining_capital
 
         stop_value = float((df['units'] * df['current_sl']).sum())

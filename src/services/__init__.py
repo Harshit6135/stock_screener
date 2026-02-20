@@ -6,8 +6,9 @@ from .factors_service import FactorsService
 from .percentile_service import PercentileService
 from .score_service import ScoreService
 from .ranking_service import RankingService
-from .actions_service import ActionsService
 from .investment_service import InvestmentService
+from .actions_service import ActionsService
+from .backtesting_service import BacktestingService
 
 
 __all__ = [
@@ -23,4 +24,5 @@ __all__ = [
     "TradingEngine",
     "HoldingSnapshot",
     "CandidateInfo",
+    "BacktestingService",
 ]

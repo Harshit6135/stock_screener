@@ -7,8 +7,9 @@ import pandas as pd
 pd.set_option('future.no_silent_downcasting', True)
 
 from sqlalchemy.orm import Session
-from datetime import timedelta, date
+from datetime import date
 from typing import Dict, List, Optional, Union
+from types import SimpleNamespace
 
 from config import setup_logger
 from services import TradingEngine, HoldingSnapshot, CandidateInfo, InvestmentService
@@ -20,10 +21,6 @@ from utils import (calculate_position_size, calculate_capital_gains_tax,
 
 
 logger = setup_logger(name="ActionsService")
-config = ConfigRepository()
-ranking = RankingRepository()
-indicators = IndicatorsRepository()
-marketdata = MarketDataRepository()
 
 
 class ActionsService:
@@ -31,10 +28,14 @@ class ActionsService:
     Investment action service for SELL/SWAP/BUY decisions.
     """
     def __init__(self, config_name: str = None,  session: Optional[Session] = None, config_info = None):
+        self.config_repo = ConfigRepository()
         if not config_info:
-            self.config = config.get_config(config_name)
+            self.config = self.config_repo.get_config(config_name)
         else:
             self.config = config_info
+        self.ranking_repo = RankingRepository()
+        self.indicators_repo = IndicatorsRepository()
+        self.marketdata_repo = MarketDataRepository()
         self.actions_repo = ActionsRepository(session)
         self.investment_repo = InvestmentRepository(session)
         self.investment_service = InvestmentService(session)
@@ -66,7 +67,7 @@ class ActionsService:
 
         # Resolve Friday for indicator lookup
         data_date = get_prev_friday(action_date)
-        atr = indicators.get_indicator_by_tradingsymbol(
+        atr = self.indicators_repo.get_indicator_by_tradingsymbol(
             'atrr_14', symbol, data_date
         )
         if atr is None:
@@ -105,10 +106,12 @@ class ActionsService:
             'prev_close' : prev_close,
             'capital' : capital_needed
         }
-        return action
+        remaining_capital -= action['capital']
+        return action, remaining_capital
 
     @staticmethod
-    def sell_action(symbol: str, action_date: date, prev_close: float, units: int, reason: str, price: float = 0) -> Dict:
+    def sell_action(symbol: str, action_date: date, prev_close: float, units: int, reason: str, price: float = 0, remaining_capital = 0,
+    entry_price = 0) -> Dict:
         """
         Generate a SELL action.
         
@@ -142,7 +145,10 @@ class ActionsService:
             'prev_close' : prev_close,
             'capital' : capital_released
         }
-        return action
+        remaining_capital += action['capital']
+        realized_gain = (float(prev_close) - entry_price)*units
+
+        return action, remaining_capital, realized_gain
 
     def generate_actions(self, action_date: date, skip_pending_check: bool = False) -> Union[str, List[Dict]]:
         """
@@ -162,8 +168,6 @@ class ActionsService:
         Raises:
             ValueError: If action_date is None
         """
-        if action_date is None:
-            raise ValueError("action_date cannot be None")
 
         if not skip_pending_check:
             pending_actions = self.actions_repo.check_other_pending_actions(action_date)
@@ -174,7 +178,7 @@ class ActionsService:
         exit_threshold = self.config.exit_threshold
 
         data_date = get_prev_friday(action_date)
-        top_n = ranking.get_top_n_by_date(
+        top_n = self.ranking_repo.get_top_n_by_date(
             self.config.max_positions, data_date
         )
         candidates = [
@@ -200,20 +204,15 @@ class ActionsService:
 
         if not current_holdings:
             for item in top_n:
-                md = marketdata.get_marketdata_by_trading_symbol(
+                md = self.marketdata_repo.get_marketdata_by_trading_symbol(
                     item.tradingsymbol, data_date
                 )
                 if md:
                     prices[item.tradingsymbol] = float(md.close)
         else:
             for h in current_holdings:
-                holdings_entry_prices[h.symbol] = float(
-                    h.entry_price
-                )
-
-                md_h = marketdata.get_marketdata_by_trading_symbol(
-                    h.symbol, data_date
-                )
+                holdings_entry_prices[h.symbol] = float(h.entry_price)
+                md_h = self.marketdata_repo.get_marketdata_by_trading_symbol(h.symbol, data_date)
 
                 if md_h:
                     prices[h.symbol] = float(md_h.close)
@@ -245,27 +244,19 @@ class ActionsService:
             )
 
         for d in decisions:
-            md = marketdata.get_marketdata_by_trading_symbol(
+            md = self.marketdata_repo.get_marketdata_by_trading_symbol(
                 d.symbol, data_date
             )
             if d.action_type == 'SELL':
-                action = self.sell_action(
+                action, remaining_capital, realized_gain = self.sell_action(
                     d.symbol, action_date, md.close,
-                    d.units, d.reason
+                    d.units, d.reason, remaining_capital=remaining_capital, 
+                    entry_price=holdings_entry_prices[d.symbol]
                 )
                 new_actions.append(action)
-                remaining_capital += action['capital']
-                if d.symbol in holdings_entry_prices:
-                    entry_price = holdings_entry_prices[
-                        d.symbol
-                    ]
-                    if entry_price > 0:
-                        realized_gain = (
-                            float(md.close) - entry_price
-                        ) * d.units
-                        sizing_base += realized_gain
+                sizing_base += realized_gain
             elif d.action_type == 'BUY':
-                action = self.buy_action(
+                action, remaining_capital = self.buy_action(
                     d.symbol, action_date, md.close,
                     d.reason,
                     total_capital=sizing_base,
@@ -273,44 +264,20 @@ class ActionsService:
                 )
                 
                 new_actions.append(action)
-                if action['units'] > 0:
-                    remaining_capital -= action['capital']
             elif d.action_type == 'SWAP':
-                sell_act = self.sell_action(
+                action, remaining_capital, realized_gain = self.sell_action(
                     d.symbol, action_date, md.close,
                     d.swap_sell_units, d.reason
                 )
-                new_actions.append(sell_act)
-                remaining_capital += (
-                    d.swap_sell_units * float(md.close)
-                )
+                new_actions.append(action)
+                sizing_base += realized_gain
 
-                if d.symbol in holdings_entry_prices:
-                    entry_price = holdings_entry_prices[
-                        d.symbol
-                    ]
-                    if entry_price > 0:
-                        realized_gain = (
-                            float(md.close) - entry_price
-                        ) * d.swap_sell_units
-                        sizing_base += realized_gain
-
-                md_swap_for = (
-                    marketdata
-                    .get_marketdata_by_trading_symbol(
-                        d.swap_for, data_date
-                    )
+                md_swap_for = self.marketdata_repo.get_marketdata_by_trading_symbol(d.swap_for, data_date)
+                action, remaining_capital = self.buy_action(
+                    d.swap_for, action_date, md_swap_for.close, d.reason,
+                    total_capital=sizing_base, remaining_capital=remaining_capital
                 )
-                buy_act = self.buy_action(
-                    d.swap_for, action_date,
-                    md_swap_for.close, d.reason,
-                    total_capital=sizing_base,
-                    remaining_capital=remaining_capital
-                )
-
-                new_actions.append(buy_act)
-                if buy_act['units'] > 0:
-                    remaining_capital -= buy_act['capital']
+                new_actions.append(action)
 
         new_actions = [a for a in new_actions if a is not None]
         if new_actions:
@@ -343,9 +310,6 @@ class ActionsService:
         Raises:
             ValueError: If action_date is None
         """
-        if action_date is None:
-            raise ValueError("action_date cannot be None")
-
         actions_list = self.actions_repo.get_actions(action_date)
         approved_count = 0
 
@@ -356,44 +320,57 @@ class ActionsService:
                 action_date
             )
         )
+        sizing_base =  self.investment_repo.get_total_capital(
+            action_date, include_realized=True
+        )
 
         # Phase 1: Approve ALL sells first (always approved, at Monday open)
         for item in actions_list:
             if item.type == 'sell' and item.status == 'Pending':
                 entry_data = self.investment_repo.get_holdings_by_symbol(item.symbol)
-                execution_price = item.execution_price or marketdata.get_marketdata_first_day(item.symbol, action_date + timedelta(days=1)).open
+                execution_price = item.execution_price or self.marketdata_repo.get_marketdata_by_trading_symbol(item.symbol, action_date).open
                 costs = calculate_transaction_costs(float(item.units * execution_price), 'sell')
-                tax = calculate_capital_gains_tax(entry_data.entry_price, execution_price, entry_data.entry_date,
+                tax = calculate_capital_gains_tax(float(entry_data.entry_price), float(execution_price), entry_data.entry_date,
                                                   action_date, item.units)
                 self.actions_repo.update_action({
                     'action_id': item.action_id,
                     'status': 'Approved',
                     'execution_price': execution_price,
-                    'sell_cost': costs.get('sell_costs', 0),
-                    'tax': tax
+                    'sell_cost': costs.get('total', 0),
+                    'tax': tax['tax']
                 })
                 remaining_capital += float(item.units * execution_price)
+                sizing_base += float(item.units * execution_price) - float(entry_data.entry_price * entry_data.units)
                 approved_count += 1
 
         for item in actions_list:
             if item.type == 'buy' and item.status == 'Pending':
-                if item.units == 0:
+                execution_price = item.execution_price or self.marketdata_repo.get_marketdata_by_trading_symbol(item.symbol, action_date).open
+                sizing = calculate_position_size(
+                    atr=float(item.atr),
+                    current_price=float(execution_price),
+                    total_capital=sizing_base,
+                    remaining_capital=remaining_capital,
+                    config=self.config
+                )
+                units = sizing['shares']
+                capital_needed = sizing['position_value']
+                if units == 0:
                     logger.info(f"Keeping BUY {item.symbol} as Pending (capital-constrained, units=0)")
                     continue
-                execution_price = item.execution_price or marketdata.get_marketdata_first_day(item.symbol, action_date + timedelta(days=1)).open
-                capital_needed = float(item.units * execution_price)
 
                 costs = calculate_transaction_costs(capital_needed, 'buy')
                 self.actions_repo.update_action({
                     'action_id': item.action_id,
                     'status': 'Approved',
                     'execution_price': execution_price,
-                    'buy_cost': costs.get('buy_costs', 0),
-                    'tax': 0
+                    'buy_cost': costs.get('total', 0),
+                    'tax': 0,
+                    'units' : units,
+                    'capital' : capital_needed
                 })
                 remaining_capital -= capital_needed
                 approved_count += 1
-
         return approved_count
 
     def process_actions(self, action_date: date, midweek: bool = False) -> Optional[List[Dict]]:
@@ -440,9 +417,20 @@ class ActionsService:
         holdings_map = {h.symbol: h for h in holdings}
         
         for symbol, action in sell_symbols.items():
-            holding = holdings_map.get(symbol)
+            logger.info(f"SELL {symbol}: units={action.units}u@{action.execution_price}={action.units*action.execution_price:.2f}")
+            if (symbol not in holdings_map) and symbol in buy_symbols:
+                logger.info(f"Intraday sell of {symbol}")
+                buy_action = buy_symbols.pop(symbol)
+                # Create temporary holding object from buy action
+                holding = SimpleNamespace(
+                    entry_price=buy_action.execution_price,
+                    units=buy_action.units
+                )
+            else:
+                holding = holdings_map.get(symbol)
+
             if not holding:
-                logger.warning(f"SELL {symbol}: not in current holdings, skipping")
+                logger.warning(f"No holding found for {symbol} to sell.")
                 continue
 
             # Use action's own units for sell value (handles stock splits)
@@ -468,20 +456,17 @@ class ActionsService:
                 )
             })
 
-        for symbol in list(buy_symbols.keys()):
-            if symbol in held_symbols:
-                logger.warning(
-                    f"Skipping BUY {symbol}: already held, "
-                    f"keeping existing position"
-                )
-                del buy_symbols[symbol]
-
         data_date = get_prev_friday(action_date)
         week_holdings = []
         for symbol, action in buy_symbols.items():
+            if symbol in sell_symbols:
+                continue
             initial_sl = round(action.execution_price - action.risk, 2)
-            rank_data = ranking.get_rankings_by_date_and_symbol(data_date, symbol)
+            rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
             score = round(rank_data.composite_score, 2) if rank_data else 0
+            logger.info(
+                f"BUY {symbol}: units={action.units}u@{action.execution_price}={action.units*action.execution_price:.2f}"
+            )
 
             holding_data = {
                 'symbol': symbol,
@@ -498,7 +483,7 @@ class ActionsService:
             week_holdings.append(holding_data)
         for symbol in held_symbols:
             week_holdings.append(
-                self.investment_service.update_holding(symbol, action_date, midweek)
+                self.investment_service.update_holding(symbol, action_date, midweek, holdings_map[symbol])
             )
         summary = self.investment_service.get_summary(week_holdings, sold, action_date=action_date)
 

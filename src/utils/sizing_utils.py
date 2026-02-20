@@ -1,8 +1,3 @@
-from repositories import ConfigRepository
-
-
-config_repository = ConfigRepository()
-
 
 def calculate_position_size(atr: float, current_price: float,
                              total_capital: float,
@@ -26,7 +21,10 @@ def calculate_position_size(atr: float, current_price: float,
     Returns:
         dict with shares, position_value, constraints applied
     """
+
     if not config:
+        from repositories import ConfigRepository
+        config_repository = ConfigRepository()
         config = config_repository.get_config('momentum_config')
 
     risk_amount = total_capital * (config.risk_threshold / 100)
@@ -37,7 +35,7 @@ def calculate_position_size(atr: float, current_price: float,
     if position_value > remaining_capital:
         position_value = remaining_capital
         shares = int(position_value / current_price)
-    
+        position_value = shares * current_price
     return {
         "shares": shares,
         "position_value": round(position_value, 2),

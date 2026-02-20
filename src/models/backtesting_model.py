@@ -7,7 +7,7 @@ from datetime import date
 from dataclasses import dataclass, field
 from typing import List, Optional
 import pandas as pd
-from utils.metrics import calculate_all_metrics
+from utils import calculate_all_metrics
 
 
 @dataclass
@@ -72,54 +72,3 @@ class BacktestResult:
         if self.total_closed_trades == 0:
             return 0.0
         return (self.successful_trades / self.total_closed_trades) * 100
-
-
-class BacktestRiskMonitor:
-    """
-    Track risk metrics during backtest simulation.
-    
-    Monitors portfolio values, drawdown, and trade outcomes.
-    """
-    
-    def __init__(self, initial_capital: float):
-        self.initial_capital = initial_capital
-        self.portfolio_values: List[float] = [initial_capital]
-        self.peak_value = initial_capital
-        self.max_drawdown = 0.0
-        self.trades: List[dict] = []
-    
-    def update(self, current_value: float) -> None:
-        """Update metrics with new portfolio value"""
-        self.portfolio_values.append(current_value)
-        if current_value > self.peak_value:
-            self.peak_value = current_value
-        current_drawdown = (self.peak_value - current_value) / self.peak_value * 100
-        self.max_drawdown = max(self.max_drawdown, current_drawdown)
-    
-    def record_trade(self, trade: dict) -> None:
-        """Record a trade for later analysis"""
-        self.trades.append(trade)
-    
-    def get_total_return(self) -> float:
-        """Calculate total return percentage"""
-        if not self.portfolio_values:
-            return 0.0
-        current = self.portfolio_values[-1]
-        return ((current - self.initial_capital) / self.initial_capital) * 100
-    
-    def get_summary(self) -> dict:
-        """Get comprehensive risk summary using metrics module"""
-        # Build equity curve
-        equity_curve = pd.Series(self.portfolio_values) if self.portfolio_values else pd.Series(dtype=float)
-        
-        # Use master metrics calculator
-        metrics = calculate_all_metrics(
-            equity_curve=equity_curve,
-            trades=self.trades,
-            initial_value=self.initial_capital
-        )
-        
-        # Add fields not covered by metrics module
-        metrics['initial_capital'] = self.initial_capital
-        
-        return metrics

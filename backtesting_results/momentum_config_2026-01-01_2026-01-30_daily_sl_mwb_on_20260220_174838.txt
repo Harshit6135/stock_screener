@@ -1,0 +1,88 @@
+======================================================================
+  BACKTEST RESULTS REPORT
+  Generated: 2026-02-20 17:48:38
+======================================================================
+
+[ CONFIGURATION ]
+  Config Name       : momentum_config
+  Start Date        : 2026-01-01
+  End Date          : 2026-01-30
+  Daily SL          : True
+  Mid-Week Buy      : True
+  Initial Capital   :      100,000.00
+  Max Positions     : 15
+  Risk Threshold    : 1.0
+  Buffer Percent    : 0.25
+  Exit Threshold    : 40.0
+  SL Multiplier     : 2.0
+  SL Step Percent   : 0.1
+  ATR Fallback Pct   : 0.06
+
+[ PERFORMANCE METRICS ]
+  Final Portfolio   :      100,784.18
+  Total Return      :         +784.18  (+0.78%)
+  CAGR              :     +10.34%
+  XIRR              :  +26490.72%
+  Max Drawdown      :       4.07%
+  Sharpe Ratio      :       0.25
+  Sortino Ratio     :       0.45
+  Calmar Ratio      :       2.54
+
+[ TRADE STATISTICS ]
+  Total Trades      : 10
+  Win Rate          :      30.00%
+  Profit Factor     :       2.62
+  Expectancy/Trade  :   +1162.24
+  Avg Holding Days  :        9.1
+  Winners           : 3
+  Losers            : 7
+  Avg Win           :       +6,262.76
+  Avg Loss          :       -1,023.69
+  Best Trade        : MAHASTEEL-BE +10,673.16
+  Worst Trade       : MAHASTEEL-BE -1,359.60
+
+[ TRANSACTION COSTS ]
+  Total Buy Value   :       59,889.39
+  Total Sell Value  :       71,511.83
+  Total Turnover    :      131,401.22
+  ---
+  Buy Side Costs    :           71.42
+  Sell Side Costs   :          204.56
+  Total Costs       :          275.98
+  ---
+  Brokerage         :            0.00
+  STT               :          131.38
+  GST               :            0.84
+  Stamp Duty        :            8.99
+  Cost as % Return  :      35.19%
+
+[ CAPITAL GAINS TAX ]
+  STCG Trades       : 3
+  STCG Gains        :       18,788.29
+  STCG Tax (20%)    :        3,757.65
+  ---
+  LTCG Trades       : 0
+  LTCG Gains        :            0.00
+  LTCG Tax (12.5%)  :            0.00
+  ---
+  Total Tax         :        3,757.65
+  Total Costs+Tax   :        4,033.63
+  Net Post-Tax Ret  :       -3,249.45
+
+[ TRADE LOG ]
+  Symbol                      Entry         Exit    Entry ₹     Exit ₹  Units          PnL Reason
+  -------------------- ------------ ------------ ---------- ---------- ------ ------------ --------------------
+  MAHASTEEL-BE           2026-01-05   2026-01-09   1,000.00     886.70     12    -1,359.60 close-based stoploss sell at open on 2026-01-09
+  MAHASTEEL-BE           2026-01-09   2026-01-09       0.00     889.43     12   +10,673.16 hard stoploss hit on 2026-01-09 (low=886.70)
+  HEG                    2026-01-05   2026-01-12     623.80     577.00     20      -936.00 stoploss hit
+  JAYNECOIND             2026-01-05   2026-01-19      91.46      80.74    121    -1,297.12 hard stoploss hit on 2026-01-19 (low=78.16)
+  SMLMAH                 2026-01-12   2026-01-22   4,195.90   3,718.00      2      -955.80 close-based stoploss sell at open on 2026-01-22
+  SMLMAH                 2026-01-22   2026-01-22       0.00   3,731.78      2    +7,463.56 hard stoploss hit on 2026-01-22 (low=3593.70)
+  RMDRIP                 2026-01-19   2026-01-23      94.82      88.95   -111      +651.57 hard stoploss hit on 2026-01-23 (low=88.92)
+  MODINSU                2026-01-05   2026-01-26     205.10     197.90     46      -331.20 stoploss hit
+  INFOBEAN               2026-01-12   2026-01-27     903.10     756.33      7    -1,027.39 hard stoploss hit on 2026-01-27 (low=729.00)
+  CSBBANK                2026-01-12   2026-01-28     510.65     450.71     21    -1,258.74 hard stoploss hit on 2026-01-28 (low=403.65)
+
+======================================================================
+  Weeks Simulated: 4 | Duration: 29 days (0.08 years)
+======================================================================
