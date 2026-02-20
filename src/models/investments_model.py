@@ -106,3 +106,42 @@ class CapitalEventModel(db.Model):
             c.name: getattr(self, c.name)
             for c in self.__table__.columns
         }
+
+
+class BacktestRunModel(db.Model):
+    """Stores metadata for each backtest run. Heavy data (summary, equity curve,
+    trades, report) is stored as files on disk; only the folder path is kept here."""
+    __tablename__ = 'backtest_runs'
+    __bind_key__ = 'personal'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    run_label = db.Column(db.String(200), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False)
+    config_name = db.Column(db.String(100), nullable=False)
+    start_date = db.Column(db.Date, nullable=False)
+    end_date = db.Column(db.Date, nullable=False)
+    check_daily_sl = db.Column(db.Boolean, nullable=False, default=True)
+    mid_week_buy = db.Column(db.Boolean, nullable=False, default=True)
+    total_return = db.Column(db.Numeric(10, 2), nullable=True)
+    max_drawdown = db.Column(db.Numeric(10, 2), nullable=True)
+    sharpe_ratio = db.Column(db.Numeric(10, 2), nullable=True)
+    data_dir = db.Column(db.String(500), nullable=False)
+
+    def __repr__(self):
+        return f"<BacktestRun {self.id} {self.run_label or ''} {self.start_date}->{self.end_date}>"
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'run_label': self.run_label,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'config_name': self.config_name,
+            'start_date': str(self.start_date),
+            'end_date': str(self.end_date),
+            'check_daily_sl': self.check_daily_sl,
+            'mid_week_buy': self.mid_week_buy,
+            'total_return': float(self.total_return) if self.total_return is not None else None,
+            'max_drawdown': float(self.max_drawdown) if self.max_drawdown is not None else None,
+            'sharpe_ratio': float(self.sharpe_ratio) if self.sharpe_ratio is not None else None,
+            'data_dir': self.data_dir,
+        }
