@@ -1,21 +1,21 @@
 from db import db
 from sqlalchemy.exc import SQLAlchemyError
 
-from models import InstrumentModel
+from models import InstrumentsModel
 
 
 class InstrumentsRepository:
 
     @staticmethod
     def get_all_instruments():
-        instruments = InstrumentModel.query.all()
+        instruments = InstrumentsModel.query.all()
         return instruments
 
     @staticmethod
     def bulk_insert(instrument_data):
         """Add multiple instruments"""
         try:
-            db.session.bulk_insert_mappings(InstrumentModel, instrument_data, return_defaults=True)
+            db.session.bulk_insert_mappings(InstrumentsModel, instrument_data, return_defaults=True)
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
@@ -25,7 +25,7 @@ class InstrumentsRepository:
     @staticmethod
     def delete_all():
         try:
-            num_rows_deleted = InstrumentModel.query.delete()
+            num_rows_deleted = InstrumentsModel.query.delete()
             db.session.commit()
             return num_rows_deleted
         except SQLAlchemyError as e:
@@ -34,18 +34,18 @@ class InstrumentsRepository:
 
     @staticmethod
     def get_by_token(instrument_token):
-        instrument = InstrumentModel.query.get(instrument_token)
+        instrument = InstrumentsModel.query.get(instrument_token)
         if instrument:
             return instrument
         return None
 
     @staticmethod
     def get_by_symbol(tradingsymbol):
-        return InstrumentModel.query.filter_by(tradingsymbol=tradingsymbol).first()
+        return InstrumentsModel.query.filter_by(tradingsymbol=tradingsymbol).first()
 
     @staticmethod
     def update_instrument(instrument_token, instrument_data):
-        instrument = InstrumentModel.query.get(instrument_token)
+        instrument = InstrumentsModel.query.get(instrument_token)
         if instrument:
             for field, value in instrument_data.items():
                 setattr(instrument, field, value)

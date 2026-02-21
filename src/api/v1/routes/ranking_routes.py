@@ -3,38 +3,25 @@ from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 from datetime import datetime, timedelta
 
-from repositories import ScoreRepository, MarketDataRepository
+from repositories import RankingRepository, MarketDataRepository
 from schemas import RankingSchema, MessageSchema, TopNSchema
 from services import RankingService
 
 
-blp = Blueprint("ranking", __name__, url_prefix="/api/v1/ranking", description="Operations on Weekly Rankings")
-score_repo = ScoreRepository()
+blp = Blueprint("Rankings", __name__, url_prefix="/api/v1/ranking", description="Operations on Weekly Rankings")
+ranking_repo = RankingRepository()
 
 marketdata_repo = MarketDataRepository()
 
 
-def get_prev_friday(d):
-    """
-    Get the Friday for ranking lookup:
-    - If d is Friday, return d
-    - Otherwise, return the previous Friday before d
-    """
-    weekday = d.weekday()  # Monday=0, Friday=4
-    if weekday == 4:  # Friday
-        return d
-    elif weekday < 4:  # Mon-Thu: go back to last Friday
-        days_back = weekday + 3  # Mon=3, Tue=4, Wed=5, Thu=6
-        return d - timedelta(days=days_back)
-    else:  # Sat=5, Sun=6: go back to Friday
-        days_back = weekday - 4  # Sat=1, Sun=2
-        return d - timedelta(days=days_back)
+from utils.date_utils import get_prev_friday
 
 
 # ========== Ranking Generation Endpoints ==========
 
 @blp.route("/generate")
 class GenerateRankings(MethodView):
+    @blp.doc(tags=["Rankings"])
     @blp.response(201, MessageSchema)
     def post(self):
         """Generate weekly rankings incrementally"""
@@ -45,6 +32,7 @@ class GenerateRankings(MethodView):
 
 @blp.route("/recalculate")
 class RecalculateRankings(MethodView):
+    @blp.doc(tags=["Rankings"])
     @blp.response(201, MessageSchema)
     def post(self):
         """Recalculate ALL weekly rankings from scratch"""
@@ -57,6 +45,7 @@ class RecalculateRankings(MethodView):
 
 @blp.route("/top/<int:n>")
 class TopRankings(MethodView):
+    @blp.doc(tags=["Rankings"])
     @blp.response(200, TopNSchema(many=True))
     def get(self, n):
         """Get top N stocks by ranking. Date is normalized to Friday."""
@@ -71,7 +60,7 @@ class TopRankings(MethodView):
                 abort(400, message="Invalid date format. Use YYYY-MM-DD")
         
         # Get top N from ranking table
-        rankings = score_repo.get_top_n_by_date(n, ranking_date)
+        rankings = ranking_repo.get_top_n_by_date(n, ranking_date)
         if not rankings:
             return []
         else:
@@ -80,6 +69,7 @@ class TopRankings(MethodView):
 
 @blp.route("/symbol/<string:symbol>")
 class RankingBySymbol(MethodView):
+    @blp.doc(tags=["Rankings"])
     @blp.response(200, TopNSchema)
     def get(self, symbol):
         """Get ranking for a specific symbol. Date is normalized to Friday."""
@@ -94,7 +84,7 @@ class RankingBySymbol(MethodView):
                 abort(400, message="Invalid date format. Use YYYY-MM-DD")
         
         # Fetch from ranking table
-        ranking = score_repo.get_by_symbol(symbol, ranking_date)
+        ranking = ranking_repo.get_by_symbol(symbol, ranking_date)
         actual_date = ranking.ranking_date if ranking else None
         
         if not actual_date:
@@ -116,7 +106,6 @@ class RankingBySymbol(MethodView):
             'tradingsymbol': symbol,
             'composite_score': ranking.composite_score if ranking else 0.0,
             'rank': ranking.rank if ranking else 0,
-            'is_invested': False,
             'ranking_date': actual_date,
             'close_price': close_price
         }
@@ -124,7 +113,8 @@ class RankingBySymbol(MethodView):
 
 @blp.route("/query/<string:ranking_date_str>")
 class RankingsQuery(MethodView):
+    @blp.doc(tags=["Rankings"])
     @blp.response(200, RankingSchema(many=True))
     def get(self, ranking_date_str):
         """Fetch all rankings for a specific date"""
-        return score_repo.get_rankings_by_date(ranking_date_str)
+        return ranking_repo.get_rankings_by_date(ranking_date_str)

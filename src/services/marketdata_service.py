@@ -12,6 +12,7 @@ logger = setup_logger(name='Orchestrator')
 instr_repository = InstrumentsRepository()
 marketdata_repository = MarketDataRepository()
 indicators_repository = IndicatorsRepository()
+pd.set_option('future.no_silent_downcasting', True)
 
 
 class MarketDataService:
@@ -52,24 +53,28 @@ class MarketDataService:
             log_symb = f"{tradingsymbol} ({instr_token})"
             logger.info(f"Processing {i+1}/{len(instruments)} {log_symb})...")
             
-            if not historical:
-                last_date = None
-                last_data_date = marketdata_repository.get_latest_date_by_symbol(tradingsymbol)
-                if last_data_date:
-                    last_date = last_data_date.date
-                    start_date = pd.to_datetime(last_date)
+            last_date = None
+            last_data_date = marketdata_repository.get_latest_date_by_symbol(tradingsymbol)
+            if last_data_date:
+                last_date = last_data_date.date
+                start_date = pd.to_datetime(last_date)
+            else:
+                if historical:
+                    start_date = historical_start_date
                 else:
                     start_date = yesterday - timedelta(days=HISTORY_LOOKBACK)
 
-                if start_date > yesterday:
-                    logger.info(f"No data to fetch for {log_symb} as last data date is {last_date}")
-                    continue
-                else:
-                    logger.info(f"Fetching from Kite for {log_symb}) starting {start_date.date()}...")
+            if start_date > yesterday:
+                logger.info(f"No data to fetch for {log_symb} as last data date is {last_date}")
+                continue
+            else:
+                logger.info(f"Fetching from Kite for {log_symb}) starting {start_date.date()}...")
+
+            if not historical:
                 records, start_time = self.get_latest_data_by_token(instr_token, start_date, yesterday)
             else:
-                logger.info(f"Fetching Historical data from Kite for {log_symb}) starting {historical_start_date}...")
-                records, start_time = self.get_historical_data(instr_token, historical_start_date)
+                logger.info(f"Fetching Historical data from Kite for {log_symb}) starting {start_date.date()}...")
+                records, start_time = self.get_historical_data(instr_token, start_date)
 
             if records is None:
                 logger.warning(f"No data returned for {log_symb}")
@@ -88,7 +93,7 @@ class MarketDataService:
                     marketdata_repository.delete_by_tradingsymbol(tradingsymbol)
                     indicators_repository.delete_by_tradingsymbol(tradingsymbol)
                     
-                    sleep(max(0, 0.34 - (time() + start_time)))
+                    sleep(max(0, 0.34 - (time() - start_time)))
                     start_date = yesterday - timedelta(days=HISTORY_LOOKBACK)
                     records, start_time = self.get_latest_data_by_token(instr_token, start_date, yesterday)
                 else:
@@ -149,4 +154,4 @@ class MarketDataService:
 
         except Exception as e:
             self.logger.error(f"Failed to fetch long-term history for {ticker}: {e}")
-            return None
+            return None, None

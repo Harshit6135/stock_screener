@@ -175,7 +175,7 @@ class InitService:
 
             for index, row in df.iterrows():
                 if index % 100 == 0:
-                    time.sleep(2)
+                    time.sleep(4)
 
                 yfinance_info, yfinance_ticker_used, yfinance_status = yf.get_stock_info(df.at[index, 'yfinance_tickers'])
                 df.at[index, 'yfinance_info'] = json.dumps(yfinance_info)

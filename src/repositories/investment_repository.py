@@ -1,207 +1,214 @@
+"""
+Investment Repository
+
+Data access layer for holdings and portfolio summary.
+Actions moved to repositories/actions_repository.py for better separation.
+"""
+from typing import Optional
 from db import db
 from sqlalchemy import func
-from models import InvestmentActionsModel, InvestmentHoldingsModel, InvestmentSummaryModel
+from sqlalchemy.orm import Session
+from models import InvestmentsHoldingsModel, InvestmentsSummaryModel
 from config import setup_logger
 
 logger = setup_logger(name="InvestmentRepository")
 
 
 class InvestmentRepository:
+    """
+    Repository for investment holdings and summary data.
+    """
+
+    def __init__(self, session: Optional[Session] = None):
+        self.session = self._get_session(session)
 
     @staticmethod
-    def get_action_dates():
-        """Get distinct working dates from actions table, ordered descending"""
-        dates = db.session.query(
-            InvestmentActionsModel.working_date
+    def _get_session(session: Optional[Session] = None) -> Session:
+        """Get session to use - default or injected."""
+        return session if session is not None else db.session
+
+    def get_holdings_dates(self):
+        """
+        Get distinct dates from holdings table.
+
+        Returns:
+            list: dates in descending order
+        """
+        dates = self.session.query(
+            InvestmentsHoldingsModel.date
         ).distinct().order_by(
-            InvestmentActionsModel.working_date.desc()
+            InvestmentsHoldingsModel.date.desc()
         ).all()
         return [d[0] for d in dates]
 
-    @staticmethod
-    def get_holdings_dates():
-        """Get distinct working dates from holdings table, ordered descending"""
-        dates = db.session.query(
-            InvestmentHoldingsModel.working_date
-        ).distinct().order_by(
-            InvestmentHoldingsModel.working_date.desc()
-        ).all()
-        return [d[0] for d in dates]
-
-    @staticmethod
-    def get_actions(working_date=None):
-        if not working_date:
-            working_date = db.session.query(
-                func.max(InvestmentActionsModel.working_date)
-            ).scalar()
-        return InvestmentActionsModel.query.filter(
-            InvestmentActionsModel.working_date == working_date
+    def get_holdings(self, date=None):
+        """
+        Get all holdings for a given date.
+        
+        Parameters:
+            date: Date to query, defaults to latest
+        
+        Returns:
+            list: InvestmentsHoldingsModel instances
+        """
+        if not date:
+            date = self.session.query(func.max(InvestmentsHoldingsModel.date)).scalar()
+        return self.session.query(InvestmentsHoldingsModel).filter(
+            InvestmentsHoldingsModel.date == date
         ).all()
 
+    def get_holdings_by_symbol(self, symbol, date=None):
+        """
+        Get holding for a specific symbol and date.
+        
+        Parameters:
+            symbol (str): Trading symbol
+            date: Date to query, defaults to latest
+        
+        Returns:
+            InvestmentsHoldingsModel: Holding instance or None
+        """
+        if not date:
+            date = self.session.query(func.max(InvestmentsHoldingsModel.date)).scalar()
+        return self.session.query(InvestmentsHoldingsModel).filter(
+            InvestmentsHoldingsModel.date == date,
+            InvestmentsHoldingsModel.symbol == symbol
+        ).first()
 
-    @staticmethod
-    def get_action_by_symbol(symbol, working_date=None):
-        if not working_date:
-            working_date = db.session.query(func.max(InvestmentActionsModel.working_date)).scalar()
-        return InvestmentActionsModel.query.filter(InvestmentActionsModel.working_date == working_date,
-                                                   InvestmentActionsModel.symbol == symbol).first()
+    def get_summary(self, date=None):
+        """
+        Get portfolio summary for a given date.
+        
+        Parameters:
+            date: Date to query, defaults to latest
+        
+        Returns:
+            InvestmentsSummaryModel: Summary instance or None
+        """
+        if not date:
+            date = self.session.query(func.max(InvestmentsSummaryModel.date)).scalar()
+        return self.session.query(InvestmentsSummaryModel).filter(
+            InvestmentsSummaryModel.date == date
+        ).first()
 
-
-    @staticmethod
-    def get_holdings(working_date=None):
-        if not working_date:
-            working_date = db.session.query(func.max(InvestmentHoldingsModel.working_date)).scalar()
-        return InvestmentHoldingsModel.query.filter(InvestmentHoldingsModel.working_date == working_date).all()
-
-
-    @staticmethod
-    def get_holdings_by_symbol(symbol, working_date=None):
-        if not working_date:
-            working_date = db.session.query(func.max(InvestmentHoldingsModel.working_date)).scalar()
-        return InvestmentHoldingsModel.query.filter(InvestmentHoldingsModel.working_date == working_date,
-                                                    InvestmentHoldingsModel.symbol == symbol).first()
-
-
-    @staticmethod
-    def get_summary(working_date=None):
-        if not working_date:
-            working_date = db.session.query(func.max(InvestmentSummaryModel.working_date)).scalar()
-        return InvestmentSummaryModel.query.filter(InvestmentSummaryModel.working_date == working_date).first()
-
-
-    @staticmethod
-    def bulk_insert_actions(actions):
+    def bulk_insert_holdings(self, holdings):
+        """
+        Bulk insert holdings records.
+        
+        Parameters:
+            holdings (list): List of holding dictionaries
+        
+        Returns:
+            bool: True if successful, None otherwise
+        """
+        if not holdings:
+            return True
         try:
-            InvestmentActionsModel.query.filter(InvestmentActionsModel.working_date == actions[0]['working_date']).delete()
-            db.session.commit()
-        except Exception as e:
-            logger.error(f"Error bulk_insert_actions (delete) {e}")
-            db.session.rollback()
-
-        try:
-            db.session.bulk_insert_mappings(InvestmentActionsModel, actions, return_defaults=True)
-            db.session.commit()
-        except Exception as e:
-            logger.error(f"Error bulk_insert_actions {e}")
-            db.session.rollback()
-            return None
-        return True
-
-
-    @staticmethod
-    def bulk_insert_holdings(holdings):
-        try:
-            InvestmentHoldingsModel.query.filter(InvestmentHoldingsModel.working_date == holdings[0]['working_date']).delete()
-            db.session.commit()
-        except Exception as e:
-            logger.error(f"Error bulk_insert_holdings (delete) {e}")
-            db.session.rollback()
-
-        try:
-            db.session.bulk_insert_mappings(InvestmentHoldingsModel, holdings, return_defaults=True)
-            db.session.commit()
+            self.session.bulk_insert_mappings(InvestmentsHoldingsModel, holdings, return_defaults=True)
+            self.session.commit()
         except Exception as e:
             logger.error(f"Error bulk_insert_holdings {e}")
-            db.session.rollback()
+            self.session.rollback()
             return None
         return True
 
-
-    @staticmethod
-    def insert_summary(summary):
-        summary_data = InvestmentSummaryModel(**summary)
+    def insert_summary(self, summary):
+        """
+        Insert summary with optional session injection for backtest.
+        
+        Parameters:
+            summary (dict): Summary data
+        
+        Returns:
+            bool: True if successful, None otherwise
+        """
+        summary_data = InvestmentsSummaryModel(**summary)
         try:
-            InvestmentSummaryModel.query.filter(InvestmentSummaryModel.working_date == summary['working_date']).delete()
-            db.session.commit()
+            self.session.query(InvestmentsSummaryModel).filter(
+                InvestmentsSummaryModel.date == summary['date']
+            ).delete()
+            self.session.commit()
         except Exception as e:
             logger.error(f"Error deleting summary {e}")
-            db.session.rollback()
+            self.session.rollback()
 
         try:
-            db.session.add(summary_data)
-            db.session.commit()
+            self.session.add(summary_data)
+            self.session.commit()
             return True
         except Exception as e:
             logger.error(f"Error inserting summary {e}")
-            db.session.rollback()
+            self.session.rollback()
             return None
 
-
-    @staticmethod
-    def check_other_pending_actions(working_date):
-        return InvestmentActionsModel.query.filter(InvestmentActionsModel.working_date != working_date,
-                                                     InvestmentActionsModel.status == 'Pending').all()
-
-
-    @staticmethod
-    def delete_holdings(working_date):
+    def delete_holdings(self, date):
+        """
+        Delete holdings for a specific date.
+        
+        Parameters:
+            date: Date to delete
+        """
         try:
-            InvestmentHoldingsModel.query.filter(InvestmentHoldingsModel.working_date == working_date).delete()
-            db.session.commit()
+            self.session.query(InvestmentsHoldingsModel).filter(
+                InvestmentsHoldingsModel.date == date
+            ).delete()
+            self.session.commit()
         except Exception as e:
             logger.error(f"Error delete_holdings {e}")
-            db.session.rollback()
+            self.session.rollback()
 
-
-    @staticmethod
-    def delete_summary(working_date):
+    def delete_holding(self, symbol, date):
+        """
+        Delete a single holding for a specific symbol and date.
+        
+        Parameters:
+            symbol (str): Trading symbol
+            date (date): Date of the holding
+        """
         try:
-            InvestmentSummaryModel.query.filter(InvestmentSummaryModel.working_date == working_date).delete()
-            db.session.commit()
+            self.session.query(InvestmentsHoldingsModel).filter(
+                InvestmentsHoldingsModel.date == date,
+                InvestmentsHoldingsModel.symbol == symbol
+            ).delete()
+            self.session.commit()
+        except Exception as e:
+            logger.error(f"Error delete_holding {e}")
+            self.session.rollback()
+
+    def delete_summary(self, date):
+        """
+        Delete summary for a specific date.
+        
+        Parameters:
+            date: Date to delete
+        """
+        try:
+            self.session.query(InvestmentsSummaryModel).filter(
+                InvestmentsSummaryModel.date == date
+            ).delete()
+            self.session.commit()
         except Exception as e:
             logger.error(f"Error delete_summary {e}")
-            db.session.rollback()
+            self.session.rollback()
 
-
-    @staticmethod
-    def update_action(action_data):
-        action_id = action_data['action_id']
-        if action_data['status'] == 'Approved':
-            if not 'execution_price' in action_data:
-                logger.warning('Missing execution price for approval')
-                return None
+    def delete_all_holdings(self):
+        """
+        Delete all holdings (used in cleanup operations).
+        """
         try:
-            action = InvestmentActionsModel.query.filter(InvestmentActionsModel.action_id == action_id).first()
-            if action:
-                for key, value in action_data.items():
-                    if hasattr(action, key):
-                        setattr(action, key, value)
-                db.session.commit()
-                return True
-            else:
-                logger.warning(f"Action with id {action_id} not found")
-                return None
-        except Exception as e:
-            logger.error(f"Error updating action {e}")
-            db.session.rollback()
-            return None
-
-
-    @staticmethod
-    def delete_all_actions():
-        try:
-            InvestmentActionsModel.query.delete()
-            db.session.commit()
-        except Exception as e:
-            logger.error(f"Error delete_all_actions {e}")
-            db.session.rollback()
-
-
-    @staticmethod
-    def delete_all_holdings():
-        try:
-            InvestmentHoldingsModel.query.delete()
-            db.session.commit()
+            self.session.query(InvestmentsHoldingsModel).delete()
+            self.session.commit()
         except Exception as e:
             logger.error(f"Error delete_all_holdings {e}")
-            db.session.rollback()
+            self.session.rollback()
 
-
-    @staticmethod
-    def delete_all_summary():
+    def delete_all_summary(self):
+        """
+        Delete all summary records (used in cleanup operations).
+        """
         try:
-            InvestmentSummaryModel.query.delete()
-            db.session.commit()
+            self.session.query(InvestmentsSummaryModel).delete()
+            self.session.commit()
         except Exception as e:
             logger.error(f"Error deleting all summary {e}")
-            db.session.rollback()
+            self.session.rollback()

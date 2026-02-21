@@ -9,19 +9,16 @@ import pandas as pd
 from datetime import date, timedelta
 
 from config import setup_logger
-from repositories import ScoreRepository
+from repositories import ScoreRepository, RankingRepository
+
 
 score_repo = ScoreRepository()
+ranking_repo = RankingRepository()
 logger = setup_logger(name="RankingService")
+pd.set_option('future.no_silent_downcasting', True)
 
 
-def get_friday(d):
-    """Get the Friday of the week containing date d (Friday = weekday 4)"""
-    days_until_friday = (4 - d.weekday()) % 7
-    if d.weekday() > 4:  # If Saturday or Sunday, go to previous Friday
-        days_until_friday = d.weekday() - 4
-        return d - timedelta(days=days_until_friday)
-    return d + timedelta(days=days_until_friday)
+from utils.date_utils import get_friday_of_week
 
 
 class RankingService:
@@ -32,10 +29,16 @@ class RankingService:
         Generate weekly rankings incrementally.
         For each Friday, calculate average of that week's (Mon-Fri) daily scores,
         sort by score descending, and assign rank (1 = highest).
+
+        Incomplete week guard: skips a week if today <= that Friday,
+        because T-1 pipeline means Friday's data isn't ready until
+        Saturday at the earliest. If Friday is a holiday the week is
+        still considered complete once Saturday arrives — we simply
+        average whatever trading-day scores exist in Mon-Fri range.
         """
         logger.info("Starting incremental ranking generation...")
         
-        last_ranking_date = score_repo.get_max_ranking_date()
+        last_ranking_date = ranking_repo.get_max_ranking_date()
         last_score_date = score_repo.get_max_score_date()
         
         if not last_score_date:
@@ -44,26 +47,40 @@ class RankingService:
         
         # Determine starting Friday
         if last_ranking_date:
-            current_friday = get_friday(last_ranking_date) + timedelta(days=7)
+            current_friday = get_friday_of_week(last_ranking_date) + timedelta(days=7)
         else:
             # Start from first available Friday after earliest score
-            from db import db
-            from models import ScoreModel
-            result = db.session.query(ScoreModel.score_date).distinct().order_by(ScoreModel.score_date).all()
-            distinct_dates = [r[0] for r in result]
+            distinct_dates = score_repo.get_all_distinct_dates()
             if not distinct_dates:
                 return {"message": "No score dates available", "weeks": 0}
             first_date = distinct_dates[0]
-            current_friday = get_friday(first_date)
+            current_friday = get_friday_of_week(first_date)
             if current_friday < first_date:
                 current_friday += timedelta(days=7)
         
         # End at latest score date's Friday
-        end_friday = get_friday(last_score_date)
+        end_friday = get_friday_of_week(last_score_date)
         weeks_processed = 0
         all_ranking_records = []
+        today = date.today()
         
         while current_friday <= end_friday:
+            # Skip incomplete weeks — don't rank until we're past Friday
+            # Handles T-1 lag: running ON Friday only has data up to Thu
+            # Handles holidays: once Saturday arrives, use available days
+            friday_as_date = (
+                current_friday.date()
+                if hasattr(current_friday, 'date')
+                else current_friday
+            )
+            if friday_as_date >= today:
+                logger.info(
+                    f"Skipping week ending {current_friday} — "
+                    f"week not yet complete (today={today})"
+                )
+                current_friday += timedelta(days=7)
+                continue
+
             # Week range: Monday to Friday (inclusive)
             week_monday = current_friday - timedelta(days=4)  # Friday - 4 = Monday
             week_friday = current_friday
@@ -92,7 +109,7 @@ class RankingService:
             current_friday += timedelta(days=7)
         
         if all_ranking_records:
-            score_repo.bulk_insert_ranking(all_ranking_records)
+            ranking_repo.bulk_insert(all_ranking_records)
         
         logger.info(f"Generated rankings for {weeks_processed} weeks")
         return {"message": f"Generated rankings for {weeks_processed} weeks", "weeks": weeks_processed}
@@ -106,7 +123,7 @@ class RankingService:
         
         # Clear existing rankings
         logger.info("Clearing existing ranking table...")
-        score_repo.delete_all_ranking()
+        ranking_repo.delete_all()
         
         # Now generate all rankings
         return self.generate_rankings()

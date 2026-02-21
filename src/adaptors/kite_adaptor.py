@@ -3,20 +3,41 @@ import threading
 import webbrowser
 import urllib.parse
 from datetime import datetime
+from typing import Optional, List, Dict, Any
 
 from kiteconnect import KiteConnect
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 class KiteAdaptor:
-    def __init__(self, config, logger):
+    """
+    Kite Connect API adaptor for stock market data.
+    
+    Handles authentication, session management, and data fetching
+    for NSE/BSE market data via Zerodha Kite Connect API.
+    """
+    
+    def __init__(self, config: Dict[str, str], logger: Any) -> None:
+        """
+        Initialize Kite adaptor with credentials.
+        
+        Parameters:
+            config (Dict[str, str]): API configuration with keys:
+                - api_key: Kite Connect API key
+                - api_secret: Kite Connect API secret
+                - redirect_url: OAuth callback URL
+            logger: Logger instance for logging
+        
+        Returns:
+            None
+        """
         self.api_key = config['api_key']
         self.api_secret = config['api_secret']
         self.redirect_url = config['redirect_url']
         self.logger = logger
-        self.kite = None
-        self.instrument_map = {}
-        self.request_token = None
+        self.kite: Optional[KiteConnect] = None
+        self.instrument_map: Dict[int, str] = {}
+        self.request_token: Optional[str] = None
         
         self._initialize_kite()
 
@@ -116,9 +137,24 @@ class KiteAdaptor:
             self.logger.error("Login timed out or failed to receive token.")
             raise TimeoutError("Login timed out")
 
-    def fetch_ticker_data(self, ticker, start_date, end_date):
+    def fetch_ticker_data(self, ticker: int, start_date: datetime, 
+                          end_date: Optional[datetime] = None) -> Optional[List[Dict]]:
         """
-        Fetches data for a ticker from start_date to end_date.
+        Fetch historical OHLCV data for a ticker.
+        
+        Parameters:
+            ticker (int): Instrument token from Kite
+            start_date (datetime): Start date for data
+            end_date (Optional[datetime]): End date, defaults to now
+        
+        Returns:
+            Optional[List[Dict]]: OHLCV records, or None if fetch fails
+        
+        Raises:
+            Exception: If API call fails (logged, returns None)
+        
+        Example:
+            >>> data = adaptor.fetch_ticker_data(738561, datetime(2024, 1, 1))
         """
         try:
             if not end_date:
@@ -135,7 +171,19 @@ class KiteAdaptor:
             self.logger.error(f"Failed to fetch/process data for {ticker}: {e}")
             return None
 
-    def get_instruments(self, exchange=None):
+    def get_instruments(self, exchange: Optional[str] = None) -> Optional[List[Dict]]:
+        """
+        Get list of tradable instruments from Kite.
+        
+        Parameters:
+            exchange (Optional[str]): Specific exchange (NSE/BSE) or None for all
+        
+        Returns:
+            Optional[List[Dict]]: Instrument data, or None if fetch fails
+        
+        Example:
+            >>> instruments = adaptor.get_instruments("NSE")
+        """
         try:
             if exchange:
                 instruments = self.kite.instruments(exchange)

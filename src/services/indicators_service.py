@@ -1,5 +1,4 @@
 
-import json
 import pandas as pd
 import pandas_ta as ta
 
@@ -14,6 +13,7 @@ instr_repo = InstrumentsRepository()
 indicators_repo = IndicatorsRepository()
 marketdata_repo = MarketDataRepository()
 logger = setup_logger(name="Orchestrator")
+pd.set_option('future.no_silent_downcasting', True)
 
 
 class IndicatorsService:
@@ -51,6 +51,14 @@ class IndicatorsService:
         return (df_close - ema) / ema
 
     @staticmethod
+    def calculate_atr_spike(atr: pd.Series, lookback: int = 20) -> pd.Series:
+        """
+        ATR relative to recent average - detects earnings/news volatility
+        """
+        atr_avg = atr.rolling(window=lookback).mean()
+        return atr / atr_avg
+
+    @staticmethod
     def apply_study(df, last_ind_date):
         df.ta.study(ema_strategy)
         date_truncate = last_ind_date - timedelta(days=additional_parameters['truncate_days'])
@@ -67,6 +75,10 @@ class IndicatorsService:
         df['distance_from_ema_50'] = self.calculate_distance_from_ema(df['close'], df['EMA_50'])
         df['risk_adjusted_return'] = df["ROC_20"]/(df['ATRr_14']/df['close'])
         df['rvol'] = df['volume']/df['VOL_SMA_20']
+        df['atr_spike'] = self.calculate_atr_spike(df['ATRr_14'])
+
+        df['momentum_3m'] = (df['close'].shift(5) / df['close'].shift(65)) - 1
+        df['momentum_6m'] = (df['close'].shift(5) / df['close'].shift(130)) - 1
         return df
 
     def calculate_indicators(self):
@@ -121,7 +133,7 @@ class IndicatorsService:
             df_for_ind.sort_index(inplace=True)
             
             logger.info("Calculating indicators...")
-
+            df_for_ind['avg_turnover'] = df_for_ind['close'] * df_for_ind['volume']
             ind_df = self.apply_study(df_for_ind, last_ind_date)
             try:
                 ind_df = self._calculate_derived_indicators(ind_df)

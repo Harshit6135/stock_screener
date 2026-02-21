@@ -3,7 +3,7 @@ from flask_smorest import Api
 from flask_migrate import Migrate
 from flask import Flask, render_template
 
-from config import Config
+from src.config import Config
 from src.api.v1.routes import (
     instruments_bp,
     marketdata_bp,
@@ -13,8 +13,12 @@ from src.api.v1.routes import (
     score_bp,
     app_bp,
     ranking_bp,
-    strategy_bp,
-    investment_bp
+    actions_bp,
+    investment_bp,
+    config_bp,
+    costs_bp,
+    tax_bp,
+    backtest_bp
 )
 
 
@@ -33,17 +37,27 @@ api = Api(app)
 with app.app_context():
     db.create_all()
 
-# Register API blueprints
+# Register API blueprints (order matches Swagger UI / Redoc tag groups)
+# System & Config
 api.register_blueprint(init_bp)
+api.register_blueprint(app_bp)
+api.register_blueprint(config_bp)
+# Data Pipeline
 api.register_blueprint(instruments_bp)
 api.register_blueprint(marketdata_bp)
 api.register_blueprint(indicators_bp)
 api.register_blueprint(percentile_bp)
 api.register_blueprint(score_bp)
-api.register_blueprint(app_bp)
 api.register_blueprint(ranking_bp)
-api.register_blueprint(strategy_bp)
+# Trading
+api.register_blueprint(actions_bp)
 api.register_blueprint(investment_bp)
+# Analysis
+api.register_blueprint(costs_bp)
+api.register_blueprint(tax_bp)
+# Backtest
+api.register_blueprint(backtest_bp)
+
 
 # Main Dashboard Route
 @app.route("/")

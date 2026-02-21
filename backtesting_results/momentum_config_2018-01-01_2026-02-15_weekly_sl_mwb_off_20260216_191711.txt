@@ -1,0 +1,1205 @@
+======================================================================
+  BACKTEST RESULTS REPORT
+  Generated: 2026-02-16 19:17:11
+======================================================================
+
+[ CONFIGURATION ]
+  Config Name       : momentum_config
+  Start Date        : 2018-01-01
+  End Date          : 2026-02-15
+  Daily SL          : False
+  Mid-Week Buy      : False
+  Initial Capital   :      120,000.00
+  Max Positions     : 11
+  Risk Threshold    : 1.0
+  Buffer Percent    : 0.25
+  Exit Threshold    : 40.0
+  SL Multiplier     : 2.0
+  SL Step Percent   : 0.1
+  SL Fallback Pct   : 0.06
+
+[ PERFORMANCE METRICS ]
+  Final Portfolio   :      797,450.19
+  Total Return      :     +677,450.19  (+564.54%)
+  CAGR              :     +26.26%
+  XIRR              :     +34.89%
+  Max Drawdown      :      43.69%
+  Sharpe Ratio      :       0.99
+  Sortino Ratio     :       1.56
+  Calmar Ratio      :       0.60
+
+[ TRADE STATISTICS ]
+  Total Trades      : 1127
+  Win Rate          :      37.71%
+  Profit Factor     :       2.19
+  Expectancy/Trade  :    +576.03
+  Avg Holding Days  :       28.7
+  Winners           : 425
+  Losers            : 702
+  Avg Win           :       +2,850.85
+  Avg Loss          :         -787.49
+  Best Trade        : MIDWEST +285,808.95
+  Worst Trade       : HINDZINC -8,320.00
+
+[ TRANSACTION COSTS ]
+  Total Buy Value   :   10,741,065.69
+  Total Sell Value  :   11,399,860.69
+  Total Turnover    :   22,140,926.38
+  ---
+  Buy Side Costs    :       12,812.91
+  Sell Side Costs   :       26,539.91
+  Total Costs       :       39,352.82
+  ---
+  Brokerage         :            0.00
+  STT               :       22,141.05
+  GST               :          141.43
+  Stamp Duty        :        1,611.28
+  Cost as % Return  :       5.81%
+
+[ CAPITAL GAINS TAX ]
+  STCG Trades       : 425
+  STCG Gains        :    1,211,609.92
+  STCG Tax (20%)    :      242,321.99
+  ---
+  LTCG Trades       : 0
+  LTCG Gains        :            0.00
+  LTCG Tax (12.5%)  :            0.00
+  ---
+  Total Tax         :      242,321.99
+  Total Costs+Tax   :      281,674.81
+  Net Post-Tax Ret  :     +395,775.38
+
+[ TRADE LOG ]
+  Symbol                      Entry         Exit    Entry ₹     Exit ₹  Units          PnL Reason
+  -------------------- ------------ ------------ ---------- ---------- ------ ------------ --------------------
+  HESTERBIO              2018-01-01   2018-01-15   1,868.40   1,690.00      4      -713.60 swap: score 62.8 → 3BBLACKBIO (86.7)
+  KLBRENG-B              2018-01-01   2018-01-15     114.00     106.75     45      -326.25 swap: score 64.0 → TGVSL (86.5)
+  BENGALASM              2018-01-01   2018-01-15   2,775.05   2,660.00      3      -345.15 swap: score 67.3 → INDIAGLYCO (86.3)
+  3BBLACKBIO             2018-01-15   2018-01-22     169.00     140.00     43    -1,247.00 stoploss hit
+  TGVSL                  2018-01-15   2018-01-22      86.95      72.80     51      -721.65 stoploss hit
+  INDIAGLYCO             2018-01-15   2018-01-22     286.00     259.80     20      -524.00 stoploss hit
+  ARTSON                 2018-01-01   2018-01-22     118.75     104.95     36      -496.80 stoploss hit
+  SUMMITSEC              2018-01-01   2018-01-22   1,347.95   1,111.50      6    -1,418.70 stoploss hit
+  BHARATWIRE             2018-01-01   2018-01-22     148.15     137.50     41      -436.65 swap: score 63.5 → JINDALSTEL (87.0)
+  ULTRAMAR               2018-01-01   2018-01-22     399.95     375.00     13      -324.35 swap: score 66.3 → EIHOTEL (86.9)
+  AURIONPRO              2018-01-01   2018-01-22     116.50     112.50     65      -260.00 swap: score 68.6 → SESHAPAPER (85.8)
+  VHL                    2018-01-01   2018-01-29   5,176.90   5,100.00      1       -76.90 swap: score 59.9 → ALEMBICLTD (90.9)
+  GANESHHOU              2018-01-01   2018-01-29     175.70     166.95     33      -288.75 swap: score 62.6 → PANACEABIO (90.8)
+  MAITHANALL             2018-01-22   2018-02-05     931.90     782.25      6      -897.90 stoploss hit
+  RADICO                 2018-01-22   2018-02-05     363.50     314.10     18      -889.20 stoploss hit
+  PRAKASH                2018-01-01   2018-02-05     196.60     190.00     62      -409.20 stoploss hit
+  SESHAPAPER             2018-01-22   2018-02-05     226.00     187.00     18      -702.00 stoploss hit
+  JINDALSTEL             2018-01-22   2018-02-05     263.70     239.00     18      -444.60 stoploss hit
+  WELCORP                2018-01-22   2018-02-05     191.65     151.00     33    -1,341.45 stoploss hit
+  UNIABEXAL              2018-01-22   2018-02-05     560.00     534.35     10      -256.50 swap: score 70.4 → LUXIND (90.8)
+  EIHOTEL                2018-01-22   2018-02-12     196.65     183.80     22      -282.70 swap: score 63.7 → TTKHLTCARE (94.4)
+  ALEMBICLTD             2018-01-29   2018-02-12      67.60      63.20     69      -303.60 swap: score 72.2 → JUBLPHARMA (94.0)
+  JUBLPHARMA             2018-02-12   2018-03-05     951.00     836.30      4      -458.80 swap: score 54.9 → VENKEYS (96.6)
+  VIMTALABS              2018-02-05   2018-03-05      98.50     106.75     35      +288.75 swap: score 66.1 → KILITCH (96.6)
+  MPHASIS                2018-02-05   2018-03-05     780.50     784.20      9       +33.30 swap: score 72.5 → IDBI (95.5)
+  PANACEABIO             2018-01-29   2018-03-12     227.50     212.20     17      -260.10 swap: score 53.3 → VMART (95.4)
+  KILITCH                2018-03-05   2018-03-12      99.25      82.55     25      -417.50 swap: score 67.8 → ARMANFIN (93.0)
+  LTTS                   2018-02-05   2018-03-19   1,260.00   1,244.95      5       -75.25 stoploss hit
+  FERMENTA               2018-01-22   2018-03-19     211.65     233.75     25      +552.50 stoploss hit
+  BIOCON                 2018-02-05   2018-03-19     294.00     293.50     24       -12.00 swap: score 68.0 → BAJAJELEC (94.6)
+  LTIM                   2018-02-05   2018-03-19   1,201.00   1,338.00      5      +685.00 swap: score 72.8 → MASTEK (94.5)
+  FACT                   2018-03-19   2018-03-26      61.00      50.90    103    -1,040.30 stoploss hit
+  BAJAJELEC              2018-03-19   2018-03-26     386.75     348.85     14      -530.60 stoploss hit
+  LUXIND                 2018-02-05   2018-03-26   1,621.10   1,649.95      4      +115.40 stoploss hit
+  TTKHLTCARE             2018-02-12   2018-03-26     959.90   1,064.30      4      +417.60 swap: score 59.4 → GRAPHITE (92.7)
+  SUNDRMFAST             2018-03-19   2018-04-02     595.85     564.00     11      -350.35 swap: score 60.8 → TITAN (96.7)
+  IDBI                   2018-03-05   2018-04-02      79.85      71.00     54      -477.90 swap: score 70.2 → CYIENT (96.1)
+  CYIENT                 2018-04-02   2018-04-09     694.85     651.70     10      -431.50 stoploss hit
+  ARMANFIN               2018-03-12   2018-04-09     332.00     344.95     14      +181.30 swap: score 62.2 → DBL (92.3)
+  GRAPHITE               2018-03-26   2018-04-16     744.00     699.00      6      -270.00 score degraded to 35.5
+  HEG                    2018-03-26   2018-04-16     649.60     560.00      5      -448.00 stoploss hit
+  COFORGE                2018-02-05   2018-04-16     157.50     180.50     48    +1,104.00 swap: score 62.1 → BIRLANU (90.5)
+  GMBREW                 2018-04-09   2018-04-16     694.35     649.60      6      -268.50 swap: score 70.2 → KEI (90.4)
+  VENKEYS                2018-03-05   2018-04-30   4,049.00   3,899.40      1      -149.60 stoploss hit
+  TITAN                  2018-04-02   2018-04-30     943.10     970.50     10      +274.00 swap: score 60.4 → COFORGE (87.9)
+  DBL                    2018-04-09   2018-04-30   1,185.50   1,173.90      5       -58.00 swap: score 65.7 → KINGFA (87.7)
+  VMART                  2018-03-12   2018-04-30     474.30     528.80     11      +599.50 swap: score 65.9 → ZENSARTECH (87.6)
+  MASTEK                 2018-03-19   2018-04-30     558.90     578.95      9      +180.45 swap: score 66.1 → TVSELECT-BE (87.4)
+  KEI                    2018-04-16   2018-04-30     451.00     432.75     13      -237.25 swap: score 66.4 → BHARATRAS (87.1)
+  COFORGE                2018-04-30   2018-05-07     227.50     207.00     24      -492.00 stoploss hit
+  TVSELECT-BE            2018-04-30   2018-05-07     536.90     428.00      9      -980.10 stoploss hit
+  IFBAGRO                2018-04-16   2018-05-07     834.00     726.10      4      -431.60 stoploss hit
+  MORGANITE              2018-03-26   2018-05-07     587.20     725.50     11    +1,521.30 swap: score 62.0 → SASKEN (89.5)
+  SHAKTIPUMP             2018-04-16   2018-05-14     122.70     115.00     37      -284.90 swap: score 65.6 → FSL (93.0)
+  CYIENT                 2018-05-07   2018-05-21     811.10     795.75      7      -107.45 stoploss hit
+  BHARATRAS              2018-04-30   2018-05-21   1,425.00   1,412.00      4       -52.00 stoploss hit
+  JUBLFOOD               2018-03-26   2018-05-21     230.00     251.30     48    +1,022.40 swap: score 62.0 → INGERRAND (93.7)
+  KINGFA                 2018-04-30   2018-05-21   1,200.00   1,136.00      4      -256.00 swap: score 70.1 → SAREGAMA (93.4)
+  INGERRAND              2018-05-21   2018-05-28     875.00     611.10     10    -2,639.00 stoploss hit
+  BIRLANU                2018-04-16   2018-05-28   2,035.00   2,128.00      2      +186.00 stoploss hit
+  PUNJABCHEM             2018-04-30   2018-05-28     548.95     517.40      8      -252.40 swap: score 52.2 → KEI (93.7)
+  GKWLIMITED             2018-05-07   2018-06-04     765.00     735.00      5      -150.00 swap: score 61.5 → TAALTECH (96.3)
+  ORIRAIL                2018-05-07   2018-06-04     655.00     588.00      6      -402.00 swap: score 69.8 → JUSTDIAL (94.6)
+  SASKEN                 2018-05-07   2018-06-04     902.00     994.00      5      +460.00 swap: score 74.4 → NELCO (94.5)
+  ZENSARTECH             2018-04-30   2018-06-04     248.00     256.00     25      +200.00 swap: score 75.0 → KIRIINDUS (94.2)
+  KEI                    2018-05-28   2018-06-11     478.75     433.10     14      -639.10 stoploss hit
+  PARAGMILK              2018-05-21   2018-06-11     356.50     315.35     15      -617.25 stoploss hit
+  SAREGAMA               2018-05-21   2018-06-11      78.55      71.50     80      -564.00 swap: score 53.8 → M&M (92.0)
+  HEG                    2018-05-21   2018-06-18     686.00     667.80      8      -145.60 swap: score 71.8 → SUVEN (94.5)
+  PERMAGN                2018-06-11   2018-06-25     112.95      92.45     40      -820.00 stoploss hit
+  FSL                    2018-05-14   2018-06-25      71.00      74.15     84      +264.60 stoploss hit
+  WELENT                 2018-05-28   2018-06-25     195.30     179.00     33      -537.90 swap: score 67.6 → BAJAJHLDNG (93.2)
+  KIRIINDUS              2018-06-04   2018-06-25     515.20     472.85      9      -381.15 swap: score 71.3 → ASTRAZEN (93.2)
+  BAJAJHLDNG             2018-06-25   2018-07-02   3,166.85   2,899.90      2      -533.90 stoploss hit
+  SUVEN                  2018-06-18   2018-07-02     219.30     192.35     24      -646.80 stoploss hit
+  TAALTECH               2018-06-04   2018-07-02     259.00     230.00     16      -464.00 swap: score 68.0 → ABBOTINDIA (93.4)
+  JUSTDIAL               2018-06-04   2018-07-02     578.25     555.10      6      -138.90 swap: score 68.7 → BATAINDIA (93.1)
+  M&M                    2018-06-11   2018-07-02     912.20     907.00     11       -57.20 swap: score 74.1 → PAGEIND (93.1)
+  RESPONIND              2018-06-11   2018-07-09      82.80      82.00     86       -68.80 swap: score 70.0 → HEG (94.3)
+  NELCO                  2018-06-04   2018-07-16     268.00     260.00     18      -144.00 swap: score 65.5 → BHARATRAS (92.9)
+  BHARATRAS              2018-07-16   2018-07-23   1,747.00   1,572.00      2      -350.00 stoploss hit
+  VMART                  2018-05-28   2018-07-23     575.30     572.50      8       -22.40 stoploss hit
+  GARFIBRES              2018-07-09   2018-07-23     237.75     227.00     29      -311.75 stoploss hit
+  MAHLIFE                2018-06-25   2018-07-23     186.80     163.20     31      -731.60 stoploss hit
+  ASTRAZEN               2018-06-25   2018-07-23   1,489.00   1,424.00      2      -130.00 swap: score 70.4 → ASIANPAINT (92.1)
+  GREAVESCOT             2018-07-02   2018-07-30     144.00     143.20     55       -44.00 swap: score 70.7 → ADANIENT (92.1)
+  LTIM                   2018-07-23   2018-08-06   1,764.00   1,689.10      3      -224.70 stoploss hit
+  RESPONIND              2018-07-23   2018-08-06      93.70      91.50     26       -57.20 swap: score 67.0 → BIRLANU (89.2)
+  MAHSCOOTER             2018-07-02   2018-08-06   2,890.00   3,075.00      1      +185.00 swap: score 70.4 → EXCELINDUS (88.9)
+  CIGNITITEC             2018-06-25   2018-08-13     339.50     425.60     15    +1,291.50 stoploss hit
+  ASIANPAINT             2018-07-23   2018-08-13   1,425.10   1,414.00      6       -66.60 swap: score 64.9 → WSTCSTPAPR (90.5)
+  GRAPHITE               2018-07-09   2018-08-27     957.40     984.00      6      +159.60 stoploss hit
+  HEG                    2018-07-09   2018-08-27     736.80     828.00      6      +547.20 swap: score 63.0 → NOVARTIND (88.3)
+  BIRLANU                2018-08-06   2018-08-27   2,348.80   2,225.00      1      -123.80 swap: score 67.3 → MORGANITE (87.8)
+  BAJAJFINSV             2018-07-23   2018-09-03     663.10     677.00     12      +166.80 stoploss hit
+  WSTCSTPAPR             2018-08-13   2018-09-03     326.00     345.70     12      +236.40 swap: score 70.4 → THEJO (89.8)
+  ADANIENT               2018-07-30   2018-09-10     191.20     153.20     16      -608.00 stoploss hit
+  BAJFINANCE             2018-07-23   2018-09-10     272.00     273.00     39       +39.00 stoploss hit
+  EXCELINDUS             2018-08-06   2018-09-10   1,675.00   1,777.00      2      +204.00 swap: score 65.0 → DATAMATICS (91.0)
+  STEL                   2018-09-10   2018-09-17     131.90     116.00     31      -492.90 stoploss hit
+  RHIM                   2018-08-06   2018-09-17     240.25     233.00     16      -116.00 stoploss hit
+  SRHHYPOLTD             2018-09-17   2018-09-24     186.05     165.00     18      -378.90 stoploss hit
+  BATAINDIA              2018-07-02   2018-09-24     862.00     974.00     10    +1,120.00 stoploss hit
+  ZENSARTECH             2018-08-27   2018-09-24     323.00     280.00     16      -688.00 stoploss hit
+  PFIZER                 2018-09-03   2018-09-24   3,668.00   3,140.00      1      -528.00 stoploss hit
+  MORGANITE              2018-08-27   2018-09-24     944.65     929.00      6       -93.90 stoploss hit
+  DATAMATICS             2018-09-10   2018-09-24     143.20     121.95     28      -595.00 stoploss hit
+  NOVARTIND              2018-08-27   2018-09-24     875.00     784.90      6      -540.60 stoploss hit
+  DHAMPURSUG             2018-09-24   2018-10-01     132.00     109.00     43      -989.00 stoploss hit
+  PERMAGN                2018-09-24   2018-10-01     171.25     135.75     28      -994.00 stoploss hit
+  PRAJIND                2018-09-24   2018-10-01     101.60      87.55     39      -547.95 stoploss hit
+  GLOBUSSPR              2018-09-24   2018-10-01     187.00     145.00     15      -630.00 stoploss hit
+  POLYPLEX               2018-09-10   2018-10-01     641.00     535.00      9      -954.00 stoploss hit
+  SASTASUNDR             2018-09-17   2018-10-01     125.40      99.00     37      -976.80 stoploss hit
+  TANFACIND              2018-08-13   2018-10-01     197.30     302.00     21    +2,198.70 stoploss hit
+  THEJO                  2018-09-03   2018-10-01     226.65     208.35     35      -640.50 stoploss hit
+  DCMSHRIRAM             2018-10-01   2018-10-08     437.90     372.00     17    -1,120.30 stoploss hit
+  BIOCON                 2018-10-01   2018-10-08     345.00     305.50     26    -1,027.00 stoploss hit
+  TCS                    2018-10-01   2018-10-08   2,190.90   2,102.65      6      -529.50 stoploss hit
+  SONATSOFTW             2018-09-24   2018-10-08     145.70     117.60     38    -1,067.80 stoploss hit
+  UTTAMSUGAR             2018-09-24   2018-10-08     108.15      99.85     40      -332.00 swap: score 49.7 → ZSARACOM (87.1)
+  ALICON                 2018-10-01   2018-10-08     631.45     614.50      7      -118.65 swap: score 55.3 → HCLTECH (84.9)
+  HINDALCO               2018-10-08   2018-10-15     235.00     229.00     21      -126.00 score degraded to 25.5
+  TCS                    2018-10-08   2018-10-15   2,102.65   1,940.00      3      -487.95 stoploss hit
+  ZSARACOM               2018-10-08   2018-10-15      28.70      28.70    236        +0.00 score degraded to 0.0
+  HCLTECH                2018-10-08   2018-10-15     535.00     490.00     16      -720.00 stoploss hit
+  DEEPAKNTR              2018-10-01   2018-10-15     289.00     252.40      6      -219.60 stoploss hit
+  SRAMSET                2018-10-01   2018-10-15     148.95     140.00    113    -1,011.35 stoploss hit
+  SCHNEIDER              2018-09-24   2018-10-15     119.00     114.00     31      -155.00 score degraded to 35.8
+  JSWHL                  2018-10-01   2018-10-15   2,380.65   1,979.95      2      -801.40 stoploss hit
+  WEALTH                 2018-10-15   2018-10-22     151.20     151.20     50        +0.00 score degraded to 0.0
+  SRAMSET                2018-10-15   2018-10-22     140.00     128.60    108    -1,231.20 stoploss hit
+  TIINDIA                2018-10-15   2018-10-22     294.00     289.35     12       -55.80 swap: score 69.8 → GAEL (93.9)
+  ARYAMAN                2018-10-15   2018-10-22      56.00      56.00    130        +0.00 swap: score 71.4 → DALMIASUG (93.7)
+  BHAGERIA               2018-10-22   2018-10-29     167.45     147.55     19      -378.10 stoploss hit
+  NLCINDIA               2018-10-22   2018-10-29      84.40      81.45     94      -277.30 swap: score 55.0 → BALRAMCHIN (90.9)
+  UNIENTER               2018-10-01   2018-10-29      92.25      91.90     26        -9.10 swap: score 55.6 → BHAGERIA (90.3)
+  AUROPHARMA             2018-10-15   2018-10-29     738.00     721.50      5       -82.50 swap: score 63.7 → GVPIL (89.4)
+  BHAGERIA               2018-10-29   2018-11-12     147.55     159.20     24      +279.60 swap: score 64.0 → RESPONIND (90.3)
+  PRAJIND                2018-10-15   2018-11-12     122.00     111.00     50      -550.00 swap: score 67.6 → ALKYLAMINE (88.7)
+  ADANIENT               2018-10-29   2018-11-12     163.50     160.90     20       -52.00 swap: score 69.8 → CIGNITITEC (88.2)
+  CIGNITITEC             2018-11-12   2018-11-19     442.95     397.25     13      -594.10 stoploss hit
+  UTTAMSUGAR             2018-10-15   2018-11-19     141.40     110.10     23      -719.90 stoploss hit
+  HEG                    2018-10-22   2018-11-19     874.60     843.20      4      -125.60 swap: score 56.1 → VINDHYATEL (90.5)
+  GVPIL                  2018-10-29   2018-11-26     813.65     822.60      6       +53.70 swap: score 68.2 → ADANIENSOL (92.0)
+  GAEL                   2018-10-22   2018-11-26      60.00      60.75     62       +46.50 swap: score 69.1 → NEWGEN (90.4)
+  BALRAMCHIN             2018-10-29   2018-12-03     101.00     101.75     34       +25.50 swap: score 58.0 → 63MOONS (89.5)
+  DHAMPURSUG             2018-10-15   2018-12-03     162.00     153.30     26      -226.20 swap: score 59.8 → PIDILITIND (89.1)
+  KILITCH                2018-10-08   2018-12-10     134.15     161.45     24      +655.20 stoploss hit
+  ALKYLAMINE             2018-11-12   2018-12-10     321.95     289.65     17      -549.10 stoploss hit
+  RESPONIND              2018-11-12   2018-12-17      93.95      83.50     53      -553.85 stoploss hit
+  DALMIASUG              2018-10-22   2018-12-17      88.70     100.25     26      +300.30 swap: score 63.4 → DMART (91.8)
+  63MOONS                2018-12-03   2018-12-17      99.95      93.15     26      -176.80 swap: score 68.0 → INDHOTEL (91.4)
+  VINDHYATEL             2018-11-19   2018-12-17   1,729.95   1,889.00      2      +318.10 swap: score 70.7 → TTKPRESTIG (91.1)
+  ADANIENSOL             2018-11-26   2018-12-24     237.00     207.05     16      -479.20 stoploss hit
+  NEWGEN                 2018-11-26   2018-12-24     162.50     152.00     22      -231.00 swap: score 61.2 → VINATIORGA (87.8)
+  VOLTAMP                2018-11-19   2018-12-24   1,080.00   1,074.20      4       -23.20 swap: score 65.7 → FEDERALBNK (87.4)
+  SRAMSET                2018-12-17   2018-12-31     168.50     169.00     38       +19.00 stoploss hit
+  PIDILITIND             2018-12-03   2018-12-31     578.00     552.50     11      -280.50 swap: score 45.0 → INDIGO (91.1)
+  EIHAHOTELS             2018-12-24   2019-01-07     205.00     196.30     10       -87.00 swap: score 50.5 → TIINDIA (91.6)
+  INDHOTEL               2018-12-17   2019-01-07     144.50     139.35     34      -175.10 swap: score 57.2 → ASAL (91.4)
+  TTKPRESTIG             2018-12-17   2019-01-07     650.10     622.45      8      -221.20 swap: score 65.7 → COCKERILL (89.9)
+  TIINDIA                2019-01-07   2019-01-14     362.00     323.00      9      -351.00 stoploss hit
+  INDIGO                 2018-12-31   2019-01-14   1,175.00   1,058.00      4      -468.00 stoploss hit
+  DMART                  2018-12-17   2019-01-14   1,596.00   1,440.00      5      -780.00 swap: score 66.9 → ELANTAS (90.7)
+  VIMTALABS              2018-12-24   2019-01-14     160.00     148.50     20      -230.00 swap: score 70.0 → UNIONBANK (88.7)
+  LINDEINDIA             2018-11-19   2019-01-21     640.20     639.00      7        -8.40 stoploss hit
+  FEDERALBNK             2018-12-24   2019-01-21      93.00      90.45     47      -119.85 stoploss hit
+  VINATIORGA             2018-12-24   2019-01-21     820.00     799.00      4       -84.00 swap: score 63.9 → SOLARA (90.3)
+  MAHSCOOTER             2018-12-10   2019-01-28   2,833.05   3,258.40      2      +850.70 stoploss hit
+  UNIONBANK              2019-01-14   2019-01-28      86.66      73.36     62      -824.60 stoploss hit
+  BANKINDIA              2018-12-31   2019-01-28     100.31      91.58     42      -366.66 stoploss hit
+  PRAJIND                2019-01-14   2019-01-28     148.00     121.60     24      -633.60 stoploss hit
+  ASAL                   2019-01-07   2019-01-28      75.00      56.50     39      -721.50 stoploss hit
+  STAR                   2019-01-28   2019-02-04     456.60     395.85      7      -425.25 stoploss hit
+  ELANTAS                2019-01-14   2019-02-04   2,450.00   2,219.95      1      -230.05 stoploss hit
+  TORNTPHARM             2019-01-21   2019-02-04     949.95     894.00      8      -447.60 stoploss hit
+  COCKERILL              2019-01-07   2019-02-04   1,048.00   1,001.00      4      -188.00 swap: score 68.5 → CHAMBLFERT (90.4)
+  VIYASH                 2019-01-21   2019-02-11      83.90      74.00     51      -504.90 stoploss hit
+  KILITCH                2019-01-14   2019-02-11     204.10     207.55     14       +48.30 swap: score 69.0 → HESTERBIO (93.9)
+  UBL                    2019-01-28   2019-02-18   1,438.20   1,330.00      3      -324.60 stoploss hit
+  DRREDDY                2019-02-04   2019-02-18     561.60     530.00     13      -410.80 stoploss hit
+  AARTIIND               2019-02-04   2019-02-18     412.50     356.25     11      -618.75 stoploss hit
+  CHAMBLFERT             2019-02-04   2019-02-25     171.00     159.35     18      -209.70 swap: score 53.3 → BALRAMCHIN (93.7)
+  RELIANCE               2019-01-28   2019-02-25     596.00     589.10     14       -96.60 swap: score 74.7 → TEAMLEASE (93.6)
+  TEAMLEASE              2019-02-25   2019-03-04   3,115.05   2,850.00      1      -265.05 stoploss hit
+  SOLARA                 2019-01-21   2019-03-04     308.00     345.55     14      +525.70 swap: score 68.4 → DALMIASUG (94.4)
+  HESTERBIO              2019-02-11   2019-03-04   1,429.95   1,313.00      2      -233.90 swap: score 71.9 → NEULANDLAB (93.3)
+  TITAN                  2019-02-11   2019-03-04   1,059.00   1,031.90      4      -108.40 swap: score 72.7 → AXTEL (93.0)
+  COFORGE                2019-01-28   2019-03-11     260.00     262.50     33       +82.50 swap: score 54.9 → DCMSHRIRAM (87.6)
+  NEULANDLAB             2019-03-04   2019-03-18     760.20     706.00      3      -162.60 swap: score 59.2 → SATIN (85.8)
+  AXTEL                  2019-03-04   2019-03-18     132.00     123.40     31      -266.60 swap: score 66.1 → GMMPFAUDLR (84.4)
+  BALRAMCHIN             2019-02-25   2019-03-18     126.20     133.10     25      +172.50 swap: score 66.6 → GOKEX (84.1)
+  DALMIASUG              2019-03-04   2019-03-18     125.45     119.05     23      -147.20 swap: score 66.8 → NCC (83.7)
+  UTTAMSUGAR             2019-03-04   2019-03-25     149.80     124.00     15      -387.00 stoploss hit
+  ASTRAZEN               2019-02-18   2019-03-25   1,789.85   1,953.90      2      +328.10 swap: score 59.1 → PGIL (87.0)
+  DCMSHRIRAM             2019-03-11   2019-03-25     452.00     413.00      8      -312.00 swap: score 66.4 → GODFRYPHLP (86.2)
+  BATAINDIA              2019-02-18   2019-03-25   1,265.00   1,361.00      4      +384.00 swap: score 66.5 → JUSTDIAL (85.9)
+  MAHASTEEL-BE           2019-02-04   2019-04-01     105.20     163.25     30    +1,741.50 stoploss hit
+  GMMPFAUDLR             2019-03-18   2019-04-01     409.35     409.00     12        -4.20 swap: score 64.4 → BAJAJELEC (85.4)
+  GOKEX                  2019-03-18   2019-04-08      98.65      89.05     38      -364.80 stoploss hit
+  NCC                    2019-03-18   2019-04-08     106.75     105.55     44       -52.80 stoploss hit
+  JUSTDIAL               2019-03-25   2019-04-08     615.00     609.00      5       -30.00 swap: score 66.0 → GODREJPROP (88.4)
+  PGIL                   2019-03-25   2019-04-15      86.50      84.70     34       -61.20 swap: score 61.8 → ICICIGI (90.3)
+  KIRIINDUS              2019-04-08   2019-04-22     613.90     554.00      7      -419.30 stoploss hit
+  BRIGADE                2019-03-25   2019-04-22     161.45     163.95     21       +52.50 swap: score 63.1 → ELECTHERM (92.1)
+  GODREJPROP             2019-04-08   2019-04-29     983.80     882.00      3      -305.40 stoploss hit
+  SATIN                  2019-03-18   2019-04-29     330.90     335.85     11       +54.45 stoploss hit
+  BANKBARODA             2019-04-08   2019-04-29     119.58     111.75     37      -289.71 swap: score 63.5 → BANDHANBNK (90.8)
+  SASTASUNDR             2019-02-18   2019-04-29     108.30     120.00     24      +280.80 swap: score 68.1 → MAHSCOOTER (90.6)
+  SEAMECLTD              2019-01-28   2019-05-06     283.50     407.40     15    +1,858.50 stoploss hit
+  GODFRYPHLP             2019-03-25   2019-05-06     374.00     352.00     12      -264.00 stoploss hit
+  BAJAJELEC              2019-04-01   2019-05-06     368.50     364.00     16       -72.00 swap: score 73.8 → BALRAMCHIN (93.1)
+  BALRAMCHIN             2019-05-06   2019-05-13     156.00     144.45     32      -369.60 stoploss hit
+  ELECTHERM              2019-04-22   2019-05-13     293.90     251.00     10      -429.00 stoploss hit
+  BANDHANBNK             2019-04-29   2019-05-13     594.00     571.40      8      -180.80 stoploss hit
+  ISTLTD                 2019-05-06   2019-05-13     347.50     297.00     11      -555.50 swap: score 71.1 → ULTRACEMCO (93.7)
+  63MOONS                2019-04-22   2019-05-20     126.60     145.30     24      +448.80 stoploss hit
+  INDIGO                 2019-04-01   2019-05-27   1,426.25   1,616.00      3      +569.25 swap: score 69.7 → POLYPLEX (93.4)
+  EPL                    2019-04-29   2019-05-27     135.00     131.60     37      -125.80 swap: score 71.6 → JUSTDIAL (93.0)
+  POLYPLEX               2019-05-27   2019-06-03     640.25     570.15      5      -350.50 stoploss hit
+  SVLL                   2019-05-13   2019-06-03      72.25      82.65    142    +1,476.80 score degraded to 0.0
+  CNL                    2019-05-13   2019-06-03     152.50     144.55     35      -278.25 stoploss hit
+  DCMSHRIRAM             2019-05-13   2019-06-10     510.60     524.30     12      +164.40 stoploss hit
+  5PAISA                 2019-04-29   2019-06-17     186.70     210.95     14      +339.50 stoploss hit
+  ULTRACEMCO             2019-05-13   2019-06-17   4,425.00   4,518.00      1       +93.00 stoploss hit
+  ICICIGI                2019-04-15   2019-06-17   1,110.00   1,163.00      4      +212.00 swap: score 68.2 → INTELLECT (89.0)
+  ORIENTCEM              2019-05-06   2019-06-17     105.75     108.00     31       +69.75 swap: score 69.8 → APOLLOHOSP (88.9)
+  HESTERBIO              2019-06-17   2019-06-24   1,890.00   1,708.00      2      -364.00 stoploss hit
+  GOKEX                  2019-06-03   2019-06-24     106.10      93.00     34      -445.40 stoploss hit
+  MAHASTEEL-BE           2019-06-10   2019-06-24     212.00     186.60     21      -533.40 stoploss hit
+  MAHASTEEL-BE           2019-06-24   2019-07-01     186.60     164.60     20      -440.00 swap: score 40.8 → TRENT (94.8)
+  AMAL                   2019-06-24   2019-07-08     156.80     130.70     20      -522.00 stoploss hit
+  INTELLECT              2019-06-17   2019-07-08     274.10     262.90     24      -268.80 swap: score 67.8 → OBEROIRLTY (92.0)
+  APOLLOHOSP             2019-06-17   2019-07-08   1,379.00   1,296.10      4      -331.60 swap: score 68.0 → RELAXO (91.4)
+  MAHSCOOTER             2019-04-29   2019-07-15   3,812.75   4,159.55      1      +346.80 stoploss hit
+  ESABINDIA              2019-06-03   2019-07-15   1,173.10   1,124.95      2       -96.30 swap: score 58.8 → CAMLINFINE (92.6)
+  BAJAJHLDNG             2019-06-24   2019-07-15   3,634.00   3,512.00      1      -122.00 swap: score 61.6 → FMGOETZE (92.1)
+  BIL                    2019-06-17   2019-07-15     310.00     290.70     10      -193.00 swap: score 64.9 → BRIGADE (91.8)
+  PNCINFRA               2019-06-03   2019-07-15     196.00     189.60     25      -160.00 swap: score 69.0 → NBIFIN (91.2)
+  MAGADSUGAR             2019-05-20   2019-07-15      97.30     124.35     20      +541.00 swap: score 70.7 → TANLA (90.9)
+  RELAXO                 2019-07-08   2019-07-22     440.00     416.00     10      -240.00 swap: score 47.4 → GTPL (94.6)
+  OBEROIRLTY             2019-07-08   2019-07-22     582.00     553.10      6      -173.40 swap: score 72.7 → GSPL (91.7)
+  NBIFIN                 2019-07-15   2019-07-29   1,377.05   1,305.80      4      -285.00 stoploss hit
+  FMGOETZE               2019-07-15   2019-07-29     581.20     513.00      9      -613.80 stoploss hit
+  JUSTDIAL               2019-05-27   2019-07-29     679.55     710.50      4      +123.80 stoploss hit
+  TRENT                  2019-07-01   2019-07-29     448.00     405.25     11      -470.25 stoploss hit
+  CAMLINFINE             2019-07-15   2019-07-29      55.94      53.44     51      -127.50 swap: score 51.5 → GRSE (92.4)
+  BFINVEST               2019-07-15   2019-08-05     269.00     229.90     13      -508.30 stoploss hit
+  TANLA                  2019-07-15   2019-08-05      70.80      50.25     41      -842.55 stoploss hit
+  BRIGADE                2019-07-15   2019-08-05     180.05     174.45     22      -123.20 swap: score 66.5 → UBL (91.0)
+  GTPL                   2019-07-22   2019-08-05      89.00      79.95     22      -199.10 swap: score 67.1 → BERGEPAINT (91.0)
+  TORNTPOWER             2019-07-08   2019-08-05     293.00     298.00     16       +80.00 swap: score 71.0 → TORNTPHARM (89.9)
+  UBL                    2019-08-05   2019-08-12   1,401.80   1,375.00      3       -80.40 swap: score 69.9 → TECHNVISN (93.6)
+  TECHNVISN              2019-08-12   2019-08-19     151.65     151.65     16        +0.00 score degraded to 0.0
+  INFY                   2019-07-29   2019-08-19     789.50     775.60     11      -152.90 swap: score 64.8 → GOCLCORP (94.2)
+  CANFINHOME             2019-07-29   2019-08-19     388.00     375.00      9      -117.00 swap: score 65.8 → TRENT (90.8)
+  TORNTPHARM             2019-08-05   2019-08-19     830.00     823.90      4       -24.40 swap: score 66.8 → CAPLIPOINT (90.6)
+  CAPLIPOINT             2019-08-19   2019-08-26     445.40     433.85      7       -80.85 stoploss hit
+  GRSE                   2019-07-29   2019-08-26     131.00     127.40     23       -82.80 swap: score 58.3 → PRESTIGE (94.2)
+  GOCLCORP               2019-08-19   2019-08-26     310.15     296.00      8      -113.20 swap: score 70.8 → APOLLOHOSP (93.2)
+  SANOFI                 2019-07-29   2019-08-26   5,547.15   5,542.70      1        -4.45 swap: score 73.1 → FERMENTA (93.1)
+  ASIANPAINT             2019-08-05   2019-09-09   1,533.20   1,530.55      3        -7.95 swap: score 62.5 → VADILALIND (92.2)
+  ICICIGI                2019-08-05   2019-09-09   1,168.20   1,200.00      2       +63.60 swap: score 68.1 → NAM-INDIA (91.2)
+  NAM-INDIA              2019-09-09   2019-09-16     285.20     260.20     15      -375.00 stoploss hit
+  HDFCLIFE               2019-07-29   2019-09-16     499.80     537.00     13      +483.60 swap: score 62.3 → MCCHRLS-B (87.9)
+  TRENT                  2019-08-19   2019-09-16     468.40     454.20      8      -113.60 swap: score 62.5 → POLYMED (87.3)
+  GSPL                   2019-07-22   2019-09-16     208.75     224.80     21      +337.05 swap: score 68.2 → VINATIORGA (87.2)
+  ZYDUSWELL              2019-09-16   2019-09-23     355.00     337.80     12      -206.40 stoploss hit
+  APOLLOHOSP             2019-08-26   2019-09-23   1,444.00   1,490.00      2       +92.00 swap: score 45.0 → VIYASH (87.1)
+  PRESTIGE               2019-08-26   2019-09-23     287.15     309.00     10      +218.50 swap: score 53.9 → SUVEN (86.7)
+  GODFRYPHLP             2019-08-26   2019-09-23     327.00     331.00      7       +28.00 swap: score 60.2 → GRSE (86.7)
+  FERMENTA               2019-08-26   2019-09-23     300.00     300.00      8        +0.00 swap: score 60.5 → BHARATRAS (86.3)
+  BERGEPAINT             2019-08-05   2019-09-23     278.30     336.65     16      +933.60 swap: score 66.3 → GRANULES (85.9)
+  VIYASH                 2019-09-23   2019-09-30      86.90      73.85     48      -626.40 stoploss hit
+  VINATIORGA             2019-09-16   2019-09-30   1,122.50   1,118.50      4       -16.00 swap: score 56.7 → BPCL (86.8)
+  POLYMED                2019-09-16   2019-09-30     210.70     217.95     15      +108.75 swap: score 65.2 → CONCOR (86.6)
+  MCCHRLS-B              2019-09-16   2019-09-30     417.80     400.00      8      -142.40 swap: score 67.0 → BAJFINANCE (86.1)
+  SUVEN                  2019-09-23   2019-10-07     259.80     245.45     17      -243.95 swap: score 61.2 → HIRECT (87.8)
+  GRANULES               2019-09-23   2019-10-21     108.00      97.80     43      -438.60 score degraded to 34.1
+  VADILALIND             2019-09-09   2019-10-21     729.85     738.00      5       +40.75 swap: score 57.9 → BERGEPAINT (92.9)
+  ARMANFIN               2019-09-23   2019-10-28     482.00     543.00      5      +305.00 swap: score 70.4 → NAM-INDIA (93.8)
+  CONCOR                 2019-09-30   2019-10-28     476.70     472.00      8       -37.60 swap: score 71.0 → MANAPPURAM (92.5)
+  BHARATRAS              2019-09-23   2019-11-04   1,348.00   1,457.00      2      +218.00 swap: score 52.1 → PFIZER (89.8)
+  BAJFINANCE             2019-09-30   2019-11-04     406.50     409.00     13       +32.50 swap: score 57.0 → GICRE (89.6)
+  BATAINDIA              2019-08-19   2019-11-11   1,484.80   1,693.10      2      +416.60 swap: score 51.9 → MIDHANI (89.7)
+  BPCL                   2019-09-30   2019-11-11     208.50     224.05     15      +233.25 swap: score 62.3 → ORISSAMINE (89.5)
+  ORISSAMINE             2019-11-11   2019-11-18   1,449.00   1,225.00      2      -448.00 stoploss hit
+  SIEMENS                2019-09-30   2019-11-18   1,149.60   1,200.20      4      +202.40 stoploss hit
+  BERGEPAINT             2019-10-21   2019-11-18     406.65     408.10     14       +20.30 swap: score 66.7 → NH (89.8)
+  GICRE                  2019-11-04   2019-11-18     292.90     251.15      7      -292.25 swap: score 69.1 → AFFLE (89.1)
+  MANAPPURAM             2019-10-28   2019-11-25     164.00     161.00     28       -84.00 swap: score 70.0 → TECHNVISN (92.9)
+  TECHNVISN              2019-11-25   2019-12-02     201.60     191.55     27      -271.35 score degraded to 0.0
+  AFFLE                  2019-11-18   2019-12-02     329.75     312.00     10      -177.50 stoploss hit
+  ITDC                   2019-10-21   2019-12-02     343.55     344.00      6        +2.70 swap: score 65.8 → ABCAPITAL (92.5)
+  GRSE                   2019-09-23   2019-12-02     156.00     212.00     22    +1,232.00 swap: score 67.8 → EPL (90.3)
+  HDFCAMC                2019-11-18   2019-12-09   1,716.00   1,569.50      2      -293.00 stoploss hit
+  MIDHANI                2019-11-11   2019-12-09     173.95     152.10     17      -371.45 stoploss hit
+  MSTCLTD                2019-11-18   2019-12-09     162.50     143.30     15      -288.00 swap: score 70.8 → LTF (92.5)
+  HIRECT                 2019-10-07   2019-12-16     150.65     209.00     16      +933.60 swap: score 65.0 → BFUTILITIE-BZ (95.0)
+  ABCAPITAL              2019-12-02   2019-12-16     109.80     100.50     32      -297.60 swap: score 65.7 → BLISSGVS (93.3)
+  NAM-INDIA              2019-10-28   2019-12-16     320.00     347.10      8      +216.80 swap: score 71.4 → MASFIN (92.3)
+  NH                     2019-11-18   2019-12-30     294.90     302.45     12       +90.60 swap: score 69.2 → GMMPFAUDLR (92.9)
+  LTF                    2019-12-09   2019-12-30     105.30     110.60     36      +190.80 swap: score 71.4 → RGL (92.3)
+  PFIZER                 2019-11-04   2019-12-30   4,023.80   4,189.00      1      +165.20 swap: score 71.9 → NAVINFLUOR (92.0)
+  BLISSGVS               2019-12-16   2020-01-06     153.00     149.25     26       -97.50 swap: score 64.0 → DALMIASUG (89.3)
+  BFUTILITIE-BZ          2019-12-16   2020-01-13     340.00     323.70      8      -130.40 swap: score 51.3 → RIIL (88.6)
+  ADANIENSOL             2019-12-09   2020-01-13     320.60     331.95     12      +136.20 swap: score 55.2 → ALKYLAMINE (88.3)
+  TANLA                  2019-12-02   2020-01-13      69.05      69.05     60        +0.00 swap: score 56.9 → MCX (87.8)
+  ADANIGREEN             2019-12-02   2020-01-20     138.00     198.05     34    +2,041.70 stoploss hit
+  EPL                    2019-12-02   2020-01-20     154.70     177.15     19      +426.55 swap: score 56.7 → RAIN (83.3)
+  MASFIN                 2019-12-16   2020-01-20     269.70     294.90     16      +403.20 swap: score 61.0 → KNRCON (82.3)
+  DALMIASUG              2020-01-06   2020-01-27     124.75     121.60     24       -75.60 swap: score 68.1 → INDOCO (86.8)
+  MCX                    2020-01-13   2020-02-03     270.00     241.00     17      -493.00 stoploss hit
+  RAIN                   2020-01-20   2020-02-03     125.05     103.00     28      -617.40 stoploss hit
+  RIIL                   2020-01-13   2020-02-03     434.00     382.00      6      -312.00 swap: score 69.5 → WOCKPHARMA (87.3)
+  NILE                   2020-01-20   2020-02-10     310.05     290.00      9      -180.45 swap: score 65.7 → POLYMED (91.0)
+  KNRCON                 2020-01-20   2020-02-10     149.25     141.40     31      -243.35 swap: score 66.7 → SIRCA (90.6)
+  RGL                    2019-12-30   2020-02-17      66.00      78.40     41      +508.40 swap: score 69.5 → DMART (93.6)
+  GUJGASLTD              2019-12-09   2020-02-24     228.50     286.80     22    +1,282.60 swap: score 68.0 → CANTABIL (93.7)
+  DHANUKA                2020-02-03   2020-02-24     501.50     519.00      5       +87.50 swap: score 73.6 → MIDHANI (93.7)
+  CANTABIL               2020-02-24   2020-03-02      69.40      63.00     59      -377.60 stoploss hit
+  ORISSAMINE             2020-02-03   2020-03-02   1,769.90   1,771.30      2        +2.80 stoploss hit
+  GMMPFAUDLR             2019-12-30   2020-03-02     613.35     966.65      8    +2,826.40 stoploss hit
+  INDOCO                 2020-01-27   2020-03-02     221.00     230.00     12      +108.00 stoploss hit
+  ALKYLAMINE             2020-01-13   2020-03-02     504.05     612.90      9      +979.65 stoploss hit
+  WOCKPHARMA             2020-02-03   2020-03-02     313.00     290.30     10      -227.00 stoploss hit
+  DMART                  2020-02-17   2020-03-02   2,354.50   2,335.00      1       -19.50 swap: score 72.5 → INDIAGLYCO (92.3)
+  MSTCLTD                2020-03-02   2020-03-09     173.95     130.60     12      -520.20 stoploss hit
+  SIRCA                  2020-02-10   2020-03-09     162.45     145.00     25      -436.25 stoploss hit
+  SGRL                   2020-03-09   2020-03-16      75.00      63.20     56      -660.80 stoploss hit
+  ARMANFIN               2020-03-02   2020-03-16     977.00     824.80      2      -304.40 stoploss hit
+  INDIAGLYCO             2020-03-02   2020-03-16     178.60     114.00     16    -1,033.60 stoploss hit
+  SOLARA                 2020-03-02   2020-03-16     596.50     415.60      5      -904.50 stoploss hit
+  POLYMED                2020-02-10   2020-03-16     327.90     272.00      8      -447.20 stoploss hit
+  MORGANITE              2020-03-02   2020-03-16     999.55     780.50      5    -1,095.25 stoploss hit
+  ALKYLAMINE             2020-03-02   2020-03-16     612.90     500.00      7      -790.30 stoploss hit
+  TECHNVISN              2020-03-16   2020-03-23     209.00     209.00     22        +0.00 score degraded to 0.0
+  DEEPAKNTR              2020-03-02   2020-03-23     483.00     331.00     10    -1,520.00 stoploss hit
+  NAVINFLUOR             2019-12-30   2020-03-23   1,022.00     977.00      5      -225.00 stoploss hit
+  MIDHANI                2020-02-24   2020-03-23     228.80     152.00     14    -1,075.20 stoploss hit
+  METROPOLIS             2020-03-09   2020-03-23   1,735.00   1,355.55      1      -379.45 swap: score 48.6 → ABBOTINDIA (73.8)
+  AKZOINDIA              2020-03-16   2020-03-23   2,260.00   1,845.00      1      -415.00 swap: score 51.9 → SPECTRUM (69.6)
+  COHANCE                2020-03-23   2020-03-30     219.00     100.70      9    -1,064.70 stoploss hit
+  SPECTRUM               2020-03-23   2020-03-30      53.00      53.00    104        +0.00 score degraded to 0.0
+  PIXTRANS               2020-03-16   2020-03-30     990.00     971.30      6      -112.20 score degraded to 0.0
+  SGRL                   2020-03-16   2020-03-30      63.20      53.55     68      -656.20 score degraded to 0.0
+  GUJAPOLLO              2020-03-30   2020-04-06     117.00     119.15     12       +25.80 score degraded to 26.2
+  ASALCBR                2020-03-23   2020-04-06     130.15     156.90      2       +53.50 swap: score 51.8 → ABBOTINDIA (89.5)
+  RSYSTEMS               2020-03-30   2020-04-06      78.00      82.15     28      +116.20 swap: score 58.0 → ZSARACOM (87.5)
+  PATANJALI              2020-03-16   2020-04-13      33.60      76.80    264   +11,404.80 score degraded to 28.0
+  SUMICHEM               2020-03-23   2020-04-13     171.00     216.00     10      +450.00 swap: score 67.9 → TORNTPHARM (93.7)
+  BASF                   2020-03-30   2020-04-13   1,072.35   1,120.00      2       +95.30 swap: score 74.6 → ELCIDIN (93.5)
+  ELCIDIN                2020-04-13   2020-04-20       8.66       8.66    797        +0.00 score degraded to 0.0
+  ZSARACOM               2020-04-06   2020-04-20     164.25     184.65     40      +816.00 score degraded to 0.0
+  SBICARD                2020-03-23   2020-04-20     659.00     534.75      4      -497.00 stoploss hit
+  COHANCE                2020-03-30   2020-04-20     100.70     145.00      9      +398.70 swap: score 59.0 → BIOCON (91.1)
+  ITI                    2020-04-20   2020-04-27      91.65      82.90     35      -306.25 swap: score 56.3 → GMMPFAUDLR (91.2)
+  HINDUNILVR             2020-03-30   2020-04-27   2,123.00   2,305.00      1      +182.00 swap: score 67.8 → AUROPHARMA (88.5)
+  INDIACEM               2020-03-23   2020-04-27      90.00     101.95     26      +310.70 swap: score 69.4 → LAURUSLABS (88.4)
+  TORNTPHARM             2020-04-13   2020-05-04   1,275.50   1,170.00      2      -211.00 swap: score 68.9 → PANACEABIO (89.3)
+  LAURUSLABS             2020-04-27   2020-05-11     101.95      88.60     36      -480.60 stoploss hit
+  ZYDUSLIFE              2020-04-13   2020-05-18     364.90     332.50     11      -356.40 swap: score 61.5 → PATANJALI (92.3)
+  BIOCON                 2020-04-20   2020-05-18     359.90     329.00     12      -370.80 swap: score 64.6 → CIGNITITEC (90.7)
+  IPCALAB                2020-03-16   2020-05-18     659.00     795.00      3      +408.00 swap: score 66.5 → ASTEC (90.3)
+  CIPLA                  2020-04-13   2020-05-18     605.00     570.60      6      -206.40 swap: score 69.0 → JBCHEPHARM (90.0)
+  DRREDDY                2020-04-06   2020-05-18     617.00     752.05      5      +675.25 swap: score 70.3 → AARTIDRUGS (89.7)
+  PATANJALI              2020-05-18   2020-05-25     235.60     192.00     34    -1,482.40 stoploss hit
+  PANACEABIO             2020-05-04   2020-05-25     122.90     107.65     20      -305.00 swap: score 74.5 → JINDALPOLY (93.7)
+  ASTRAZEN               2020-05-11   2020-06-01   3,149.00   3,097.00      1       -52.00 swap: score 69.5 → BPLPHARMA (94.2)
+  CIGNITITEC             2020-05-18   2020-06-01     318.95     295.50     10      -234.50 swap: score 74.1 → DHANUKA (92.9)
+  3BBLACKBIO             2020-04-20   2020-06-08     128.50     121.00     27      -202.50 stoploss hit
+  LUPIN                  2020-04-20   2020-06-08     822.00     905.00      5      +415.00 swap: score 62.8 → AMBER (84.9)
+  AMBER                  2020-06-08   2020-06-15   1,545.00   1,361.00      2      -368.00 stoploss hit
+  BPLPHARMA              2020-06-01   2020-06-15     289.05     231.00     17      -986.85 stoploss hit
+  INDIACEM               2020-05-25   2020-06-15     127.00     130.00     30       +90.00 swap: score 59.8 → MAGADSUGAR (82.4)
+  JBCHEPHARM             2020-05-18   2020-06-15     318.70     357.00     11      +421.30 swap: score 61.1 → EIDPARRY (81.6)
+  JINDALPOLY             2020-05-25   2020-06-22     288.00     336.00     11      +528.00 swap: score 66.4 → ALEMBICLTD (84.6)
+  AUROPHARMA             2020-04-27   2020-06-22     630.00     788.20      4      +632.80 swap: score 66.9 → GRSE (84.3)
+  SHILPAMED              2020-06-15   2020-06-29     276.50     238.00     14      -539.00 stoploss hit
+  GMMPFAUDLR             2020-04-27   2020-06-29   1,213.35   1,386.65      2      +346.60 swap: score 50.3 → RIIL (81.9)
+  KSCL                   2020-06-08   2020-07-13     524.65     572.65      8      +384.00 swap: score 67.2 → BDL (89.5)
+  MAGADSUGAR             2020-06-15   2020-07-13     113.00     124.20     27      +302.40 swap: score 69.9 → HAL (87.7)
+  GRSE                   2020-06-22   2020-07-20     201.70     207.00     19      +100.70 swap: score 69.4 → ADCINDIA (89.4)
+  ADCINDIA               2020-07-20   2020-08-03     210.00     180.05     17      -509.15 stoploss hit
+  ALEMBICLTD             2020-06-22   2020-08-03      81.65      79.05     38       -98.80 swap: score 53.3 → DEEPAKFERT (91.1)
+  RIIL                   2020-06-29   2020-08-03     422.00     403.80      8      -145.60 swap: score 59.9 → PERSISTENT (90.9)
+  BDL                    2020-07-13   2020-08-03     204.40     192.40     15      -180.00 swap: score 70.6 → LAURUSLABS (90.7)
+  EIDPARRY               2020-06-15   2020-08-03     222.60     292.40     16    +1,116.80 swap: score 70.8 → THYROCARE (90.2)
+  HAL                    2020-07-13   2020-08-03     475.00     430.80      7      -309.40 swap: score 71.5 → MCX (90.2)
+  ASTEC                  2020-05-18   2020-08-10     547.80     990.40      5    +2,213.00 swap: score 68.4 → CAPLIPOINT (91.1)
+  DHANUKA                2020-06-01   2020-08-10     581.05     792.45      5    +1,057.00 swap: score 68.8 → PERMAGN (89.2)
+  AARTIDRUGS             2020-05-18   2020-08-17     217.50     537.50     17    +5,440.00 stoploss hit
+  5PAISA                 2020-06-29   2020-08-17     233.00     355.00     12    +1,464.00 swap: score 57.5 → ORISSAMINE (86.5)
+  THYROCARE              2020-08-03   2020-08-17     231.00     236.70     19      +108.30 swap: score 67.2 → AXTEL (86.4)
+  MCX                    2020-08-03   2020-08-24     340.00     345.00     11       +55.00 swap: score 53.2 → BALAMINES (84.8)
+  PERMAGN                2020-08-10   2020-08-24     140.00     140.00     18        +0.00 swap: score 58.8 → AARTIDRUGS (84.4)
+  DEEPAKFERT             2020-08-03   2020-08-24     166.45     165.00     28       -40.60 swap: score 60.1 → KIOCL (83.6)
+  CAPLIPOINT             2020-08-10   2020-08-24     600.00     540.80      5      -296.00 swap: score 61.7 → FIEMIND (82.6)
+  AARTIDRUGS             2020-08-24   2020-09-07     812.50     719.75      5      -463.75 stoploss hit
+  ZENTEC                 2020-08-17   2020-09-07      91.70      74.00     41      -725.70 stoploss hit
+  DALMIASUG              2020-06-15   2020-09-07     102.00     134.95     35    +1,153.25 stoploss hit
+  KIOCL                  2020-08-24   2020-09-07     152.50     139.80     26      -330.20 swap: score 55.9 → CDSL (88.1)
+  ORISSAMINE             2020-08-17   2020-09-07   2,696.00   2,375.00      1      -321.00 swap: score 59.5 → TMPV (86.2)
+  PERSISTENT             2020-08-03   2020-09-07     458.00     495.00     10      +370.00 swap: score 59.6 → JUBLFOOD (86.1)
+  AXTEL                  2020-08-17   2020-09-21     236.65     236.00     20       -13.00 stoploss hit
+  LAURUSLABS             2020-08-03   2020-09-28     191.05     271.00     26    +2,078.70 stoploss hit
+  TMPV                   2020-09-07   2020-09-28     103.25      88.75     50      -725.00 stoploss hit
+  BALAMINES              2020-08-24   2020-09-28     878.00     819.85      4      -232.60 swap: score 64.5 → NUCLEUS (94.3)
+  FIEMIND                2020-08-24   2020-09-28     317.00     291.05     13      -337.35 swap: score 67.7 → PERSISTENT (94.2)
+  AFFLE                  2020-09-07   2020-10-05     559.80     573.05      8      +106.00 swap: score 67.9 → IGPL (93.6)
+  JUBLFOOD               2020-09-07   2020-10-12     449.00     458.80     13      +127.40 swap: score 70.3 → HIMATSEIDE (91.7)
+  INDIAMART              2020-09-07   2020-10-19   2,124.50   2,525.00      2      +801.00 swap: score 67.4 → LTIM (93.6)
+  CDSL                   2020-09-07   2020-10-19     233.75     227.50     17      -106.25 swap: score 69.0 → COFORGE (93.4)
+  MASTEK                 2020-08-03   2020-10-19     575.80     816.90      6    +1,446.60 swap: score 70.6 → TATAELXSI (93.1)
+  KPITTECH               2020-09-28   2020-10-26     113.60     105.90     27      -207.90 stoploss hit
+  PERSISTENT             2020-09-28   2020-10-26     612.50     594.50      7      -126.00 stoploss hit
+  NUCLEUS                2020-09-28   2020-10-26     691.00     635.00      5      -280.00 swap: score 54.2 → JUSTDIAL (91.1)
+  COFORGE                2020-10-19   2020-11-02     517.50     441.00     10      -765.00 stoploss hit
+  HIMATSEIDE             2020-10-12   2020-11-02     128.90     124.50     27      -118.80 stoploss hit
+  ICIL                   2020-09-21   2020-11-02     102.35     143.00     38    +1,544.70 stoploss hit
+  IGPL                   2020-10-05   2020-11-02     327.00     292.05     11      -384.45 swap: score 61.8 → SAREGAMA (89.7)
+  ICEMAKE                2020-11-02   2020-11-09      83.35      74.90     81      -684.45 stoploss hit
+  VIDHIING               2020-09-28   2020-11-09     111.70     134.00     35      +780.50 swap: score 60.8 → SASTASUNDR (92.4)
+  TATAELXSI              2020-10-19   2020-11-16   1,505.00   1,501.00      4       -16.00 stoploss hit
+  LTIM                   2020-10-19   2020-11-16   3,090.35   3,043.95      1       -46.40 swap: score 55.7 → PRSMJOHNSN (87.3)
+  SAGCEM                 2020-10-26   2020-11-23     149.00     143.00     28      -168.00 swap: score 52.4 → BEPL (87.4)
+  JUSTDIAL               2020-10-26   2020-11-23     584.00     622.30      6      +229.80 swap: score 62.6 → ATGL (86.5)
+  BBOX                   2020-10-26   2020-11-23     107.95     125.00     39      +664.95 swap: score 64.6 → IGPL (86.3)
+  GUFICBIO               2020-11-16   2020-11-30     123.90     111.00     33      -425.70 swap: score 54.0 → ACE (85.4)
+  SASTASUNDR             2020-11-09   2020-11-30     125.00     134.75     33      +321.75 swap: score 60.6 → CAPACITE (84.8)
+  NAHARPOLY              2020-11-02   2020-11-30      81.45      86.50     38      +191.90 swap: score 66.6 → WOCKPHARMA (84.2)
+  SAREGAMA               2020-11-02   2020-12-07      62.50      72.65     70      +710.50 swap: score 57.0 → KIRLFER (84.3)
+  ESTER                  2020-11-02   2020-12-07     121.85     129.00     28      +200.20 swap: score 60.8 → TIRUMALCHM (82.0)
+  PRSMJOHNSN             2020-11-16   2020-12-07      82.00      88.00     74      +444.00 swap: score 62.8 → KOVAI (82.0)
+  ADANIGREEN             2020-09-07   2020-12-14     530.05   1,019.00      8    +3,911.60 swap: score 50.9 → ICEMAKE (84.0)
+  APOLLOPIPE             2020-11-09   2020-12-14     199.95     221.25     26      +553.80 swap: score 55.6 → OLECTRA (82.4)
+  IGPL                   2020-11-23   2020-12-14     455.80     470.00      9      +127.80 swap: score 65.4 → GNFC (82.0)
+  KOVAI                  2020-12-07   2020-12-21   1,165.00   1,064.90      4      -400.40 stoploss hit
+  TIRUMALCHM             2020-12-07   2020-12-21     115.90     101.50     39      -561.60 stoploss hit
+  ATGL                   2020-11-23   2020-12-21     358.00     359.75     12       +21.00 swap: score 61.7 → VIMTALABS (82.8)
+  GNFC                   2020-12-14   2020-12-28     191.45     177.25     27      -383.40 swap: score 53.9 → BORORENEW (90.1)
+  CAPACITE               2020-11-30   2020-12-28     183.15     184.00     21       +17.85 swap: score 59.4 → DATAMATICS (88.5)
+  KIRLFER                2020-12-07   2020-12-28     142.90     136.50     32      -204.80 swap: score 67.9 → LTTS (87.6)
+  ICEMAKE                2020-12-14   2021-01-04     106.00     104.90     46       -50.60 stoploss hit
+  VIMTALABS              2020-12-21   2021-01-04      88.00      87.55     56       -25.20 swap: score 62.5 → HNDFDS (89.3)
+  WOCKPHARMA             2020-11-30   2021-01-11     409.10     477.90     11      +756.80 swap: score 62.6 → ZUARIIND (89.0)
+  ZUARIIND               2021-01-11   2021-01-18     122.80     101.00     33      -719.40 stoploss hit
+  TVSHLTD                2020-12-21   2021-01-18   1,431.55   1,427.75      3       -11.40 swap: score 55.7 → HEMIPROP (87.3)
+  ACE                    2020-11-30   2021-01-18     102.00     132.80     37    +1,139.60 swap: score 62.6 → FACT (87.1)
+  DATAMATICS             2020-12-28   2021-01-18     116.00     114.70     32       -41.60 swap: score 65.4 → INDIAMART (86.4)
+  HNDFDS                 2021-01-04   2021-01-18     324.00     299.40     13      -319.80 swap: score 67.3 → GNA (86.4)
+  SHRJAGP                2021-01-04   2021-01-25     566.00     613.90      9      +431.10 stoploss hit
+  BEPL                   2020-11-23   2021-02-01      71.35      95.95     67    +1,648.20 swap: score 59.9 → PRIVISCL (92.5)
+  BORORENEW              2020-12-28   2021-02-01     235.00     275.10     16      +641.60 swap: score 66.2 → AGI (92.2)
+  OLECTRA                2020-12-14   2021-02-01     101.00     140.00     33    +1,287.00 swap: score 70.1 → GREENPANEL (91.7)
+  LTTS                   2020-12-28   2021-02-01   2,358.30   2,455.00      2      +193.40 swap: score 73.1 → HAVELLS (91.5)
+  PRIVISCL               2021-02-01   2021-02-08     696.65     632.00      9      -581.85 stoploss hit
+  GREENPANEL             2021-02-01   2021-02-15     176.90     173.10     28      -106.40 stoploss hit
+  FACT                   2021-01-18   2021-02-15      85.00      79.45     51      -283.05 swap: score 62.1 → SHARDAMOTR (89.5)
+  GNA                    2021-01-18   2021-02-15     189.00     202.75     26      +357.50 swap: score 66.2 → BAJAJELEC (89.4)
+  IFBIND                 2020-12-21   2021-02-15   1,089.05   1,332.00      4      +971.80 swap: score 66.5 → MSTCLTD (89.3)
+  HAVELLS                2021-02-01   2021-02-15   1,050.00   1,154.90      5      +524.50 swap: score 70.1 → GRAPHITE (89.2)
+  TATAELXSI              2021-01-18   2021-02-22   2,354.00   2,731.35      2      +754.70 swap: score 66.1 → AXTEL (88.6)
+  KNRCON                 2021-02-08   2021-02-22     214.35     214.80     20        +9.00 swap: score 66.4 → SGRL (88.3)
+  IMFA                   2021-01-25   2021-02-22     197.50     223.75     22      +577.50 swap: score 69.6 → TANFACIND (88.3)
+  INDIAMART              2021-01-18   2021-03-01   3,925.20   4,350.00      1      +424.80 stoploss hit
+  MSTCLTD                2021-02-15   2021-03-01     305.00     278.00      9      -243.00 swap: score 60.5 → VEDL (87.5)
+  SHARDAMOTR             2021-02-15   2021-03-01     240.70     225.00     23      -361.10 swap: score 69.0 → ABCAPITAL (87.4)
+  BAJAJELEC              2021-02-15   2021-03-01     723.00     651.05      6      -431.70 swap: score 69.7 → TATACHEM (87.3)
+  HEMIPROP               2021-01-18   2021-03-08     132.00     164.65     29      +946.85 stoploss hit
+  AGI                    2021-02-01   2021-03-08     137.00     178.70     34    +1,417.80 swap: score 56.6 → SCI (88.0)
+  TANFACIND              2021-02-22   2021-03-08     275.10     268.00     15      -106.50 swap: score 64.7 → PRAJIND (87.0)
+  NCC                    2021-02-15   2021-03-08      86.10      90.00     43      +167.70 swap: score 67.7 → RELIGARE (86.0)
+  HINDCOPPER             2021-03-01   2021-03-15     157.00     135.00     33      -726.00 stoploss hit
+  AXTEL                  2021-02-22   2021-03-15     348.30     320.00     14      -396.20 swap: score 65.8 → NAHARSPING (89.6)
+  SGRL                   2021-02-22   2021-03-15     192.75     195.35     15       +39.00 swap: score 68.9 → AMAL (89.4)
+  RELIGARE               2021-03-08   2021-03-22      96.00      86.00     49      -490.00 stoploss hit
+  SCI                    2021-03-08   2021-03-22      75.35      62.34     64      -832.64 stoploss hit
+  RML                    2021-03-08   2021-03-22     460.00     367.25      8      -742.00 stoploss hit
+  ABCAPITAL              2021-03-01   2021-03-29     124.30     119.00     43      -227.90 swap: score 69.0 → TAALTECH (93.8)
+  NAHARSPING             2021-03-15   2021-04-05     109.90     105.05     43      -208.55 swap: score 69.4 → HGS (94.5)
+  BEML                   2021-03-15   2021-04-05     718.30     652.50      6      -394.80 swap: score 73.4 → SGRL (93.5)
+  KABRAEXTRU             2021-03-22   2021-04-19     190.25     163.50     18      -481.50 swap: score 59.7 → TECHNVISN (95.9)
+  VEDL                   2021-03-01   2021-04-19     172.75     188.00     39      +594.75 swap: score 61.8 → AURIONPRO (94.3)
+  AMAL                   2021-03-15   2021-04-19     343.10     326.70     12      -196.80 swap: score 64.6 → THEJO (94.0)
+  TATACHEM               2021-03-01   2021-04-19     750.00     731.00      9      -171.00 swap: score 69.3 → IZMO (93.7)
+  TAALTECH               2021-03-29   2021-04-26     500.00     502.70      9       +24.30 swap: score 68.9 → TNPETRO (92.9)
+  THEJO                  2021-04-19   2021-05-03     651.70     630.00      6      -130.20 stoploss hit
+  HGS                    2021-04-05   2021-05-03     908.95     850.00      4      -235.80 swap: score 66.6 → BALAMINES (90.6)
+  INTELLECT              2021-03-22   2021-05-03     699.00     679.00      7      -140.00 swap: score 68.5 → ALKYLAMINE (90.6)
+  SGRL                   2021-04-05   2021-05-03     278.00     276.20     11       -19.80 swap: score 68.6 → VIMTALABS (90.5)
+  TECHNVISN              2021-04-19   2021-05-10     255.90     219.45     24      -874.80 stoploss hit
+  AURIONPRO              2021-04-19   2021-05-10      86.00      84.50     36       -54.00 swap: score 69.1 → DHAMPURSUG (87.7)
+  VIMTALABS              2021-05-03   2021-05-17     128.00     123.90     29      -118.90 swap: score 65.7 → GUFICBIO (87.8)
+  BALAMINES              2021-05-03   2021-05-17   2,595.00   2,419.40      1      -175.60 swap: score 69.4 → DVL (87.6)
+  TITANBIO               2021-05-03   2021-05-24     339.00     310.00     11      -319.00 swap: score 56.5 → GOKEX (86.1)
+  GRAPHITE               2021-02-15   2021-05-24     417.00     746.90     12    +3,958.80 swap: score 65.2 → PRINCEPIPE (86.0)
+  IZMO                   2021-04-19   2021-05-24      67.55      76.10     58      +495.90 swap: score 65.2 → NAHARSPING (85.1)
+  UTTAMSUGAR             2021-05-10   2021-05-31     146.90     145.50     28       -39.20 swap: score 54.3 → KIRLOSBROS (85.5)
+  DHAMPURSUG             2021-05-10   2021-05-31     289.00     321.50     16      +520.00 swap: score 65.8 → SHAKTIPUMP (84.7)
+  GUFICBIO               2021-05-17   2021-06-07     205.00     191.00     24      -336.00 swap: score 64.1 → CENTENKA (85.4)
+  PRAJIND                2021-03-08   2021-06-07     170.65     397.00     23    +5,206.05 swap: score 64.8 → INFOBEAN (85.3)
+  ALKYLAMINE             2021-05-03   2021-06-07   3,416.00   3,650.00      1      +234.00 swap: score 65.7 → ADOR (85.0)
+  PRINCEPIPE             2021-05-24   2021-06-14     723.80     711.90      7       -83.30 swap: score 59.5 → AXISCADES (85.9)
+  SAREGAMA               2021-03-22   2021-06-14     140.05     234.25     27    +2,543.40 swap: score 64.4 → RELIGARE (85.7)
+  GOKEX                  2021-05-24   2021-06-14     130.45     138.75     32      +265.60 swap: score 65.9 → HGS (84.4)
+  SHAKTIPUMP             2021-05-31   2021-06-21     126.05     132.10     40      +242.00 swap: score 63.7 → BAJAJST (86.9)
+  RELIGARE               2021-06-14   2021-06-21     138.50     127.75     31      -333.25 swap: score 66.1 → PRECOT (86.1)
+  AXISCADES              2021-06-14   2021-06-28      96.90      78.95     41      -735.95 stoploss hit
+  KIRLOSBROS             2021-05-31   2021-06-28     372.00     421.00     13      +637.00 swap: score 66.3 → RAJRATAN (88.2)
+  INFOBEAN               2021-06-07   2021-06-28     312.00     311.90     14        -1.40 swap: score 68.4 → VENKEYS (87.7)
+  CENTENKA               2021-06-07   2021-07-05     400.00     398.00     13       -26.00 swap: score 63.0 → 3BBLACKBIO (89.0)
+  HGS                    2021-06-14   2021-07-05   1,294.50   1,287.45      4       -28.20 swap: score 63.9 → VLSFINANCE (88.9)
+  BFUTILITIE-BZ          2021-06-28   2021-07-12     526.00     480.70      8      -362.40 swap: score 65.9 → GENUSPOWER-BE (87.1)
+  TNPETRO                2021-04-26   2021-07-19      73.65     121.60     57    +2,733.15 swap: score 61.6 → GOKEX (86.6)
+  VENKEYS                2021-06-28   2021-07-19   3,444.00   3,395.00      1       -49.00 swap: score 65.3 → EXPLEOSOL (86.0)
+  GENUSPOWER-BE          2021-07-12   2021-07-26      75.70      66.20     73      -693.50 swap: score 63.8 → ECORECO (87.5)
+  ECORECO                2021-07-26   2021-08-02     118.00     105.00     39      -507.00 stoploss hit
+  ADOR                   2021-06-07   2021-08-02     541.00     725.45      9    +1,660.05 swap: score 67.1 → IMFA (86.9)
+  BAJAJST                2021-06-21   2021-08-02     188.75     324.25     24    +3,252.00 swap: score 69.3 → GNA (86.8)
+  XPROINDIA              2021-08-02   2021-08-09     220.00     178.65     32    -1,323.20 stoploss hit
+  IMFA                   2021-08-02   2021-08-09     480.00     432.50     13      -617.50 stoploss hit
+  3BBLACKBIO             2021-07-05   2021-08-09     643.00     616.80      7      -183.40 stoploss hit
+  VLSFINANCE             2021-07-05   2021-08-09     196.00     219.75     24      +570.00 swap: score 66.8 → COSMOFIRST (86.7)
+  EXPLEOSOL              2021-07-19   2021-08-09   1,261.00   1,120.00      3      -423.00 swap: score 66.9 → SAGCEM (86.5)
+  TNPETRO                2021-08-09   2021-08-16     148.70     127.20     44      -946.00 stoploss hit
+  RAJRATAN               2021-06-28   2021-08-16     265.00     447.15     21    +3,825.15 stoploss hit
+  DVL                    2021-05-17   2021-08-16     137.50     295.00     31    +4,882.50 swap: score 59.6 → GLOBUSSPR (91.1)
+  TECHNVISN              2021-08-16   2021-08-23     266.00     216.70     18      -887.40 stoploss hit
+  GOKEX                  2021-07-19   2021-08-23     205.00     200.05     26      -128.70 stoploss hit
+  NAHARSPING             2021-05-24   2021-08-23     134.65     370.00     42    +9,884.70 stoploss hit
+  COSMOFIRST             2021-08-09   2021-08-23     940.65     880.00      7      -424.55 stoploss hit
+  PRECOT                 2021-06-21   2021-08-23     212.00     225.40     29      +388.60 stoploss hit
+  PDSL                   2021-08-09   2021-08-23     302.00     242.65     19    -1,127.65 stoploss hit
+  ZOTA                   2021-08-09   2021-08-23     375.05     325.00     16      -800.80 stoploss hit
+  NELCO                  2021-08-23   2021-08-30     564.95     469.95     18    -1,710.00 stoploss hit
+  SAGCEM                 2021-08-09   2021-08-30     308.40     277.80     21      -642.60 stoploss hit
+  GNA                    2021-08-02   2021-08-30     328.00     359.35     17      +532.95 swap: score 73.8 → LINDEINDIA (93.9)
+  POONAWALLA             2021-08-23   2021-09-06     191.85     181.05     34      -367.20 swap: score 63.8 → ADANIENSOL (94.1)
+  HIKAL                  2021-08-16   2021-09-06     699.80     630.00      6      -418.80 swap: score 72.5 → IEX (92.7)
+  THEMISMED              2021-08-23   2021-09-13     107.10     100.00     54      -383.40 swap: score 63.1 → STEL (90.6)
+  KPITTECH               2021-08-23   2021-09-13     342.65     328.00     21      -307.65 swap: score 68.5 → IRCTC (90.3)
+  ARVINDFASN             2021-08-30   2021-09-20     269.85     253.00     18      -303.30 swap: score 59.2 → BALAMINES (88.6)
+  TAALTECH               2021-08-23   2021-09-20   1,019.00     995.00      7      -168.00 swap: score 69.8 → RPSGVENT (88.4)
+  ADANIENSOL             2021-09-06   2021-09-27   1,784.00   1,512.00      4    -1,088.00 stoploss hit
+  MAXHEALTH              2021-08-23   2021-09-27     334.00     366.10     22      +706.20 swap: score 64.1 → TIRUMALCHM (87.9)
+  BALAMINES              2021-09-20   2021-10-04   4,698.75   4,575.00      1      -123.75 swap: score 70.9 → SRAMSET (90.3)
+  SRAMSET                2021-10-04   2021-10-11     184.65     156.00     33      -945.45 stoploss hit
+  LINDEINDIA             2021-08-30   2021-10-11   2,410.00   2,650.50      2      +481.00 swap: score 58.7 → TATAPOWER (87.6)
+  RPSGVENT               2021-09-20   2021-10-11     961.35     932.00      5      -146.75 swap: score 66.7 → XPROINDIA (87.4)
+  STEL                   2021-09-13   2021-10-11     162.65     179.25     27      +448.20 swap: score 67.1 → GTPL (86.6)
+  XPROINDIA              2021-10-11   2021-10-18     481.15     435.35     13      -595.40 stoploss hit
+  RELINFRA-BE            2021-09-27   2021-10-18     109.00      99.00     64      -640.00 stoploss hit
+  TIRUMALCHM             2021-09-27   2021-10-18     285.45     289.65     18       +75.60 swap: score 66.3 → MAHSEAMLES (87.6)
+  GANESHHOU              2021-10-18   2021-10-25     230.00     203.00     27      -729.00 stoploss hit
+  ASAL                   2021-10-18   2021-10-25      90.05      82.80     78      -565.50 stoploss hit
+  SAKSOFT                2021-08-30   2021-10-25      69.85      80.50     76      +809.40 stoploss hit
+  GLOBUSSPR              2021-08-16   2021-10-25     988.00   1,194.00      8    +1,648.00 stoploss hit
+  TANFACIND              2021-08-23   2021-10-25     440.00     559.65     15    +1,794.75 stoploss hit
+  IRCTC                  2021-09-13   2021-10-25     663.00     937.00     14    +3,836.00 stoploss hit
+  THEJO                  2021-10-11   2021-10-25   1,283.30     990.05      4    -1,173.00 stoploss hit
+  GTPL                   2021-10-11   2021-10-25     297.70     268.00     17      -504.90 swap: score 69.4 → INDIANB (87.3)
+  MSTCLTD                2021-10-25   2021-11-01     460.00     397.00     14      -882.00 stoploss hit
+  IEX                    2021-09-06   2021-11-01     180.60     236.85     36    +2,025.00 stoploss hit
+  SPECIALITY             2021-10-25   2021-11-08     100.65      99.00     57       -94.05 swap: score 73.3 → PANCHMAHQ (93.3)
+  HGINFRA                2021-11-01   2021-11-15     737.15     698.25      7      -272.30 stoploss hit
+  INDIANB                2021-10-25   2021-11-15     179.65     165.75     37      -514.30 swap: score 70.2 → ASTRAMICRO (91.7)
+  PRIMESECU              2021-10-25   2021-11-22     113.95     104.25     76      -737.20 stoploss hit
+  PANCHMAHQ              2021-11-08   2021-11-22     139.95     119.90     29      -581.45 stoploss hit
+  ARVIND                 2021-10-25   2021-11-22     130.00     125.25     64      -304.00 swap: score 66.2 → MONTECARLO (92.4)
+  SIYSIL                 2021-11-01   2021-11-22     465.00     459.00     12       -72.00 swap: score 72.9 → SPAL (92.4)
+  ASTRAMICRO             2021-11-15   2021-11-29     278.70     240.00     22      -851.40 stoploss hit
+  TMPV                   2021-10-25   2021-11-29     340.05     314.65     19      -482.60 stoploss hit
+  SMLMAH                 2021-10-25   2021-11-29     741.35     655.00      8      -690.80 stoploss hit
+  MAHSEAMLES             2021-10-18   2021-11-29     246.75     246.00     25       -18.75 swap: score 70.6 → TDPOWERSYS (92.1)
+  TATAPOWER              2021-10-11   2021-12-06     177.85     225.60     43    +2,053.25 swap: score 70.4 → PANSARI-BE (94.5)
+  PANSARI-BE             2021-12-06   2021-12-13     204.00     174.75     59    -1,725.75 stoploss hit
+  ZSARACOM               2021-11-29   2021-12-13   2,812.20   2,500.00      1      -312.20 swap: score 74.7 → INTEGRAEN (94.2)
+  ACGL                   2021-12-13   2021-12-20   1,160.05     951.10      4      -835.80 stoploss hit
+  ELECON                 2021-11-29   2021-12-20     105.15      85.90     61    -1,174.25 stoploss hit
+  ADSL                   2021-11-15   2021-12-20     122.30     110.35     37      -442.15 swap: score 67.1 → SATIN (91.4)
+  MONTECARLO             2021-11-22   2021-12-20     586.00     558.85      9      -244.35 swap: score 69.5 → FREDUN (91.4)
+  INTEGRAEN              2021-12-13   2021-12-27     102.70      88.75     54      -753.30 stoploss hit
+  TDPOWERSYS             2021-11-29   2021-12-27      82.80      79.20     63      -226.80 swap: score 61.7 → SEKURITIND (93.1)
+  PRECAM                 2021-11-29   2021-12-27     134.15     125.15     38      -342.00 swap: score 70.2 → E2E (93.0)
+  SPAL                   2021-11-22   2021-12-27     412.50     408.00     14       -63.00 swap: score 72.9 → EXPLEOSOL (92.3)
+  SATIN                  2021-12-20   2022-01-03      96.25      92.95     46      -151.80 swap: score 60.8 → KINGFA (91.6)
+  JBMA                   2021-11-22   2022-01-03     190.00     226.80     30    +1,104.00 swap: score 68.6 → KABRAEXTRU (91.5)
+  SIKA                   2021-12-20   2022-01-10     209.70     194.00     27      -423.90 swap: score 59.9 → BGRENERGY (91.0)
+  NDTV                   2021-12-20   2022-01-10      98.23      95.29     46      -135.24 swap: score 66.9 → ECORECO (89.9)
+  BGRENERGY              2022-01-10   2022-01-17     124.20     102.00     48    -1,065.60 stoploss hit
+  ECORECO                2022-01-10   2022-01-17     156.45     138.80     45      -794.25 stoploss hit
+  EXPLEOSOL              2021-12-27   2022-01-17   1,740.00   1,700.00      2       -80.00 swap: score 57.1 → PANCHMAHQ (85.7)
+  SEKURITIND             2021-12-27   2022-01-17      91.20      97.90     52      +348.40 swap: score 60.7 → RAJRATAN (85.4)
+  UNOMINDA               2021-12-27   2022-01-17     590.00     586.35     10       -36.50 swap: score 61.8 → TALBROAUTO (85.4)
+  ASAL                   2021-10-25   2022-01-24      82.80     583.40     91   +45,554.60 stoploss hit
+  KINGFA                 2022-01-03   2022-01-24   1,526.60   1,456.70      3      -209.70 swap: score 63.3 → AGI (85.1)
+  PANCHMAHQ              2022-01-17   2022-01-31     174.75     148.20     23      -610.65 stoploss hit
+  RAJRATAN               2022-01-17   2022-01-31     579.60     548.55     10      -310.50 stoploss hit
+  KPITTECH               2021-11-22   2022-02-07     452.00     626.65     11    +1,921.15 stoploss hit
+  TALBROAUTO             2022-01-17   2022-02-07     124.10     109.60     36      -522.00 swap: score 69.2 → BLS (89.8)
+  SHARDACROP             2022-02-07   2022-02-14     660.10     524.20     13    -1,766.70 stoploss hit
+  20MICRONS              2022-01-17   2022-02-14      97.70      81.60     54      -869.40 stoploss hit
+  CNL                    2022-01-17   2022-02-14     670.00     592.95     10      -770.50 swap: score 63.3 → SPECIALITY (93.4)
+  FREDUN                 2021-12-20   2022-02-21     682.95     851.55     10    +1,686.00 stoploss hit
+  KOTHARIPET             2022-01-24   2022-02-21     102.65      85.00     71    -1,253.15 stoploss hit
+  KABRAEXTRU             2022-01-03   2022-02-21     471.00     451.15     10      -198.50 stoploss hit
+  DBREALTY               2022-01-31   2022-02-21      82.50     102.45    127    +2,533.65 stoploss hit
+  BLS                    2022-02-07   2022-02-21      62.85      54.05    142    -1,249.60 stoploss hit
+  AGI                    2022-01-24   2022-02-21     321.00     302.00     31      -589.00 swap: score 73.8 → GNFC (93.7)
+  INNOVANA               2022-02-14   2022-02-28     209.10     192.00     59    -1,008.90 stoploss hit
+  E2E                    2021-12-27   2022-02-28      78.25     110.00    120    +3,810.00 stoploss hit
+  CIANAGRO               2022-01-31   2022-02-28      77.95      75.20    100      -275.00 swap: score 71.2 → VADILALIND (95.7)
+  RELINFRA-BE            2022-02-14   2022-02-28     120.60     102.00     53      -985.80 swap: score 72.8 → BUTTERFLY (94.8)
+  CONSOFINVT             2022-02-21   2022-03-07     200.00     155.25     32    -1,432.00 stoploss hit
+  CWD                    2022-02-28   2022-03-21      76.40     115.00    122    +4,709.20 score degraded to 0.0
+  BUTTERFLY              2022-02-28   2022-03-21   1,388.00   1,363.10      5      -124.50 swap: score 70.7 → GAEL (93.7)
+  EXCELINDUS             2022-02-21   2022-04-04   1,209.00   1,450.00      7    +1,687.00 swap: score 59.8 → TATAELXSI (91.0)
+  HINDALCO               2022-03-07   2022-04-04     586.75     572.00     19      -280.25 swap: score 63.9 → GUJALKALI (90.3)
+  VADILALIND             2022-02-28   2022-04-04   1,220.10   1,440.00      7    +1,539.30 swap: score 71.5 → CHEMFAB (90.2)
+  NDTV                   2022-02-21   2022-04-11     134.86     166.69     48    +1,527.84 swap: score 62.7 → ASHAPURMIN (87.7)
+  GAEL                   2022-03-21   2022-04-11     127.00     132.50     54      +297.00 swap: score 67.7 → BLS (85.9)
+  SPECIALITY             2022-02-14   2022-04-18     135.40     157.90     49    +1,102.50 swap: score 46.9 → SIYSIL (88.6)
+  CHEMFAB                2022-04-04   2022-04-18     256.95     218.05     26    -1,011.40 swap: score 62.5 → ADANIGREEN (88.6)
+  JYOTIRES               2022-02-21   2022-04-18     436.70     717.00     12    +3,363.60 swap: score 62.7 → DEEPINDS (87.6)
+  TATAELXSI              2022-04-04   2022-04-18   8,988.00   8,319.00      1      -669.00 swap: score 65.1 → KAPSTON-BE (87.3)
+  JAGSNPHARM             2022-02-28   2022-04-25      95.95     122.30     80    +2,108.00 swap: score 67.1 → SUNFLAG (90.0)
+  GNFC                   2022-02-21   2022-04-25     484.70     773.10     17    +4,902.80 swap: score 67.5 → BDL (89.3)
+  SUNFLAG                2022-04-25   2022-05-02     136.85     119.35     63    -1,102.50 stoploss hit
+  ASHAPURMIN             2022-04-11   2022-05-02     166.60     138.20     41    -1,164.40 stoploss hit
+  RHIM                   2022-02-21   2022-05-02     546.00     601.00     20    +1,100.00 swap: score 64.2 → TGVSL (90.1)
+  DEEPINDS               2022-04-18   2022-05-09     133.45     113.85     55    -1,078.00 stoploss hit
+  KAPSTON-BE             2022-04-18   2022-05-09      88.50      76.00    113    -1,412.50 stoploss hit
+  BETA                   2022-05-09   2022-05-16     876.20     758.55      7      -823.55 stoploss hit
+  GUJALKALI              2022-04-04   2022-05-16     933.40     742.40     10    -1,910.00 stoploss hit
+  SIYSIL                 2022-04-18   2022-05-16     660.00     540.00     12    -1,440.00 stoploss hit
+  SOLEX                  2022-05-02   2022-05-16     158.30     148.20     71      -717.10 score degraded to 0.0
+  BDL                    2022-04-25   2022-05-16     395.00     338.75     17      -956.25 stoploss hit
+  JKPAPER                2022-03-21   2022-05-16     304.00     307.00     29       +87.00 stoploss hit
+  ADANIGREEN             2022-04-18   2022-05-16   2,850.00   2,234.00      2    -1,232.00 stoploss hit
+  TGVSL                  2022-05-02   2022-05-16      97.80      75.65    102    -2,259.30 stoploss hit
+  PASHUPATI              2022-05-16   2022-05-30     126.50     123.00     56      -196.00 score degraded to 0.0
+  BETA                   2022-05-16   2022-06-06     758.55     838.10      7      +556.85 swap: score 57.3 → RAYMOND (95.7)
+  GOKEX                  2022-05-16   2022-06-13     420.50     400.00     13      -266.50 swap: score 51.5 → OIL (92.5)
+  VIRAT                  2022-05-16   2022-06-13     206.00     210.00     52      +208.00 swap: score 66.8 → STERTOOLS (91.8)
+  OIL                    2022-06-13   2022-06-20     198.35     164.00     41    -1,408.35 stoploss hit
+  MBAPL                  2022-05-16   2022-06-20     145.45     156.90     90    +1,030.50 stoploss hit
+  RAYMOND                2022-06-06   2022-06-20     658.60     533.60      9    -1,125.00 stoploss hit
+  SHARDACROP             2022-05-30   2022-06-20     752.00     632.00      8      -960.00 stoploss hit
+  VADILALIND             2022-05-09   2022-06-20   1,675.00   1,845.10      5      +850.50 stoploss hit
+  NITTAGELA              2022-05-16   2022-06-20     345.00     322.00     27      -621.00 swap: score 74.8 → ELPROINTL (94.0)
+  DSSL                   2022-06-20   2022-06-27     410.80     330.00     13    -1,050.40 stoploss hit
+  ELPROINTL              2022-06-20   2022-06-27      64.95      63.70    104      -130.00 swap: score 45.5 → FIEMIND (94.7)
+  CWD                    2022-05-16   2022-06-27     224.00     240.00     53      +848.00 swap: score 66.5 → INDOKEM (94.7)
+  APCOTEXIND             2022-05-02   2022-06-27     584.95     603.00     14      +252.70 swap: score 68.3 → SVLL (94.2)
+  SVLL                   2022-06-27   2022-07-04      88.00      88.00    387        +0.00 score degraded to 0.0
+  MRPL                   2022-06-20   2022-07-04      91.50      79.65     45      -533.25 swap: score 67.7 → TVSMOTOR (95.2)
+  INDOKEM                2022-06-27   2022-07-11      72.50      62.75     90      -877.50 stoploss hit
+  APARINDS               2022-06-20   2022-07-18     950.15   1,016.80      9      +599.85 swap: score 69.6 → SEIL (89.1)
+  STERTOOLS              2022-06-13   2022-07-25     211.50     256.00     29    +1,290.50 stoploss hit
+  MARATHON               2022-06-20   2022-07-25     189.45     219.95     40    +1,220.00 swap: score 67.6 → EPIGRAL (85.8)
+  KPIGREEN               2022-06-20   2022-07-25      83.00      79.35    100      -365.00 swap: score 67.7 → RAJRATAN (85.8)
+  SEIL                   2022-07-18   2022-08-01     104.00      85.40     85    -1,581.00 stoploss hit
+  SILVERTUC              2022-07-11   2022-08-01     359.05     344.90     18      -254.70 swap: score 68.3 → SPECIALITY (87.5)
+  TVSMOTOR               2022-07-04   2022-08-01     840.00     908.90     18    +1,240.20 swap: score 68.4 → ASTRAMICRO (87.0)
+  EPIGRAL                2022-07-25   2022-08-08   1,541.00   1,404.70      5      -681.50 swap: score 54.2 → 20MICRONS (87.8)
+  JKIL                   2022-05-16   2022-08-08     222.90     307.95     28    +2,381.40 swap: score 64.4 → JKPAPER (86.8)
+  PRECAM                 2022-07-25   2022-08-08     136.00     130.55     59      -321.55 swap: score 65.2 → WSTCSTPAPR (86.1)
+  BLS                    2022-04-11   2022-08-08      82.50     118.25    119    +4,254.25 swap: score 68.3 → TNPL (86.0)
+  FIEMIND                2022-06-27   2022-08-15     619.00     783.30     13    +2,135.90 stoploss hit
+  ELECON                 2022-06-27   2022-08-15     136.70     173.00     46    +1,669.80 swap: score 64.3 → BHARATWIRE (88.8)
+  VOLTAMP                2022-07-04   2022-08-22   2,962.00   2,784.00      3      -534.00 stoploss hit
+  TNPL                   2022-08-08   2022-08-22     249.70     238.00     46      -538.20 swap: score 70.7 → ADANIPOWER (88.6)
+  ADANIPOWER             2022-08-22   2022-08-29      84.05      72.00    157    -1,891.85 stoploss hit
+  SPECIALITY             2022-08-01   2022-08-29     191.90     184.00     45      -355.50 swap: score 69.4 → INDOAMIN (88.2)
+  JKPAPER                2022-08-08   2022-09-05     383.30     423.50     28    +1,125.60 swap: score 68.2 → KINGFA (88.2)
+  20MICRONS              2022-08-08   2022-09-05     109.45     107.05     65      -156.00 swap: score 68.5 → JYOTIRES (88.2)
+  INDOAMIN               2022-08-29   2022-09-12     142.00     138.00     39      -156.00 swap: score 59.8 → SAPL (87.9)
+  SRHHYPOLTD             2022-08-01   2022-09-12     658.50     762.00     11    +1,138.50 swap: score 65.2 → ANANTRAJ (86.9)
+  WSTCSTPAPR             2022-08-08   2022-09-19     498.00     565.00     21    +1,407.00 swap: score 55.7 → PERMAGN (87.0)
+  KINGFA                 2022-09-05   2022-09-19   1,300.00   1,199.00      5      -505.00 swap: score 56.0 → MENONBE (86.1)
+  KINETICENG             2022-08-22   2022-09-19     117.00     121.75     50      +237.50 swap: score 61.2 → TANFACIND (85.5)
+  ASTRAMICRO             2022-08-01   2022-09-19     285.00     346.00     34    +2,074.00 swap: score 64.4 → KARURVYSYA (85.1)
+  ANANTRAJ               2022-09-12   2022-09-26      95.95      89.50     80      -516.00 swap: score 67.1 → INDOKEM (90.0)
+  MENONBE                2022-09-19   2022-10-03     113.95     100.85     79    -1,034.90 stoploss hit
+  PREMEXPLN              2022-08-29   2022-10-03      99.80      88.80     97    -1,067.00 stoploss hit
+  JYOTIRES               2022-09-05   2022-10-03   1,335.35   1,282.75      7      -368.20 stoploss hit
+  BHARATWIRE             2022-08-15   2022-10-03      82.60     111.60     80    +2,320.00 stoploss hit
+  PERMAGN                2022-09-19   2022-10-10     522.10     499.25     17      -388.45 swap: score 71.5 → MAZDOCK (95.4)
+  RAJRATAN               2022-07-25   2022-10-10     890.00   1,262.00      8    +2,976.00 swap: score 73.6 → COCHINSHIP (94.7)
+  KARURVYSYA             2022-09-19   2022-10-10      75.00      69.60    121      -653.40 swap: score 73.8 → DEEPINDS (94.1)
+  TSFINV                 2022-10-03   2022-10-17     103.50      93.15    103    -1,066.05 stoploss hit
+  POWERMECH              2022-10-03   2022-10-17     899.50     917.50     10      +180.00 stoploss hit
+  SCHNEIDER              2022-10-03   2022-10-24     183.85     172.70     47      -524.05 stoploss hit
+  DEEPINDS               2022-10-10   2022-11-07     154.90     145.75     57      -521.55 swap: score 69.4 → KTKBANK (90.8)
+  SVRL                   2022-10-17   2022-11-14     124.00     105.00     86    -1,634.00 stoploss hit
+  KUANTUM                2022-10-24   2022-11-14     163.74     149.56     45      -638.10 swap: score 68.8 → BANKINDIA (90.5)
+  INDOKEM                2022-09-26   2022-11-14      82.80      99.05     74    +1,202.50 swap: score 70.6 → INDRAMEDCO (90.5)
+  FRONTSP                2022-10-03   2022-11-21     449.90     446.10     20       -76.00 swap: score 64.8 → PERMAGN (91.6)
+  ICEMAKE                2022-08-15   2022-12-05     181.40     270.00     42    +3,721.20 swap: score 52.5 → ARROWGREEN (91.2)
+  INDRAMEDCO             2022-11-14   2022-12-05      85.50      85.75    124       +31.00 swap: score 71.2 → RICOAUTO (89.7)
+  TANFACIND              2022-09-19   2022-12-12     874.00     981.00      7      +749.00 stoploss hit
+  ELECON                 2022-11-14   2022-12-12     223.70     210.35     47      -627.45 swap: score 61.5 → JKLAKSHMI (90.2)
+  COCHINSHIP             2022-10-10   2022-12-12     262.05     307.00     43    +1,932.85 swap: score 67.8 → WELENT (88.6)
+  GRSE                   2022-10-17   2022-12-19     464.00     485.40     17      +363.80 stoploss hit
+  PERMAGN                2022-11-21   2022-12-19     710.30     628.30      9      -738.00 stoploss hit
+  MAZDOCK                2022-10-10   2022-12-19     315.00     418.50     28    +2,898.00 swap: score 68.5 → INTEGRAEN (89.8)
+  FACT                   2022-12-19   2022-12-26     278.70     249.00     30      -891.00 stoploss hit
+  THEMISMED              2022-12-19   2022-12-26     139.10     122.60     59      -973.50 stoploss hit
+  INTEGRAEN              2022-12-19   2022-12-26      99.50      86.00     90    -1,215.00 stoploss hit
+  ARROWGREEN             2022-12-05   2022-12-26     188.00     165.90     48    -1,060.80 stoploss hit
+  WELENT                 2022-12-12   2022-12-26     162.45     144.20     72    -1,314.00 stoploss hit
+  RICOAUTO               2022-12-05   2022-12-26      77.50      69.00    126    -1,071.00 stoploss hit
+  KTKBANK                2022-11-07   2022-12-26     136.15     126.42     72      -700.56 stoploss hit
+  BANKINDIA              2022-11-14   2022-12-26      71.51      74.69    146      +464.28 stoploss hit
+  JKLAKSHMI              2022-12-12   2023-01-02     846.65     822.55     13      -313.30 swap: score 75.6 → USHAMART (95.1)
+  ARYAMAN                2022-12-26   2023-01-09      87.05      82.00     65      -328.25 swap: score 63.7 → INDOKEM (93.4)
+  SKIPPER                2022-12-12   2023-01-09     126.95     117.25     57      -552.90 swap: score 70.0 → PRAVEG (93.0)
+  FACT                   2022-12-26   2023-01-16     249.00     321.85     26    +1,894.10 stoploss hit
+  KALYANKJIL             2022-12-26   2023-01-16     108.00     123.70     71    +1,114.70 swap: score 70.1 → SALZERELEC (93.6)
+  INDOKEM                2023-01-09   2023-01-23     146.00     115.45     39    -1,191.45 stoploss hit
+  GICRE                  2022-12-26   2023-01-23     152.80     169.50     59      +985.30 swap: score 67.1 → KAMATHOTEL (91.3)
+  NFL                    2022-12-26   2023-01-23      59.00      71.70    131    +1,663.70 swap: score 72.4 → SPECIALITY (91.2)
+  JAGAJITIND             2023-01-16   2023-01-30     115.95     102.25     81    -1,109.70 stoploss hit
+  USHAMART               2023-01-02   2023-01-30     176.00     179.95     55      +217.25 stoploss hit
+  GICHSGFIN              2022-12-26   2023-01-30     169.80     190.60     54    +1,123.20 stoploss hit
+  VADILENT               2022-12-26   2023-01-30   3,127.25   3,625.00      2      +995.50 stoploss hit
+  SPECIALITY             2023-01-23   2023-02-06     276.85     242.50     31    -1,064.85 stoploss hit
+  SHRIPISTON             2022-12-26   2023-02-06     540.00     561.00     17      +357.00 stoploss hit
+  SALZERELEC             2023-01-16   2023-02-06     312.90     292.85     27      -541.35 swap: score 72.6 → JINDALSAW (93.9)
+  DSSL                   2023-01-30   2023-02-13     549.00     468.00     22    -1,782.00 stoploss hit
+  SKMEGGPROD             2023-02-13   2023-02-20     111.30      93.00     70    -1,281.00 stoploss hit
+  KAMATHOTEL             2023-01-23   2023-02-20     134.80     120.90     75    -1,042.50 stoploss hit
+  PERMAGN                2023-02-06   2023-02-20     849.00     771.00     10      -780.00 stoploss hit
+  AUTOAXLES              2023-02-06   2023-02-27   2,600.00   2,370.00      3      -690.00 stoploss hit
+  MBAPL                  2023-01-30   2023-02-27     332.45     307.50     30      -748.50 swap: score 62.9 → NUCLEUS (94.8)
+  GRAVITA                2023-01-30   2023-02-27     493.40     475.00     24      -441.60 swap: score 70.9 → FINCABLES (94.4)
+  SUNFLAG                2023-01-30   2023-03-06     130.00     138.15     59      +480.85 swap: score 70.2 → TRITURBINE (93.5)
+  PERSISTENT             2023-01-30   2023-03-13   2,295.00   2,384.25      6      +535.50 swap: score 63.4 → JSL (93.6)
+  PRAVEG                 2023-01-09   2023-03-13     357.50     434.15     30    +2,299.50 swap: score 72.5 → TDPOWERSYS (93.3)
+  JINDALSAW              2023-02-06   2023-03-20      65.20      76.75    119    +1,374.45 stoploss hit
+  WPIL                   2023-02-20   2023-03-20     160.50     208.00     53    +2,517.50 stoploss hit
+  TRITURBINE             2023-03-06   2023-03-20     326.85     300.85     22      -572.00 stoploss hit
+  WONDERLA               2023-02-20   2023-03-27     430.05     396.80     20      -665.00 stoploss hit
+  SAPL                   2022-09-12   2023-04-03     605.05     882.00     20    +5,539.00 stoploss hit
+  JSL                    2023-03-13   2023-04-10     316.95     288.00     32      -926.40 stoploss hit
+  VADILENT               2023-03-20   2023-04-10   3,620.05   3,598.00      2       -44.10 swap: score 66.6 → ADCINDIA (93.6)
+  TDPOWERSYS             2023-03-13   2023-04-10     162.95     158.90     54      -218.70 swap: score 70.2 → NEULANDLAB (92.6)
+  VRLLOG                 2023-03-20   2023-04-10     316.00     322.50     48      +312.00 swap: score 70.9 → SMLMAH (92.4)
+  SCHAND                 2023-03-20   2023-04-17     225.00     218.80     36      -223.20 swap: score 66.3 → TANFACIND (92.5)
+  CLSEL                  2023-02-20   2023-04-17     169.30     171.75     48      +117.60 swap: score 66.4 → MINDACORP (90.5)
+  NITTAGELA              2023-03-27   2023-04-24     873.00     820.00     11      -583.00 stoploss hit
+  NUCLEUS                2023-02-27   2023-04-24     615.00     605.90     11      -100.10 stoploss hit
+  ZENTEC                 2023-02-27   2023-04-24     266.00     307.40     28    +1,159.20 swap: score 57.2 → KSOLVES (87.6)
+  KSOLVES                2023-04-24   2023-05-01     333.85     310.00     32      -763.20 stoploss hit
+  IZMO                   2023-04-03   2023-05-01     124.90     125.05     54        +8.10 swap: score 62.9 → RVNL (88.1)
+  TTKHLTCARE             2023-04-10   2023-05-01   1,296.60   1,290.90      6       -34.20 swap: score 70.2 → RAYMOND (88.0)
+  NEULANDLAB             2023-04-10   2023-05-08   2,078.40   2,042.05      6      -218.10 swap: score 62.2 → DATAMATICS (86.5)
+  ADCINDIA               2023-04-10   2023-05-08     743.95     810.00     11      +726.55 swap: score 65.3 → IRCON (86.4)
+  RVNL                   2023-05-01   2023-05-15     104.25     123.50     82    +1,578.50 stoploss hit
+  FACT                   2023-04-24   2023-05-15     331.75     309.40     24      -536.40 swap: score 58.2 → COCKERILL (87.6)
+  SMLMAH                 2023-04-10   2023-05-15     887.60     941.95     12      +652.20 swap: score 60.1 → ENGINERSIN (86.4)
+  RAYMOND                2023-05-01   2023-05-15   1,035.60     979.80      9      -502.20 swap: score 66.1 → KLBRENG-B (86.3)
+  FINCABLES              2023-02-27   2023-05-15     720.75     905.70     13    +2,404.35 swap: score 68.7 → KECL (85.9)
+  IRCON                  2023-05-08   2023-05-22      86.95      78.45    104      -884.00 stoploss hit
+  MINDACORP              2023-04-17   2023-05-22     266.90     281.35     41      +592.45 swap: score 60.7 → MANINDS (87.3)
+  TITAGARH               2023-04-24   2023-05-22     332.50     325.05     29      -216.05 swap: score 62.1 → SHRIPISTON (86.8)
+  KECL                   2023-05-15   2023-05-29     121.60     103.10     62    -1,147.00 stoploss hit
+  DATAMATICS             2023-05-08   2023-05-29     445.10     447.00     21       +39.90 stoploss hit
+  EIMCOELECO             2023-05-01   2023-05-29     628.00     590.00     15      -570.00 swap: score 68.0 → ONWARDTEC (87.5)
+  TREJHARA-BE            2023-05-29   2023-06-05      89.00      68.80     82    -1,656.40 stoploss hit
+  SHRIPISTON             2023-05-22   2023-06-05     843.00     736.00     14    -1,498.00 stoploss hit
+  COCKERILL              2023-05-15   2023-06-05   2,085.00   2,135.00      4      +200.00 swap: score 61.6 → CENTUM (87.9)
+  KLBRENG-B              2023-05-15   2023-06-12     124.80     126.50     79      +134.30 swap: score 54.5 → RAMRAT (87.2)
+  POWERMECH              2023-05-15   2023-06-12   1,568.00   1,622.50      7      +381.50 swap: score 61.6 → MAZDOCK (87.1)
+  REPRO                  2023-05-22   2023-06-12     604.80     578.00     13      -348.40 swap: score 66.1 → AVALON (87.0)
+  ENGINERSIN             2023-05-15   2023-06-19      98.00     113.20    109    +1,656.80 swap: score 64.6 → JAYBARMARU (88.3)
+  REFEX                  2023-05-29   2023-06-19     103.70     113.90     68      +693.60 swap: score 67.2 → INTEGRAEN (86.5)
+  NUCLEUS                2023-06-05   2023-06-26   1,152.00   1,002.00      7    -1,050.00 stoploss hit
+  JINDALSAW              2023-06-05   2023-06-26     124.15     115.80     86      -718.10 swap: score 64.9 → FACT (87.7)
+  TANFACIND              2023-04-17   2023-06-26   1,365.00   1,911.95      8    +4,375.60 swap: score 65.1 → KPIGREEN (87.0)
+  MANINDS                2023-05-22   2023-06-26     118.95     140.25     78    +1,661.40 swap: score 66.6 → HPL (86.3)
+  ONWARDTEC              2023-05-29   2023-06-26     470.00     485.70     21      +329.70 swap: score 67.3 → TITAGARH (85.9)
+  RAMRAT                 2023-06-12   2023-07-10     132.20     145.00     67      +857.60 swap: score 67.8 → SOLEX (90.5)
+  INTEGRAEN              2023-06-19   2023-07-17     228.00     240.00     38      +456.00 swap: score 63.8 → JINDALSAW (88.0)
+  JAYBARMARU             2023-06-19   2023-07-24      98.40     125.15     90    +2,407.50 swap: score 62.9 → TANAA (89.1)
+  KPIGREEN               2023-06-26   2023-07-24     169.00     183.15     54      +764.10 swap: score 67.1 → RITCO (88.6)
+  AVALON                 2023-06-12   2023-07-31     504.75     597.95     21    +1,957.20 stoploss hit
+  JINDALSAW              2023-07-17   2023-07-31     158.70     162.80     68      +278.80 stoploss hit
+  CENTUM                 2023-06-05   2023-07-31   1,139.00   1,473.25      7    +2,339.75 swap: score 68.4 → TEXINFRA (86.9)
+  FACT                   2023-06-26   2023-07-31     415.05     476.95     21    +1,299.90 swap: score 69.1 → RBLBANK (86.5)
+  THANGAMAYL             2023-07-31   2023-08-07   1,288.55   1,123.30      9    -1,487.25 stoploss hit
+  HPL                    2023-06-26   2023-08-07     133.00     220.50     80    +7,000.00 swap: score 65.1 → UNIABEXAL (87.1)
+  DYCL                   2023-08-07   2023-08-14     302.40     227.10     32    -2,409.60 stoploss hit
+  SOLEX                  2023-07-10   2023-08-14     501.55     503.95     22       +52.80 stoploss hit
+  MAZDOCK                2023-06-12   2023-08-14     519.50     870.65     20    +7,023.00 stoploss hit
+  RBLBANK                2023-07-31   2023-08-14     235.90     223.70     50      -610.00 swap: score 56.8 → BECTORFOOD (86.6)
+  TANAA                  2023-07-24   2023-08-14     253.95     246.90     24      -169.20 swap: score 67.9 → TALBROAUTO (86.4)
+  RITCO                  2023-07-24   2023-08-21     264.10     233.30     32      -985.60 swap: score 45.7 → DBREALTY (91.6)
+  TEXINFRA               2023-07-31   2023-08-28      80.70      82.75    117      +239.85 swap: score 62.2 → INNOVANA (90.1)
+  ACE                    2023-07-31   2023-08-28     696.90     790.00     15    +1,396.50 swap: score 71.2 → SIKA (89.3)
+  INNOVANA               2023-08-28   2023-09-04     799.95     739.80     11      -661.65 stoploss hit
+  SIKA                   2023-08-28   2023-09-04     267.25     226.40     38    -1,552.30 stoploss hit
+  BECTORFOOD             2023-08-14   2023-09-04     219.00     208.60     58      -603.20 swap: score 69.0 → PITTIENG (87.0)
+  TALBROAUTO             2023-08-14   2023-09-11     226.95     203.20     49    -1,163.75 stoploss hit
+  HBLENGINE              2023-08-14   2023-09-11     224.50     271.20     58    +2,708.60 swap: score 64.8 → MAGADSUGAR (86.1)
+  RECLTD                 2023-08-14   2023-09-11     221.85     272.90     81    +4,135.05 swap: score 67.5 → SCI (86.0)
+  SCI                    2023-09-11   2023-09-18     156.22     138.71     84    -1,470.84 stoploss hit
+  PITTIENG               2023-09-04   2023-09-18     659.00     622.70     16      -580.80 swap: score 69.5 → TARIL (88.6)
+  UNIABEXAL              2023-08-07   2023-09-25   1,551.00   1,896.00      6    +2,070.00 stoploss hit
+  TEXRAIL                2023-06-26   2023-09-25      76.15     134.65    131    +7,663.50 stoploss hit
+  TITAGARH               2023-06-26   2023-09-25     469.60     770.00     21    +6,308.40 swap: score 68.7 → BANKINDIA (89.3)
+  3BBLACKBIO             2023-09-11   2023-10-09     826.40     763.30      9      -567.90 swap: score 63.9 → MAPMYINDIA (93.3)
+  DBREALTY               2023-08-21   2023-10-09     136.90     165.00     60    +1,686.00 swap: score 71.3 → MODINSU (93.1)
+  SJVN                   2023-09-18   2023-10-09      75.35      71.00    139      -604.65 swap: score 71.8 → QUICKHEAL (92.8)
+  ATULAUTO               2023-09-04   2023-10-09     610.00     590.00     17      -340.00 swap: score 72.6 → GRWRHITECH (92.1)
+  MAFATIND               2023-08-14   2023-10-16     104.95     154.00     84    +4,120.20 stoploss hit
+  BANKINDIA              2023-09-25   2023-10-16     106.00     102.29    154      -571.34 swap: score 65.7 → EIMCOELECO (92.7)
+  MAGADSUGAR             2023-09-11   2023-10-16     672.20     699.00     15      +402.00 swap: score 66.4 → ORISSAMINE (92.4)
+  MAPMYINDIA             2023-10-09   2023-10-23   2,205.00   1,979.00      6    -1,356.00 stoploss hit
+  TARIL                  2023-09-18   2023-10-23      86.00      80.00    108      -648.00 swap: score 62.9 → PPL (90.6)
+  J&KBANK                2023-09-25   2023-10-23     109.10     108.00    114      -125.40 swap: score 70.3 → DRAGARWQ (89.6)
+  ORISSAMINE             2023-10-16   2023-10-30   6,585.00   6,430.00      2      -310.00 stoploss hit
+  PRAKASH                2023-10-16   2023-10-30     183.60     154.00     69    -2,042.40 stoploss hit
+  GRWRHITECH             2023-10-09   2023-10-30   1,500.00   1,446.00      7      -378.00 swap: score 67.6 → ORIRAIL (92.8)
+  PPL                    2023-10-23   2023-11-06     408.00     348.55     22    -1,307.90 stoploss hit
+  GMDCLTD                2023-09-04   2023-11-06     250.65     330.70     44    +3,522.20 stoploss hit
+  KIOCL                  2023-09-25   2023-11-06     339.45     330.90     30      -256.50 stoploss hit
+  MODINSU                2023-10-09   2023-11-06      90.85      93.00    132      +283.80 swap: score 68.9 → JINDALSAW (91.9)
+  JSLL                   2023-11-06   2023-11-13     155.00     134.60     64    -1,305.60 stoploss hit
+  DRAGARWQ               2023-10-23   2023-11-13   2,980.00   2,780.15      3      -599.55 swap: score 62.5 → AXTEL (90.0)
+  QUICKHEAL              2023-10-09   2023-11-13     314.70     325.50     33      +356.40 swap: score 66.6 → TEXINFRA (89.7)
+  JAICORPLTD             2023-10-23   2023-11-13     318.95     299.10     26      -516.10 swap: score 71.6 → TSFINV (89.6)
+  ORIRAIL                2023-10-30   2023-11-20     120.20     120.50    243       +72.90 stoploss hit
+  EIMCOELECO             2023-10-16   2023-11-20   1,448.00   1,517.00      8      +552.00 swap: score 66.4 → KPIGREEN (89.7)
+  CEINSYSTECH            2023-10-30   2023-11-20     373.40     365.50     23      -181.70 swap: score 68.4 → SOLARINDS (89.3)
+  SOLARINDS              2023-11-20   2023-11-27   7,500.00   6,764.00      2    -1,472.00 stoploss hit
+  GARGI                  2023-11-13   2023-11-27     410.00     372.00     23      -874.00 stoploss hit
+  BSE                    2023-10-30   2023-11-27     620.50     710.00     22    +1,969.00 stoploss hit
+  MAANALU-BE             2023-11-06   2023-11-27     130.95     137.25     90      +567.00 swap: score 60.9 → TATAINVEST (87.1)
+  JINDALSAW              2023-11-06   2023-11-27     232.00     229.00     41      -123.00 swap: score 66.9 → SPMLINFRA (87.1)
+  AXTEL                  2023-11-13   2023-12-04     725.00     690.00     14      -490.00 swap: score 59.5 → CONSOFINVT (87.1)
+  TSFINV                 2023-11-13   2023-12-04     163.70     156.25     77      -573.65 swap: score 59.7 → MINDTECK (86.8)
+  HIRECT                 2023-11-06   2023-12-04     630.95     609.95     19      -399.00 swap: score 59.7 → NAVKARCORP (86.7)
+  TEXINFRA               2023-11-13   2023-12-04     103.20     101.00     80      -176.00 swap: score 65.0 → NIACL (86.4)
+  BANCOINDIA             2023-11-20   2023-12-04     294.90     285.50     50      -470.00 swap: score 66.0 → NEWGEN (86.2)
+  KPIGREEN               2023-11-20   2023-12-11     252.85     257.00     53      +219.95 swap: score 68.6 → ASHAPURMIN (87.6)
+  MINDTECK               2023-12-04   2023-12-18     199.15     198.55     34       -20.40 swap: score 69.1 → INOXGREEN (87.3)
+  ELECTHERM              2023-11-27   2023-12-25     192.90     250.75    143    +8,272.55 stoploss hit
+  TATAINVEST             2023-11-27   2023-12-25     416.00     420.00     23       +92.00 swap: score 63.1 → KRISHNADEF (87.7)
+  NIACL                  2023-12-04   2023-12-25     236.80     219.70     34      -581.40 swap: score 65.8 → HINDCOPPER (87.5)
+  ASHAPURMIN             2023-12-11   2024-01-01     448.80     414.00     26      -904.80 swap: score 70.8 → MSTCLTD (90.4)
+  SPMLINFRA              2023-11-27   2024-01-08      74.45      94.80    261    +5,311.35 stoploss hit
+  TITAGARH               2023-11-27   2024-01-08     965.95   1,015.00     11      +539.55 swap: score 59.8 → MAXIND (87.6)
+  ANANDRATHI             2023-11-27   2024-01-08   1,245.00   1,359.50      9    +1,030.50 swap: score 64.6 → RAILTEL (86.8)
+  HPL                    2024-01-08   2024-01-15     320.00     289.80     48    -1,449.60 stoploss hit
+  KRISHNADEF             2023-12-25   2024-01-15     379.00     379.00     33        +0.00 swap: score 58.3 → POCL (88.9)
+  CONSOFINVT             2023-12-04   2024-01-15     285.00     315.50     34    +1,037.00 swap: score 61.0 → PRAVEG (88.5)
+  HINDCOPPER             2023-12-25   2024-01-22     218.00     266.60     59    +2,867.40 swap: score 66.4 → IRCON (88.8)
+  PRAVEG                 2024-01-15   2024-01-29   1,152.45     993.10      8    -1,274.80 stoploss hit
+  FRONTSP                2024-01-15   2024-01-29   1,247.25   1,306.90      9      +536.85 swap: score 71.8 → TARIL (90.3)
+  MAXIND                 2024-01-08   2024-02-05     205.56     199.79     53      -305.81 swap: score 60.5 → SJVN (89.6)
+  NAVKARCORP             2023-12-04   2024-02-05      95.00     110.80    110    +1,738.00 swap: score 63.4 → NHPC (89.5)
+  INOXGREEN              2023-12-18   2024-02-05     100.80     132.00     90    +2,808.00 swap: score 65.7 → RITES (89.4)
+  NBCC                   2024-01-29   2024-02-12      78.00      97.83    157    +3,113.31 stoploss hit
+  TARIL                  2024-01-29   2024-02-12     187.50     156.10     59    -1,852.60 stoploss hit
+  NEWGEN                 2023-12-04   2024-02-12     734.90     797.05     14      +870.10 swap: score 61.6 → GICRE (88.4)
+  IRCON                  2024-01-22   2024-02-12     231.00     223.00     62      -496.00 swap: score 66.1 → BLAL (88.4)
+  POCL                   2024-01-15   2024-02-12     409.50     390.00     29      -565.50 swap: score 67.9 → ENIL (88.1)
+  SJVN                   2024-02-05   2024-02-19     145.00     121.50     81    -1,903.50 stoploss hit
+  NHPC                   2024-02-05   2024-02-19     105.75      94.40    131    -1,486.85 stoploss hit
+  RAILTEL                2024-01-08   2024-02-19     356.75     380.00     36      +837.00 stoploss hit
+  MSTCLTD                2024-01-01   2024-02-19     673.65     964.45     15    +4,362.00 swap: score 61.9 → OIL (90.6)
+  IRFC                   2023-12-25   2024-02-26     101.00     154.30    119    +6,342.70 swap: score 55.7 → FORCEMOT (90.7)
+  BLAL                   2024-02-12   2024-02-26     302.00     281.70     29      -588.70 swap: score 67.2 → SPELS (90.5)
+  RITES                  2024-02-05   2024-02-26     365.00     383.60     27      +502.20 swap: score 71.5 → BPLPHARMA (90.0)
+  BALAJITELE             2024-02-19   2024-03-04     132.95      99.95     84    -2,772.00 stoploss hit
+  IOC                    2024-02-12   2024-03-04     166.67     156.89     87      -850.86 stoploss hit
+  NIACL                  2024-02-12   2024-03-04     290.95     272.25     38      -710.60 swap: score 69.5 → DCAL (91.1)
+  KIRLOSENG              2024-02-19   2024-03-11     899.85     831.00     18    -1,239.30 stoploss hit
+  GICRE                  2024-02-12   2024-03-11     398.10     359.95     22      -839.30 swap: score 51.1 → RICOAUTO (93.4)
+  ZSARACOM               2024-03-11   2024-03-18   7,950.00   6,210.15      1    -1,739.85 stoploss hit
+  BPLPHARMA              2024-02-26   2024-03-18   1,048.95   1,152.00      9      +927.45 stoploss hit
+  SPELS                  2024-02-26   2024-03-18     125.73     132.05    127      +802.64 stoploss hit
+  ENIL                   2024-02-12   2024-03-18     290.90     280.15     36      -387.00 stoploss hit
+  LGHL                   2024-03-04   2024-03-18     116.05     118.25    170      +374.00 stoploss hit
+  ORCHPHARMA             2024-02-19   2024-03-18   1,097.00     994.25     10    -1,027.50 stoploss hit
+  OIL                    2024-02-19   2024-03-18     384.00     365.65     30      -550.50 stoploss hit
+  DCAL                   2024-03-04   2024-03-18     268.70     225.70     40    -1,720.00 stoploss hit
+  GODFRYPHLP             2024-03-18   2024-04-01     989.00   1,040.00     14      +714.00 swap: score 73.3 → VADILALIND (95.2)
+  INTELLECT              2024-03-18   2024-04-08   1,120.00   1,081.00     16      -624.00 swap: score 56.7 → TARIL (91.6)
+  TMPV                   2024-03-18   2024-04-08     651.20     695.40     24    +1,060.80 swap: score 69.7 → COCHINSHIP (91.1)
+  LGHL                   2024-03-18   2024-04-08     118.25     112.90    128      -684.80 swap: score 70.3 → BSE (90.6)
+  SOLARINDS              2024-03-18   2024-04-15   8,900.05   8,422.00      2      -956.10 swap: score 61.1 → INDOTECH (90.4)
+  RICOAUTO               2024-03-11   2024-04-15     143.05     136.70     79      -501.65 swap: score 67.9 → BHAGYANGR-BE (88.7)
+  SALZERELEC             2024-03-04   2024-04-22     745.00     799.00     13      +702.00 swap: score 63.9 → WEL (88.7)
+  VADILALIND             2024-04-01   2024-04-22   4,391.00   4,030.00      1      -361.00 swap: score 64.6 → MOTILALOFS (88.6)
+  BHAGYANGR-BE           2024-04-15   2024-04-29     116.60     114.80     74      -133.20 swap: score 69.6 → BPLPHARMA (88.6)
+  TECHNVISN              2024-03-18   2024-05-06   1,376.35   1,723.00     30   +10,399.50 stoploss hit
+  BSE                    2024-04-08   2024-05-06     962.50     958.50     13       -52.00 stoploss hit
+  WEL                    2024-04-22   2024-05-06      99.40     115.60    126    +2,041.20 stoploss hit
+  SMSPHARMA              2024-03-18   2024-05-06     189.20     202.70     27      +364.50 swap: score 68.3 → MAXIND (86.5)
+  BPLPHARMA              2024-04-29   2024-05-13   1,790.00   1,510.05      5    -1,399.75 stoploss hit
+  TARIL                  2024-04-08   2024-05-13     242.00     292.80     42    +2,133.60 stoploss hit
+  MOTILALOFS             2024-04-22   2024-05-13     573.75     548.15     21      -537.60 stoploss hit
+  INDOTECH               2024-04-15   2024-05-13   1,335.10   1,480.00      6      +869.40 stoploss hit
+  KPIL                   2024-03-18   2024-05-20   1,042.25   1,201.80     14    +2,233.70 swap: score 66.0 → SARLAPOLY (92.5)
+  FORCEMOT               2024-02-26   2024-05-20   5,938.00   8,862.50      2    +5,849.00 swap: score 67.2 → KECL (91.5)
+  KECL                   2024-05-20   2024-05-27     224.80     183.00     52    -2,173.60 stoploss hit
+  NITCO                  2024-05-13   2024-05-27      74.70      74.80    496       +49.60 stoploss hit
+  DOLATALGO              2024-05-13   2024-06-03     134.40     143.00     71      +610.60 stoploss hit
+  SARLAPOLY              2024-05-20   2024-06-03      92.90      82.00    114    -1,242.60 stoploss hit
+  YUKEN                  2024-05-06   2024-06-03   1,359.95   1,207.50      9    -1,372.05 stoploss hit
+  WEALTH                 2024-05-13   2024-06-03     850.00     875.00     15      +375.00 swap: score 67.3 → RVNL (92.0)
+  MAXIND                 2024-05-06   2024-06-03     249.39     256.14     56      +378.00 swap: score 71.1 → PASHUPATI (91.8)
+  RVNL                   2024-06-03   2024-06-10     425.00     383.65     40    -1,654.00 stoploss hit
+  POWERINDIA             2024-05-06   2024-06-17   9,729.90  10,830.85      1    +1,100.95 swap: score 53.5 → 3BBLACKBIO (88.4)
+  SHAKTIPUMP             2024-05-13   2024-06-17     371.65     432.50     33    +2,008.05 swap: score 61.7 → POEL (88.4)
+  TSFINV                 2024-06-03   2024-06-17     277.00     281.10     49      +200.90 swap: score 66.8 → PREMEXPLN (88.4)
+  TECHNVISN              2024-06-10   2024-06-24   2,817.85   2,477.10     14    -4,770.50 stoploss hit
+  BDL                    2024-05-27   2024-06-24   1,580.00   1,518.10      9      -557.10 swap: score 69.6 → MARINE (87.3)
+  PREMEXPLN              2024-06-17   2024-07-01     709.20     743.00     14      +473.20 stoploss hit
+  3BBLACKBIO             2024-06-17   2024-07-01   1,126.00   1,125.05      6        -5.70 swap: score 69.5 → YSL (87.2)
+  KRISHNADEF             2024-06-03   2024-07-08     724.00     915.00     17    +3,247.00 stoploss hit
+  PASHUPATI              2024-06-03   2024-07-08     263.60     482.90     50   +10,965.00 stoploss hit
+  THEJO                  2024-07-08   2024-07-15   3,422.60   3,311.40      4      -444.80 swap: score 68.6 → RVNL (87.9)
+  PFOCUS                 2024-07-08   2024-07-22     147.65     126.80     89    -1,855.65 stoploss hit
+  POEL                   2024-06-17   2024-07-22      86.00      96.40    108    +1,123.20 stoploss hit
+  GPTINFRA               2024-05-06   2024-07-22     114.40     155.05    107    +4,349.55 stoploss hit
+  COCHINSHIP             2024-04-08   2024-07-22   1,105.05   2,505.00     10   +13,999.50 stoploss hit
+  CFF                    2024-06-24   2024-07-22     823.00     760.00     14      -882.00 swap: score 60.7 → TCC (87.6)
+  GRSE                   2024-05-27   2024-07-29   1,475.00   2,248.00      9    +6,957.00 stoploss hit
+  RVNL                   2024-07-15   2024-07-29     637.00     557.50     22    -1,749.00 stoploss hit
+  MAZDOCK                2024-06-03   2024-07-29   1,719.85   2,453.70      7    +5,136.95 stoploss hit
+  AWHCL                  2024-07-29   2024-08-12     890.05     738.05     19    -2,888.00 stoploss hit
+  TECHNVISN              2024-07-29   2024-08-12   3,919.90   3,400.00      4    -2,079.60 stoploss hit
+  TCC                    2024-07-22   2024-08-12     750.00     747.25     19       -52.25 swap: score 62.2 → PCBL (91.6)
+  MARINE                 2024-06-24   2024-08-26     149.75     261.95     93   +10,434.60 stoploss hit
+  LOTUSCHO               2024-07-01   2024-09-02     609.20   1,826.40     17   +20,692.40 stoploss hit
+  WEL                    2024-07-22   2024-09-02     124.75     145.00    163    +3,300.75 swap: score 65.9 → CNCRD (88.8)
+  MAXESTATES             2024-09-02   2024-09-09     679.00     599.00     26    -2,080.00 stoploss hit
+  OIL                    2024-07-22   2024-09-09     562.00     626.10     27    +1,730.70 stoploss hit
+  ARROWGREEN             2024-08-12   2024-09-09     853.00     835.10     12      -214.80 swap: score 61.0 → TEMBO (88.1)
+  LUXIND                 2024-07-22   2024-09-16   1,791.00   2,320.45      9    +4,765.05 swap: score 60.8 → SIMPLEXINF (90.3)
+  NPST                   2024-07-22   2024-09-16   2,115.65   3,170.00      8    +8,434.80 swap: score 66.8 → DHUNINV (89.7)
+  REFEX                  2024-09-09   2024-09-23     411.00     430.00     43      +817.00 stoploss hit
+  SPORTKING              2024-07-29   2024-09-23     129.90     116.80     99    -1,296.90 stoploss hit
+  NEULANDLAB             2024-08-12   2024-09-23  11,599.45  12,799.00      1    +1,199.55 swap: score 70.5 → BRRL (89.7)
+  CNCRD                  2024-09-02   2024-09-23   1,109.15   1,131.25     17      +375.70 swap: score 70.8 → HSCL (89.5)
+  POCL                   2024-07-08   2024-09-30     472.90   1,005.00     28   +14,898.80 stoploss hit
+  ADSL                   2024-09-09   2024-09-30     294.40     261.00     50    -1,670.00 swap: score 64.2 → ABCOTS (91.4)
+  OPTIEMUS               2024-09-30   2024-10-07     851.20     701.00     17    -2,553.40 stoploss hit
+  NAVA                   2024-09-23   2024-10-07     615.00     525.00     29    -2,610.00 stoploss hit
+  PCBL                   2024-08-12   2024-10-14     393.00     509.15     35    +4,065.25 stoploss hit
+  ABCOTS                 2024-09-30   2024-10-14     410.00     404.50     52      -286.00 stoploss hit
+  DHUNINV                2024-09-16   2024-10-14   2,520.00   2,232.10      5    -1,439.50 swap: score 63.4 → RAMRAT (92.5)
+  PGEL                   2024-08-26   2024-10-14     564.10     613.65     28    +1,387.40 swap: score 67.5 → SARDAEN (92.5)
+  HSCL                   2024-09-23   2024-10-14     644.05     642.10     33       -64.35 swap: score 72.3 → SUDARCOLOR (92.3)
+  SUDARCOLOR             2024-10-14   2024-10-21     626.00     542.00     20    -1,680.00 stoploss hit
+  SRHHYPOLTD             2024-10-14   2024-10-28     893.10     709.60     15    -2,752.50 stoploss hit
+  BAJAJST                2024-10-07   2024-10-28     850.00     731.25     21    -2,493.75 stoploss hit
+  IIFLCAPS               2024-10-14   2024-10-28     418.80     353.30     33    -2,161.50 stoploss hit
+  RAMRAT                 2024-10-14   2024-10-28     367.50     269.90     49    -4,782.40 stoploss hit
+  EMKAY                  2024-10-07   2024-10-28     255.00     251.23    144      -542.88 stoploss hit
+  SARDAEN                2024-10-14   2024-10-28     499.00     460.00     34    -1,326.00 stoploss hit
+  TEMBO                  2024-09-09   2024-10-28     390.00     489.60     38    +3,784.80 stoploss hit
+  BRRL                   2024-09-23   2024-11-04     231.00     380.00     77   +11,473.00 score degraded to 0.0
+  PILANIINVS             2024-10-28   2024-11-11   6,815.15   6,525.00      2      -580.30 swap: score 69.6 → PANSARI-BE (93.6)
+  MCX                    2024-10-28   2024-11-11   1,300.00   1,276.00     19      -456.00 swap: score 70.4 → SHARDACROP (93.4)
+  TITANBIO               2024-10-28   2024-11-11     870.05     901.00     14      +433.30 swap: score 73.4 → WPIL (92.7)
+  PANSARI-BE             2024-11-11   2024-11-18     200.50     164.82    100    -3,568.00 stoploss hit
+  SKYGOLD                2024-10-28   2024-11-18     365.50     337.90     73    -2,014.80 stoploss hit
+  SIMPLEXINF             2024-09-16   2024-11-18     229.00     242.60    100    +1,360.00 stoploss hit
+  NSIL                   2024-10-28   2024-12-09   6,020.00   7,709.95      2    +3,379.90 stoploss hit
+  BGDL                   2024-11-18   2024-12-09   1,204.00   1,076.20     25    -3,195.00 stoploss hit
+  AMBER                  2024-10-28   2024-12-09   6,229.40   5,807.50      2      -843.80 stoploss hit
+  BSE                    2024-09-23   2024-12-09   1,333.50   1,792.50     15    +6,885.00 swap: score 66.1 → 63MOONS (88.9)
+  SHARDACROP             2024-11-11   2024-12-16     816.00     820.00     22       +88.00 swap: score 62.1 → IZMO (88.7)
+  BANCOINDIA             2024-11-25   2024-12-16     590.00     546.00     31    -1,364.00 swap: score 66.5 → BIRLAMONEY (88.6)
+  DYCL                   2024-11-04   2024-12-16     401.00     474.50     41    +3,013.50 swap: score 69.3 → MARINE (88.3)
+  INNOVACAP              2024-11-18   2024-12-23     992.20     985.95     20      -125.00 swap: score 59.2 → SALZERELEC (88.3)
+  MANORAMA               2024-10-28   2024-12-23     931.90   1,139.15     17    +3,523.25 swap: score 60.6 → ZOTA (88.2)
+  SALZERELEC             2024-12-23   2024-12-30   1,618.05   1,444.10     11    -1,913.45 stoploss hit
+  MARINE                 2024-12-16   2024-12-30     304.00     270.00     60    -2,040.00 stoploss hit
+  IZMO                   2024-12-16   2024-12-30     633.85     560.15     28    -2,063.60 stoploss hit
+  NELCO                  2024-12-09   2024-12-30   1,280.30   1,279.70     15        -9.00 stoploss hit
+  VADILENT               2024-12-09   2025-01-06   8,255.00   8,090.40      2      -329.20 swap: score 72.1 → EPACK (94.1)
+  EPACK                  2025-01-06   2025-01-13     647.00     541.15     29    -3,069.65 stoploss hit
+  BIRLAMONEY             2024-12-16   2025-01-13     227.65     206.10     74    -1,594.70 stoploss hit
+  63MOONS                2024-12-09   2025-01-13     795.00     849.95     28    +1,538.60 stoploss hit
+  WPIL                   2024-11-11   2025-01-13     595.00     690.00     25    +2,375.00 swap: score 75.3 → INDOTHAI (94.4)
+  KFINTECH               2024-12-30   2025-01-20   1,511.45   1,200.00     15    -4,671.75 stoploss hit
+  SIGMAADV               2024-12-30   2025-01-20      85.15      85.20    231       +11.55 stoploss hit
+  GOLDIAM                2025-01-20   2025-01-27     528.20     441.05     28    -2,440.20 stoploss hit
+  CEINSYSTECH            2024-10-21   2025-01-27   1,155.00   1,522.80     11    +4,045.80 stoploss hit
+  PGIL                   2024-12-30   2025-01-27   1,410.55   1,289.00     18    -2,187.90 stoploss hit
+  ITI                    2025-01-13   2025-01-27     439.70     332.50     20    -2,144.00 stoploss hit
+  INDOTHAI               2025-01-13   2025-01-27     173.40     182.90    151    +1,434.50 stoploss hit
+  PTCIL                  2025-01-13   2025-01-27  17,200.00  15,500.05      1    -1,699.95 stoploss hit
+  SHAILY                 2024-12-09   2025-01-27   1,323.00   1,494.95     12    +2,063.40 swap: score 74.2 → AEROFLEX (93.3)
+  COSMICCRF              2025-01-27   2025-02-03   1,900.00   1,613.50      7    -2,005.50 stoploss hit
+  BSE                    2025-01-27   2025-02-03   1,903.00   1,777.00     12    -1,512.00 swap: score 65.5 → MPSLTD (96.2)
+  JSWHL                  2025-01-13   2025-02-10  17,256.00  16,500.05      1      -755.95 stoploss hit
+  APOLLO                 2025-01-27   2025-02-10     128.70     129.00    115       +34.50 swap: score 73.8 → DPABHUSHAN (93.8)
+  AEROFLEX               2025-01-27   2025-02-17     238.00     189.50     58    -2,813.00 stoploss hit
+  AMAL                   2025-01-27   2025-02-17     669.00     668.95     23        -1.15 stoploss hit
+  KINETICENG             2025-02-03   2025-02-17     215.50     175.00     60    -2,430.00 stoploss hit
+  ZOTA                   2024-12-23   2025-02-17     783.70     879.95     26    +2,502.50 stoploss hit
+  ASHAPURMIN             2025-01-27   2025-02-17     519.05     434.80     42    -3,538.50 stoploss hit
+  MBAPL                  2025-01-20   2025-02-17     282.97     279.05     66      -258.72 swap: score 71.1 → SUNRAKSHAK (93.0)
+  VIMTALABS              2025-02-17   2025-02-24     560.00     458.05     28    -2,854.60 stoploss hit
+  DPABHUSHAN             2025-02-10   2025-02-24   1,810.00   1,532.50      9    -2,497.50 stoploss hit
+  TANFACIND              2024-12-30   2025-02-24   3,020.10   3,549.95      5    +2,649.25 swap: score 76.3 → CAMLINFINE (95.5)
+  MPSLTD                 2025-02-03   2025-03-03   2,729.95   2,355.00      5    -1,874.75 stoploss hit
+  INDOKEM                2025-02-17   2025-03-03     164.00     137.60    148    -3,907.20 stoploss hit
+  KAMATHOTEL             2025-02-10   2025-03-03     302.90     267.50     53    -1,876.20 stoploss hit
+  GODFRYPHLP             2025-02-24   2025-03-10   1,927.00   1,782.00      4      -580.00 swap: score 58.1 → FORCEMOT (93.6)
+  CPML                   2025-02-17   2025-03-17   1,200.00   1,239.00     12      +468.00 swap: score 76.4 → JSWHL (96.6)
+  MAHASTEEL-BE           2025-02-17   2025-03-17     233.80     241.00     92      +662.40 swap: score 76.7 → SARDAEN (96.3)
+  SUNRAKSHAK             2025-02-17   2025-03-24     157.85     188.90    169    +5,247.45 stoploss hit
+  DECCANCE               2025-03-03   2025-03-24     785.10     804.25     11      +210.65 swap: score 68.2 → INDIASHLTR (91.4)
+  BENARAS                2025-01-27   2025-03-24   9,929.95  11,498.00      2    +3,136.10 swap: score 69.4 → JSWHL (91.2)
+  MIIL                   2025-03-03   2025-03-24     400.50     420.00     27      +526.50 swap: score 71.4 → NACLIND (91.1)
+  VADILALIND             2025-03-24   2025-03-31   5,229.85   4,670.20      2    -1,119.30 stoploss hit
+  SARDAEN                2025-03-17   2025-03-31     545.10     510.00     29    -1,017.90 swap: score 62.7 → MAZDOCK (87.9)
+  CAMLINFINE             2025-02-24   2025-04-07     151.50     130.10     91    -1,947.40 stoploss hit
+  TECHNVISN              2025-02-17   2025-04-07   4,200.00   5,258.35      3    +3,175.05 stoploss hit
+  TCPLPACK               2025-02-24   2025-04-07   3,997.25   3,665.00      3      -996.75 swap: score 59.9 → SIKA (88.9)
+  INDIASHLTR             2025-03-24   2025-04-07     794.95     650.00     20    -2,899.00 swap: score 69.8 → VADILALIND (88.8)
+  MAZDOCK                2025-03-31   2025-04-14   2,724.00   2,443.75      6    -1,681.50 stoploss hit
+  SIMPLEXINF             2025-03-31   2025-04-28     314.00     297.00     50      -850.00 swap: score 68.2 → SVLL (90.4)
+  SVLL                   2025-04-28   2025-05-05     592.00     545.40     22    -1,025.20 stoploss hit
+  SHRADDHA               2025-03-31   2025-05-05     154.95     139.00     78    -1,244.10 swap: score 58.3 → DATAPATTNS (91.4)
+  KSCL                   2025-03-24   2025-05-05   1,285.00   1,425.00     15    +2,100.00 swap: score 72.3 → KRISHANA (91.0)
+  GRMOVER                2025-04-14   2025-05-05     108.00     102.70    125      -662.50 swap: score 72.5 → ZSARACOM (90.8)
+  ZSARACOM               2025-05-05   2025-05-12  16,271.30  15,749.75      1      -521.55 stoploss hit
+  NACLIND                2025-03-24   2025-05-12      94.32     158.14    107    +6,828.74 stoploss hit
+  POEL                   2025-04-07   2025-05-19     190.00     234.05     40    +1,762.00 swap: score 55.8 → SUVEN (88.3)
+  GALLANTT               2025-04-07   2025-05-19     356.00     477.00     34    +4,114.00 swap: score 67.0 → INDIAGLYCO (88.1)
+  VADILALIND             2025-04-07   2025-05-26   4,820.55   6,050.00      2    +2,458.90 stoploss hit
+  MANORAMA               2025-05-05   2025-05-26   1,365.00   1,394.70     10      +297.00 swap: score 69.7 → ASMTEC (89.2)
+  SPORTKING              2025-05-12   2025-06-02     113.50     110.60    123      -356.70 swap: score 56.8 → FRONTSP (88.5)
+  CEATLTD                2025-05-12   2025-06-02   3,825.90   3,800.00      5      -129.50 swap: score 65.6 → CAMLINFINE (87.3)
+  SIKA                   2025-04-07   2025-06-02     572.00     820.85     19    +4,728.15 swap: score 67.2 → CENTUM (87.1)
+  INDIAGLYCO             2025-05-19   2025-06-09     875.00     927.50     22    +1,155.00 swap: score 69.6 → PENIND (87.2)
+  CENTUM                 2025-06-02   2025-06-16   2,562.20   2,220.00      5    -1,711.00 stoploss hit
+  BAJAJINDEF             2025-06-16   2025-06-23     462.35     401.86     26    -1,572.74 stoploss hit
+  PENIND                 2025-06-09   2025-06-23     246.91     220.90     71    -1,846.71 stoploss hit
+  DATAPATTNS             2025-05-05   2025-06-23   2,332.00   2,956.90      5    +3,124.50 swap: score 71.4 → SUBROS (91.0)
+  SUVEN                  2025-05-19   2025-06-30     190.90     243.00     67    +3,490.70 swap: score 62.3 → INNOVANA (90.6)
+  KRISHIVAL              2025-06-23   2025-07-07     398.85     353.95     57    -2,559.30 stoploss hit
+  KRISHANA               2025-05-05   2025-07-07     299.00     436.00     69    +9,453.00 stoploss hit
+  CAMLINFINE             2025-06-02   2025-07-07     231.60     307.80     56    +4,267.20 swap: score 69.7 → SMLMAH (88.0)
+  STLTECH                2025-06-23   2025-07-14     104.99     102.92    133      -275.31 stoploss hit
+  COMSYN-BE              2025-05-26   2025-07-14     113.99     130.45    135    +2,222.10 swap: score 61.3 → JGCHEM (90.6)
+  SUBROS                 2025-06-23   2025-07-14     910.00     925.00     13      +195.00 swap: score 70.7 → JSLL (90.4)
+  MIDWEST                2025-03-03   2025-07-21     219.35   1,215.20    287  +285,808.95 swap: score 72.0 → CUPID (90.8)
+  YASHHV                 2025-07-14   2025-07-28     596.00     472.70     22    -2,712.60 stoploss hit
+  FRONTSP                2025-06-02   2025-07-28   3,791.00   4,400.00      3    +1,827.00 stoploss hit
+  JSLL                   2025-07-14   2025-07-28     560.05     540.00     29      -581.45 swap: score 70.4 → STALLION (89.3)
+  ASMTEC                 2025-05-26   2025-08-04   2,060.00   2,705.25      6    +3,871.50 stoploss hit
+  INNOVANA               2025-06-30   2025-08-04     519.10     504.90     29      -411.80 stoploss hit
+  JGCHEM                 2025-07-14   2025-08-04     500.80     480.95     30      -595.50 swap: score 73.2 → GALLANTT (92.7)
+  VALIANT                2025-07-07   2025-08-11     579.45     552.65     38    -1,018.40 stoploss hit
+  HALDYNGL               2025-07-28   2025-08-11     148.20     129.40    268    -5,038.40 stoploss hit
+  PARADEEP               2025-08-04   2025-08-18     218.91     202.99    155    -2,467.60 stoploss hit
+  GALLANTT               2025-08-04   2025-08-18     754.85     655.05     48    -4,790.40 stoploss hit
+  TI                     2025-07-28   2025-09-01     494.70     474.90     98    -1,940.40 swap: score 60.2 → APOLLO (94.2)
+  VIMTALABS              2025-08-04   2025-09-01     688.40     667.10     42      -894.60 swap: score 71.0 → VIRAT (93.8)
+  FORCEMOT               2025-03-10   2025-09-08   7,720.20  17,813.00      2   +20,185.60 stoploss hit
+  SMLMAH                 2025-07-07   2025-09-08   2,714.80   3,832.00      6    +6,703.20 stoploss hit
+  ARYACAPM               2025-08-18   2025-09-08     489.00     531.75     86    +3,676.50 stoploss hit
+  MIDWEST                2025-09-08   2025-09-15   1,977.50   1,991.90     45      +648.00 stoploss hit
+  VIRAT                  2025-09-01   2025-09-15     828.00     691.55     49    -6,686.05 stoploss hit
+  SARDAEN                2025-08-11   2025-09-15     539.90     590.20     63    +3,168.90 swap: score 70.4 → BALAJITELE (90.6)
+  SOBME                  2025-07-07   2025-09-22     568.65     920.60     49   +17,245.55 swap: score 62.3 → BANCOINDIA (90.4)
+  YATRA                  2025-08-18   2025-09-22     142.70     153.25    168    +1,772.40 swap: score 68.8 → SEJALLTD (89.9)
+  SEJALLTD               2025-09-22   2025-09-29     803.70     710.00     49    -4,591.30 stoploss hit
+  BGRENERGY              2025-09-08   2025-09-29     219.00     230.00    131    +1,441.00 stoploss hit
+  JINDALPHOT             2025-09-08   2025-09-29   1,185.00   1,100.60     19    -1,603.60 swap: score 69.4 → HINDCOPPER (90.9)
+  SIRCA                  2025-08-11   2025-10-13     458.80     490.25    123    +3,868.35 swap: score 72.5 → TIMEX (92.8)
+  BALAJITELE             2025-09-15   2025-10-20     119.05     113.10    268    -1,594.60 stoploss hit
+  APOLLO                 2025-09-01   2025-10-20     264.50     296.75    115    +3,708.75 stoploss hit
+  BANCOINDIA             2025-09-22   2025-10-20     830.00     725.00     43    -4,515.00 stoploss hit
+  STALLION               2025-07-28   2025-10-27     102.63     259.05    378   +59,126.76 stoploss hit
+  GMDCLTD                2025-09-15   2025-10-27     565.10     587.30     53    +1,176.60 swap: score 67.7 → MODINSU (93.8)
+  MODINSU                2025-10-27   2025-11-03     178.40     156.90    214    -4,601.00 stoploss hit
+  MOSCHIP                2025-09-15   2025-11-03     255.00     251.55    103      -355.35 swap: score 60.1 → BHAGYANGR-BE (91.1)
+  TIMEX                  2025-10-13   2025-11-03     397.20     381.95     94    -1,433.50 swap: score 71.9 → SKMEGGPROD (90.8)
+  NETWEB                 2025-09-29   2025-11-10   3,700.00   3,459.90      7    -1,680.70 stoploss hit
+  HINDCOPPER             2025-09-29   2025-11-10     315.45     333.00    122    +2,141.10 swap: score 64.2 → CHENNPETRO (91.5)
+  WELINV                 2025-11-03   2025-11-10   1,155.00   1,166.90     29      +345.10 swap: score 70.5 → RPEL (91.4)
+  LKPFIN                 2025-10-20   2025-11-17     750.00     911.45     43    +6,942.35 stoploss hit
+  SANDUMA                2025-10-20   2025-11-17     218.00     224.00    143      +858.00 swap: score 72.7 → TEMBO (92.5)
+  INOXGREEN              2025-09-29   2025-11-24     209.05     229.00    216    +4,309.20 stoploss hit
+  CHENNPETRO             2025-11-10   2025-12-01   1,022.00     919.00     36    -3,708.00 stoploss hit
+  CMBL                   2025-12-01   2025-12-08     406.00     382.00    247    -5,928.00 stoploss hit
+  IFBAGRO                2025-10-27   2025-12-08   1,137.80   1,228.30     26    +2,353.00 stoploss hit
+  BHAGYANGR-BE           2025-11-03   2025-12-08     136.00     133.00    234      -702.00 stoploss hit
+  SKMEGGPROD             2025-11-03   2025-12-08     215.00     200.40    218    -3,182.80 swap: score 68.8 → STEL (94.3)
+  TEMBO                  2025-11-17   2025-12-08     780.00     702.05     43    -3,351.85 swap: score 75.0 → JAMNAAUTO (94.1)
+  VLSFINANCE             2025-12-08   2025-12-15     337.00     295.00    177    -7,434.00 stoploss hit
+  AKCAPIT                2025-11-17   2025-12-15   1,450.00   1,320.00     29    -3,770.00 stoploss hit
+  FREDUN                 2025-10-20   2025-12-15   1,648.80   1,530.00     23    -2,732.40 stoploss hit
+  RPEL                   2025-11-10   2025-12-15     915.00   1,006.80     43    +3,947.40 swap: score 62.7 → SMLMAH (94.3)
+  SOUTHWEST-BE           2025-11-10   2025-12-22     179.94     184.14    177      +743.40 stoploss hit
+  JSWHL                  2025-12-08   2025-12-22  20,280.00  20,065.00      1      -215.00 stoploss hit
+  STEL                   2025-12-08   2025-12-29     535.00     516.15     46      -867.10 swap: score 71.8 → ASHAPURMIN (94.3)
+  CUPID                  2025-07-21   2026-01-05     150.00     341.00    398   +76,018.00 stoploss hit
+  VENUSREM-BE            2025-11-24   2026-01-05     706.80     770.10     54    +3,418.20 swap: score 70.3 → FORCEMOT (93.4)
+  FORCEMOT               2026-01-05   2026-01-12  21,340.00  18,710.00      2    -5,260.00 stoploss hit
+  MIDWEST                2025-12-15   2026-01-12   3,910.50   4,025.00      7      +801.50 stoploss hit
+  DREDGECORP             2025-12-15   2026-01-12   1,032.00     962.50     39    -2,710.50 swap: score 62.8 → CSBBANK (90.6)
+  MWL                    2025-12-08   2026-01-12     261.71     280.15    115    +2,120.60 swap: score 71.9 → SANSERA (90.4)
+  INFOBEAN               2025-12-22   2026-01-19     770.00     789.70     32      +630.40 stoploss hit
+  ASHAPURMIN             2025-12-29   2026-01-19     901.10     801.20     44    -4,395.60 stoploss hit
+  PFOCUS                 2025-12-15   2026-01-26     201.00     231.15    183    +5,517.45 stoploss hit
+  SILVERTUC              2026-01-05   2026-01-26   1,330.00   1,380.00     33    +1,650.00 stoploss hit
+  SANSERA                2026-01-12   2026-01-26   1,825.00   1,695.80     24    -3,100.80 stoploss hit
+  SMLMAH                 2025-12-15   2026-01-26   3,800.00   3,630.00     12    -2,040.00 stoploss hit
+  JAMNAAUTO              2025-12-08   2026-01-26     121.50     120.85    430      -279.50 stoploss hit
+  HINDZINC               2026-01-26   2026-02-02     695.00     565.00     64    -8,320.00 stoploss hit
+  MENONBE                2026-01-19   2026-02-02     130.00     112.40    240    -4,224.00 stoploss hit
+  CSBBANK                2026-01-12   2026-02-02     510.65     417.00     77    -7,211.05 stoploss hit
+  KRISHNADEF             2026-01-12   2026-02-09     943.00     932.50     31      -325.50 stoploss hit
+  KESAR                  2025-12-22   2026-02-09   1,063.00   1,151.00     66    +5,808.00 stoploss hit
+
+======================================================================
+  Weeks Simulated: 424 | Duration: 2967 days (8.12 years)
+======================================================================

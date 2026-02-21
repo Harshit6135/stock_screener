@@ -1,25 +1,25 @@
-from .marketdata import MarketDataModel
-from .instruments import InstrumentModel
-from .master import MasterModel
-from .indicators import IndicatorsModel
-from .risk_config import RiskConfigModel
-from .percentile import PercentileModel
-from .score import ScoreModel
-from .ranking import RankingModel
-from .investment import InvestmentActionsModel, InvestmentHoldingsModel, InvestmentSummaryModel
+from .market_data_model import MarketDataModel
+from .instruments_model import InstrumentsModel
+from .master_model import MasterModel
+from .indicators_model import IndicatorsModel
+from .config_model import ConfigModel
+from .percentile_model import PercentileModel
+from .score_model import ScoreModel
+from .ranking_model import RankingModel
+from .actions_model import ActionsModel
+from .investments_model import InvestmentsHoldingsModel, InvestmentsSummaryModel
 
 
 __all__ = [
     "MarketDataModel",
-    "InstrumentModel",
+    "InstrumentsModel",
     "MasterModel",
     "IndicatorsModel",
-    "ActionsModel",
-    "RiskConfigModel",
+    "ConfigModel",
     "PercentileModel",
     "ScoreModel",
     "RankingModel",
-    "InvestmentActionsModel",
-    "InvestmentHoldingsModel",
-    "InvestmentSummaryModel"
+    "ActionsModel",
+    "InvestmentsHoldingsModel",
+    "InvestmentsSummaryModel"
 ]

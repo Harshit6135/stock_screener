@@ -1,159 +1,339 @@
 """
 Score Service - Calculates weighted composite scores from percentiles
 
-Composite Score Formula (from Strategy1Parameters):
-  final_trend_score = trend_rank*0.6 + trend_extension_rank*0.2 + trend_start_rank*0.2
-  final_momentum_score = momentum_rsi_rank*0.5 + momentum_ppo_rank*0.3 + momentum_ppoh_rank*0.2
-  final_vol_score = rvolume_rank*0.7 + price_vol_corr_rank*0.3
-  final_structure_score = structure_rank*0.5 + structure_bb_rank*0.5
-  
-  composite_score = trend*0.30 + momentum*0.25 + efficiency*0.20 + vol*0.15 + structure*0.10
+Batch-processes all pending dates in a single pass using vectorised
+pandas operations. Applies penalty box rules and tracks penalty
+reasons for transparency.
 """
 
+import time
 import pandas as pd
-from datetime import date, timedelta
 
-from config import setup_logger, Strategy1Parameters
-from repositories import ScoreRepository, PercentileRepository
+from config import setup_logger, StrategyParameters
+from repositories import (
+    ScoreRepository, PercentileRepository,
+    IndicatorsRepository
+)
+
 
 score_repo = ScoreRepository()
 percentile_repo = PercentileRepository()
+indicators_repo = IndicatorsRepository()
 logger = setup_logger(name="ScoreService")
+pd.set_option('future.no_silent_downcasting', True)
 
 
 class ScoreService:
     """Service for calculating composite scores from percentiles"""
-    
+
     def __init__(self):
-        self.params = Strategy1Parameters()
-    
-    def _calculate_composite_for_df(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Apply weighted formula to calculate composite scores"""
-        
-        # Fill NaN values in rank columns to avoid FutureWarning
-        rank_cols = [
-            'trend_rank', 'trend_extension_rank', 'trend_start_rank',
-            'momentum_rsi_rank', 'momentum_ppo_rank', 'momentum_ppoh_rank',
-            'rvolume_rank', 'price_vol_corr_rank',
-            'structure_rank', 'structure_bb_rank', 'efficiency_rank'
-        ]
-        for col in rank_cols:
-            if col in df.columns:
-                df[col] = df[col].fillna(0).astype(float)
-        
-        # Calculate component scores
-        df['final_trend_score'] = (
-            df['trend_rank'] * self.params.trend_rank_weight +
-            df['trend_extension_rank'] * self.params.trend_extension_rank_weight +
-            df['trend_start_rank'] * self.params.trend_start_rank_weight
+        self.params = StrategyParameters()
+
+    def calculate_composite_scores(
+        self, percentile_df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """Apply weighted formula to calculate composite scores.
+
+        Parameters:
+            percentile_df: DataFrame with percentile columns.
+
+        Returns:
+            DataFrame with `initial_composite_score` added.
+
+        Example:
+            >>> svc = ScoreService()
+            >>> df = svc.calculate_composite_scores(pct_df)
+        """
+        percentile_df['initial_composite_score'] = (
+            self.params.trend_strength_weight
+            * percentile_df['trend_percentile']
+            + self.params.momentum_velocity_weight
+            * percentile_df['momentum_percentile']
+            + self.params.risk_efficiency_weight
+            * percentile_df['efficiency_percentile']
+            + self.params.conviction_weight
+            * percentile_df['volume_percentile']
+            + self.params.structure_weight
+            * percentile_df['structure_percentile']
+        )
+        return percentile_df
+
+    def _apply_soft_penalties(
+        self, df: pd.DataFrame
+    ) -> pd.DataFrame:
+        """Apply soft penalty multipliers using indicator data.
+
+        applies multipliers score for stocks that fail checks:
+        1. Price below 200 EMA -> * 0.5
+        2. Price below 50 EMA -> * 0.7
+        3. ATR spike above threshold -> * 0.8
+        4. EMA 50 below min_price -> * 0.0 (Hard exclusion)
+        5. Average turnover below minimum -> * 0.0 (Hard exclusion)
+
+        Parameters:
+            df: DataFrame with indicator columns merged in.
+
+        Returns:
+            DataFrame with `penalty` (multiplier) and `penalty_reason` columns.
+        """
+        reasons = pd.Series(
+            [''] * len(df), index=df.index
         )
         
-        df['final_momentum_score'] = (
-            df['momentum_rsi_rank'] * self.params.momentum_rsi_rank_weight +
-            df['momentum_ppo_rank'] * self.params.momentum_ppo_rank_weight +
-            df['momentum_ppoh_rank'] * self.params.momentum_ppoh_rank_weight
+        # Start with neutral penalty multiplier
+        penalties = pd.Series([1.0] * len(df), index=df.index)
+
+        # Soft Penalty: Price < EMA 200
+        mask_200 = df['ema_200'] > df['close']
+        reasons[mask_200] += 'below_ema_200; '
+        # penalties[mask_200] *= self.params.ema_200_penalty
+        penalties[mask_200] *= 0
+
+        # Soft Penalty: Price < EMA 50
+        mask_50 = df['ema_50'] > df['close']
+        reasons[mask_50] += 'below_ema_50; '
+        # penalties[mask_50] *= self.params.ema_50_penalty
+        penalties[mask_50] *= 0
+
+        # Soft Penalty: High Volatility (ATR Spike)
+        mask_atr = (
+            df['atr_spike'] > self.params.atr_threshold
+        )
+        reasons[mask_atr] += 'atr_spike; '
+        # penalties[mask_atr] *= self.params.atr_spike_penalty
+        penalties[mask_atr] *= 0
+
+        # Hard Penalty: Penny Stocks (Multiplier = 0.0)
+        mask_price = df['ema_50'] < self.params.min_price
+        reasons[mask_price] += 'penny_stock; '
+        penalties[mask_price] = 0.0
+
+        # Hard Penalty: Low Liquidity (Multiplier = 0.0)
+        mask_turnover = (
+            df['avg_turnover_ema_20']
+            < self.params.min_turnover
+        )
+        reasons[mask_turnover] += 'low_turnover; '
+        penalties[mask_turnover] = 0.0
+
+        df['penalty_reason'] = reasons.str.rstrip('; ')
+        df['penalty_reason'] = (
+            df['penalty_reason'].replace('', None)
         )
         
-        df['final_vol_score'] = (
-            df['rvolume_rank'] * self.params.rvolume_rank_weight +
-            df['price_vol_corr_rank'] * self.params.price_vol_corr_rank_weight
-        )
-        
-        df['final_structure_score'] = (
-            df['structure_rank'] * self.params.structure_rank_weight +
-            df['structure_bb_rank'] * self.params.structure_bb_rank_weight
-        )
-        
-        # Calculate composite score
-        df['composite_score'] = (
-            self.params.trend_strength_weight * df['final_trend_score'] +
-            self.params.momentum_velocity_weight * df['final_momentum_score'] +
-            self.params.risk_efficiency_weight * df['efficiency_rank'] +
-            self.params.conviction_weight * df['final_vol_score'] +
-            self.params.structure_weight * df['final_structure_score']
-        )
-        
+        df['penalty'] = penalties
         return df
-    
+
     def generate_composite_scores(self):
+        """Generate composite scores incrementally (batch).
+
+        Fetches all pending percentiles and indicators in
+        single queries, calculates scores vectorised, and
+        bulk-inserts the results.
+
+        Returns:
+            Dict with message and record count.
+
+        Example:
+            >>> result = ScoreService().generate_composite_scores()
+            >>> print(result['records'])
         """
-        Generate composite scores incrementally from last calculated date.
-        Processes date by date for progress visibility.
-        """
-        logger.info("Starting incremental composite score generation...")
-        
-        last_score_date = score_repo.get_max_score_date()
-        
-        if last_score_date:
-            logger.info(f"Last score date: {last_score_date}")
-        else:
-            logger.info("No existing scores, processing all percentiles")
-        
-        # Get distinct dates from percentile table to process
-        from db import db
-        from models import PercentileModel
-        result = db.session.query(PercentileModel.percentile_date).distinct().order_by(PercentileModel.percentile_date).all()
-        all_dates = [r[0] for r in result]
-        
-        if last_score_date:
-            dates_to_process = [d for d in all_dates if d > last_score_date]
-        else:
-            dates_to_process = all_dates
-        
-        if not dates_to_process:
-            logger.info("No new dates to process")
-            return {"message": "No new percentiles to process", "records": 0}
-        
-        logger.info(f"Processing {len(dates_to_process)} dates...")
-        total_count = 0
-        
-        for i, percentile_date in enumerate(dates_to_process, 1):
-            logger.info(f"Processing date {i}/{len(dates_to_process)}: {percentile_date}")
-            
-            # Get percentiles for this date
-            percentiles = percentile_repo.get_percentiles_by_date(percentile_date)
+        try:
+            t_start = time.time()
+            logger.info(
+                "Starting batch composite score generation..."
+            )
+
+            last_score_date = score_repo.get_max_score_date()
+            if last_score_date:
+                logger.info(
+                    f"Last score date: {last_score_date}"
+                )
+
+            # Step 1: Fetch percentiles
+            t0 = time.time()
+            logger.info("[1/6] Fetching percentiles from DB...")
+            percentiles = (
+                percentile_repo.get_percentiles_after_date(
+                    last_score_date
+                )
+            )
             if not percentiles:
-                continue
-            
-            # Convert to DataFrame
-            df = pd.DataFrame([
-                {c.name: getattr(r, c.name) for c in r.__table__.columns}
+                logger.info("No new percentiles to process")
+                return {
+                    "message": "No new percentiles to process",
+                    "records": 0
+                }
+            logger.info(
+                f"[1/6] Fetched {len(percentiles)} percentile "
+                f"rows in {time.time() - t0:.2f}s"
+            )
+
+            # Step 2: Build percentiles DataFrame
+            t0 = time.time()
+            logger.info("[2/6] Building percentiles DataFrame...")
+            percentiles_df = pd.DataFrame([
+                {
+                    c.name: getattr(r, c.name)
+                    for c in r.__table__.columns
+                }
                 for r in percentiles
             ])
-            
-            # Calculate composite scores
-            df = self._calculate_composite_for_df(df)
-            
-            # Prepare records for insertion
-            score_records = df[[
+            n_dates = percentiles_df[
+                'percentile_date'
+            ].nunique()
+            logger.info(
+                f"[2/6] Built DataFrame: {len(percentiles_df)} rows, "
+                f"{n_dates} dates in {time.time() - t0:.2f}s"
+            )
+
+            # Step 3: Fetch indicators
+            t0 = time.time()
+            date_min = percentiles_df['percentile_date'].min()
+            date_max = percentiles_df['percentile_date'].max()
+            logger.info(
+                f"[3/6] Fetching indicators ({date_min} → {date_max})..."
+            )
+            indicators = (
+                indicators_repo.get_indicators_for_all_stocks(
+                    {
+                        "start_date": date_min,
+                        "end_date": date_max
+                    }
+                )
+            )
+
+            if indicators:
+                indicators_df = pd.DataFrame([
+                    {
+                        c.name: getattr(r, c.name)
+                        for c in r.__table__.columns
+                    }
+                    for r in indicators
+                ])
+                logger.info(
+                    f"[3/6] Fetched {len(indicators_df)} indicator "
+                    f"rows in {time.time() - t0:.2f}s"
+                )
+            else:
+                indicators_df = pd.DataFrame()
+                logger.warning(
+                    f"[3/6] No indicators found in {time.time() - t0:.2f}s — "
+                    "skipping penalties"
+                )
+
+            # Step 4: Calculate composite scores (vectorised)
+            t0 = time.time()
+            logger.info("[4/6] Calculating composite scores (vector multiply)...")
+            scores_df = self.calculate_composite_scores(
+                percentiles_df
+            )
+            logger.info(
+                f"[4/6] Scores calculated in {time.time() - t0:.2f}s"
+            )
+
+            # Step 5: Merge indicators and apply penalties
+            t0 = time.time()
+            logger.info("[5/6] Merging indicators & applying penalties...")
+            if not indicators_df.empty:
+                penalty_cols = [
+                    'tradingsymbol', 'date',
+                    'ema_200', 'ema_50',
+                    'atr_spike', 'avg_turnover_ema_20'
+                ]
+                available_cols = [
+                    c for c in penalty_cols
+                    if c in indicators_df.columns
+                ]
+                scores_df = pd.merge(
+                    scores_df,
+                    indicators_df[available_cols],
+                    left_on=[
+                        'tradingsymbol', 'percentile_date'
+                    ],
+                    right_on=['tradingsymbol', 'date'],
+                    how='left'
+                )
+                scores_df = self._apply_soft_penalties(
+                    scores_df
+                )
+                scores_df['composite_score'] = (
+                    scores_df['initial_composite_score']
+                    * scores_df['penalty']
+                )
+                penalized = (scores_df['penalty'] < 1).sum()
+                excluded = (scores_df['penalty'] == 0).sum()
+                logger.info(
+                    f"[5/6] Penalties applied in {time.time() - t0:.2f}s — "
+                    f"{penalized} penalized, {excluded} excluded"
+                )
+            else:
+                scores_df['penalty'] = 1
+                scores_df['penalty_reason'] = None
+                scores_df['composite_score'] = (
+                    scores_df['initial_composite_score']
+                )
+                logger.info(
+                    f"[5/6] No penalties applied (no indicators) "
+                    f"in {time.time() - t0:.2f}s"
+                )
+
+            # Select output columns
+            scores_df = scores_df[[
                 'tradingsymbol', 'percentile_date',
-                'final_trend_score', 'final_momentum_score', 
-                'final_vol_score', 'final_structure_score',
-                'composite_score'
-            ]].copy()
-            score_records.rename(columns={'percentile_date': 'score_date'}, inplace=True)
-            
-            # Insert into score table
-            records = score_records.to_dict('records')
+                'initial_composite_score', 'penalty',
+                'penalty_reason', 'composite_score'
+            ]]
+            scores_df.rename(
+                columns={'percentile_date': 'score_date'},
+                inplace=True
+            )
+
+            # Step 6: Bulk insert
+            t0 = time.time()
+            logger.info(f"[6/6] Bulk inserting {len(scores_df)} score records...")
+            records = scores_df.to_dict('records')
             result = score_repo.bulk_insert(records)
             count = len(result) if result else 0
-            total_count += count
-            logger.info(f"  Inserted {count} records for {percentile_date}")
-        
-        logger.info(f"Total: Inserted {total_count} score records")
-        return {"message": f"Generated {total_count} composite scores", "records": total_count}
-    
+
+            logger.info(
+                f"[6/6] Inserted {count} records "
+                f"across {n_dates} dates in {time.time() - t0:.2f}s"
+            )
+            logger.info(
+                f"Score generation complete — "
+                f"total elapsed: {time.time() - t_start:.2f}s"
+            )
+        except Exception as e:
+            logger.error(f"Error generating composite scores: {e}")
+            return {
+                "message": f"Error generating composite scores: {e}",
+                "records": 0
+            }
+        return {
+            "message": (
+                f"Generated {count} composite scores"
+            ),
+            "records": count
+        }
+
     def recalculate_all_scores(self):
-        """
-        Recalculate ALL composite scores from scratch.
+        """Recalculate ALL composite scores from scratch.
+
         Use this when strategy weights have been updated.
-        Processes date by date for progress visibility.
+
+        Returns:
+            Dict with message and record count.
+
+        Example:
+            >>> result = ScoreService().recalculate_all_scores()
         """
-        logger.info("Starting FULL score recalculation (weights may have changed)...")
-        
-        # Clear existing scores
+        logger.info(
+            "Starting FULL score recalculation "
+            "(weights may have changed)..."
+        )
+
         logger.info("Clearing existing score table...")
         score_repo.delete_all()
-        
-        # Now generate all scores
+
         return self.generate_composite_scores()
