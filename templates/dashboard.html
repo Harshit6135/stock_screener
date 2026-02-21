@@ -606,8 +606,13 @@
             </div>
             <div class="step-row">
                 <span>2. Update Market Data</span>
-                <label class="switch"><input type="checkbox" id="step-market" checked><span
-                        class="slider"></span></label>
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <label style="font-size:0.8rem; color:var(--text-muted); display:flex; align-items:center; gap:5px; cursor:pointer;">
+                        <input type="checkbox" id="step-historical"> Historical
+                    </label>
+                    <label class="switch"><input type="checkbox" id="step-market" checked><span
+                            class="slider"></span></label>
+                </div>
             </div>
             <div class="step-row">
                 <span>3. Calculate Indicators</span>
@@ -1240,6 +1245,7 @@
             const payload = {
                 init: document.getElementById('step-init').checked,
                 marketdata: document.getElementById('step-market').checked,
+                historical: document.getElementById('step-historical').checked,
                 indicators: document.getElementById('step-ind').checked,
                 percentile: document.getElementById('step-pct').checked,
                 score: document.getElementById('step-score').checked,
