@@ -5,1135 +5,1887 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Screener Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
     <style>
         :root {
-            --primary: #667eea;
-            --success: #38ef7d;
-            --info: #6dd5ed;
-            --bg: #0f0f1a;
-            --card: rgba(22, 33, 62, 0.8);
-            --accent: #00d9ff;
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
+            --bg-dark: #0f1115;
+            --bg-panel: #181b21;
+            --bg-input: #232730;
+            --text-main: #e0e6ed;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --border: #2d3748;
+            --font-main: 'Inter', sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
         }
 
         body {
-            font-family: 'Segoe UI', system-ui, sans-serif;
-            background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
-            color: #eee;
-            min-height: 100vh;
-            padding: 30px;
-        }
-
-        h1 {
-            text-align: center;
-            margin-bottom: 10px;
-            background: linear-gradient(90deg, #00d9ff, #667eea, #764ba2);
-            background-clip: text;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            font-size: 2.5rem;
-        }
-
-        .subtitle {
-            text-align: center;
-            color: #888;
-            margin-bottom: 30px;
-            font-size: 0.9rem;
-        }
-
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-
-        .card {
-            background: var(--card);
-            backdrop-filter: blur(10px);
-            border-radius: 16px;
-            padding: 25px;
-            margin-bottom: 25px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-        }
-
-        .btn-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 12px;
-        }
-
-        .btn-card {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: var(--font-main);
+            margin: 0;
+            padding: 0;
             display: flex;
             flex-direction: column;
-            padding: 20px;
-            border: none;
-            border-radius: 12px;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-align: center;
-            position: relative;
+            height: 100vh;
             overflow: hidden;
         }
 
-        .btn-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
-        }
-
-        .btn-card:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .btn-card .icon {
-            font-size: 24px;
-            margin-bottom: 8px;
-        }
-
-        .btn-card .label {
-            font-size: 12px;
-            opacity: 0.9;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #fff;
-        }
-
-        .btn-success {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-            color: #fff;
-        }
-
-        .btn-info {
-            background: linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%);
-            color: #fff;
-        }
-
-        .progress-bar {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            height: 4px;
-            background: rgba(255, 255, 255, 0.3);
-            width: 0%;
-            transition: width 0.3s;
-        }
-
-        .progress-bar.active {
-            animation: progress 3s linear forwards;
-            background: rgba(255, 255, 255, 0.8);
-        }
-
-        @keyframes progress {
-            0% {
-                width: 0%;
-            }
-
-            100% {
-                width: 100%;
-            }
-        }
-
-        .status {
-            padding: 15px 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            background: var(--card);
-            border-left: 4px solid var(--accent);
+        /* --- Header --- */
+        header {
+            background-color: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            padding: 0 20px;
+            height: 60px;
             display: flex;
             align-items: center;
-            gap: 12px;
+            justify-content: space-between;
+            flex-shrink: 0;
         }
 
-        .status.hidden {
-            display: none;
+        .logo {
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
-        .status.error {
-            border-left-color: #e74c3c;
+        .status-bar {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            display: flex;
+            gap: 15px;
         }
 
-        .status.success {
-            border-left-color: #38ef7d;
-        }
-
-        .spinner {
-            width: 18px;
-            height: 18px;
-            border: 2px solid #333;
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
+        /* --- Tabs --- */
         .tabs {
             display: flex;
-            gap: 8px;
-            margin-bottom: 20px;
+            gap: 2px;
+            background: var(--bg-dark);
+            padding: 10px 20px 0;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
         }
 
-        .tab {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.05);
-            color: #888;
+        .tab-btn {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-bottom: none;
+            color: var(--text-muted);
+            padding: 10px 20px;
             cursor: pointer;
-            transition: all 0.3s;
+            font-size: 0.9rem;
             font-weight: 500;
+            border-radius: 6px 6px 0 0;
+            transition: all 0.2s;
         }
 
-        .tab:hover {
-            background: rgba(255, 255, 255, 0.1);
+        .tab-btn:hover {
+            background: var(--bg-input);
+            color: var(--text-main);
         }
 
-        .tab.active {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .tab-btn.active {
+            background: var(--accent);
             color: #fff;
-        }
-
-        .filter-row {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 15px;
-            align-items: center;
-            flex-wrap: wrap;
-        }
-
-        .filter-row label {
-            color: #aaa;
-            font-size: 13px;
-        }
-
-        .filter-row input {
-            padding: 10px 15px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            background: rgba(0, 0, 0, 0.3);
-            color: #eee;
-            font-size: 14px;
-        }
-
-        .filter-row input:focus {
-            outline: none;
             border-color: var(--accent);
         }
 
-        .load-btn {
-            padding: 10px 20px;
+        /* --- Main Content --- */
+        .main-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            position: relative;
+        }
+
+        .tab-pane {
+            display: none;
+            height: 100%;
+        }
+
+        .tab-pane.active {
+            display: block;
+            animation: fadeIn 0.2s;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* --- Components --- */
+        .card {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
             border-radius: 8px;
-            border: none;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card h3 {
+            margin-top: 0;
+            font-size: 1rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn {
             background: var(--accent);
-            color: #000;
-            font-weight: 600;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
             cursor: pointer;
-            transition: all 0.3s;
+            font-weight: 500;
+            font-size: 0.9rem;
+            transition: background 0.2s;
         }
 
-        .load-btn:hover {
-            background: #fff;
+        .btn:hover {
+            background: var(--accent-hover);
         }
 
+        .btn:disabled {
+            background: var(--bg-input);
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .btn-success {
+            background: var(--success);
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-warning {
+            background: var(--warning);
+            color: #000;
+        }
+
+        .btn-warning:hover {
+            background: #d97706;
+        }
+
+        input,
+        select {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: var(--font-main);
+        }
+
+        /* --- Grid Layouts --- */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        .grid-4 {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        /* --- Tables --- */
         table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 13px;
+            font-size: 0.9rem;
         }
 
         th,
         td {
-            padding: 14px 16px;
+            padding: 10px;
             text-align: left;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid var(--border);
         }
 
         th {
-            background: rgba(0, 0, 0, 0.3);
-            color: var(--accent);
+            background: var(--bg-input);
+            color: var(--text-muted);
             font-weight: 600;
-            text-transform: uppercase;
-            font-size: 11px;
-            letter-spacing: 0.5px;
-            position: sticky;
-            top: 0;
         }
 
         tr:hover {
-            background: rgba(255, 255, 255, 0.03);
+            background: rgba(255, 255, 255, 0.02);
         }
 
-        .table-container {
-            overflow-x: auto;
-            max-height: 500px;
-            border-radius: 10px;
-            background: rgba(0, 0, 0, 0.2);
+        .text-right {
+            text-align: right;
+        }
+
+        .text-center {
+            text-align: center;
         }
 
         .badge {
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
             font-weight: 600;
         }
 
         .badge-buy {
-            background: rgba(56, 239, 125, 0.2);
-            color: #38ef7d;
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
         }
 
         .badge-sell {
-            background: rgba(231, 76, 60, 0.2);
-            color: #e74c3c;
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
         }
 
         .badge-swap {
-            background: rgba(102, 126, 234, 0.2);
-            color: #667eea;
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
         }
 
-        .badge-pending {
-            background: rgba(255, 193, 7, 0.2);
-            color: #ffc107;
+        .badge-neutral {
+            background: var(--bg-input);
+            color: var(--text-muted);
         }
 
-        .badge-executed {
-            background: rgba(56, 239, 125, 0.2);
-            color: #38ef7d;
+        .pos-val {
+            color: var(--success);
         }
 
-        .score {
-            font-weight: 700;
-            color: var(--accent);
+        .neg-val {
+            color: var(--danger);
         }
 
-        .hidden {
-            display: none;
+        /* --- Pipeline Specific --- */
+        .step-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px dashed var(--border);
         }
 
-        .empty {
-            text-align: center;
-            padding: 40px;
-            color: #666;
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
         }
 
-        .btn-execute {
-            padding: 6px 12px;
-            border-radius: 6px;
-            border: none;
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-            color: #000;
-            font-weight: 600;
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
             cursor: pointer;
-            font-size: 11px;
-            transition: all 0.3s;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--bg-input);
+            transition: .4s;
+            border-radius: 20px;
         }
 
-        .btn-execute:hover {
-            transform: scale(1.05);
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
         }
 
-        .btn-execute:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
+        input:checked+.slider {
+            background-color: var(--accent);
         }
 
-        /* Modal Styles */
-        .modal {
-            display: none;
+        input:checked+.slider:before {
+            transform: translateX(20px);
+        }
+
+        /* --- Console/Logs --- */
+        .console-output {
+            background: #000;
+            color: #bbc;
+            font-family: var(--font-mono);
+            padding: 15px;
+            border-radius: 6px;
+            height: 300px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+            white-space: pre-wrap;
+        }
+
+        .metric-card {
+            text-align: center;
+            background: var(--bg-panel);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 5px 0;
+        }
+
+        .metric-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        /* --- Loading Overlay --- */
+        #loading-overlay {
             position: fixed;
             top: 0;
             left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            z-index: 1000;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
             justify-content: center;
             align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(2px);
         }
 
-        .modal.active {
-            display: flex;
+        .hidden {
+            display: none !important;
         }
 
-        .modal-content {
-            background: var(--card);
-            border-radius: 16px;
-            padding: 30px;
-            max-width: 450px;
-            width: 90%;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid var(--bg-input);
+            border-top: 4px solid var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
         }
 
-        .modal-title {
-            font-size: 1.3rem;
-            margin-bottom: 20px;
-            color: var(--accent);
-        }
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
 
-        .form-group {
-            margin-bottom: 15px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            color: #aaa;
-            font-size: 13px;
-        }
-
-        .form-group input,
-        .form-group select {
-            width: 100%;
-            padding: 12px;
-            border-radius: 8px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            background: rgba(0, 0, 0, 0.3);
-            color: #eee;
-            font-size: 14px;
-        }
-
-        .form-group input:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
-
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .checkbox-group input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-        }
-
-        .modal-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        .modal-btn {
-            flex: 1;
-            padding: 12px;
-            border-radius: 8px;
-            border: none;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .modal-btn-primary {
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-            color: #000;
-        }
-
-        .modal-btn-cancel {
-            background: rgba(255, 255, 255, 0.1);
-            color: #aaa;
-        }
-
-        .modal-btn:hover {
-            transform: scale(1.02);
-        }
-
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            font-size: 13px;
-        }
-
-        .info-label {
-            color: #888;
-        }
-
-        .info-value {
-            color: #eee;
-            font-weight: 600;
+            100% {
+                transform: rotate(360deg);
+            }
         }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <h1>📊 Stock Screener</h1>
-        <p class="subtitle">Multi-factor momentum screening dashboard</p>
 
-        <div class="card" style="display: flex; justify-content: space-around; padding: 20px;">
-            <div style="text-align: center;">
-                <div style="color: #888; margin-bottom: 5px;">Total Investment</div>
-                <div id="summary-investment" style="font-size: 1.5rem; font-weight: bold; color: var(--success);">₹0.00
-                </div>
-            </div>
-            <div style="text-align: center;">
-                <div style="color: #888; margin-bottom: 5px;">Current Value</div>
-                <div id="summary-current-value" style="font-size: 1.5rem; font-weight: bold; color: #fff;">₹0.00</div>
-            </div>
-            <div style="text-align: center;">
-                <div style="color: #888; margin-bottom: 5px;">Capital Left</div>
-                <div id="summary-capital" style="font-size: 1.5rem; font-weight: bold; color: var(--accent);">₹0.00
-                </div>
-            </div>
-            <div style="text-align: center;">
-                <div style="color: #888; margin-bottom: 5px;">Returns</div>
-                <div id="summary-returns" style="font-size: 1.5rem; font-weight: bold; color: var(--info);">0.00%</div>
-                <div id="returns-label" style="font-size: 0.8rem; color: #666;">Absolute</div>
-            </div>
-            <div style="text-align: center; cursor: pointer;" onclick="openConfigDialog()">
-                <div style="color: #888; margin-bottom: 5px;">Risk Config</div>
-                <div style="font-size: 1.5rem;">⚙️</div>
-                <div style="font-size: 0.8rem; color: #666;">Settings</div>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="btn-grid">
-                <button class="btn-card btn-primary" id="btn-init" onclick="runAction('/api/v1/init', 'GET', this)">
-                    <span class="icon">🔧</span>Init App<span class="label">Day 0 Setup</span>
-                    <div class="progress-bar"></div>
-                </button>
-                <button class="btn-card btn-primary" id="btn-market"
-                    onclick="runAction('/api/v1/marketdata/update_all', 'GET', this)">
-                    <span class="icon">📈</span>Market Data<span class="label">Fetch Latest</span>
-                    <div class="progress-bar"></div>
-                </button>
-                <button class="btn-card btn-primary" id="btn-indicators"
-                    onclick="runAction('/api/v1/indicators/update_all', 'GET', this)">
-                    <span class="icon">📊</span>Indicators<span class="label">Calculate All</span>
-                    <div class="progress-bar"></div>
-                </button>
-                <button class="btn-card btn-success" id="btn-rank"
-                    onclick="runAction('/api/v1/ranking/update', 'GET', this)">
-                    <span class="icon">🏆</span>Rankings<span class="label">Generate Rankings</span>
-                    <div class="progress-bar"></div>
-                </button>
-                <button class="btn-card btn-success" id="btn-actions"
-                    onclick="runAction('/api/v1/actions/generate', 'POST', this, {})">
-                    <span class="icon">⚡</span>Actions<span class="label">Generate Trades</span>
-                    <div class="progress-bar"></div>
-                </button>
-                <button class="btn-card btn-info" onclick="loadTop20()">
-                    <span class="icon">🔝</span>Top 20<span class="label">View Rankings</span>
-                    <div class="progress-bar"></div>
-                </button>
-            </div>
-        </div>
-
-        <div id="status" class="status hidden">
+    <div id="loading-overlay" class="hidden">
+        <div style="text-align:center">
             <div class="spinner"></div>
-            <span id="status-text"></span>
+            <p id="loading-text" style="margin-top:15px; font-weight:500;">Processing...</p>
+        </div>
+    </div>
+
+    <!-- Approve Modal -->
+    <div id="approve-modal" class="hidden"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;">
+        <div
+            style="background:var(--card-bg);border:1px solid var(--border);border-radius:12px;padding:30px;min-width:400px;max-width:500px;">
+            <h3 style="margin-bottom:20px;" id="approve-modal-title">Approve Action</h3>
+            <input type="hidden" id="approve-action-id">
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Symbol</label>
+                <input type="text" id="approve-symbol" readonly
+                    style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-weight:600;">
+            </div>
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Units</label>
+                <input type="number" id="approve-units"
+                    style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);">
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Execution
+                    Price</label>
+                <input type="number" step="0.01" id="approve-price"
+                    style="width:100%;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);">
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button class="btn" onclick="closeApproveModal()" style="background:var(--bg);">Cancel</button>
+                <button class="btn btn-success" onclick="confirmApprove()">Confirm Approve</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manual Buy Modal -->
+    <div id="manual-buy-modal" class="hidden"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;">
+        <div
+            style="background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;padding:30px;min-width:400px;max-width:500px;">
+            <h3 style="margin-bottom:20px; color:var(--success);">Manual Buy</h3>
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Symbol</label>
+                <input type="text" id="mb-symbol" style="width:100%;" placeholder="e.g. RELIANCE">
+            </div>
+            <div class="grid-2" style="margin-bottom:15px;">
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Date</label>
+                    <input type="date" id="mb-date" style="width:100%;">
+                </div>
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Price</label>
+                    <input type="number" step="0.05" id="mb-price" style="width:100%;" oninput="calcUnits()">
+                </div>
+            </div>
+            <div class="grid-2" style="margin-bottom:15px;">
+                <div>
+                    <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Capital
+                        (₹)</label>
+                    <input type="number" id="mb-capital" style="width:100%;" oninput="calcUnits()">
+                </div>
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Units</label>
+                    <input type="number" id="mb-units" style="width:100%;" oninput="calcCapital()">
+                </div>
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Reason</label>
+                <input type="text" id="mb-reason" value="Manual Buy" style="width:100%;">
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button class="btn" onclick="document.getElementById('manual-buy-modal').classList.add('hidden')"
+                    style="background:var(--bg-input);">Cancel</button>
+                <button class="btn btn-success" onclick="submitManualBuy()">Submit Buy</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manual Sell Modal -->
+    <div id="manual-sell-modal" class="hidden"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;">
+        <div
+            style="background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;padding:30px;min-width:400px;max-width:500px;">
+            <h3 style="margin-bottom:20px; color:var(--danger);">Manual Sell</h3>
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Symbol</label>
+                <input type="text" id="ms-symbol" style="width:100%;" placeholder="e.g. RELIANCE">
+            </div>
+            <div class="grid-2" style="margin-bottom:15px;">
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Date</label>
+                    <input type="date" id="ms-date" style="width:100%;">
+                </div>
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Units</label>
+                    <input type="number" id="ms-units" style="width:100%;">
+                </div>
+            </div>
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Price</label>
+                <input type="number" step="0.05" id="ms-price" style="width:100%;">
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Reason</label>
+                <input type="text" id="ms-reason" value="Manual Sell" style="width:100%;">
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button class="btn" onclick="document.getElementById('manual-sell-modal').classList.add('hidden')"
+                    style="background:var(--bg-input);">Cancel</button>
+                <button class="btn btn-danger" onclick="submitManualSell()">Submit Sell</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Capital Event Modal -->
+    <div id="capital-event-modal" class="hidden"
+        style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:1001;display:flex;align-items:center;justify-content:center;">
+        <div
+            style="background:var(--bg-panel);border:1px solid var(--border);border-radius:12px;padding:30px;min-width:400px;max-width:500px;">
+            <h3 style="margin-bottom:20px; color:var(--warning);">Capital Event</h3>
+            <div class="grid-2" style="margin-bottom:15px;">
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Date</label>
+                    <input type="date" id="ce-date" style="width:100%;">
+                </div>
+                <div>
+                    <label
+                        style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Type</label>
+                    <select id="ce-type" style="width:100%;">
+                        <option value="infusion">Deposit (Infusion)</option>
+                        <option value="withdrawal">Withdrawal</option>
+                    </select>
+                </div>
+            </div>
+            <div style="margin-bottom:15px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Amount
+                    (₹)</label>
+                <input type="number" step="1000" id="ce-amount" style="width:100%;">
+            </div>
+            <div style="margin-bottom:20px;">
+                <label style="display:block;margin-bottom:5px;color:var(--text-muted);font-size:0.85rem;">Note</label>
+                <input type="text" id="ce-note" placeholder="Optional note" style="width:100%;">
+            </div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;">
+                <button class="btn" onclick="document.getElementById('capital-event-modal').classList.add('hidden')"
+                    style="background:var(--bg-input);">Cancel</button>
+                <button class="btn btn-warning" onclick="submitCapitalEvent()">Submit</button>
+            </div>
+        </div>
+    </div>
+
+    <header>
+        <div class="logo">
+            <span style="color:var(--accent)">ANTIGRAVITY</span> STOCK SCREENER
+        </div>
+    </header>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('pipeline')">Pipeline</button>
+        <button class="tab-btn" onclick="switchTab('portfolio')">Portfolio</button>
+        <button class="tab-btn" onclick="switchTab('actions')">Actions</button>
+        <button class="tab-btn" onclick="switchTab('backtest')">Backtest</button>
+        <button class="tab-btn" onclick="switchTab('config')">Configuration</button>
+    </div>
+
+    <!-- PIPELINE TAB -->
+    <div id="tab-pipeline" class="tab-pane active main-content">
+        <div class="card" style="max-width: 800px; margin: 0 auto;">
+            <h3>Data Pipeline Orchestration</h3>
+
+            <div class="step-row">
+                <span>1. Initialize Instruments (Kite Sync)</span>
+                <label class="switch"><input type="checkbox" id="step-init" checked><span class="slider"></span></label>
+            </div>
+            <div class="step-row">
+                <span>2. Update Market Data</span>
+                <label class="switch"><input type="checkbox" id="step-market" checked><span
+                        class="slider"></span></label>
+            </div>
+            <div class="step-row">
+                <span>3. Calculate Indicators</span>
+                <label class="switch"><input type="checkbox" id="step-ind" checked><span class="slider"></span></label>
+            </div>
+            <div class="step-row">
+                <span>4. Calculate Percentiles</span>
+                <label class="switch"><input type="checkbox" id="step-pct" checked><span class="slider"></span></label>
+            </div>
+            <div class="step-row">
+                <span>5. Calculate Scores</span>
+                <label class="switch"><input type="checkbox" id="step-score" checked><span
+                        class="slider"></span></label>
+            </div>
+            <div class="step-row">
+                <span>6. Generate Rankings</span>
+                <label class="switch"><input type="checkbox" id="step-rank" checked><span class="slider"></span></label>
+            </div>
+
+            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn" onclick="runPipeline()">Run Selected Steps</button>
+            </div>
+        </div>
+
+        <div class="card" style="max-width: 800px; margin: 20px auto;">
+            <h3>Sanitization & Cleanup</h3>
+            <div class="grid-2">
+                <div>
+                    <label>Cleanup Data After:</label>
+                    <input type="date" id="cleanup-date" style="width: 100%; margin-top: 5px;">
+                </div>
+                <div style="display:flex; align-items:flex-end;">
+                    <button class="btn btn-warning" onclick="runCleanup()">🛑 Delete Data</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="max-width: 800px; margin: 20px auto;">
+            <h3>Console Output</h3>
+            <div id="pipeline-console" class="console-output">Ready to run...</div>
+        </div>
+    </div>
+
+    <!-- PORTFOLIO TAB -->
+    <div id="tab-portfolio" class="tab-pane main-content">
+        <!-- Summary Cards -->
+        <div class="grid-3" id="summary-cards" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
+            <div class="metric-card">
+                <div class="metric-label">Portfolio Value</div>
+                <div class="metric-value" id="sum-val">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Invested Capital</div>
+                <div class="metric-value" id="sum-inv">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Unrealized Gain</div>
+                <div class="metric-value" id="sum-unrealized">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Realized Gain</div>
+                <div class="metric-value" id="sum-realized">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Remaining Cash</div>
+                <div class="metric-value" id="sum-cash">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Absolute Return %</div>
+                <div class="metric-value" id="sum-abs-return">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">XIRR (Annualized)</div>
+                <div class="metric-value" id="sum-xirr">-</div>
+            </div>
+        </div>
+
+        <!-- Equity Curve & Drawdown Charts -->
+        <div class="grid-2">
+            <div class="card">
+                <h3>Equity Curve</h3>
+                <div style="height:280px;">
+                    <canvas id="equityCurveChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Drawdown</h3>
+                <div style="height:280px;">
+                    <canvas id="drawdownChart"></canvas>
+                </div>
+            </div>
         </div>
 
         <div class="card">
-            <div class="tabs">
-                <button class="tab active" onclick="showTab('investments', this)">💼 Investments</button>
-                <button class="tab" onclick="showTab('actions', this)">📋 Actions</button>
-            </div>
-
-            <div id="investments-tab">
-                <div class="filter-row">
-                    <button class="load-btn" onclick="loadInvestments()">🔄 Load Investments</button>
-                    <button class="load-btn" onclick="openInvestDialog()"
-                        style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #fff;">➕ New
-                        Investment</button>
-                </div>
-                <div id="investments-table" class="table-container"></div>
-            </div>
-
-            <div id="actions-tab" class="hidden">
-                <div class="filter-row">
-                    <label>Filter by Date:</label>
-                    <input type="date" id="action-date" />
-                    <button class="load-btn" onclick="loadActions()">🔄 Load Actions</button>
-                </div>
-                <div id="actions-table" class="table-container"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Execute Action Modal -->
-    <div id="execute-modal" class="modal">
-        <div class="modal-content">
-            <h3 class="modal-title">✓ Execute Action</h3>
-            <div id="execute-info"></div>
-            <div id="execute-fields"></div>
-            <div class="modal-actions">
-                <button class="modal-btn modal-btn-cancel" onclick="closeModal('execute-modal')">Cancel</button>
-                <button class="modal-btn modal-btn-primary" onclick="submitExecute()">Execute Trade</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Add Investment Modal -->
-    <div id="invest-modal" class="modal">
-        <div class="modal-content">
-            <h3 class="modal-title">➕ Add Investment</h3>
-            <div class="form-group">
-                <label>Trading Symbol</label>
-                <input type="text" id="invest-symbol" placeholder="e.g., RELIANCE" />
-            </div>
-            <div class="form-group">
-                <label>Buy Price (₹)</label>
-                <input type="number" id="invest-price" step="0.01" placeholder="e.g., 2500.00" />
-            </div>
-            <div class="form-group">
-                <label>Number of Shares</label>
-                <input type="number" id="invest-units" placeholder="e.g., 10" />
-            </div>
-            <div class="form-group">
-                <label>Buy Date</label>
-                <input type="date" id="invest-date" />
-            </div>
-            <div class="form-group">
-                <div class="checkbox-group">
-                    <input type="checkbox" id="invest-strategy" checked />
-                    <label for="invest-strategy" style="margin: 0;">Include in Strategy (uncheck for manual
-                        management)</label>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <h3>Current Holdings</h3>
+                <div style="display:flex; gap:10px; align-items:center;">
+                    <button class="btn btn-warning"
+                        style="font-size:0.85rem; padding:6px 12px; background:#f59e0b; color:black;"
+                        onclick="openCapitalEventModal()">💰 Capital Event</button>
+                    <button class="btn btn-success" style="font-size:0.85rem; padding:6px 12px;"
+                        onclick="openManualBuy()">+ Buy</button>
+                    <button class="btn btn-danger" style="font-size:0.85rem; padding:6px 12px;"
+                        onclick="openManualSell()">- Sell</button>
+                    <button class="btn" style="font-size:0.85rem; padding:6px 12px;" onclick="refreshPortfolio()">↻
+                        Prices</button>
                 </div>
             </div>
-            <div class="modal-actions">
-                <button class="modal-btn modal-btn-cancel" onclick="closeModal('invest-modal')">Cancel</button>
-                <button class="modal-btn modal-btn-primary" onclick="submitInvest()">Add Investment</button>
+            <div style="overflow-x:auto;">
+                <table id="holdings-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Entry Date</th>
+                            <th>Units</th>
+                            <th class="text-right">Avg Price</th>
+                            <th class="text-right">Current</th>
+                            <th class="text-right">Invested</th>
+                            <th class="text-right">Value</th>
+                            <th class="text-right">Unrealized P&L</th>
+                            <th class="text-right">%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="holdings-body"></tbody>
+                    <tfoot id="holdings-foot"></tfoot>
+                </table>
+            </div>
+        </div>
+
+        <!-- Trade Journal -->
+        <div class="card">
+            <h3>Trade Journal (Closed Trades)</h3>
+            <div style="overflow-x:auto;">
+                <table id="journal-table">
+                    <thead>
+                        <tr>
+                            <th>Entry Date</th>
+                            <th>Exit Date</th>
+                            <th>Symbol</th>
+                            <th>Units</th>
+                            <th class="text-right">Entry Price</th>
+                            <th class="text-right">Exit Price</th>
+                            <th class="text-right">P&L</th>
+                            <th class="text-right">Return %</th>
+                            <th>Days</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody id="journal-body">
+                        <tr>
+                            <td colspan="10" class="text-center" style="padding:20px;">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="grid-2">
+            <div class="card">
+                <h3>Top 20 Rankings</h3>
+                <table id="rankings-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Symbol</th>
+                            <th class="text-right">Score</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="card">
+                <h3>Portfolio Distribution</h3>
+                <div style="height:250px;">
+                    <canvas id="portfolioChart"></canvas>
+                </div>
+                <p style="text-align:center; color:var(--text-muted); margin-top:20px;">
+                    Positions: <span id="pos-count">0</span> / <span id="max-pos">-</span>
+                </p>
             </div>
         </div>
     </div>
 
-    <!-- Risk Config Modal -->
-    <div id="config-modal" class="modal">
-        <div class="modal-content">
-            <h3 class="modal-title">⚙️ Risk Configuration</h3>
-            <div class="form-group">
-                <label>Current Capital (₹)</label>
-                <input type="number" id="conf-capital" placeholder="e.g., 100000" />
+    <!-- ACTIONS TAB -->
+    <div id="tab-actions" class="tab-pane main-content">
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; gap:15px; align-items:center;">
+                    <h3>Trading Actions</h3>
+                    <input type="date" id="actions-date" onchange="loadActions()">
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button class="btn btn-success" style="font-size:0.85rem;" onclick="openManualBuy()">+ Manual
+                        Buy</button>
+                    <button class="btn btn-danger" style="font-size:0.85rem;" onclick="openManualSell()">- Manual
+                        Sell</button>
+                    <button class="btn btn-warning" onclick="rejectPending()">Reject All Pending</button>
+                    <button class="btn btn-success" onclick="approveAll()">Approve All</button>
+                    <button class="btn" onclick="processActions()">Process Actions</button>
+                </div>
             </div>
-            <div class="form-group">
-                <label>Risk Per Trade (%)</label>
-                <input type="number" id="conf-risk" step="0.1" placeholder="e.g., 1.0" />
+
+            <div style="margin: 15px 0;">
+                <button class="btn" onclick="generateActions()">✨ Generate New Actions</button>
+                <span style="margin-left:10px; font-size:0.8rem; color:var(--text-muted);">
+                    Based on latest Friday rankings
+                </span>
             </div>
-            <div class="form-group">
-                <label>Max Positions</label>
-                <input type="number" id="conf-max-pos" placeholder="e.g., 15" />
-            </div>
-            <div class="form-group">
-                <label>Stop Loss Multiplier (ATR x)</label>
-                <input type="number" id="conf-sl-mult" step="0.1" placeholder="e.g., 2.0" />
-            </div>
-            <div class="modal-actions">
-                <button class="modal-btn modal-btn-cancel" onclick="closeModal('config-modal')">Cancel</button>
-                <button class="modal-btn modal-btn-primary" onclick="submitConfig()">Save Configuration</button>
-            </div>
-        </div>
-    </div>
 
-    <!-- Sell Investment Modal -->
-    <div id="sell-modal" class="modal">
-        <div class="modal-content">
-            <h3 class="modal-title">📉 Sell Investment</h3>
-            <div class="form-group">
-                <label>Trading Symbol</label>
-                <input type="text" id="sell-symbol" readonly style="background: rgba(255,255,255,0.05); color: #888;" />
-            </div>
-            <div class="form-group">
-                <label>Sell Price (₹)</label>
-                <input type="number" id="sell-price" step="0.01" />
-            </div>
-            <div class="form-group">
-                <label>Number of Shares</label>
-                <input type="number" id="sell-units" />
-            </div>
-            <div class="form-group">
-                <label>Sell Date</label>
-                <input type="date" id="sell-date" />
-            </div>
-            <div class="modal-actions">
-                <button class="modal-btn modal-btn-cancel" onclick="closeModal('sell-modal')">Cancel</button>
-                <button class="modal-btn modal-btn-primary" onclick="submitSell()">Sell</button>
-            </div>
-        </div>
-    </div>
-    <script>
-        let currentAction = null;
-        let portfolioData = {};
-        let showXirr = true;
-
-        document.addEventListener('DOMContentLoaded', () => {
-            fetchPortfolioSummary();
-        });
-
-        async function fetchPortfolioSummary() {
-            try {
-                const res = await fetch('/api/v1/portfolio/summary');
-                if (res.ok) {
-                    portfolioData = await res.json();
-                    updateSummaryDisplay();
-                }
-            } catch (e) {
-                console.error("Failed to fetch summary", e);
-            }
-        }
-
-        function updateSummaryDisplay() {
-            if (!portfolioData) return;
-
-            document.getElementById('summary-investment').innerText = '₹' + (portfolioData.total_investment ||
-                0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            document.getElementById('summary-current-value').innerText = '₹' + (portfolioData.current_value ||
-                0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            document.getElementById('summary-capital').innerText = '₹' + (portfolioData.capital_left ||
-                0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-            const returnsEl = document.getElementById('summary-returns');
-            const labelEl = document.getElementById('returns-label');
-
-            const absRet = portfolioData.absolute_return || 0;
-            returnsEl.innerText = '₹' + absRet.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            returnsEl.style.color = absRet >= 0 ? '#38ef7d' : '#e74c3c';
-            labelEl.innerText = 'Absolute';
-        }
-
-        // function toggleReturns() { ... } // Removed
-
-        function toggleReturns() {
-            showXirr = !showXirr;
-            updateSummaryDisplay();
-        }
-
-        function showStatus(msg, type = 'info') {
-            const el = document.getElementById('status');
-            const txt = document.getElementById('status-text');
-            txt.textContent = msg;
-            el.className = 'status ' + type;
-            el.querySelector('.spinner').style.display = type === 'info' ? 'block' : 'none';
-        }
-
-        function hideStatus() {
-            document.getElementById('status').classList.add('hidden');
-        }
-
-        async function runAction(url, method, btn, body = null) {
-            const bar = btn.querySelector('.progress-bar');
-            bar.classList.add('active');
-            btn.disabled = true;
-            showStatus('Processing... This may take a while.');
-            try {
-                const opts = { method };
-                if (body) {
-                    opts.headers = { 'Content-Type': 'application/json' };
-                    opts.body = JSON.stringify(body);
-                }
-                const res = await fetch(url, opts);
-                const text = await res.text();
-                showStatus(res.ok ? '✅ ' + text : '❌ ' + text, res.ok ? 'success' : 'error');
-            } catch (e) {
-                showStatus('❌ ' + e.message, 'error');
-            }
-            bar.classList.remove('active');
-            bar.style.width = '0%';
-            btn.disabled = false;
-        }
-
-        function showTab(tab, btn) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            btn.classList.add('active');
-            document.getElementById('investments-tab').classList.toggle('hidden', tab !== 'investments');
-            document.getElementById('actions-tab').classList.toggle('hidden', tab !== 'actions');
-        }
-
-        async function loadInvestments() {
-            try {
-                const res = await fetch('/api/v1/portfolio/invested');
-                const data = await res.json();
-                if (!data.length) {
-                    document.getElementById('investments-table').innerHTML = '<p class="empty">No investments found.</p>';
-                    return;
-                }
-                let html = `<table>
+            <table id="actions-table">
+                <thead>
                     <tr>
-                        <th>Rank</th>
-                        <th>Symbol</th>
-                        <th>Score</th>
-                        <th>Buy Price</th>
-                        <th>Shares</th>
-                        <th>Buy Date</th>
-                        <th>Stop Loss</th>
-                        <th>Strategy</th>
-                        <th>Action</th>
-                    </tr>`;
-                data.forEach(r => {
-                    const strategyBadge = r.include_in_strategy
-                        ? '<span class="badge badge-executed">Yes</span>'
-                        : '<span class="badge badge-pending">Manual</span>';
-                    html += `<tr>
-            <td><strong>${r.rank !== null && r.rank !== undefined ? '#' + r.rank : '-'}</strong></td>
-            <td><strong>${r.tradingsymbol}</strong></td>
-            <td class="score">${r.current_score?.toFixed(2) || '-'}</td>
-            <td>₹${r.buy_price?.toFixed(2) || '-'}</td>
-            <td>${r.num_shares}</td>
-            <td>${r.buy_date || '-'}</td>
-            <td>₹${r.current_stop_loss?.toFixed(2) || '-'}</td>
-            <td>${strategyBadge}</td>
-            <td><button class="btn-execute" style="background: var(--info); color: #fff;"
-                    onclick="openSellDialog('${r.tradingsymbol}', ${r.num_shares})">Sell</button></td>
-        </tr>`;
-                });
-                document.getElementById('investments-table').innerHTML = html + '</table>';
-            } catch (e) {
-                document.getElementById('investments-table').innerHTML = '<p class="empty">Error loading data.</p>';
-            }
-        }
-
-        async function loadActions() {
-            try {
-                let url = '/api/actions';
-                const dt = document.getElementById('action-date').value;
-                if (dt) url += '?date=' + dt;
-                const res = await fetch(url);
-                const data = await res.json();
-                if (!data.length) {
-                    document.getElementById('actions-table').innerHTML = '<p class="empty">No actions found.</p>';
-                    return;
-                }
-                let html = `<table>
-                    <tr>
-                        <th>Id</th>
                         <th>Date</th>
                         <th>Type</th>
                         <th>Symbol</th>
-                        <th>Score</th>
                         <th>Units</th>
                         <th>Price</th>
-                        <th>Amount</th>
-                        <th>Swap From</th>
+                        <th>SL</th>
                         <th>Status</th>
-                        <th>Action</th>
-                    </tr>`;
-                data.forEach(r => {
-                    const badge = r.action_type === 'BUY' ? 'buy' : r.action_type === 'SELL' ? 'sell' : 'swap';
-                    const statusBadge = r.status === 'PENDING' ? 'pending' : 'executed';
-                    const swapInfo = r.action_type === 'SWAP'
-                        ? `${r.swap_from_symbol || '-'} (${r.swap_from_units || 0} @ ₹${r.swap_from_price?.toFixed(2) || '-'})`
-                        : '-';
-                    const executeBtn = r.status === 'PENDING'
-                        ? `<button class="btn-execute" onclick='openExecuteDialog(${JSON.stringify(r)})'>✓ Execute</button>`
-                        : '<span style="color: #38ef7d;">Done</span>';
-                    html += `<tr>
-            <td>${r.id}</td>
-            <td>${r.action_date}</td>
-            <td><span class="badge badge-${badge}">${r.action_type}</span></td>
-            <td><strong>${r.tradingsymbol}</strong></td>
-            <td class="score">${r.composite_score?.toFixed(2) || '-'}</td>
-            <td>${r.units}</td>
-            <td>₹${r.expected_price?.toFixed(2) || '-'}</td>
-            <td>₹${r.amount?.toFixed(2) || '-'}</td>
-            <td>${swapInfo}</td>
-            <td><span class="badge badge-${statusBadge}">${r.status}</span></td>
-            <td>${executeBtn}</td>
-        </tr>`;
-                });
-                document.getElementById('actions-table').innerHTML = html + '</table>';
-            } catch (e) {
-                document.getElementById('actions-table').innerHTML = '<p class="empty">Error loading data.</p>';
-            }
-        }
-
-        async function loadTop20() {
-            showStatus('Loading Top 20 rankings...');
-            try {
-                const res = await fetch('/api/v1/ranking/top/20');
-                const data = await res.json();
-                if (!data.length) {
-                    showStatus('No rankings found.', 'error');
-                    return;
-                }
-                let html = `<table>
+                        <th>Reason</th>
+                        <th class="text-center">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="actions-body">
                     <tr>
-                        <th>#</th>
-                        <th>Symbol</th>
-                        <th>Score</th>
-                        <th>Invested</th>
-                    </tr>`;
-                data.forEach(r => {
-                    html += `<tr>
-            <td>${r.rank}</td>
-            <td><strong>${r.tradingsymbol}</strong></td>
-            <td class="score">${r.composite_score?.toFixed(2)}</td>
-            <td>${r.is_invested ? '✅' : '-'}</td>
-        </tr>`;
-                });
-                document.getElementById('investments-table').innerHTML = html + '</table>';
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                document.querySelector('.tab').classList.add('active');
-                document.getElementById('investments-tab').classList.remove('hidden');
-                document.getElementById('actions-tab').classList.add('hidden');
-                showStatus('Top 20 loaded successfully', 'success');
-            } catch (e) {
-                showStatus('Error: ' + e.message, 'error');
-            }
+                        <td colspan="8" class="text-center" style="padding:20px;">Select a date to view actions</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- CONFIG TAB -->
+    <div id="tab-config" class="tab-pane main-content">
+        <div class="card" style="max-width:600px; margin:0 auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>Strategy Configuration</h3>
+                <select id="config-select" onchange="loadConfig()">
+                    <option value="momentum_config">Momentum Strategy</option>
+                </select>
+            </div>
+
+            <div class="grid-2" style="margin-top:20px;">
+                <div>
+                    <label>Initial Capital</label>
+                    <input type="number" id="conf-initial" style="width:100%">
+                </div>
+                <div>
+                    <label>Risk Threshold (%)</label>
+                    <input type="number" step="0.1" id="conf-risk" style="width:100%">
+                </div>
+                <div>
+                    <label>Max Positions</label>
+                    <input type="number" id="conf-max" style="width:100%">
+                </div>
+                <div>
+                    <label>Exit Threshold (%)</label>
+                    <input type="number" id="conf-exit" style="width:100%">
+                </div>
+                <div>
+                    <label>SL Multiplier (ATR)</label>
+                    <input type="number" step="0.1" id="conf-sl-mult" style="width:100%">
+                </div>
+                <div>
+                    <label>SL Step (% of gain)</label>
+                    <input type="number" step="0.01" id="conf-sl-step" style="width:100%">
+                </div>
+            </div>
+
+            <div style="margin-top:20px; text-align:right;">
+                <button class="btn btn-success" onclick="saveConfig()">Save Configuration</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BACKTEST TAB -->
+    <div id="tab-backtest" class="tab-pane main-content">
+        <div class="card">
+            <h3>Run Backtest</h3>
+            <div style="display:flex; gap:15px; align-items:flex-end; flex-wrap:wrap;">
+                <div>
+                    <label style="display:block; font-size:0.8rem; margin-bottom:5px;">Start Date</label>
+                    <input type="date" id="bt-start" value="2024-01-01">
+                </div>
+                <div>
+                    <label style="display:block; font-size:0.8rem; margin-bottom:5px;">End Date</label>
+                    <input type="date" id="bt-end">
+                </div>
+                <div>
+                    <label style="display:block; font-size:0.8rem; margin-bottom:5px;">Strategy</label>
+                    <select id="bt-config">
+                        <option value="momentum_config">Momentum Strategy</option>
+                    </select>
+                </div>
+                <div style="display:flex; gap:15px; padding-bottom:10px;">
+                    <label style="font-size:0.9rem; cursor:pointer;"><input type="checkbox" id="bt-daily-sl" checked>
+                        Daily SL Check</label>
+                    <label style="font-size:0.9rem; cursor:pointer;"><input type="checkbox" id="bt-mid-week" checked>
+                        Mid-Week Buy</label>
+                </div>
+                <button class="btn" style="background:#8b5cf6;" onclick="runBacktest()">▶ Run Backtest</button>
+            </div>
+        </div>
+
+        <!-- Backtest Results -->
+        <div id="bt-results" class="hidden">
+            <!-- Metrics -->
+            <div class="grid-4" style="margin-bottom:20px;">
+                <div class="metric-card">
+                    <div class="metric-label">Total Return</div>
+                    <div class="metric-value" id="bt-return" style="color:var(--success)">-</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Sharpe Ratio</div>
+                    <div class="metric-value" id="bt-sharpe">-</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Max Drawdown</div>
+                    <div class="metric-value" id="bt-dd" style="color:var(--danger)">-</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-label">Win Rate</div>
+                    <div class="metric-value" id="bt-winrate">-</div>
+                </div>
+            </div>
+
+            <!-- Costs, Tax & Efficiency -->
+            <div class="grid-4" style="margin-bottom:20px;">
+                <div class="card metric-card">
+                    <div class="metric-label">Transaction Costs</div>
+                    <div class="metric-value" id="bt-costs" style="color:var(--danger)">-</div>
+                </div>
+                <div class="card metric-card">
+                    <div class="metric-label">Estimated Tax</div>
+                    <div class="metric-value" id="bt-tax" style="color:var(--danger)">-</div>
+                </div>
+                <div class="card metric-card">
+                    <div class="metric-label">Net Return (Post-Tax)</div>
+                    <div class="metric-value" id="bt-net-ret">-</div>
+                </div>
+                <div class="card metric-card">
+                    <div class="metric-label">Efficiency</div>
+                    <div class="metric-value" id="bt-efficiency" style="font-size:1rem;">-</div>
+                </div>
+            </div>
+
+            <!-- Equity Curve -->
+            <div class="card">
+                <h3>Portfolio Equity Curve</h3>
+                <div style="height:300px;">
+                    <canvas id="equityChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Trades -->
+            <div class="card">
+                <h3>Trade Log</h3>
+                <div style="max-height:400px; overflow-y:auto;">
+                    <table id="bt-trades-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Entry Date</th>
+                                <th>Exit Date</th>
+                                <th class="text-right">PnL</th>
+                                <th class="text-right">Return %</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bt-trades-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Raw Report -->
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <h3>Details</h3>
+                    <button class="btn" style="font-size:0.8rem;"
+                        onclick="document.getElementById('bt-raw-log').classList.toggle('hidden')">Toggle Raw
+                        Report</button>
+                </div>
+                <div id="bt-raw-log" class="console-output hidden"
+                    style="margin-top:15px; background:#1e1e1e; color:#eee; height:500px;"></div>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- Navigation ---
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+
+            document.getElementById('tab-' + tabId).classList.add('active');
+            // Find button that calls this function with this tabId
+            // Simple approach: select by index or just iterate. 
+            // Better: add specific IDs to buttons. But iterating is fine.
+            const btns = document.querySelectorAll('.tab-btn');
+            if (tabId === 'pipeline') btns[0].classList.add('active');
+            if (tabId === 'portfolio') { btns[1].classList.add('active'); loadPortfolio(); }
+            if (tabId === 'actions') { btns[2].classList.add('active'); initActionsDate(); }
+            if (tabId === 'backtest') { btns[3].classList.add('active'); initBacktestDates(); }
+            if (tabId === 'config') { btns[4].classList.add('active'); loadConfig(); }
         }
 
-        async function openConfigDialog() {
+        function showLoading(msg) {
+            document.getElementById('loading-text').innerText = msg;
+            document.getElementById('loading-overlay').classList.remove('hidden');
+        }
+        function hideLoading() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+
+        function log(msg) {
+            const el = document.getElementById('pipeline-console');
+            const time = new Date().toLocaleTimeString();
+            el.innerHTML += `<div><span style="color:#555">[${time}]</span> ${msg}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        // --- MANUAL TRADES ---
+        function openManualBuy() {
+            document.getElementById('mb-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('mb-symbol').value = '';
+            document.getElementById('mb-units').value = '';
+            document.getElementById('mb-price').value = '';
+            document.getElementById('mb-capital').value = '';
+            document.getElementById('manual-buy-modal').classList.remove('hidden');
+        }
+
+        function openManualSell() {
+            document.getElementById('ms-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('ms-symbol').value = '';
+            document.getElementById('ms-units').value = '';
+            document.getElementById('ms-price').value = '';
+            document.getElementById('manual-sell-modal').classList.remove('hidden');
+        }
+
+        async function submitManualBuy() {
+            const symbol = document.getElementById('mb-symbol').value.toUpperCase();
+            const date = document.getElementById('mb-date').value;
+            const units = parseInt(document.getElementById('mb-units').value);
+            const price = parseFloat(document.getElementById('mb-price').value);
+            const reason = document.getElementById('mb-reason').value;
+
+            if (!symbol || !units || !price) return alert('Fill all fields');
+
+            const payload = [{
+                symbol: symbol,
+                date: date,
+                units: units,
+                price: price,
+                reason: reason,
+                config_name: "momentum_config"
+            }];
+
+            showLoading('Processing Buy...');
             try {
-                // Fetch current config
-                const res = await fetch('/api/v1/portfolio/risk_config');
-                if (res.ok) {
-                    const data = await res.json();
-                    document.getElementById('conf-capital').value = data.current_capital;
-                    document.getElementById('conf-risk').value = data.risk_per_trade;
-                    document.getElementById('conf-max-pos').value = data.max_positions;
-                    document.getElementById('conf-sl-mult').value = data.stop_loss_multiplier || 2.0;
-                }
-            } catch (e) {
-                console.log("No config found, using defaults");
-            }
-            openModal('config-modal');
-        }
-
-        async function submitConfig() {
-            const body = {
-                current_capital: parseFloat(document.getElementById('conf-capital').value) || 100000,
-                risk_per_trade: parseFloat(document.getElementById('conf-risk').value) || 1000,
-                max_positions: parseInt(document.getElementById('conf-max-pos').value) || 15,
-                stop_loss_multiplier: parseFloat(document.getElementById('conf-sl-mult').value) || 2.0
-            };
-
-            showStatus('Saving configuration...');
-            try {
-                const res = await fetch('/api/v1/portfolio/risk_config', {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                if (res.ok) {
-                    showStatus('Config saved!', 'success');
-                    closeModal('config-modal');
-                    fetchPortfolioSummary(); // reload summary with new capital
-                } else {
-                    const txt = await res.text();
-                    showStatus('Error: ' + txt, 'error');
-                }
-            } catch (e) {
-                showStatus('Error: ' + e.message, 'error');
-            }
-        }
-        // Modal functions
-        function openModal(id) {
-            document.getElementById(id).classList.add('active');
-        }
-
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('active');
-            currentAction = null;
-        }
-
-        function openExecuteDialog(action) {
-            currentAction = action;
-            let infoHtml = `
-    <div class="info-row"><span class="info-label">Type</span><span class="info-value">${action.action_type}</span>
-    </div>
-    <div class="info-row"><span class="info-label">Symbol</span><span class="info-value">${action.tradingsymbol}</span>
-    </div>
-    <div class="info-row"><span class="info-label">Expected Units</span><span class="info-value">${action.units}</span>
-    </div>
-    <div class="info-row"><span class="info-label">Expected Price</span><span
-            class="info-value">₹${action.expected_price?.toFixed(2) || '-'}</span></div>
-    `;
-
-            let fieldsHtml = '';
-
-            if (action.action_type === 'BUY') {
-                fieldsHtml = `
-    <div class="form-group">
-        <label>Actual Buy Price (₹)</label>
-        <input type="number" id="exec-buy-price" step="0.01" value="${action.expected_price || ''}" />
-    </div>
-    <div class="form-group">
-        <label>Actual Units</label>
-        <input type="number" id="exec-units" value="${action.units}" />
-    </div>
-    `;
-            } else if (action.action_type === 'SELL') {
-                fieldsHtml = `
-    <div class="form-group">
-        <label>Actual Sell Price (₹)</label>
-        <input type="number" id="exec-sell-price" step="0.01" value="${action.expected_price || ''}" />
-    </div>
-    `;
-            } else if (action.action_type === 'SWAP') {
-                infoHtml += `
-    <div class="info-row"><span class="info-label">Sell Symbol</span><span
-            class="info-value">${action.swap_from_symbol}</span></div>
-    <div class="info-row"><span class="info-label">Sell Units</span><span
-            class="info-value">${action.swap_from_units}</span></div>
-    `;
-                fieldsHtml = `
-    <div class="form-group">
-        <label>Actual Sell Price for ${action.swap_from_symbol} (₹)</label>
-        <input type="number" id="exec-sell-price" step="0.01" value="${action.swap_from_price || ''}" />
-    </div>
-    <div class="form-group">
-        <label>Actual Buy Price for ${action.tradingsymbol} (₹)</label>
-        <input type="number" id="exec-buy-price" step="0.01" value="${action.expected_price || ''}" />
-    </div>
-    <div class="form-group">
-        <label>Actual Units for ${action.tradingsymbol}</label>
-        <input type="number" id="exec-units" value="${action.units}" />
-    </div>
-    `;
-            }
-
-            document.getElementById('execute-info').innerHTML = infoHtml;
-            document.getElementById('execute-fields').innerHTML = fieldsHtml;
-            openModal('execute-modal');
-        }
-
-        async function submitExecute() {
-            if (!currentAction) return;
-
-            const payload = {};
-            const buyPriceEl = document.getElementById('exec-buy-price');
-            const sellPriceEl = document.getElementById('exec-sell-price');
-            const unitsEl = document.getElementById('exec-units');
-
-            if (buyPriceEl) payload.actual_buy_price = parseFloat(buyPriceEl.value);
-            if (sellPriceEl) payload.actual_sell_price = parseFloat(sellPriceEl.value);
-            if (unitsEl) payload.actual_units = parseInt(unitsEl.value);
-            console.log(currentAction)
-            try {
-                const res = await fetch(`/api/v1/actions/${currentAction.id}/execute`, {
+                const res = await fetch('/api/v1/investment/manual/buy', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-
+                const data = await res.json();
                 if (res.ok) {
-                    showStatus('✅ Trade executed successfully!', 'success');
-                    closeModal('execute-modal');
-                    loadActions();
-                    fetchPortfolioSummary();
+                    alert('Success: ' + data.message);
+                    document.getElementById('manual-buy-modal').classList.add('hidden');
+                    loadPortfolio();
                 } else {
-                    const err = await res.json();
-                    showStatus('❌ ' + (err.message || 'Execution failed'), 'error');
+                    alert('Error: ' + data.message);
                 }
-            } catch (e) {
-                showStatus('❌ ' + e.message, 'error');
-            }
+            } catch (e) { alert(e.message); }
+            hideLoading();
         }
 
-        function openInvestDialog() {
-            document.getElementById('invest-symbol').value = '';
-            document.getElementById('invest-price').value = '';
-            document.getElementById('invest-units').value = '';
-            document.getElementById('invest-date').value = new Date().toISOString().split('T')[0]; // Default to today
-            document.getElementById('invest-strategy').checked = true;
-            openModal('invest-modal');
-        }
+        async function submitManualSell() {
+            const symbol = document.getElementById('ms-symbol').value.toUpperCase();
+            const date = document.getElementById('ms-date').value;
+            const units = parseInt(document.getElementById('ms-units').value);
+            const price = parseFloat(document.getElementById('ms-price').value);
+            const reason = document.getElementById('ms-reason').value;
 
-        async function submitInvest() {
-            const symbol = document.getElementById('invest-symbol').value.trim().toUpperCase();
-            const price = parseFloat(document.getElementById('invest-price').value);
-            const units = parseInt(document.getElementById('invest-units').value);
-            const includeInStrategy = document.getElementById('invest-strategy').checked;
+            if (!symbol || !units || !price) return alert('Fill all fields');
 
-            if (!symbol || !price || !units) {
-                showStatus('❌ Please fill all fields', 'error');
-                return;
-            }
+            const payload = {
+                symbol: symbol,
+                date: date,
+                units: units,
+                price: price,
+                reason: reason
+            };
 
+            showLoading('Processing Sell...');
             try {
-                const res = await fetch('/api/v1/portfolio/invested', {
+                const res = await fetch('/api/v1/investment/manual/sell', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    alert('Success: ' + data.message);
+                    document.getElementById('manual-sell-modal').classList.add('hidden');
+                    loadPortfolio();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (e) { alert(e.message); }
+            hideLoading();
+        }
+
+        // --- CAPITAL EVENTS ---
+        function openCapitalEventModal() {
+            document.getElementById('ce-date').value = new Date().toISOString().split('T')[0];
+            document.getElementById('ce-amount').value = '';
+            document.getElementById('ce-note').value = '';
+            document.getElementById('capital-event-modal').classList.remove('hidden');
+        }
+
+        async function submitCapitalEvent() {
+            const date = document.getElementById('ce-date').value;
+            const type = document.getElementById('ce-type').value;
+            const amount = parseFloat(document.getElementById('ce-amount').value);
+            const note = document.getElementById('ce-note').value;
+
+            if (!amount || amount <= 0) return alert('Enter valid amount');
+
+            showLoading('Processing Capital Event...');
+            try {
+                const res = await fetch('/api/v1/investment/capital-events', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        tradingsymbol: symbol,
-                        buy_price: price,
-                        num_shares: units,
-                        buy_date: document.getElementById('invest-date').value || undefined,
-                        include_in_strategy: includeInStrategy
+                        date: date,
+                        event_type: type,
+                        amount: amount,
+                        note: note
                     })
                 });
-
+                const data = await res.json();
                 if (res.ok) {
-                    showStatus('✅ Investment added successfully!', 'success');
-                    closeModal('invest-modal');
-                    loadInvestments();
-                    fetchPortfolioSummary();
+                    alert('Success: ' + data.message);
+                    document.getElementById('capital-event-modal').classList.add('hidden');
+                    loadPortfolio();
                 } else {
-                    const err = await res.json();
-                    showStatus('❌ ' + (err.message || 'Failed to add investment'), 'error');
+                    alert('Error: ' + data.message);
                 }
-            } catch (e) {
-                showStatus('❌ ' + e.message, 'error');
+            } catch (e) { alert(e.message); }
+            hideLoading();
+        }
+
+
+        // --- CALCULATOR ---
+        function calcUnits() {
+            const capital = parseFloat(document.getElementById('mb-capital').value) || 0;
+            const price = parseFloat(document.getElementById('mb-price').value) || 0;
+            if (capital > 0 && price > 0) {
+                document.getElementById('mb-units').value = Math.floor(capital / price);
             }
         }
-        // Sell Logic
-        function openSellDialog(symbol, shares) {
-            document.getElementById('sell-symbol').value = symbol;
-            // document.getElementById('sell-price').value = inv.current_value / inv.num_shares; // Can't guess exact price,
-            // maybe leave blank
-            document.getElementById('sell-price').value = '';
-            document.getElementById('sell-units').value = shares;
-            document.getElementById('sell-date').valueAsDate = new Date();
-            openModal('sell-modal');
+
+        function calcCapital() {
+            const units = parseInt(document.getElementById('mb-units').value) || 0;
+            const price = parseFloat(document.getElementById('mb-price').value) || 0;
+            if (units > 0 && price > 0) {
+                document.getElementById('mb-capital').value = (units * price).toFixed(2);
+            }
         }
 
-        async function submitSell() {
+        // --- Init Helpers ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Set today's date for inputs
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('cleanup-date').value = today;
+            document.getElementById('cleanup-date').value = today;
+
+            // Auto-load portfolio on start
+            switchTab('portfolio');
+        });
+
+        // --- PIPELINE ---
+        async function runPipeline() {
             const payload = {
-                tradingsymbol: document.getElementById('sell-symbol').value,
-                sell_price: parseFloat(document.getElementById('sell-price').value),
-                num_shares: parseInt(document.getElementById('sell-units').value),
-                sell_date: document.getElementById('sell-date').value
+                init: document.getElementById('step-init').checked,
+                marketdata: document.getElementById('step-market').checked,
+                indicators: document.getElementById('step-ind').checked,
+                percentile: document.getElementById('step-pct').checked,
+                score: document.getElementById('step-score').checked,
+                ranking: document.getElementById('step-rank').checked
             };
 
-            if (!payload.sell_price || !payload.num_shares) {
-                showStatus('Please fill all fields', 'error');
+            showLoading('Running Pipeline... this may take a while');
+            log('--> Starting pipeline execution...');
+
+            try {
+                const res = await fetch('/api/v1/app/run-pipeline', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    log('✅ Pipeline Complete!');
+                    Object.entries(data.results).forEach(([step, status]) => {
+                        log(`   • ${step}: ${status}`);
+                    });
+                } else {
+                    log(`❌ Error: ${data.message || 'Unknown error'}`);
+                }
+            } catch (e) {
+                log(`❌ Network Error: ${e.message}`);
+            }
+            hideLoading();
+        }
+
+        async function runCleanup() {
+            const date = document.getElementById('cleanup-date').value;
+            if (!date) return alert('Select a date');
+            if (!confirm(`Are you sure you want to delete data after ${date}? This cannot be undone.`)) return;
+
+            showLoading('Cleaning up data...');
+            try {
+                const res = await fetch(`/api/v1/app/cleanup?start_date=${date}`, { method: 'DELETE' });
+                const data = await res.json();
+                log(`🗑 Cleanup result: ${data.message}`);
+            } catch (e) {
+                log(`❌ Cleanup failed: ${e.message}`);
+            }
+            hideLoading();
+        }
+
+        // --- PORTFOLIO ---
+        let portfolioChartInstance = null;
+
+        async function loadPortfolio() {
+            showLoading('Loading Portfolio...');
+
+            try {
+                // 1. Load Config (for max positions)
+                // We assume momentum_config for now, or we could make this dynamic
+                const cRes = await fetch('/api/v1/config/momentum_config');
+                const config = await cRes.json();
+                const maxPositions = config.max_positions || 15;
+                document.getElementById('max-pos').innerText = maxPositions;
+
+                // 2. Load Holdings (Latest)
+                const hRes = await fetch('/api/v1/investment/holdings');
+                const holdings = await hRes.json();
+                renderHoldings(holdings);
+                renderPortfolioChart(holdings);
+
+                // 3. Load Summary (Latest)
+                const sRes = await fetch('/api/v1/investment/summary');
+                const summary = await sRes.json();
+
+                if (summary && summary.portfolio_value) {
+                    const fmt = (v) => parseFloat(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+                    document.getElementById('sum-val').innerText = '₹' + fmt(summary.portfolio_value);
+                    document.getElementById('sum-inv').innerText = '₹' + fmt(summary.invested_value || 0);
+
+                    const unrealized = parseFloat(summary.unrealized_gain || 0);
+                    const realized = parseFloat(summary.realized_gain || 0);
+
+                    const elUnrealized = document.getElementById('sum-unrealized');
+                    elUnrealized.innerText = '₹' + fmt(unrealized);
+                    elUnrealized.className = 'metric-value ' + (unrealized >= 0 ? 'pos-val' : 'neg-val');
+
+                    const elRealized = document.getElementById('sum-realized');
+                    elRealized.innerText = '₹' + fmt(realized);
+                    elRealized.className = 'metric-value ' + (realized >= 0 ? 'pos-val' : 'neg-val');
+
+                    document.getElementById('sum-cash').innerText = '₹' + fmt(summary.remaining_capital || 0);
+                    document.getElementById('pos-count').innerText = holdings.length;
+
+                    // Absolute Return %
+                    const absReturn = parseFloat(summary.gain_percentage || 0);
+                    const elAbsReturn = document.getElementById('sum-abs-return');
+                    elAbsReturn.innerText = absReturn.toFixed(2) + '%';
+                    elAbsReturn.className = 'metric-value ' + (absReturn >= 0 ? 'pos-val' : 'neg-val');
+
+                    // XIRR
+                    const xirr = summary.xirr;
+                    const elXirr = document.getElementById('sum-xirr');
+                    if (xirr !== null && xirr !== undefined) {
+                        elXirr.innerText = parseFloat(xirr).toFixed(2) + '%';
+                        elXirr.className = 'metric-value ' + (xirr >= 0 ? 'pos-val' : 'neg-val');
+                    } else {
+                        elXirr.innerText = 'N/A';
+                    }
+                } else {
+                    ['sum-val', 'sum-inv', 'sum-unrealized', 'sum-realized', 'sum-cash', 'sum-abs-return', 'sum-xirr'].forEach(id => {
+                        document.getElementById(id).innerText = '-';
+                    });
+                }
+
+                // 4. Load Rankings (Latest)
+                const rRes = await fetch('/api/v1/ranking/top/20');
+                const rankings = await rRes.json();
+                renderRankings(rankings);
+
+                // 5. Load Equity Curve & Drawdown
+                loadEquityCurve();
+
+                // 6. Load Trade Journal
+                loadTradeJournal();
+
+            } catch (e) {
+                console.error(e);
+            }
+            hideLoading();
+        }
+
+        function renderPortfolioChart(holdings) {
+            const canvas = document.getElementById('portfolioChart');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+
+            if (portfolioChartInstance) {
+                portfolioChartInstance.destroy();
+            }
+
+            if (!holdings || holdings.length === 0) {
                 return;
             }
 
-            // Route call
-            const btn = document.querySelector('#sell-modal .modal-btn-primary');
-            btn.disabled = true;
-            btn.innerText = 'Selling...';
+            const labels = [];
+            const data = [];
+            const colors = [];
 
+            holdings.forEach((h, i) => {
+                const price = parseFloat(h.current_price || 0);
+                const units = parseFloat(h.units || 0);
+                const val = price * units;
+
+                // Only include non-zero positions to avoid clutter and NaNs
+                if (val > 0.01) {
+                    labels.push(h.symbol);
+                    data.push(val);
+                    colors.push(`hsl(${i * 360 / holdings.length}, 70%, 60%)`);
+                }
+            });
+
+            if (data.length === 0) return;
+
+            portfolioChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: colors,
+                        borderWidth: 1,
+                        borderColor: '#181b21'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { color: '#94a3b8' } }
+                    }
+                }
+            });
+        }
+
+
+
+        function renderHoldings(holdings) {
+            const tbody = document.getElementById('holdings-body');
+            const tfoot = document.getElementById('holdings-foot');
+            tbody.innerHTML = '';
+            tfoot.innerHTML = '';
+
+            if (!holdings || !holdings.length) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center">No holdings found for this date</td></tr>';
+                return;
+            }
+
+            let totalInv = 0, totalVal = 0, totalPnL = 0;
+
+            holdings.forEach(h => {
+                const entryPrice = parseFloat(h.entry_price || 0);
+                const currentPrice = parseFloat(h.current_price || 0);
+                const units = parseFloat(h.units || 0);
+
+                const inv = entryPrice * units;
+                const val = currentPrice * units;
+                const pnl = val - inv;
+                const pnlPct = inv !== 0 ? (pnl / inv) * 100 : 0;
+
+                totalInv += inv;
+                totalVal += val;
+                totalPnL += pnl;
+
+                const row = `<tr>
+                    <td><strong>${h.symbol}</strong></td>
+                    <td>${h.entry_date}</td>
+                    <td>${units}</td>
+                    <td class="text-right">₹${entryPrice.toFixed(2)}</td>
+                    <td class="text-right">₹${currentPrice.toFixed(2)}</td>
+                    <td class="text-right">₹${inv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right">₹${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right ${pnl >= 0 ? 'pos-val' : 'neg-val'}">₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right ${pnl >= 0 ? 'pos-val' : 'neg-val'}">${pnlPct.toFixed(2)}%</td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+
+            // Totals
+            const totalRow = `<tr style="font-weight:700; background:#232730;">
+                    <td colspan="5">TOTALS</td>
+                    <td class="text-right">₹${totalInv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right">₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}">₹${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}">${totalInv !== 0 ? ((totalPnL / totalInv) * 100).toFixed(2) : '0.00'}%</td>
+                </tr>`;
+            tfoot.innerHTML = totalRow;
+        }
+
+        function renderRankings(rankings) {
+            const body = document.querySelector('#rankings-table tbody');
+            body.innerHTML = '';
+            rankings.forEach(r => {
+                const row = `<tr>
+                    <td>#${r.rank}</td>
+                    <td>${r.tradingsymbol}</td>
+                    <td class="text-right">${r.composite_score.toFixed(2)}</td>
+                </tr>`;
+                body.innerHTML += row;
+            });
+        }
+
+        // --- ACTIONS ---
+        async function initActionsDate() {
+            // Fetch available dates
+            const res = await fetch('/api/v1/actions/dates');
+            const dates = await res.json();
+            if (dates.length > 0) {
+                // select latest
+                document.getElementById('actions-date').value = dates[0]; // assumes sorted desc
+                loadActions();
+            }
+        }
+
+        async function generateActions() {
+            showLoading('Generating Actions...');
             try {
-                const res = await fetch('/api/v1/portfolio/sell', {
+                const res = await fetch('/api/v1/actions/generate?config_name=momentum_config', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    alert('Actions Generated: ' + data.message);
+                    loadActions();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (e) { alert(e.message); }
+            hideLoading();
+        }
+
+        async function loadActions() {
+            const date = document.getElementById('actions-date').value;
+            if (!date) return;
+
+            showLoading('Loading Actions...');
+            const res = await fetch(`/api/v1/actions/?date=${date}`);
+            const actions = await res.json();
+
+            const tbody = document.getElementById('actions-body');
+            tbody.innerHTML = '';
+
+            if (!actions.length) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center">No actions found</td></tr>';
+                hideLoading();
+                return;
+            }
+
+            actions.forEach(a => {
+                const badgeClass = a.type === 'buy' ? 'badge-buy' : a.type === 'sell' ? 'badge-sell' : 'badge-swap';
+
+                let actionBtn = '';
+                if (a.status === 'Pending') {
+                    actionBtn = `
+                    <button class="badge badge-buy" style="border:none;cursor:pointer;" onclick="openApproveModal('${a.action_id}', '${a.symbol}', ${a.units}, ${a.execution_price || a.prev_close || 0})">Approve</button>
+                        <button class="badge badge-sell" style="border:none;cursor:pointer;" onclick="updateAction('${a.action_id}', 'Rejected')">Reject</button>
+                `;
+                }
+
+                tbody.innerHTML += `<tr>
+                    <td>${a.action_date}</td>
+                    <td><span class="badge ${badgeClass}">${a.type.toUpperCase()}</span></td>
+                    <td><b>${a.symbol}</b></td>
+                    <td>${a.units}</td>
+                    <td>${a.execution_price || a.prev_close || '-'}</td>
+                    <td>${a.stop_loss ? '₹' + parseFloat(a.stop_loss).toFixed(2) : '-'}</td>
+                    <td>${a.status}</td>
+                    <td style="font-size:0.8rem; color:#aaa;">${a.reason || ''}</td>
+                    <td class="text-center">${actionBtn}</td>
+                </tr>`;
+            });
+            hideLoading();
+        }
+
+        async function updateAction(id, status) {
+            await fetch(`/api/v1/actions/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: status })
+            });
+            loadActions();
+        }
+
+        async function approveAll() {
+            const date = document.getElementById('actions-date').value;
+            if (!confirm('Approve all pending actions for ' + date + '?')) return;
+
+            await fetch(`/api/v1/actions/approve?date=${date}&config_name=momentum_config`, { method: 'POST' });
+            loadActions();
+        }
+
+        async function rejectPending() {
+            // Not exposed as bulk endpoint in plan, but can iterate or add backend endpoint. 
+            // Ideally we add a backend endpoint, but for now lets skip implementation or do loop
+            alert("Feature requires backend endpoint '/reject-all'. Use individual reject for now.");
+        }
+
+        async function processActions() {
+            const date = document.getElementById('actions-date').value;
+            if (!confirm('Process all APPROVED actions into holdings for ' + date + '?')) return;
+
+            await fetch(`/api/v1/actions/process?date=${date}`, { method: 'POST' });
+            alert('Processing complete. Check Portfolio.');
+            loadActions();
+        }
+
+        // --- APPROVE MODAL ---
+        function openApproveModal(actionId, symbol, units, price) {
+            document.getElementById('approve-action-id').value = actionId;
+            document.getElementById('approve-symbol').value = symbol;
+            document.getElementById('approve-units').value = units;
+            document.getElementById('approve-price').value = price;
+            document.getElementById('approve-modal-title').innerText = 'Approve: ' + symbol;
+            document.getElementById('approve-modal').classList.remove('hidden');
+        }
+
+        function closeApproveModal() {
+            document.getElementById('approve-modal').classList.add('hidden');
+        }
+
+        async function confirmApprove() {
+            const actionId = document.getElementById('approve-action-id').value;
+            const units = parseInt(document.getElementById('approve-units').value);
+            const price = parseFloat(document.getElementById('approve-price').value);
+
+            if (!units || !price) {
+                alert('Please enter valid units and execution price.');
+                return;
+            }
+
+            await fetch(`/api/v1/actions/${actionId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'Approved', units: units, execution_price: price.toString() })
+            });
+            closeApproveModal();
+            loadActions();
+        }
+
+        // --- EQUITY CURVE & DRAWDOWN ---
+        let equityChartInstance = null;
+        let drawdownChartInstance = null;
+
+        async function loadEquityCurve() {
+            try {
+                const res = await fetch('/api/v1/investment/summary/history');
+                const data = await res.json();
+                if (!data || !data.length) return;
+
+                const labels = data.map(d => d.date);
+                const values = data.map(d => parseFloat(d.portfolio_value || 0));
+
+                // Compute drawdown
+                let peak = values[0];
+                const drawdowns = values.map(v => {
+                    if (v > peak) peak = v;
+                    return peak > 0 ? ((v - peak) / peak) * 100 : 0;
+                });
+
+                // Equity Curve
+                const eqCtx = document.getElementById('equityCurveChart').getContext('2d');
+                if (equityChartInstance) equityChartInstance.destroy();
+
+                const gradient = eqCtx.createLinearGradient(0, 0, 0, 280);
+                gradient.addColorStop(0, 'rgba(0, 200, 150, 0.3)');
+                gradient.addColorStop(1, 'rgba(0, 200, 150, 0.02)');
+
+                equityChartInstance = new Chart(eqCtx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Portfolio Value',
+                            data: values,
+                            borderColor: '#00c896',
+                            backgroundColor: gradient,
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { display: true, ticks: { maxTicksLimit: 8, color: '#888' }, grid: { display: false } },
+                            y: { display: true, ticks: { color: '#888', callback: v => '₹' + (v / 1000).toFixed(0) + 'K' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                        }
+                    }
+                });
+
+                // Drawdown Chart
+                const ddCtx = document.getElementById('drawdownChart').getContext('2d');
+                if (drawdownChartInstance) drawdownChartInstance.destroy();
+
+                const ddGradient = ddCtx.createLinearGradient(0, 0, 0, 280);
+                ddGradient.addColorStop(0, 'rgba(255, 75, 75, 0.02)');
+                ddGradient.addColorStop(1, 'rgba(255, 75, 75, 0.25)');
+
+                drawdownChartInstance = new Chart(ddCtx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Drawdown %',
+                            data: drawdowns,
+                            borderColor: '#ff4b4b',
+                            backgroundColor: ddGradient,
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 2,
+                            pointHoverRadius: 5,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { display: true, ticks: { maxTicksLimit: 8, color: '#888' }, grid: { display: false } },
+                            y: { display: true, ticks: { color: '#888', callback: v => v.toFixed(1) + '%' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                        }
+                    }
+                });
+            } catch (e) {
+                console.error('Equity curve error:', e);
+            }
+        }
+
+        // --- TRADE JOURNAL ---
+        async function loadTradeJournal() {
+            try {
+                const res = await fetch('/api/v1/investment/trade-journal');
+                const trades = await res.json();
+                const tbody = document.getElementById('journal-body');
+                tbody.innerHTML = '';
+
+                if (!trades || !trades.length) {
+                    tbody.innerHTML = '<tr><td colspan="10" class="text-center" style="padding:20px;">No closed trades yet</td></tr>';
+                    return;
+                }
+
+                trades.forEach(t => {
+                    const pnlClass = t.pnl >= 0 ? 'pos-val' : 'neg-val';
+                    tbody.innerHTML += `<tr>
+                        <td>${t.entry_date}</td>
+                        <td>${t.exit_date}</td>
+                        <td><b>${t.symbol}</b></td>
+                        <td>${t.units}</td>
+                        <td class="text-right">₹${t.entry_price.toFixed(2)}</td>
+                        <td class="text-right">₹${t.exit_price.toFixed(2)}</td>
+                        <td class="text-right ${pnlClass}">₹${t.pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="text-right ${pnlClass}">${t.return_pct.toFixed(2)}%</td>
+                        <td>${t.days_held}</td>
+                        <td style="font-size:0.8rem;color:#aaa;">${t.reason}</td>
+                    </tr>`;
+                });
+            } catch (e) {
+                console.error('Trade journal error:', e);
+                document.getElementById('journal-body').innerHTML = '<tr><td colspan="10" class="text-center">Failed to load</td></tr>';
+            }
+        }
+
+        // --- CONFIG ---
+        async function loadConfig() {
+            const name = document.getElementById('config-select').value;
+            const res = await fetch(`/api/v1/config/${name}`);
+            const data = await res.json();
+
+            document.getElementById('conf-initial').value = data.initial_capital;
+            document.getElementById('conf-risk').value = data.risk_threshold;
+            document.getElementById('conf-max').value = data.max_positions;
+            document.getElementById('conf-exit').value = data.exit_threshold;
+            document.getElementById('conf-sl-mult').value = data.sl_multiplier;
+            document.getElementById('conf-sl-step').value = data.sl_step_percent;
+        }
+
+        async function saveConfig() {
+            const name = document.getElementById('config-select').value;
+            const payload = {
+                initial_capital: parseFloat(document.getElementById('conf-initial').value),
+                risk_threshold: parseFloat(document.getElementById('conf-risk').value),
+                max_positions: parseInt(document.getElementById('conf-max').value),
+                exit_threshold: parseFloat(document.getElementById('conf-exit').value),
+                sl_multiplier: parseFloat(document.getElementById('conf-sl-mult').value),
+                sl_step_percent: parseFloat(document.getElementById('conf-sl-step').value),
+            };
+
+            await fetch(`/api/v1/config/${name}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            alert('Configuration Saved!');
+        }
+
+        // --- BACKTEST ---
+        function initBacktestDates() {
+            const today = new Date();
+            const start = new Date();
+            start.setFullYear(today.getFullYear() - 1);
+            document.getElementById('bt-start').value = start.toISOString().split('T')[0];
+            document.getElementById('bt-end').value = today.toISOString().split('T')[0];
+        }
+
+        let backtestChartInstance = null;
+
+        async function runBacktest() {
+            const payload = {
+                start_date: document.getElementById('bt-start').value,
+                end_date: document.getElementById('bt-end').value,
+                config_name: document.getElementById('bt-config').value,
+                check_daily_sl: document.getElementById('bt-daily-sl').checked,
+                mid_week_buy: document.getElementById('bt-mid-week').checked
+            };
+
+            showLoading('Running Backtest... (this takes time)');
+            try {
+                const res = await fetch('/api/v1/backtest/run', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
 
+                const data = await res.json();
+
                 if (res.ok) {
-                    showStatus('Sell executed successfully!', 'success');
-                    closeModal('sell-modal');
-                    loadInvestments();
-                    fetchPortfolioSummary();
+                    document.getElementById('bt-results').classList.remove('hidden');
+
+                    // Render Metrics
+                    const sum = data.summary || {};
+                    const metrics = sum.metrics || {}; // Depending on structure
+
+                    // We need to parse summary correctly. 
+                    // Based on runner.py, get_summary returns risk_monitor.get_summary()
+                    // which has { metrics: {...}, final_value... }
+
+                    document.getElementById('bt-return').innerText = (sum.total_return || 0).toFixed(2) + '%';
+                    document.getElementById('bt-sharpe').innerText = (sum.sharpe_ratio || 0).toFixed(2);
+                    document.getElementById('bt-dd').innerText = (sum.max_drawdown || 0).toFixed(2) + '%';
+                    document.getElementById('bt-winrate').innerText = (sum.win_rate || 0).toFixed(2) + '%';
+
+                    // Populate Cost & Tax Metrics
+                    document.getElementById('bt-costs').innerText = '₹' + (sum.total_transaction_costs || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    document.getElementById('bt-tax').innerText = '₹' + (sum.total_tax || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+                    const netRetPct = sum.net_post_tax_return_pct || 0;
+                    const netRetAbs = sum.net_post_tax_return || 0;
+                    document.getElementById('bt-net-ret').innerText = `₹${netRetAbs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${netRetPct.toFixed(2)}%)`;
+
+                    const grossGain = (sum.final_value || 0) - (sum.initial_capital || 0);
+                    let eff = 0;
+                    if (grossGain > 0) {
+                        eff = (netRetAbs / grossGain) * 100;
+                    }
+                    document.getElementById('bt-efficiency').innerText = eff.toFixed(1) + '% retained';
+
+                    // Render Chart
+                    renderEquityChart(data.equity_curve);
+
+                    // Render Trades
+                    const tbody = document.getElementById('bt-trades-body');
+                    tbody.innerHTML = '';
+                    const trades = data.trades || [];
+                    const sellTrades = trades.filter(t => t.type === 'SELL');
+
+                    sellTrades.forEach(t => {
+                        const tr = `<tr>
+                            <td>${t.symbol}</td>
+                            <td>${t.type}</td>
+                            <td>${t.entry_date}</td>
+                            <td>${t.exit_date}</td>
+                            <td class="text-right ${t.pnl >= 0 ? 'pos-val' : 'neg-val'}">${t.pnl.toFixed(2)}</td>
+                            <td class="text-right">${((t.pnl / (t.price * t.units)) * 100).toFixed(2)}%</td>
+                        </tr>`;
+                        tbody.innerHTML += tr;
+                    });
+
+                    // Raw log
+                    document.getElementById('bt-raw-log').innerText = data.report_text;
+
                 } else {
-                    const txt = await res.text();
-                    showStatus('Error: ' + txt, 'error');
+                    alert('Backtest Failed: ' + data.message);
                 }
-            } catch (e) {
-                showStatus('Error: ' + e.message, 'error');
-            }
-            btn.disabled = false;
-            btn.innerText = 'Sell';
+
+            } catch (e) { console.error(e); alert('Error running backtest'); }
+            hideLoading();
         }
+
+        function renderEquityChart(values) {
+            const ctx = document.getElementById('equityChart').getContext('2d');
+
+            if (backtestChartInstance) {
+                backtestChartInstance.destroy();
+            }
+
+            const labels = values.map((_, i) => i); // simple index for now, usually dates
+
+            backtestChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Portfolio Equity',
+                        data: values,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.1,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: { display: false },
+                        y: {
+                            grid: { color: '#2d3748' },
+                            ticks: { color: '#94a3b8' }
+                        }
+                    }
+                }
+            });
+        }
+
+        async function refreshPortfolio() {
+            // Always sync latest
+            showLoading('Syncing Prices...');
+            try {
+                const res = await fetch('/api/v1/investment/sync-prices', { method: 'POST' });
+                const dat = await res.json();
+                if (!res.ok) throw new Error(dat.message);
+                console.log("Sync complete:", dat.message);
+            } catch (e) {
+                console.error("Failed to sync prices", e);
+            }
+            await loadPortfolio();
+            hideLoading();
+        }
+
     </script>
 </body>
 

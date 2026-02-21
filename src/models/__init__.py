@@ -7,7 +7,11 @@ from .percentile_model import PercentileModel
 from .score_model import ScoreModel
 from .ranking_model import RankingModel
 from .actions_model import ActionsModel
-from .investments_model import InvestmentsHoldingsModel, InvestmentsSummaryModel
+from .investments_model import (
+    InvestmentsHoldingsModel,
+    InvestmentsSummaryModel,
+    CapitalEventModel,
+)
 
 
 __all__ = [
@@ -21,5 +25,6 @@ __all__ = [
     "RankingModel",
     "ActionsModel",
     "InvestmentsHoldingsModel",
-    "InvestmentsSummaryModel"
+    "InvestmentsSummaryModel",
+    "CapitalEventModel",
 ]

@@ -61,6 +61,11 @@ class MarketDataRepository:
         return query.order_by(MarketDataModel.date.desc()).first()
 
     @staticmethod
+    def get_latest_marketdata(tradingsymbol):
+        """Fetch the latest market data for a tradingsymbol (alias)"""
+        return MarketDataRepository.get_latest_date_by_symbol(tradingsymbol)
+
+    @staticmethod
     def get_prices_for_all_stocks(date_range):
         """Fetch the latest market data for a tradingsymbol"""
         query = MarketDataModel.query

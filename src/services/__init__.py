@@ -7,6 +7,7 @@ from .percentile_service import PercentileService
 from .score_service import ScoreService
 from .ranking_service import RankingService
 from .actions_service import ActionsService
+from .investment_service import InvestmentService
 
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "ScoreService",
     "RankingService",
     "ActionsService",
+    "InvestmentService",
     "FactorsService",
     "TradingEngine",
     "HoldingSnapshot",
