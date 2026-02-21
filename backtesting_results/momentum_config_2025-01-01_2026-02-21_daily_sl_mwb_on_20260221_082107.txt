@@ -1,0 +1,273 @@
+======================================================================
+  BACKTEST RESULTS REPORT
+  Generated: 2026-02-21 08:21:07
+======================================================================
+
+[ CONFIGURATION ]
+  Config Name       : momentum_config
+  Start Date        : 2025-01-01
+  End Date          : 2026-02-21
+  Daily SL          : True
+  Mid-Week Buy      : True
+  Initial Capital   :      200,000.00
+  Max Positions     : 15
+  Risk Threshold    : 1.0
+  Buffer Percent    : 0.25
+  Exit Threshold    : 40.0
+  SL Multiplier     : 2.0
+  SL Step Percent   : 0.1
+  ATR Fallback Pct   : 0.03
+
+[ PERFORMANCE METRICS ]
+  Final Portfolio   :      336,670.33
+  Total Return      :     +136,670.33  (+68.34%)
+  CAGR              :     +57.97%
+  XIRR              :     +51.06%
+  Max Drawdown      :      16.90%
+  Sharpe Ratio      :       1.57
+  Sortino Ratio     :       3.18
+  Calmar Ratio      :       3.43
+
+[ TRADE STATISTICS ]
+  Total Trades      : 195
+  Win Rate          :      40.51%
+  Profit Factor     :       1.55
+  Expectancy/Trade  :    +539.86
+  Avg Holding Days  :       25.5
+  Winners           : 79
+  Losers            : 116
+  Avg Win           :       +3,735.41
+  Avg Loss          :       -1,636.42
+  Best Trade        : MIDWEST +75,102.50
+  Worst Trade       : RMDRIP -5,817.17
+
+[ TRANSACTION COSTS ]
+  Total Buy Value   :    3,544,399.47
+  Total Sell Value  :    3,649,672.41
+  Total Turnover    :    7,194,071.88
+  ---
+  Buy Side Costs    :        4,228.07
+  Sell Side Costs   :        6,341.24
+  Total Costs       :       10,569.31
+  ---
+  Brokerage         :            0.00
+  STT               :        7,194.14
+  GST               :           46.13
+  Stamp Duty        :          531.64
+  Cost as % Return  :       7.73%
+
+[ CAPITAL GAINS TAX ]
+  STCG Trades       : 79
+  STCG Gains        :      295,097.08
+  STCG Tax (20%)    :       59,019.41
+  ---
+  LTCG Trades       : 0
+  LTCG Gains        :            0.00
+  LTCG Tax (12.5%)  :            0.00
+  ---
+  Total Tax         :       59,019.41
+  Total Costs+Tax   :       69,588.72
+  Net Post-Tax Ret  :      +67,081.61
+
+[ TRADE LOG ]
+  Symbol                      Entry         Exit    Entry ₹     Exit ₹  Units          PnL Reason
+  -------------------- ------------ ------------ ---------- ---------- ------ ------------ --------------------
+  BAJAJHCARE             2025-01-06   2025-01-10     630.90     552.40     25    -1,962.50 close-based stoploss sell at open on 2025-01-10
+  EPACK                  2025-01-06   2025-01-10     647.00     572.47     35    -2,608.55 hard stoploss hit on 2025-01-10 (low=568.45)
+  DRAGARWQ               2025-01-10   2025-01-13   7,019.95   6,221.96      2    -1,595.98 hard stoploss hit on 2025-01-13 (low=5916.00)
+  ARIHANTSUP             2025-01-06   2025-01-14     533.30     476.90     41    -2,312.40 close-based stoploss sell at open on 2025-01-14
+  TARIL                  2025-01-10   2025-01-15     577.00     510.50      8      -532.00 close-based stoploss sell at open on 2025-01-15
+  SHAKTIPUMP             2025-01-06   2025-01-15   1,270.00   1,119.81     17    -2,553.23 hard stoploss hit on 2025-01-15 (low=1104.20)
+  ITI                    2025-01-10   2025-01-16     447.70     379.80     34    -2,308.60 close-based stoploss sell at open on 2025-01-16
+  PGIL                   2025-01-06   2025-01-20   1,519.80   1,488.95     16      -493.60 hard stoploss hit on 2025-01-20 (low=1370.00)
+  NEWGEN                 2025-01-06   2025-01-21   1,700.00   1,509.67     13    -2,474.29 hard stoploss hit on 2025-01-21 (low=1294.00)
+  PTCIL                  2025-01-14   2025-01-22  17,316.00  15,326.00      1    -1,990.00 close-based stoploss sell at open on 2025-01-22
+  EXHICON                2025-01-06   2025-01-22     379.00     337.90     44    -1,808.40 close-based stoploss sell at open on 2025-01-22
+  INDOTHAI               2025-01-06   2025-01-22     143.00     187.52     64    +2,849.28 hard stoploss hit on 2025-01-22 (low=187.50)
+  GOLDIAM                2025-01-20   2025-01-24     528.20     447.34     27    -2,183.22 hard stoploss hit on 2025-01-24 (low=437.80)
+  ZOTA                   2025-01-13   2025-01-27     965.00     875.64     12    -1,072.32 hard stoploss hit on 2025-01-27 (low=866.30)
+  LLOYDSME               2025-01-06   2025-01-27   1,439.00   1,305.86     20    -2,662.80 hard stoploss hit on 2025-01-27 (low=1274.00)
+  SHINDL                 2025-01-06   2025-01-27      74.15      63.47    229    -2,445.72 hard stoploss hit on 2025-01-27 (low=62.92)
+  COSMICCRF              2025-01-27   2025-01-28   1,900.00   1,631.75      7    -1,877.75 hard stoploss hit on 2025-01-28 (low=1541.05)
+  BSE                    2025-01-27   2025-01-29   1,903.00   1,716.50      4      -746.00 close-based stoploss sell at open on 2025-01-29
+  SVLL                   2025-01-20   2025-01-29     441.40     431.75     54      -521.10 close-based stoploss sell at open on 2025-01-29
+  JSWHL                  2025-01-15   2025-02-04  17,279.00  17,298.00      1       +19.00 close-based stoploss sell at open on 2025-02-04
+  TANFACIND              2025-02-03   2025-02-11   3,750.00   3,144.86      3    -1,815.42 hard stoploss hit on 2025-02-11 (low=3110.00)
+  BENARAS                2025-01-27   2025-02-12   9,929.95   9,764.34      1      -165.61 hard stoploss hit on 2025-02-12 (low=9316.95)
+  KINETICENG             2025-02-03   2025-02-12     215.50     182.03     61    -2,041.67 hard stoploss hit on 2025-02-12 (low=181.60)
+  ASHAPURMIN             2025-01-27   2025-02-13     519.05     455.00     29    -1,857.45 close-based stoploss sell at open on 2025-02-13
+  AMAL                   2025-01-27   2025-02-14     669.00     682.60     20      +272.00 close-based stoploss sell at open on 2025-02-14
+  APOLLO                 2025-01-27   2025-02-14     128.70     113.95     94    -1,386.50 hard stoploss hit on 2025-02-14 (low=112.47)
+  DPABHUSHAN             2025-02-12   2025-02-17   1,824.95   1,669.00      9    -1,403.55 stoploss hit
+  VIMTALABS              2025-02-17   2025-02-17     560.00     470.76     21    -1,874.04 hard stoploss hit on 2025-02-17 (low=457.00)
+  YOGI                   2025-01-21   2025-02-18     102.03      93.10    146    -1,303.78 close-based stoploss sell at open on 2025-02-18
+  KOTIC                  2025-01-06   2025-02-18      86.43     120.50      1       +34.07 close-based stoploss sell at open on 2025-02-18
+  ZENSARTECH             2025-02-04   2025-02-18     905.00     827.00     19    -1,482.00 close-based stoploss sell at open on 2025-02-18
+  KAMATHOTEL             2025-02-11   2025-02-18     295.80     254.66     32    -1,316.48 hard stoploss hit on 2025-02-18 (low=249.62)
+  VTMLTD                 2025-02-17   2025-02-24      88.00      77.85    112    -1,136.80 stoploss hit
+  MBAPL                  2025-01-20   2025-02-24     282.97     309.45     26      +688.48 swap: score 71.1 → GLAXO (93.3)
+  INDOKEM                2025-01-20   2025-02-25     135.10     146.15      1       +11.05 close-based stoploss sell at open on 2025-02-25
+  MPSLTD                 2025-02-03   2025-02-25   2,729.95   2,397.09      5    -1,664.30 hard stoploss hit on 2025-02-25 (low=2345.05)
+  KOVAI                  2025-02-25   2025-02-28   6,085.00   5,376.54      2    -1,416.92 hard stoploss hit on 2025-02-28 (low=5170.00)
+  SHREEPUSHK             2025-02-24   2025-03-03     334.50     290.80     34    -1,485.80 stoploss hit
+  SHINDL                 2025-03-03   2025-03-13      80.00      64.76      2       -30.48 hard stoploss hit on 2025-03-13 (low=59.00)
+  GODFRYPHLP             2025-02-24   2025-03-17   1,927.00   1,893.00      3      -102.00 swap: score 58.1 → VADILALIND (96.2)
+  AARTIPHARM             2025-02-24   2025-03-17     736.80     744.45     13       +99.45 swap: score 75.4 → AXISCADES (95.2)
+  SUNRAKSHAK             2025-02-17   2025-03-21     157.85     185.20     12      +328.20 close-based stoploss sell at open on 2025-03-21
+  REDINGTON              2025-02-24   2025-03-24     248.77     251.40     58      +152.54 swap: score 66.9 → NACLIND (91.1)
+  SARDAEN                2025-03-17   2025-03-25     545.10     481.30     28    -1,786.40 hard stoploss hit on 2025-03-25 (low=475.20)
+  VADILALIND             2025-03-25   2025-03-26   5,188.00   4,547.11      2    -1,281.78 hard stoploss hit on 2025-03-26 (low=4531.00)
+  TECHNVISN              2025-02-17   2025-03-27   4,200.00   6,841.00      3    +7,923.00 close-based stoploss sell at open on 2025-03-27
+  CPML                   2025-02-17   2025-03-31   1,200.00   1,235.00     10      +350.00 swap: score 67.8 → AZADIND (87.6)
+  DECCANCE               2025-03-03   2025-03-31     785.10     806.85     12      +261.00 swap: score 68.2 → NAVA (87.5)
+  SHRADDHA               2025-03-31   2025-04-02     154.95     132.65     86    -1,917.80 hard stoploss hit on 2025-04-02 (low=131.35)
+  MAHASTEEL-BE           2025-02-17   2025-04-03     233.80     238.20     81      +356.40 close-based stoploss sell at open on 2025-04-03
+  CAMLINFINE             2025-02-24   2025-04-04     151.50     150.91     85       -50.15 hard stoploss hit on 2025-04-04 (low=146.46)
+  MIIL                   2025-03-03   2025-04-07     400.50     409.85      2       +18.70 swap: score 63.8 → VADILALIND (88.8)
+  NAVA                   2025-04-02   2025-04-07     530.95     461.69      4      -277.04 hard stoploss hit on 2025-04-07 (low=396.30)
+  KSCL                   2025-03-24   2025-04-07   1,285.00   1,274.14     13      -141.18 hard stoploss hit on 2025-04-07 (low=1260.20)
+  MAZDOCK                2025-03-31   2025-04-07   2,724.00   2,416.35      6    -1,845.90 hard stoploss hit on 2025-04-07 (low=2200.00)
+  GLAXO                  2025-02-28   2025-04-07   2,580.00   2,624.93      4      +179.72 hard stoploss hit on 2025-04-07 (low=2401.00)
+  INDIASHLTR             2025-03-25   2025-04-07     829.00     738.62      3      -271.14 hard stoploss hit on 2025-04-07 (low=650.00)
+  TCPLPACK               2025-02-24   2025-04-07   3,997.25   3,960.72      3      -109.59 hard stoploss hit on 2025-04-07 (low=3660.00)
+  AZADIND                2025-03-31   2025-04-08     147.00     126.62     47      -957.86 hard stoploss hit on 2025-04-08 (low=126.55)
+  SIMPLEXINF             2025-03-31   2025-04-28     314.00     297.00     50      -850.00 stoploss hit
+  NACLIND                2025-03-24   2025-04-29      94.32     148.60      3      +162.84 close-based stoploss sell at open on 2025-04-29
+  SVLL                   2025-04-28   2025-05-05     592.00     545.40     21      -978.60 stoploss hit
+  RAMAPHO                2025-04-28   2025-05-05     125.50     107.79     19      -336.49 stoploss hit
+  MIDWEST                2025-02-03   2025-05-08     153.95     427.05    275   +75,102.50 close-based stoploss sell at open on 2025-05-08
+  MANORAMA               2025-05-05   2025-05-09   1,365.00   1,177.60      9    -1,686.60 hard stoploss hit on 2025-05-09 (low=1170.00)
+  GALLANTT               2025-04-07   2025-05-09     356.00     402.02     33    +1,518.66 hard stoploss hit on 2025-05-09 (low=400.00)
+  GRMOVER                2025-04-14   2025-05-09     108.00      92.83    122    -1,850.74 hard stoploss hit on 2025-05-09 (low=90.00)
+  JSLL                   2025-04-14   2025-05-12     444.70     453.20      6       +51.00 swap: score 65.5 → SSWL (90.4)
+  KSCL                   2025-04-14   2025-05-12   1,384.60   1,425.50      8      +327.20 swap: score 72.2 → KRYSTAL (90.3)
+  PARAS                  2025-05-12   2025-05-21     750.00     771.89     27      +591.03 hard stoploss hit on 2025-05-21 (low=769.80)
+  VADILALIND             2025-04-07   2025-05-23   4,820.55   5,980.00      2    +2,318.90 close-based stoploss sell at open on 2025-05-23
+  POEL                   2025-04-07   2025-05-26     190.00     239.00     43    +2,107.00 swap: score 55.8 → TIMEX (88.5)
+  GMRAIRPORT             2025-04-14   2025-05-26      86.10      87.40      2        +2.60 swap: score 64.1 → ASTRAMICRO (88.4)
+  COMSYN-BE              2025-05-26   2025-05-27     113.99     101.40    215    -2,706.85 close-based stoploss sell at open on 2025-05-27
+  KRYSTAL                2025-05-12   2025-05-28     687.90     600.00     30    -2,637.00 close-based stoploss sell at open on 2025-05-28
+  PNBHOUSING             2025-04-14   2025-06-02     947.00   1,040.90     17    +1,596.30 swap: score 56.9 → CENTUM (87.1)
+  SPORTKING              2025-05-12   2025-06-09     113.50     118.47    162      +805.14 swap: score 56.8 → RELINFRA-BE (86.0)
+  SSWL                   2025-05-12   2025-06-09     223.19     245.90    129    +2,929.59 swap: score 64.9 → AVANTEL (85.8)
+  CEATLTD                2025-05-12   2025-06-09   3,825.90   3,800.00      7      -181.30 swap: score 65.6 → BIRLAMONEY (85.6)
+  SIKA                   2025-04-07   2025-06-09     572.00   1,297.95     20   +14,519.00 swap: score 67.2 → FMGOETZE (85.1)
+  AVANTEL                2025-06-09   2025-06-19     172.80     153.00    123    -2,435.40 close-based stoploss sell at open on 2025-06-19
+  PENIND                 2025-06-09   2025-06-19     246.91     217.50    107    -3,146.87 hard stoploss hit on 2025-06-19 (low=217.42)
+  BIRLAMONEY             2025-06-09   2025-06-20     191.04     174.72    144    -2,350.08 close-based stoploss sell at open on 2025-06-20
+  DATAPATTNS             2025-05-08   2025-06-23   2,185.50   2,956.90      7    +5,399.80 swap: score 70.9 → GRMOVER (90.7)
+  ASMTEC                 2025-05-26   2025-06-23   2,060.00   2,534.65     10    +4,746.50 swap: score 72.4 → MCX (90.7)
+  TIMEX                  2025-05-26   2025-06-27     272.00     226.55     56    -2,545.20 close-based stoploss sell at open on 2025-06-27
+  ASTRAMICRO             2025-05-27   2025-06-30   1,072.55   1,042.00     20      -611.00 swap: score 72.2 → LAKSHMIMIL (90.5)
+  KRISHIVAL              2025-06-23   2025-06-30     398.85     361.00     91    -3,444.35 hard stoploss hit on 2025-06-30 (low=355.05)
+  KRISHANA               2025-05-05   2025-07-04     299.00     449.90      5      +754.50 hard stoploss hit on 2025-07-04 (low=436.20)
+  YOGI                   2025-05-12   2025-07-04     144.00     148.61    137      +631.57 hard stoploss hit on 2025-07-04 (low=148.20)
+  PARADEEP               2025-04-14   2025-07-07     119.70     161.00    106    +4,377.80 swap: score 55.1 → KINETICENG (87.9)
+  RELINFRA-BE            2025-06-09   2025-07-08     379.00     371.90     66      -468.60 close-based stoploss sell at open on 2025-07-08
+  CAMLINFINE             2025-06-02   2025-07-11     231.60     290.70     73    +4,314.30 close-based stoploss sell at open on 2025-07-11
+  MCX                    2025-06-23   2025-07-11   1,610.00   1,660.00      7      +350.00 close-based stoploss sell at open on 2025-07-11
+  STLTECH                2025-06-23   2025-07-14     104.99     102.92    194      -401.58 stoploss hit
+  SUBROS                 2025-06-23   2025-07-21     910.00     888.55     22      -471.90 swap: score 70.7 → CUPID (90.8)
+  YASHHV                 2025-07-14   2025-07-22     596.00     511.95     36    -3,025.80 hard stoploss hit on 2025-07-22 (low=510.05)
+  FRONTSP                2025-06-02   2025-07-28   3,791.00   4,400.00      5    +3,045.00 stoploss hit
+  ASMTEC                 2025-07-28   2025-07-29   3,009.25   2,637.69      4    -1,486.24 hard stoploss hit on 2025-07-29 (low=2521.00)
+  SMLMAH                 2025-07-14   2025-07-31   3,010.60   3,299.00      8    +2,307.20 close-based stoploss sell at open on 2025-07-31
+  INNOVANA               2025-06-30   2025-07-31     519.10     521.95     47      +133.95 close-based stoploss sell at open on 2025-07-31
+  KINETICENG             2025-07-07   2025-08-01     260.00     307.49     10      +474.90 hard stoploss hit on 2025-08-01 (low=305.00)
+  GRMOVER                2025-06-23   2025-08-04     116.00     124.50    214    +1,819.00 swap: score 68.6 → IFBAGRO (92.5)
+  JSLL                   2025-07-14   2025-08-04     560.05     564.00     13       +51.35 swap: score 70.4 → PUNJABCHEM (92.1)
+  FMGOETZE               2025-06-09   2025-08-07     509.00     545.00      6      +216.00 close-based stoploss sell at open on 2025-08-07
+  DIACABS                2025-07-14   2025-08-07     165.64     151.08      3       -43.68 hard stoploss hit on 2025-08-07 (low=150.69)
+  VALIANT                2025-07-07   2025-08-08     579.45     580.00     50       +27.50 close-based stoploss sell at open on 2025-08-08
+  JGCHEM                 2025-07-14   2025-08-11     500.80     484.10     48      -801.60 swap: score 73.2 → FREDUN (91.8)
+  STALLION               2025-08-04   2025-08-11     112.10      95.33    181    -3,035.37 hard stoploss hit on 2025-08-11 (low=95.09)
+  GALLANTT               2025-08-04   2025-08-14     754.85     670.69     37    -3,113.92 hard stoploss hit on 2025-08-14 (low=650.05)
+  PARADEEP               2025-08-04   2025-08-18     218.91     202.99    115    -1,830.80 stoploss hit
+  IFBAGRO                2025-08-04   2025-08-18     836.50     740.81      8      -765.52 hard stoploss hit on 2025-08-18 (low=736.30)
+  POEL                   2025-08-11   2025-08-20     282.00     251.93     61    -1,834.27 hard stoploss hit on 2025-08-20 (low=232.55)
+  LAKSHMIMIL             2025-06-30   2025-08-22   9,490.00   9,210.00      1      -280.00 close-based stoploss sell at open on 2025-08-22
+  PUNJABCHEM             2025-08-07   2025-08-25   1,350.00   1,215.70      2      -268.60 swap: score 57.4 → KINGFA (93.7)
+  BGRENERGY              2025-08-25   2025-08-29     181.33     155.45    147    -3,804.36 close-based stoploss sell at open on 2025-08-29
+  ARYACAPM               2025-08-18   2025-09-03     489.00     620.15     47    +6,164.05 close-based stoploss sell at open on 2025-09-03
+  FORCEMOT               2025-04-02   2025-09-05   8,800.00  18,225.00      1    +9,425.00 close-based stoploss sell at open on 2025-09-05
+  TI                     2025-07-28   2025-09-08     494.70     461.20     54    -1,809.00 swap: score 60.2 → JINDALPHOT (90.9)
+  VIMTALABS              2025-08-04   2025-09-08     688.40     880.00     29    +5,556.40 swap: score 71.0 → BGRENERGY (90.5)
+  APOLLO                 2025-09-01   2025-09-10     264.50     278.70      5       +71.00 close-based stoploss sell at open on 2025-09-10
+  MIDWEST                2025-09-08   2025-09-11   1,977.50   1,861.25     24    -2,790.00 close-based stoploss sell at open on 2025-09-11
+  VIRAT                  2025-09-03   2025-09-11     800.00     745.47     36    -1,963.08 hard stoploss hit on 2025-09-11 (low=738.65)
+  RISHABH                2025-08-25   2025-09-15     424.25     430.50      1        +6.25 stoploss hit
+  SARDAEN                2025-08-11   2025-09-22     539.90     575.00     46    +1,614.60 swap: score 70.4 → BANCOINDIA (90.4)
+  INDOKEM                2025-08-18   2025-09-25     359.90     497.85     16    +2,207.20 close-based stoploss sell at open on 2025-09-25
+  YATRA                  2025-08-18   2025-09-26     142.70     144.99      3        +6.87 close-based stoploss sell at open on 2025-09-26
+  RAMCOIND               2025-09-15   2025-09-29     363.00     358.05      1        -4.95 stoploss hit
+  SOBME                  2025-07-07   2025-09-29     568.65     920.60     73   +25,692.35 swap: score 62.3 → INDOTHAI (90.1)
+  FREDUN                 2025-08-14   2025-09-29   1,040.00   1,288.00     24    +5,952.00 swap: score 70.8 → TVSELECT-BE (90.0)
+  CNCRD                  2025-09-15   2025-09-29   1,625.00   1,471.27      2      -307.46 hard stoploss hit on 2025-09-29 (low=1469.40)
+  JINDALPHOT             2025-09-08   2025-10-06   1,185.00   1,107.70      1       -77.30 swap: score 69.4 → LUMAXIND (92.9)
+  BANCOINDIA             2025-09-22   2025-10-14     830.00     745.82     31    -2,609.58 hard stoploss hit on 2025-10-14 (low=735.50)
+  BALAJITELE             2025-09-15   2025-10-15     119.05     119.00    213       -10.65 close-based stoploss sell at open on 2025-10-15
+  JSLL                   2025-08-29   2025-10-15     697.00     736.20     31    +1,215.20 close-based stoploss sell at open on 2025-10-15
+  TIMEX                  2025-10-13   2025-10-15     397.20     352.69      4      -178.04 hard stoploss hit on 2025-10-15 (low=351.15)
+  NETWEB                 2025-09-29   2025-10-16   3,700.00   3,729.44      7      +206.08 hard stoploss hit on 2025-10-16 (low=3728.10)
+  SIRCA                  2025-08-11   2025-10-20     458.80     497.50     62    +2,399.40 swap: score 72.5 → TITANBIO (92.0)
+  STALLION               2025-09-08   2025-10-24     165.79     272.66    123   +13,145.01 close-based stoploss sell at open on 2025-10-24
+  INDOTHAI               2025-09-29   2025-10-24     267.99     385.90     27    +3,183.57 close-based stoploss sell at open on 2025-10-24
+  UNIPARTS               2025-10-20   2025-10-27     508.85     468.00     22      -898.70 stoploss hit
+  GMDCLTD                2025-09-15   2025-11-03     565.10     595.55     40    +1,218.00 swap: score 67.7 → SKMEGGPROD (90.8)
+  FREDUN                 2025-10-20   2025-11-03   1,648.80   1,472.58     21    -3,700.62 hard stoploss hit on 2025-11-03 (low=1471.10)
+  TITANBIO               2025-10-24   2025-11-04     233.25     202.50     22      -676.50 close-based stoploss sell at open on 2025-11-04
+  MTARTECH               2025-10-24   2025-11-06   2,293.00   2,288.33     17       -79.39 hard stoploss hit on 2025-11-06 (low=2281.20)
+  MOSCHIP                2025-09-15   2025-11-06     255.00     233.64     85    -1,815.60 hard stoploss hit on 2025-11-06 (low=228.25)
+  HITECHGEAR-BE          2025-10-20   2025-11-07     823.00     752.85     41    -2,876.15 close-based stoploss sell at open on 2025-11-07
+  LKPFIN                 2025-10-20   2025-11-11     750.00     938.00     35    +6,580.00 close-based stoploss sell at open on 2025-11-11
+  HINDCOPPER             2025-09-29   2025-11-17     315.45     336.40    118    +2,472.10 swap: score 64.2 → TEMBO (92.5)
+  TVSELECT-BE            2025-09-29   2025-11-17     627.00     660.55      4      +134.20 swap: score 65.5 → NATIONALUM (90.7)
+  WELINV                 2025-11-03   2025-11-17   1,155.00   1,157.00     20       +40.00 swap: score 70.5 → CNCRD (90.6)
+  INOXGREEN              2025-09-29   2025-11-18     209.05     235.95    178    +4,788.20 hard stoploss hit on 2025-11-18 (low=225.45)
+  SANDUMA                2025-10-20   2025-11-24     218.00     201.50    109    -1,798.50 swap: score 72.7 → UNIVCABLES (93.0)
+  BHAGYANGR-BE           2025-11-03   2025-11-25     136.00     131.58      5       -22.10 hard stoploss hit on 2025-11-25 (low=129.25)
+  CHENNPETRO             2025-11-10   2025-11-26   1,022.00     915.31     30    -3,200.70 hard stoploss hit on 2025-11-26 (low=890.00)
+  IFBAGRO                2025-10-27   2025-12-01   1,137.80   1,295.69      9    +1,421.01 hard stoploss hit on 2025-12-01 (low=1280.00)
+  CMBL                   2025-12-01   2025-12-03     406.00     382.20     68    -1,618.40 close-based stoploss sell at open on 2025-12-03
+  ABDL                   2025-11-10   2025-12-03     646.90     602.40      5      -222.50 close-based stoploss sell at open on 2025-12-03
+  SKMEGGPROD             2025-11-03   2025-12-08     215.00     193.96    144    -3,029.76 hard stoploss hit on 2025-12-08 (low=186.00)
+  AKCAPIT                2025-11-17   2025-12-09   1,450.00   1,366.00     25    -2,100.00 close-based stoploss sell at open on 2025-12-09
+  CNCRD                  2025-11-18   2025-12-09   2,065.00   2,186.25     15    +1,818.75 hard stoploss hit on 2025-12-09 (low=2158.40)
+  TEMBO                  2025-11-17   2025-12-09     780.00     680.57     38    -3,778.34 hard stoploss hit on 2025-12-09 (low=680.15)
+  RPEL                   2025-11-10   2025-12-10     915.00     958.00     36    +1,548.00 close-based stoploss sell at open on 2025-12-10
+  VLSFINANCE             2025-12-01   2025-12-12     311.80     301.21     38      -402.42 hard stoploss hit on 2025-12-12 (low=295.00)
+  SOUTHWEST-BE           2025-11-10   2025-12-17     179.94     181.59    151      +249.15 hard stoploss hit on 2025-12-17 (low=180.00)
+  UNIVCABLES             2025-11-25   2025-12-17     931.80     845.01      1       -86.79 hard stoploss hit on 2025-12-17 (low=831.40)
+  JSWHL                  2025-12-08   2025-12-19  20,280.00  20,050.00      1      -230.00 close-based stoploss sell at open on 2025-12-19
+  VENUSREM-BE            2025-11-24   2025-12-31     706.80     735.00     46    +1,297.20 close-based stoploss sell at open on 2025-12-31
+  CUPID                  2025-07-21   2026-01-02     150.00     436.11    130   +37,194.30 hard stoploss hit on 2026-01-02 (low=419.95)
+  STEL                   2025-12-08   2026-01-05     535.00     490.85     40    -1,766.00 swap: score 71.8 → JAYNECOIND (93.3)
+  DREDGECORP             2025-11-11   2026-01-07     840.00     900.97     36    +2,194.92 hard stoploss hit on 2026-01-07 (low=892.50)
+  FORCEMOT               2026-01-05   2026-01-09  21,340.00  19,304.32      1    -2,035.68 hard stoploss hit on 2026-01-09 (low=18505.00)
+  MIDWEST                2025-12-15   2026-01-09   3,910.50   4,145.96      6    +1,412.76 hard stoploss hit on 2026-01-09 (low=4077.85)
+  SILVERTUC              2026-01-05   2026-01-14   1,330.00   1,454.30     26    +3,231.80 hard stoploss hit on 2026-01-14 (low=1442.40)
+  INFOBEAN               2025-12-15   2026-01-16     696.70     781.98     21    +1,790.88 hard stoploss hit on 2026-01-16 (low=772.10)
+  ASHAPURMIN             2025-12-31   2026-01-19     891.90     801.20     37    -3,355.90 stoploss hit
+  MWL                    2025-12-08   2026-01-19     261.71     286.00     33      +801.57 swap: score 71.9 → AIIL (92.9)
+  JAYNECOIND             2026-01-05   2026-01-19      91.46      80.74    232    -2,487.04 hard stoploss hit on 2026-01-19 (low=78.16)
+  JAMNAAUTO              2025-12-15   2026-01-20     124.79     124.00    325      -256.75 close-based stoploss sell at open on 2026-01-20
+  PFOCUS                 2025-12-15   2026-01-20     201.00     219.47    142    +2,622.74 close-based stoploss sell at open on 2026-01-20
+  SMLMAH                 2025-12-15   2026-01-21   3,800.00   3,835.00     10      +350.00 close-based stoploss sell at open on 2026-01-21
+  AIIL                   2026-01-20   2026-01-22     623.90     570.00     65    -3,503.50 close-based stoploss sell at open on 2026-01-22
+  RMDRIP                 2026-01-19   2026-01-23      94.82      88.95    991    -5,817.17 hard stoploss hit on 2026-01-23 (low=88.92)
+  KMEW                   2025-12-19   2026-01-23   1,737.40   1,611.60     16    -2,012.80 hard stoploss hit on 2026-01-23 (low=1566.10)
+  SANSERA                2026-01-12   2026-01-26   1,825.00   1,695.80      6      -775.20 stoploss hit
+  CSBBANK                2026-01-12   2026-01-28     510.65     450.71     72    -4,315.68 hard stoploss hit on 2026-01-28 (low=403.65)
+  MENONBE                2026-01-19   2026-01-30     130.00     117.21    144    -1,841.76 close-based stoploss sell at open on 2026-01-30
+  HINDZINC               2026-01-26   2026-01-30     695.00     623.57     62    -4,428.66 hard stoploss hit on 2026-01-30 (low=622.35)
+  FEDFINA                2026-01-20   2026-02-02     151.65     140.00    202    -2,353.30 swap: score 70.6 → HINDZINC (94.7)
+  BANKINDIA              2026-01-26   2026-02-02     166.16     151.26    318    -4,738.20 hard stoploss hit on 2026-02-02 (low=146.40)
+  KESAR                  2025-12-22   2026-02-04   1,063.00   1,178.50     19    +2,194.50 close-based stoploss sell at open on 2026-02-04
+  KRISHNADEF             2026-01-12   2026-02-06     943.00     903.76     30    -1,177.20 hard stoploss hit on 2026-02-06 (low=890.30)
+  OIL                    2026-02-02   2026-02-16     490.00     453.60     63    -2,293.20 stoploss hit
+  NATIONALUM             2025-11-17   2026-02-16     262.50     346.00      8      +668.00 stoploss hit
+  HINDZINC               2026-02-04   2026-02-16     635.00     585.95     35    -1,716.75 swap: score 66.8 → SCI (90.7)
+
+======================================================================
+  Weeks Simulated: 59 | Duration: 416 days (1.14 years)
+======================================================================
