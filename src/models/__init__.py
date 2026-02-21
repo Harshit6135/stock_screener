@@ -11,6 +11,7 @@ from .investments_model import (
     InvestmentsHoldingsModel,
     InvestmentsSummaryModel,
     CapitalEventModel,
+    BacktestRunModel,
 )
 from .backtesting_model import *
 
@@ -28,5 +29,6 @@ __all__ = [
     "InvestmentsHoldingsModel",
     "InvestmentsSummaryModel",
     "CapitalEventModel",
+    "BacktestRunModel",
     "BacktestResult"
 ]

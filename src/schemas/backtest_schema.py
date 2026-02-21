@@ -36,4 +36,11 @@ class BacktestInputSchema(Schema):
             )
         }
     )
+    run_label = fields.String(
+        required=False,
+        load_default=None,
+        metadata={
+            "description": "Optional label/name for this backtest run"
+        }
+    )
 

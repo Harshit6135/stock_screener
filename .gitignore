@@ -49,8 +49,6 @@ htmlcov/
 
 # Data files (large/generated)
 !data/.gitkeep
-data/*.csv
-data/exports/*.csv
 
 # Cache
 .cache/

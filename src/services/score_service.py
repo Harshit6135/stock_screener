@@ -71,24 +71,24 @@ class ScoreService:
         df['penalty'] = 1
 
         mask_200 = df['ema_200'] > df['close']
-        df[mask_200, 'penalty_reason'] += 'below_ema_200; '
-        df[mask_200] = 0
+        df.loc[mask_200, 'penalty_reason'] += 'below_ema_200; '
+        df.loc[mask_200, 'penalty'] = 0
 
         mask_50 = df['ema_50'] > df['close']
-        df[mask_50] += 'below_ema_50; '
-        df[mask_50] = 0
+        df.loc[mask_50, 'penalty_reason'] += 'below_ema_50; '
+        df.loc[mask_50, 'penalty'] = 0
 
         mask_atr = df['atr_spike'] > self.params.atr_threshold
-        df[mask_atr] += 'atr_spike; '
-        df[mask_atr] = 0
+        df.loc[mask_atr, 'penalty_reason'] += 'atr_spike; '
+        df.loc[mask_atr, 'penalty'] = 0
 
         mask_price = df['ema_50'] < self.params.min_price
-        df[mask_price] += 'penny_stock; '
-        df[mask_price] = 0.0
+        df.loc[mask_price, 'penalty_reason'] += 'penny_stock; '
+        df.loc[mask_price, 'penalty'] = 0.0
 
         mask_turnover = df['avg_turnover_ema_20'] < self.params.min_turnover
-        df[mask_turnover] += 'low_turnover; '
-        df[mask_turnover] = 0.0
+        df.loc[mask_turnover, 'penalty_reason'] += 'low_turnover; '
+        df.loc[mask_turnover, 'penalty'] = 0.0
 
         df['penalty_reason'] = df['penalty_reason'].str.rstrip('; ')
         df['penalty_reason'] = df['penalty_reason'].replace('', None)

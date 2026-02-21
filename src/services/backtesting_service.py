@@ -661,7 +661,8 @@ class WeeklyBacktester:
 class BacktestingService:
 
     @staticmethod
-    def run_backtest(start_date: date, end_date: date, config_name: str = "momentum_config", check_daily_sl: bool = True, mid_week_buy: bool = True):
+    def run_backtest(start_date: date, end_date: date, config_name: str = "momentum_config",
+                     check_daily_sl: bool = True, mid_week_buy: bool = True, run_label: str = None):
         """
         Convenience function to run a backtest.
         
@@ -671,6 +672,7 @@ class BacktestingService:
             config_name: config name for config lookup
             check_daily_sl: Enable daily stop-loss checks
             mid_week_buy: Enable mid-week vacancy fills
+            run_label: Optional label/name for this run
             
         Returns:
             Tuple of (results, summary, risk_monitor_data, report_path)
@@ -679,16 +681,54 @@ class BacktestingService:
         results = backtester.run()
         summary = backtester.get_summary()
         
+        # Build equity curve with dates
+        portfolio_dates = [d.isoformat() if d else None for d in backtester.risk_monitor.portfolio_dates]
+        portfolio_values = backtester.risk_monitor.portfolio_values
+        equity_curve = [
+            {"date": d, "value": v}
+            for d, v in zip(portfolio_dates, portfolio_values)
+        ]
+        
         # Expose risk monitor data for charts/tables
         risk_monitor_data = {
             'trades': backtester.risk_monitor.trades,
-            'portfolio_values': backtester.risk_monitor.portfolio_values,
-            'portfolio_dates': [d.isoformat() if d else None for d in backtester.risk_monitor.portfolio_dates]
+            'portfolio_values': portfolio_values,
+            'portfolio_dates': portfolio_dates,
+            'equity_curve': equity_curve,
         }
         
         # The report path is returned by _generate_report, but that method is internal and called inside run().
         # We need to capture it. Let's make _generate_report store it in self.report_path
         report_path = getattr(backtester, 'report_path', None)
+        
+        # Read report text
+        report_text = ""
+        if report_path:
+            try:
+                with open(report_path, 'r', encoding='utf-8') as f:
+                    report_text = f.read()
+            except Exception as e:
+                logger.error(f"Failed to read report file {report_path}: {e}")
+        
+        # Auto-save to history
+        try:
+            from repositories import BacktestHistoryRepository
+            history_repo = BacktestHistoryRepository()
+            history_repo.save(
+                config_name=config_name,
+                start_date=start_date,
+                end_date=end_date,
+                check_daily_sl=check_daily_sl,
+                mid_week_buy=mid_week_buy,
+                summary=summary,
+                equity_curve=equity_curve,
+                trades=backtester.risk_monitor.trades,
+                report_text=report_text,
+                run_label=run_label,
+            )
+            logger.info("Backtest run saved to history")
+        except Exception as e:
+            logger.error(f"Failed to save backtest run to history: {e}")
         
         return results, summary, risk_monitor_data, report_path
 

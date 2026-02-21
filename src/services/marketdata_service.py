@@ -45,7 +45,7 @@ class MarketDataService:
             self.logger.error(f"Failed to fetch/process data for {token}: {e}")
             return None, None
 
-    def update_latest_data_for_all(self, historical=False, historical_start_date="2010-01-01"):
+    def update_latest_data_for_all(self, historical=False, historical_start_date="2015-01-01"):
         """
         Fetches data for a ticker from start_date to end_date.
         """
@@ -69,6 +69,7 @@ class MarketDataService:
             else:
                 if historical:
                     start_date = historical_start_date
+                    start_date = pd.Timestamp(start_date)
                 else:
                     start_date = fetch_end_date - timedelta(days=HISTORY_LOOKBACK)
 

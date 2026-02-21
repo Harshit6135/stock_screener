@@ -606,8 +606,13 @@
             </div>
             <div class="step-row">
                 <span>2. Update Market Data</span>
-                <label class="switch"><input type="checkbox" id="step-market" checked><span
-                        class="slider"></span></label>
+                <div style="display:flex; align-items:center; gap:15px;">
+                    <label style="font-size:0.8rem; color:var(--text-muted); display:flex; align-items:center; gap:5px; cursor:pointer;">
+                        <input type="checkbox" id="step-historical"> Historical
+                    </label>
+                    <label class="switch"><input type="checkbox" id="step-market" checked><span
+                            class="slider"></span></label>
+                </div>
             </div>
             <div class="step-row">
                 <span>3. Calculate Indicators</span>
@@ -682,6 +687,14 @@
             <div class="metric-card">
                 <div class="metric-label">XIRR (Annualized)</div>
                 <div class="metric-value" id="sum-xirr">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Portfolio Risk</div>
+                <div class="metric-value" id="sum-portfolio-risk">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Capital Risk</div>
+                <div class="metric-value" id="sum-capital-risk">-</div>
             </div>
         </div>
 
@@ -908,6 +921,10 @@
                     <label style="font-size:0.9rem; cursor:pointer;"><input type="checkbox" id="bt-mid-week" checked>
                         Mid-Week Buy</label>
                 </div>
+                <div>
+                    <label style="display:block; font-size:0.8rem; margin-bottom:5px;">Run Label (optional)</label>
+                    <input type="text" id="bt-label" placeholder="e.g. Baseline, No SL..." style="width:180px;">
+                </div>
                 <button class="btn" style="background:#8b5cf6;" onclick="runBacktest()">▶ Run Backtest</button>
             </div>
         </div>
@@ -994,6 +1011,39 @@
                     style="margin-top:15px; background:#1e1e1e; color:#eee; height:500px;"></div>
             </div>
         </div>
+
+        <!-- Backtest History (always visible) -->
+        <div class="card" style="margin-top:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <h3>📂 Run History</h3>
+                <button class="btn" style="font-size:0.8rem; background:#475569;" onclick="loadBacktestHistory()">⟳
+                    Refresh</button>
+            </div>
+            <div style="max-height:350px; overflow-y:auto; margin-top:10px;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Label</th>
+                            <th>Config</th>
+                            <th>Date Range</th>
+                            <th>Daily SL</th>
+                            <th>Mid-Wk Buy</th>
+                            <th class="text-right">Return %</th>
+                            <th class="text-right">Max DD %</th>
+                            <th class="text-right">Sharpe</th>
+                            <th>Created</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bt-history-body">
+                        <tr>
+                            <td colspan="11" class="text-center">No saved runs</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
 
@@ -1011,7 +1061,7 @@
             if (tabId === 'pipeline') btns[0].classList.add('active');
             if (tabId === 'portfolio') { btns[1].classList.add('active'); loadPortfolio(); }
             if (tabId === 'actions') { btns[2].classList.add('active'); initActionsDate(); }
-            if (tabId === 'backtest') { btns[3].classList.add('active'); initBacktestDates(); }
+            if (tabId === 'backtest') { btns[3].classList.add('active'); initBacktestDates(); loadBacktestHistory(); }
             if (tabId === 'config') { btns[4].classList.add('active'); loadConfig(); }
         }
 
@@ -1195,6 +1245,7 @@
             const payload = {
                 init: document.getElementById('step-init').checked,
                 marketdata: document.getElementById('step-market').checked,
+                historical: document.getElementById('step-historical').checked,
                 indicators: document.getElementById('step-ind').checked,
                 percentile: document.getElementById('step-pct').checked,
                 score: document.getElementById('step-score').checked,
@@ -1281,6 +1332,14 @@
                     const elRealized = document.getElementById('sum-realized');
                     elRealized.innerText = '₹' + fmt(realized);
                     elRealized.className = 'metric-value ' + (realized >= 0 ? 'pos-val' : 'neg-val');
+
+                    const elPortfolioRisk = document.getElementById('sum-portfolio-risk');
+                    elPortfolioRisk.innerText = '₹' + fmt(summary.portfolio_risk || 0);
+                    elPortfolioRisk.className = 'metric-value ' + (summary.portfolio_risk <= 0 ? 'pos-val' : 'neg-val');
+
+                    const elCapitalRisk = document.getElementById('sum-capital-risk');
+                    elCapitalRisk.innerText = '₹' + fmt(summary.capital_risk || 0);
+                    elCapitalRisk.className = 'metric-value ' + (summary.capital_risk <= 0 ? 'pos-val' : 'neg-val');
 
                     document.getElementById('sum-cash').innerText = '₹' + fmt(summary.remaining_capital || 0);
                     document.getElementById('pos-count').innerText = holdings.length;
@@ -1751,6 +1810,7 @@
         let backtestChartInstance = null;
 
         async function runBacktest() {
+            const label = document.getElementById('bt-label').value.trim();
             const payload = {
                 start_date: document.getElementById('bt-start').value,
                 end_date: document.getElementById('bt-end').value,
@@ -1758,6 +1818,7 @@
                 check_daily_sl: document.getElementById('bt-daily-sl').checked,
                 mid_week_buy: document.getElementById('bt-mid-week').checked
             };
+            if (label) payload.run_label = label;
 
             showLoading('Running Backtest... (this takes time)');
             try {
@@ -1770,66 +1831,145 @@
                 const data = await res.json();
 
                 if (res.ok) {
-                    document.getElementById('bt-results').classList.remove('hidden');
-
-                    // Render Metrics
-                    const sum = data.summary || {};
-                    const metrics = sum.metrics || {}; // Depending on structure
-
-                    // We need to parse summary correctly. 
-                    // Based on backtesting_service.py, get_summary returns risk_monitor.get_summary()
-                    // which has { metrics: {...}, final_value... }
-
-                    document.getElementById('bt-return').innerText = (sum.total_return || 0).toFixed(2) + '%';
-                    document.getElementById('bt-sharpe').innerText = (sum.sharpe_ratio || 0).toFixed(2);
-                    document.getElementById('bt-dd').innerText = (sum.max_drawdown || 0).toFixed(2) + '%';
-                    document.getElementById('bt-winrate').innerText = (sum.win_rate || 0).toFixed(2) + '%';
-
-                    // Populate Cost & Tax Metrics
-                    document.getElementById('bt-costs').innerText = '₹' + (sum.total_transaction_costs || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                    document.getElementById('bt-tax').innerText = '₹' + (sum.total_tax || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-                    const netRetPct = sum.net_post_tax_return_pct || 0;
-                    const netRetAbs = sum.net_post_tax_return || 0;
-                    document.getElementById('bt-net-ret').innerText = `₹${netRetAbs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${netRetPct.toFixed(2)}%)`;
-
-                    const grossGain = (sum.final_value || 0) - (sum.initial_capital || 0);
-                    let eff = 0;
-                    if (grossGain > 0) {
-                        eff = (netRetAbs / grossGain) * 100;
-                    }
-                    document.getElementById('bt-efficiency').innerText = eff.toFixed(1) + '% retained';
-
-                    // Render Chart
-                    renderEquityChart(data.equity_curve);
-
-                    // Render Trades
-                    const tbody = document.getElementById('bt-trades-body');
-                    tbody.innerHTML = '';
-                    const trades = data.trades || [];
-                    const sellTrades = trades.filter(t => t.type === 'SELL');
-
-                    sellTrades.forEach(t => {
-                        const tr = `<tr>
-                            <td>${t.symbol}</td>
-                            <td>${t.type}</td>
-                            <td>${t.entry_date}</td>
-                            <td>${t.exit_date}</td>
-                            <td class="text-right ${t.pnl >= 0 ? 'pos-val' : 'neg-val'}">${t.pnl.toFixed(2)}</td>
-                            <td class="text-right">${((t.pnl / (t.price * t.units)) * 100).toFixed(2)}%</td>
-                        </tr>`;
-                        tbody.innerHTML += tr;
-                    });
-
-                    // Raw log
-                    document.getElementById('bt-raw-log').innerText = data.report_text;
-
+                    populateBacktestResults(data);
+                    // Refresh history list since a new run was saved
+                    loadBacktestHistory();
                 } else {
                     alert('Backtest Failed: ' + data.message);
                 }
 
             } catch (e) { console.error(e); alert('Error running backtest'); }
             hideLoading();
+        }
+
+        function populateBacktestResults(data) {
+            document.getElementById('bt-results').classList.remove('hidden');
+
+            const sum = data.summary || {};
+
+            document.getElementById('bt-return').innerText = (sum.total_return || 0).toFixed(2) + '%';
+            document.getElementById('bt-sharpe').innerText = (sum.sharpe_ratio || 0).toFixed(2);
+            document.getElementById('bt-dd').innerText = (sum.max_drawdown || 0).toFixed(2) + '%';
+            document.getElementById('bt-winrate').innerText = (sum.win_rate || 0).toFixed(2) + '%';
+
+            document.getElementById('bt-costs').innerText = '₹' + (sum.total_transaction_costs || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            document.getElementById('bt-tax').innerText = '₹' + (sum.total_tax || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+            const netRetPct = sum.net_post_tax_return_pct || 0;
+            const netRetAbs = sum.net_post_tax_return || 0;
+            document.getElementById('bt-net-ret').innerText = `₹${netRetAbs.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${netRetPct.toFixed(2)}%)`;
+
+            const grossGain = (sum.final_value || 0) - (sum.initial_capital || 0);
+            let eff = 0;
+            if (grossGain > 0) {
+                eff = (netRetAbs / grossGain) * 100;
+            }
+            document.getElementById('bt-efficiency').innerText = eff.toFixed(1) + '% retained';
+
+            // Render Chart
+            renderEquityChart(data.equity_curve || []);
+
+            // Render Trades
+            const tbody = document.getElementById('bt-trades-body');
+            tbody.innerHTML = '';
+            const trades = data.trades || [];
+            const sellTrades = trades.filter(t => t.type === 'SELL');
+
+            sellTrades.forEach(t => {
+                const investedValue = (t.price || 0) * (t.units || 1);
+                const retPct = investedValue > 0 ? ((t.pnl / investedValue) * 100).toFixed(2) : '0.00';
+                const tr = `<tr>
+                    <td>${t.symbol}</td>
+                    <td>${t.type}</td>
+                    <td>${t.entry_date}</td>
+                    <td>${t.exit_date}</td>
+                    <td class="text-right ${t.pnl >= 0 ? 'pos-val' : 'neg-val'}">${t.pnl.toFixed(2)}</td>
+                    <td class="text-right">${retPct}%</td>
+                </tr>`;
+                tbody.innerHTML += tr;
+            });
+
+            // Raw log
+            document.getElementById('bt-raw-log').innerText = data.report_text || '';
+        }
+
+        // --- BACKTEST HISTORY ---
+        async function loadBacktestHistory() {
+            try {
+                const res = await fetch('/api/v1/backtest/history');
+                const runs = await res.json();
+                const tbody = document.getElementById('bt-history-body');
+                tbody.innerHTML = '';
+
+                if (!runs || !runs.length) {
+                    tbody.innerHTML = '<tr><td colspan="11" class="text-center">No saved runs</td></tr>';
+                    return;
+                }
+
+                runs.forEach((r, i) => {
+                    const retClass = (r.total_return || 0) >= 0 ? 'pos-val' : 'neg-val';
+                    const ddVal = r.max_drawdown != null ? r.max_drawdown.toFixed(2) : '-';
+                    const sharpeVal = r.sharpe_ratio != null ? r.sharpe_ratio.toFixed(2) : '-';
+                    const retVal = r.total_return != null ? r.total_return.toFixed(2) : '-';
+                    const created = r.created_at ? r.created_at.substring(0, 16).replace('T', ' ') : '-';
+                    const dailySl = r.check_daily_sl ? '✓' : '✗';
+                    const mwb = r.mid_week_buy ? '✓' : '✗';
+
+                    tbody.innerHTML += `<tr>
+                        <td>${r.id}</td>
+                        <td>${r.run_label || '<em style="color:#666;">—</em>'}</td>
+                        <td>${r.config_name || '-'}</td>
+                        <td style="white-space:nowrap;">${r.start_date} → ${r.end_date}</td>
+                        <td class="text-center">${dailySl}</td>
+                        <td class="text-center">${mwb}</td>
+                        <td class="text-right ${retClass}">${retVal}%</td>
+                        <td class="text-right" style="color:var(--danger);">${ddVal}%</td>
+                        <td class="text-right">${sharpeVal}</td>
+                        <td style="font-size:0.8rem; color:#888;">${created}</td>
+                        <td class="text-center" style="white-space:nowrap;">
+                            <button class="badge badge-buy" style="border:none; cursor:pointer; margin-right:4px;" onclick="loadBacktestRun(${r.id})">Load</button>
+                            <button class="badge badge-sell" style="border:none; cursor:pointer;" onclick="deleteBacktestRun(${r.id})">Del</button>
+                        </td>
+                    </tr>`;
+                });
+            } catch (e) {
+                console.error('Failed to load backtest history:', e);
+            }
+        }
+
+        async function loadBacktestRun(runId) {
+            showLoading('Loading backtest run...');
+            try {
+                const res = await fetch(`/api/v1/backtest/history/${runId}`);
+                const data = await res.json();
+                if (res.ok) {
+                    populateBacktestResults(data);
+                    // Scroll to results
+                    document.getElementById('bt-results').scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    alert('Failed to load run: ' + (data.message || 'Unknown error'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Error loading backtest run');
+            }
+            hideLoading();
+        }
+
+        async function deleteBacktestRun(runId) {
+            if (!confirm('Delete this backtest run? This will also remove the data files.')) return;
+            try {
+                const res = await fetch(`/api/v1/backtest/history/${runId}`, { method: 'DELETE' });
+                const data = await res.json();
+                if (res.ok) {
+                    loadBacktestHistory();
+                } else {
+                    alert('Failed to delete: ' + (data.message || 'Unknown error'));
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Error deleting backtest run');
+            }
         }
 
         function renderEquityChart(equityCurve) {

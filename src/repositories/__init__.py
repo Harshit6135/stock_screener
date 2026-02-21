@@ -8,6 +8,7 @@ from .score_repository import ScoreRepository
 from .ranking_repository import RankingRepository
 from .actions_repository import ActionsRepository
 from .investment_repository import InvestmentRepository
+from .backtest_history_repository import BacktestHistoryRepository
 
 __all__ = [
     "MasterRepository",
@@ -19,5 +20,6 @@ __all__ = [
     "ScoreRepository",
     "RankingRepository",
     "ActionsRepository",
-    "InvestmentRepository"
+    "InvestmentRepository",
+    "BacktestHistoryRepository"
 ]

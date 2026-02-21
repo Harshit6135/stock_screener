@@ -1,5 +1,6 @@
 from flask.views import MethodView
 from flask_smorest import Blueprint
+import traceback
 
 from schemas import (
     MessageSchema,
@@ -110,6 +111,7 @@ class RunPipeline(MethodView):
                 init_service.initialize_app()
                 results['init'] = "completed"
             except Exception as e:
+                traceback.print_exc()
                 results['init'] = f"failed: {str(e)}"
 
         # Step 2: Update Market Data
@@ -122,6 +124,7 @@ class RunPipeline(MethodView):
                 )
                 results['marketdata'] = "completed"
             except Exception as e:
+                traceback.print_exc()
                 results['marketdata'] = f"failed: {str(e)}"
 
         # Step 3: Calculate Indicators
@@ -131,6 +134,7 @@ class RunPipeline(MethodView):
                 indicators_service.calculate_indicators()
                 results['indicators'] = "completed"
             except Exception as e:
+                traceback.print_exc()
                 results['indicators'] = f"failed: {str(e)}"
 
         # Step 4: Calculate Percentiles
@@ -140,6 +144,7 @@ class RunPipeline(MethodView):
                 percentile_service.backfill_percentiles()
                 results['percentile'] = "completed"
             except Exception as e:
+                traceback.print_exc()
                 results['percentile'] = f"failed: {str(e)}"
 
         # Step 5: Calculate Scores
@@ -149,6 +154,7 @@ class RunPipeline(MethodView):
                 score_service.generate_composite_scores()
                 results['score'] = "completed"
             except Exception as e:
+                traceback.print_exc()
                 results['score'] = f"failed: {str(e)}"
 
         # Step 6: Calculate Rankings
@@ -158,6 +164,7 @@ class RunPipeline(MethodView):
                 ranking_service.generate_rankings()
                 results['ranking'] = "completed"
             except Exception as e:
+                traceback.print_exc()
                 results['ranking'] = f"failed: {str(e)}"
 
         return {
