@@ -10,6 +10,7 @@ from flask_smorest import Blueprint, abort
 from config import setup_logger
 from schemas import BacktestInputSchema
 from services import BacktestingService
+from repositories import BacktestHistoryRepository
 
 
 logger = setup_logger(name="BacktestRoutes")
@@ -28,13 +29,8 @@ class RunBacktest(MethodView):
     @blp.arguments(BacktestInputSchema)
     def post(self, data):
         """
-        Run backtesting strategy using new backtesting module.
-        
-        Results are written to backtest.db for analysis.
-        
-        Parameters:
-            data: BacktestInputSchema with start_date and end_date
-            
+        Run backtesting strategy.
+
         Returns:
             dict: Rich backtest results including summary, trades, equity curve, and full report text.
         """
@@ -44,13 +40,14 @@ class RunBacktest(MethodView):
             config_name = data.get('config_name', 'momentum_config')
             check_daily_sl = data.get('check_daily_sl', True)
             mid_week_buy = data.get('mid_week_buy', True)
-            
-            # Now returns 4 values
+            run_label = data.get('run_label')
+
             results, summary, risk_data, report_path = BacktestingService().run_backtest(
                 start_date, end_date, config_name,
-                check_daily_sl, mid_week_buy
+                check_daily_sl, mid_week_buy,
+                run_label=run_label
             )
-            
+
             # Read report content
             report_text = ""
             if report_path:
@@ -60,14 +57,10 @@ class RunBacktest(MethodView):
                 except Exception as e:
                     logger.error(f"Failed to read report file {report_path}: {e}")
                     report_text = f"Error reading report file: {e}"
-            
-            portfolio_values = risk_data.get('portfolio_values', [])
-            portfolio_dates = risk_data.get('portfolio_dates', [])
-            # Zip into [{date, value}] pairs for the chart
-            equity_curve = [
-                {"date": d, "value": v}
-                for d, v in zip(portfolio_dates, portfolio_values)
-            ]
+
+            # equity_curve already built as [{date, value}] in service
+            equity_curve = risk_data.get('equity_curve', [])
+
             return {
                 "message": f"Backtest completed. Final: {summary.get('final_value', 0):.2f}",
                 "summary": summary,
@@ -81,7 +74,49 @@ class RunBacktest(MethodView):
             abort(400, message=str(e))
         except Exception as e:
             logger.error(f"Backtest failed: {e}")
-            # Log full traceback for debugging
             import traceback
             logger.error(traceback.format_exc())
             abort(500, message=f"Backtest failed: {str(e)}")
+
+
+@blp.route("/history")
+class BacktestHistory(MethodView):
+    @blp.doc(tags=["Backtest"])
+    def get(self):
+        """List all saved backtest runs (metadata only)."""
+        try:
+            repo = BacktestHistoryRepository()
+            runs = repo.list_runs()
+            return [r.to_dict() for r in runs]
+        except Exception as e:
+            logger.error(f"Failed to list backtest history: {e}")
+            abort(500, message=str(e))
+
+
+@blp.route("/history/<int:run_id>")
+class BacktestHistoryDetail(MethodView):
+    @blp.doc(tags=["Backtest"])
+    def get(self, run_id):
+        """Get full backtest run data (metadata + files)."""
+        try:
+            repo = BacktestHistoryRepository()
+            result = repo.get_run(run_id)
+            if not result:
+                abort(404, message=f"Backtest run {run_id} not found")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to get backtest run {run_id}: {e}")
+            abort(500, message=str(e))
+
+    @blp.doc(tags=["Backtest"])
+    def delete(self, run_id):
+        """Delete a backtest run and its data files."""
+        try:
+            repo = BacktestHistoryRepository()
+            deleted = repo.delete_run(run_id)
+            if not deleted:
+                abort(404, message=f"Backtest run {run_id} not found")
+            return {"message": f"Backtest run {run_id} deleted"}
+        except Exception as e:
+            logger.error(f"Failed to delete backtest run {run_id}: {e}")
+            abort(500, message=str(e))

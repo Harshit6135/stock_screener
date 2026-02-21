@@ -19,14 +19,20 @@ logger = setup_logger(name="BacktestHistoryRepository")
 
 # Base directory for backtest history data files
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-HISTORY_BASE_DIR = os.path.join(PROJECT_ROOT, 'backtest_history')
+HISTORY_REL_DIR = 'backtest_history'
+HISTORY_ABS_DIR = os.path.join(PROJECT_ROOT, HISTORY_REL_DIR)
 
 
 class BacktestHistoryRepository:
     """Repository for backtest run history with file-based data storage."""
 
     def __init__(self):
-        os.makedirs(HISTORY_BASE_DIR, exist_ok=True)
+        os.makedirs(HISTORY_ABS_DIR, exist_ok=True)
+
+    @staticmethod
+    def _abs_path(relative_dir: str) -> str:
+        """Resolve a relative data_dir stored in DB to absolute path."""
+        return os.path.join(PROJECT_ROOT, relative_dir)
 
     def save(
         self,
@@ -68,23 +74,24 @@ class BacktestHistoryRepository:
             db.session.add(run)
             db.session.flush()  # get the id without committing
 
-            # Build folder name: {timestamp}_{id}
+            # Build folder: backtest_history/{timestamp}_{id}
             folder_name = f"{timestamp}_{run.id}"
-            data_dir = os.path.join(HISTORY_BASE_DIR, folder_name)
-            os.makedirs(data_dir, exist_ok=True)
+            rel_dir = os.path.join(HISTORY_REL_DIR, folder_name)
+            abs_dir = os.path.join(PROJECT_ROOT, rel_dir)
+            os.makedirs(abs_dir, exist_ok=True)
 
             # Write data files
-            self._write_json(os.path.join(data_dir, 'summary.json'), summary)
-            self._write_json(os.path.join(data_dir, 'equity_curve.json'), equity_curve)
-            self._write_json(os.path.join(data_dir, 'trades.json'), trades)
-            with open(os.path.join(data_dir, 'report.txt'), 'w', encoding='utf-8') as f:
+            self._write_json(os.path.join(abs_dir, 'summary.json'), summary)
+            self._write_json(os.path.join(abs_dir, 'equity_curve.json'), equity_curve)
+            self._write_json(os.path.join(abs_dir, 'trades.json'), trades)
+            with open(os.path.join(abs_dir, 'report.txt'), 'w', encoding='utf-8') as f:
                 f.write(report_text or '')
 
-            # Update data_dir on the row
-            run.data_dir = data_dir
+            # Store relative path in DB
+            run.data_dir = rel_dir
             db.session.commit()
 
-            logger.info(f"Saved backtest run {run.id} to {data_dir}")
+            logger.info(f"Saved backtest run {run.id} to {rel_dir}")
             return run
         except Exception as e:
             db.session.rollback()
@@ -104,21 +111,21 @@ class BacktestHistoryRepository:
         Get full run data: metadata + file contents.
 
         Returns:
-            dict with keys: metadata, summary, equity_curve, trades, report_text
+            dict with keys: metadata fields + summary, equity_curve, trades, report_text
             or None if not found.
         """
         run = db.session.query(BacktestRunModel).get(run_id)
         if not run:
             return None
 
-        data_dir = run.data_dir
+        abs_dir = self._abs_path(run.data_dir)
         result = run.to_dict()
 
         # Read data files
-        result['summary'] = self._read_json(os.path.join(data_dir, 'summary.json'))
-        result['equity_curve'] = self._read_json(os.path.join(data_dir, 'equity_curve.json'))
-        result['trades'] = self._read_json(os.path.join(data_dir, 'trades.json'))
-        result['report_text'] = self._read_text(os.path.join(data_dir, 'report.txt'))
+        result['summary'] = self._read_json(os.path.join(abs_dir, 'summary.json'))
+        result['equity_curve'] = self._read_json(os.path.join(abs_dir, 'equity_curve.json'))
+        result['trades'] = self._read_json(os.path.join(abs_dir, 'trades.json'))
+        result['report_text'] = self._read_text(os.path.join(abs_dir, 'report.txt'))
 
         return result
 
@@ -133,15 +140,15 @@ class BacktestHistoryRepository:
         if not run:
             return False
 
-        data_dir = run.data_dir
+        abs_dir = self._abs_path(run.data_dir) if run.data_dir else None
         try:
             db.session.delete(run)
             db.session.commit()
 
             # Remove folder from disk
-            if data_dir and os.path.isdir(data_dir):
-                shutil.rmtree(data_dir)
-                logger.info(f"Deleted backtest run {run_id} and folder {data_dir}")
+            if abs_dir and os.path.isdir(abs_dir):
+                shutil.rmtree(abs_dir)
+                logger.info(f"Deleted backtest run {run_id} and folder {abs_dir}")
             else:
                 logger.info(f"Deleted backtest run {run_id} (folder not found)")
 
