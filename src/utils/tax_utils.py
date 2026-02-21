@@ -1,5 +1,5 @@
 from datetime import date
-from config.strategies_config import TaxConfig
+from config import TaxConfig
 
 
 def calculate_capital_gains_tax(purchase_price: float, current_price: float,
@@ -34,14 +34,14 @@ def calculate_capital_gains_tax(purchase_price: float, current_price: float,
         return {
             "gain": round(total_gain, 2),
             "holding_days": holding_days,
-            "tax_type": "no_gain",
+            "tax_type": "loss",
             "tax": 0,
             "net_gain": round(total_gain, 2)
         }
     
     if holding_days < config.ltcg_holding_days:
         # Short-term capital gains
-        tax = total_gain * config.stcg_rate
+        tax = float(total_gain) * config.stcg_rate
         tax_type = "STCG"
     else:
         # Long-term capital gains

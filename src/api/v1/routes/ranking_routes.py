@@ -1,11 +1,12 @@
 from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from repositories import RankingRepository, MarketDataRepository
 from schemas import RankingSchema, MessageSchema, TopNSchema
 from services import RankingService
+from utils import get_prev_friday
 
 
 blp = Blueprint("Rankings", __name__, url_prefix="/api/v1/ranking", description="Operations on Weekly Rankings")
@@ -13,11 +14,6 @@ ranking_repo = RankingRepository()
 
 marketdata_repo = MarketDataRepository()
 
-
-from utils.date_utils import get_prev_friday
-
-
-# ========== Ranking Generation Endpoints ==========
 
 @blp.route("/generate")
 class GenerateRankings(MethodView):
@@ -40,8 +36,6 @@ class RecalculateRankings(MethodView):
         result = ranking_service.recalculate_all_rankings()
         return {"message": result["message"]}
 
-
-# ========== Ranking Query Endpoints ==========
 
 @blp.route("/top/<int:n>")
 class TopRankings(MethodView):

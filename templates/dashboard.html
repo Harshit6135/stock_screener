@@ -1777,7 +1777,7 @@
                     const metrics = sum.metrics || {}; // Depending on structure
 
                     // We need to parse summary correctly. 
-                    // Based on runner.py, get_summary returns risk_monitor.get_summary()
+                    // Based on backtesting_service.py, get_summary returns risk_monitor.get_summary()
                     // which has { metrics: {...}, final_value... }
 
                     document.getElementById('bt-return').innerText = (sum.total_return || 0).toFixed(2) + '%';
@@ -1832,14 +1832,16 @@
             hideLoading();
         }
 
-        function renderEquityChart(values) {
+        function renderEquityChart(equityCurve) {
             const ctx = document.getElementById('equityChart').getContext('2d');
 
             if (backtestChartInstance) {
                 backtestChartInstance.destroy();
             }
 
-            const labels = values.map((_, i) => i); // simple index for now, usually dates
+            // equityCurve is [{date, value}, ...] from the API
+            const labels = equityCurve.map(p => p.date || '');
+            const values = equityCurve.map(p => p.value);
 
             backtestChartInstance = new Chart(ctx, {
                 type: 'line',
@@ -1861,7 +1863,11 @@
                         legend: { display: false }
                     },
                     scales: {
-                        x: { display: false },
+                        x: {
+                            display: true,
+                            ticks: { maxTicksLimit: 8, color: '#94a3b8' },
+                            grid: { display: false }
+                        },
                         y: {
                             grid: { color: '#2d3748' },
                             ticks: { color: '#94a3b8' }

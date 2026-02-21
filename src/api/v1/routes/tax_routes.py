@@ -178,4 +178,3 @@ class TaxAdjustedCost(MethodView):
         )
         
         return {"total_cost_pct": total_cost}
-

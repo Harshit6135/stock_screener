@@ -1,4 +1,5 @@
 import pandas as pd
+
 from config import setup_logger, StrategyParameters
 from utils import goldilocks_score, rsi_regime_score, score_percent_b
 
@@ -19,8 +20,6 @@ class FactorsService:
         Goldilocks scoring for distance from 200 EMA
         Non-linear: sweet spot at 10-35% above EMA
         """
-        above_200 = (distance_from_ema_200 > 0).astype(float)
-        
         dist_score = distance_from_ema_200.apply(goldilocks_score)
         ema_slope_norm = ema_50_slope.clip(-5, 5) / 5 * 50 + 50
 

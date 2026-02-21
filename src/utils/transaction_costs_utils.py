@@ -1,4 +1,4 @@
-from config.strategies_config import TransactionCostConfig, ImpactCostConfig
+from config import TransactionCostConfig, ImpactCostConfig
 
 
 def calculate_transaction_costs(trade_value: float, side: str,
@@ -47,6 +47,7 @@ def calculate_transaction_costs(trade_value: float, side: str,
     
     total = brokerage + stt + exchange + sebi + stamp + gst + ipf + dp
     
+    
     return {
         "brokerage": round(brokerage, 2),
         "stt": round(stt, 2),
@@ -72,11 +73,6 @@ def calculate_buy_costs(trade_value: float,
         
     Returns:
         dict: Breakdown with brokerage, stt, exchange, sebi, stamp, gst, total, percent
-        
-    Example:
-        >>> costs = calculate_buy_costs(100000.0)
-        >>> costs['total']
-        15.35
     """
     return calculate_transaction_costs(trade_value, 'buy', config)
 
@@ -92,11 +88,6 @@ def calculate_sell_costs(trade_value: float,
         
     Returns:
         dict: Breakdown with brokerage, stt, exchange, sebi, stamp, gst, total, percent
-        
-    Example:
-        >>> costs = calculate_sell_costs(100000.0)
-        >>> costs['total']
-        118.06
     """
     return calculate_transaction_costs(trade_value, 'sell', config)
 

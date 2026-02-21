@@ -1,9 +1,12 @@
-from config.app_config import BASE_URL, MCAP_THRESHOLD, PRICE_THRESHOLD, HISTORY_LOOKBACK, BACKTESTING_HISTORY_START_DATE, TOP_N_RANKINGS, DEFAULT_INITIAL_SL
-from config.flask_config import Config
-from config.indicators_config import ema_strategy, momentum_strategy, derived_strategy, additional_parameters
-from config.kite_config import KITE_CONFIG
-from config.logger_config import setup_logger
-from config.strategies_config import StrategyParameters, TransactionCostConfig, ImpactCostConfig, PenaltyBoxConfig, PositionSizingConfig, PortfolioControlConfig, TaxConfig, ChallengerConfig, GoldilocksConfig, RSIRegimeConfig, BacktestConfig
+from .app_config import BASE_URL, MCAP_THRESHOLD, PRICE_THRESHOLD, HISTORY_LOOKBACK, BACKTESTING_HISTORY_START_DATE, TOP_N_RANKINGS, DEFAULT_INITIAL_SL
+from .flask_config import Config
+from .indicators_config import ema_strategy, momentum_strategy, derived_strategy, additional_parameters
+from .kite_config import KITE_CONFIG
+from .logger_config import setup_logger
+from .strategies_config import StrategyParameters, GoldilocksConfig, RSIRegimeConfig
+from .tax_config import TaxConfig
+from .cost_config import TransactionCostConfig, ImpactCostConfig
+
 
 __all__ = [
     #AppConfig
@@ -32,14 +35,13 @@ __all__ = [
 
     #Strategies Config
     "StrategyParameters",
-    "TransactionCostConfig",
-    "ImpactCostConfig",
-    "PenaltyBoxConfig",
-    "PositionSizingConfig",
-    "PortfolioControlConfig",
-    "TaxConfig",
-    "ChallengerConfig",
     "GoldilocksConfig",
     "RSIRegimeConfig",
-    "BacktestConfig"
+
+    #Tax Config
+    "TaxConfig",
+
+    #Cost Config
+    "TransactionCostConfig",
+    "ImpactCostConfig",
 ]

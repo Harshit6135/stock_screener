@@ -4,7 +4,6 @@ Actions Routes
 API endpoints for trading actions (BUY/SELL/SWAP).
 """
 from datetime import datetime
-from flask import request
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 
@@ -19,7 +18,6 @@ from services import ActionsService
 
 logger = setup_logger(name="ActionsRoutes")
 actions_repo = ActionsRepository()
-
 blp = Blueprint(
     "Actions",
     __name__,
@@ -194,4 +192,3 @@ class ProcessActions(MethodView):
         except Exception as e:
             logger.error(f"Failed to process actions: {e}")
             abort(500, message=f"Processing failed: {str(e)}")
-

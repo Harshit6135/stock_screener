@@ -3,6 +3,7 @@ import json
 import time
 
 import pandas as pd
+pd.set_option('future.no_silent_downcasting', True)
 
 from adaptors import YFinanceAdaptor
 from config import setup_logger, MCAP_THRESHOLD, PRICE_THRESHOLD

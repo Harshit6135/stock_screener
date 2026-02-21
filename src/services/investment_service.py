@@ -5,13 +5,17 @@ Handles portfolio summary calculations, trade journal generation,
 and manual trade creation. Centralizes business logic that was
 previously scattered across route handlers.
 """
+import pandas as pd
+pd.set_option('future.no_silent_downcasting', True)
+
+from sqlalchemy.orm import Session
 from datetime import datetime, date
 from typing import Dict, List, Optional
 
+from repositories import *
 from config import setup_logger
-from repositories import InvestmentRepository, ActionsRepository, ConfigRepository
-from .actions_service import ActionsService
-from utils import calculate_xirr
+from utils import calculate_xirr, get_prev_friday, calculate_effective_stop
+
 
 logger = setup_logger(name="InvestmentService")
 
@@ -19,144 +23,48 @@ logger = setup_logger(name="InvestmentService")
 class InvestmentService:
     """Service layer for investment operations."""
 
-    def __init__(self):
-        self.inv_repo = InvestmentRepository()
-        self.actions_repo = ActionsRepository()
+    def __init__(self, session: Optional[Session] = None):
+        self.inv_repo = InvestmentRepository(session)
+        self.actions_repo = ActionsRepository(session)
         self.config_repo = ConfigRepository()
 
-    def get_portfolio_summary(
-        self, working_date: Optional[date] = None
-    ) -> Optional[Dict]:
+        self.indicators_repo = IndicatorsRepository()
+        self.marketdata_repo = MarketDataRepository()
+        self.ranking_repo = RankingRepository()
+
+    def ensure_capital_events_seeded(self, seed_date = None) -> None:
         """
-        Get portfolio summary with on-the-fly recalculation.
-
-        Recalculates portfolio_value, gains, absolute return %,
-        and XIRR from current holdings and cash, rather than
-        relying on stale DB values.
-
-        Parameters:
-            working_date: Date to get summary for (None = latest)
-
-        Returns:
-            Dict with all summary fields, or None if no summary
+        If capital_events table is empty, auto-seed
+        with config.initial_capital at the earliest
+        summary date for backward compatibility.
         """
-        summary_model = self.inv_repo.get_summary(working_date)
-        if not summary_model:
-            return None
+        events = self.inv_repo.get_all_capital_events()
+        if events:
+            return
 
-        summary = summary_model.to_dict()
-        summary_date = summary['date']
-
-        # Total capital from capital_events up to this date
-        self._ensure_capital_events_seeded()
-        total_capital = self.inv_repo.get_total_capital(
-            summary_date
+        config_data = self.config_repo.get_config(
+            'momentum_config'
         )
+        initial = float(config_data.initial_capital)
 
-        # Fresh calculation from current holdings
-        holdings = self.inv_repo.get_holdings(summary_date)
-        entry_value = float(sum(
-            float(h.entry_price) * h.units for h in holdings
-        ))
-        current_value = float(sum(
-            float(h.current_price) * h.units for h in holdings
-        ))
-
-        # Remaining cash from actual actions
-        all_actions = (
-            self.actions_repo.get_all_approved_actions()
-        )
-        total_bought = sum(
-            float(a.execution_price or a.prev_close) * a.units
-            for a in all_actions if a.type == 'buy'
-        )
-        total_sold = sum(
-            float(a.execution_price or a.prev_close) * a.units
-            for a in all_actions if a.type == 'sell'
-        )
-        remaining_cash = (
-            total_capital - total_bought + total_sold
-        )
-
-        portfolio_value = current_value + remaining_cash
-
-        # Gains
-        total_gain = portfolio_value - total_capital
-        unrealized_gain = current_value - entry_value
-
-        # Realized gain from trade journal (FIFO)
-        trades = self.get_trade_journal()
-        realized_gain = (
-            sum(t['pnl'] for t in trades) if trades else 0.0
-        )
-
-        absolute_return_pct = (
-            (total_gain / entry_value) * 100
-            if entry_value else 0
-        )
-
-        summary['portfolio_value'] = round(portfolio_value, 2)
-        summary['gain'] = round(total_gain, 2)
-        summary['gain_percentage'] = round(
-            absolute_return_pct, 2
-        )
-        summary['invested_value'] = round(entry_value, 2)
-        summary['unrealized_gain'] = round(
-            unrealized_gain, 2
-        )
-        summary['realized_gain'] = round(realized_gain, 2)
-        summary['remaining_capital'] = round(
-            remaining_cash, 2
-        )
-
-        # Calculate XIRR from cash flows
-        summary['xirr'] = self._calculate_xirr(
-            current_value
-        )
-
-        return summary
-
-    def _calculate_xirr(
-        self, current_value: float
-    ) -> Optional[float]:
-        """
-        Calculate XIRR from capital events (infusions as
-        negative cashflows) plus current portfolio value as
-        terminal cashflow.
-
-        Parameters:
-            current_value: Current market value of holdings
-
-        Returns:
-            XIRR as percentage, or None if calculation fails
-        """
-        try:
-            cashflows = []
-
-            # Each capital event is a negative cashflow
-            events = self.inv_repo.get_all_capital_events()
-            if not events:
-                return None
-
-            for ev in events:
-                cashflows.append(
-                    (-float(ev.amount), ev.date)
-                )
-
-            # Remaining cash in the portfolio today
-            remaining = self._remaining_cash()
-            terminal = current_value + remaining
-            cashflows.append(
-                (terminal, datetime.now().date())
+        # Use earliest summary date, or today
+        summaries = self.inv_repo.get_all_summaries()
+        if not seed_date:
+            seed_date = (
+                summaries[0].date if summaries
+                else datetime.now().date()
             )
 
-            xirr_val = calculate_xirr(cashflows)
-            return (
-                round(xirr_val * 100, 2)
-                if xirr_val else None
-            )
-        except Exception:
-            return None
+        self.inv_repo.insert_capital_event({
+            'date': seed_date,
+            'amount': initial,
+            'event_type': 'initial',
+            'note': 'Auto-seeded from config',
+        })
+        logger.info(
+            f"Auto-seeded capital event: {initial} "
+            f"on {seed_date}"
+        )
 
     def _remaining_cash(self) -> float:
         """
@@ -178,6 +86,88 @@ class InvestmentService:
             for a in all_actions if a.type == 'sell'
         )
         return total_capital - total_bought + total_sold
+
+    def _calculate_xirr(
+        self, portfolio_value
+    ) -> Optional[float]:
+        """
+        Calculate XIRR from capital events (infusions as
+        negative cashflows) plus current portfolio value as
+        terminal cashflow.
+
+        Parameters:
+            current_value: Current market value of holdings
+
+        Returns:
+            XIRR as percentage, or None if calculation fails
+        """
+        try:
+            cashflows = []
+
+            events = self.inv_repo.get_all_capital_events()
+            if not events:
+                return None
+
+            for ev in events:
+                cashflows.append(
+                    (-float(ev.amount), ev.date)
+                )
+            cashflows.append(
+                (portfolio_value, datetime.now().date())
+            )
+
+            xirr_val = calculate_xirr(cashflows)
+            return (
+                round(xirr_val * 100, 2)
+                if xirr_val else None
+            )
+        except Exception:
+            return None
+
+    def get_portfolio_summary(
+        self, working_date: Optional[date] = None
+    ) -> Optional[Dict]:
+
+        summary_FROM_DB = self.inv_repo.get_summary(working_date)
+        if not summary_FROM_DB:
+            return None
+
+        summary = summary_FROM_DB.to_dict()
+        summary_date = summary['date']
+
+        self.ensure_capital_events_seeded()
+        total_capital = self.inv_repo.get_total_capital(summary_date, include_realized=True)
+        total_invested_captial = self.inv_repo.get_total_capital(summary_date, include_realized=False)
+
+        holdings = self.inv_repo.get_holdings(summary_date)
+        entry_value = float(sum(h.entry_price * h.units for h in holdings))
+        current_value = float(sum(h.current_price * h.units for h in holdings)) #TODO Handle split/bonus
+
+        current_invested = float(sum(a.execution_price or a.prev_close * a.units for a in holdings if a.type == 'buy'))
+
+        remaining_cash = total_capital - current_invested
+        portfolio_value = current_value + remaining_cash
+
+        total_gain = portfolio_value - total_capital
+        unrealized_gain = current_value - entry_value
+
+        realized_gain = total_capital - total_invested_captial
+
+        absolute_return_pct = (
+            (total_gain / entry_value) * 100
+            if entry_value else 0
+        )
+
+        summary['portfolio_value'] = round(portfolio_value, 2)
+        summary['gain'] = round(total_gain, 2)
+        summary['gain_percentage'] = round(absolute_return_pct, 2)
+        summary['invested_value'] = round(entry_value, 2)
+        summary['unrealized_gain'] = round(unrealized_gain, 2)
+        summary['realized_gain'] = round(realized_gain, 2)
+        summary['remaining_capital'] = round(remaining_cash, 2)
+        summary['xirr'] = self._calculate_xirr(portfolio_value)
+
+        return summary
 
     def get_summary_history(self) -> List[Dict]:
         """
@@ -226,7 +216,6 @@ class InvestmentService:
             total_buy_cost = 0.0
             buy_date = None
             
-            # FIFO matching
             matched_units = 0
             while matched_units < sell_units:
                 if symbol in buys and buys[symbol]:
@@ -243,17 +232,13 @@ class InvestmentService:
                     if not buy_date:
                         buy_date = buy.action_date
                     
-                    # Update buy units or remove if fully consumed
                     if take >= available:
                         buys[symbol].pop(0)
                     else:
                         buy.units -= take
                 else:
-                    # No more buys (split/bonus shares) -> 0 cost basis
-                    # The remaining sell value is pure profit
                     remaining = sell_units - matched_units
                     matched_units += remaining
-                    # total_buy_cost += 0
                     if not buy_date:
                          buy_date = sell.action_date # Fallback
 
@@ -282,231 +267,6 @@ class InvestmentService:
         # Sort by exit date descending
         trades.sort(key=lambda x: x['exit_date'], reverse=True)
         return trades
-
-    def create_manual_buy(self, stocks: List[Dict]) -> str:
-        """
-        Create manual BUY actions with position sizing.
-
-        Parameters:
-            stocks: List of dicts with symbol, date, price, units, reason, config_name
-
-        Returns:
-            Confirmation message
-
-        Raises:
-            ValueError: If validation fails
-        """
-        actions = []
-        # Get portfolio value (Total Risk Capital) for sizing
-        # For manual buy, we use the same base as generating actions (Net Worth)
-        portfolio_value = self.inv_repo.get_total_capital(include_realized=True)
-        
-        for stock in stocks:
-            service = ActionsService(stock['config_name'])
-            action = service.buy_action(
-                symbol=stock['symbol'],
-                action_date=stock['date'],
-                prev_close=float(stock['price']),
-                reason=stock['reason'],
-                portfolio_value=portfolio_value,
-                remaining_capital=portfolio_value, # Manual buy might ignore checks, but param is needed
-                units=stock['units']
-            )
-            action['execution_price'] = float(stock['price'])
-            actions.append(action)
-
-        self.actions_repo.delete_actions(stocks[0]['date'])
-        self.actions_repo.bulk_insert_actions(actions)
-        return f"Manual BUY actions created for {[s['symbol'] for s in stocks]}"
-
-    def create_manual_sell(self, data: Dict) -> str:
-        """
-        Create a manual SELL action.
-
-        Parameters:
-            data: Dict with symbol, date, price, units, reason
-
-        Returns:
-            Confirmation message
-
-        Raises:
-            ValueError: If validation fails
-        """
-        # Validate units against current holding
-        holding = self.inv_repo.get_holdings_by_symbol(data['symbol'])
-        if not holding:
-            raise ValueError(
-                f"Cannot sell {data['symbol']}: not in current holdings"
-            )
-        if data['units'] > holding.units:
-            raise ValueError(
-                f"Cannot sell {data['units']} units of {data['symbol']}: "
-                f"only {holding.units} held"
-            )
-
-        action = ActionsService.sell_action(
-            data['symbol'], data['date'], float(data['price']), data['units'], data['reason']
-        )
-        action['execution_price'] = float(data['price'])
-        self.actions_repo.delete_actions(data['date'])
-        self.actions_repo.bulk_insert_actions([action])
-        return f"Manual SELL action created for {data['symbol']}: {data['units']} units"
-
-    def sync_prices(self) -> str:
-        """
-        Sync portfolio holdings with latest market prices.
-
-        Returns:
-            Confirmation message
-        """
-        today = datetime.now().date()
-        service = ActionsService("momentum_config")
-        service.sync_latest_prices(today)
-        return "Portfolio prices synced with latest market data"
-
-    def recalculate_summary(self) -> str:
-        """
-        Recalculate and fix all summary records in the DB.
-
-        Uses cumulative capital from capital_events per
-        summary date so infusions mid-stream are handled.
-
-        Returns:
-            Confirmation message with number of records fixed
-        """
-        self._ensure_capital_events_seeded()
-
-        all_summaries = self.inv_repo.get_all_summaries()
-        if not all_summaries:
-            return "No summary records to recalculate"
-
-        # Total capital from all events (for gain calc)
-        total_capital = self.inv_repo.get_total_capital()
-
-        # Group actions by date
-        all_actions = (
-            self.actions_repo.get_all_approved_actions()
-        )
-        actions_by_date: Dict = {}
-        for a in all_actions:
-            if a.action_date not in actions_by_date:
-                actions_by_date[a.action_date] = []
-            actions_by_date[a.action_date].append(a)
-
-        first_date = all_summaries[0].date
-        rolling_capital = self.inv_repo.get_total_capital(
-            first_date
-        )
-        fixed_count = 0
-
-        for summary_model in all_summaries:
-            summary_date = summary_model.date
-
-            # Check for infusions between last date
-            # and this date
-            cap_at_date = (
-                self.inv_repo.get_total_capital(summary_date)
-            )
-            infusion_delta = cap_at_date - (
-                rolling_capital
-                + sum(
-                    float(
-                        a.execution_price or a.prev_close
-                    ) * a.units
-                    for a in all_actions
-                    if a.type == 'sell'
-                    and a.action_date <= summary_date
-                )
-                - sum(
-                    float(
-                        a.execution_price or a.prev_close
-                    ) * a.units
-                    for a in all_actions
-                    if a.type == 'buy'
-                    and a.action_date <= summary_date
-                )
-            ) if fixed_count > 0 else 0
-            if infusion_delta > 0:
-                rolling_capital += infusion_delta
-
-            date_actions = actions_by_date.get(
-                summary_date, []
-            )
-            bought = sum(
-                float(
-                    a.execution_price or a.prev_close
-                ) * a.units
-                for a in date_actions if a.type == 'buy'
-            )
-            sold = sum(
-                float(
-                    a.execution_price or a.prev_close
-                ) * a.units
-                for a in date_actions if a.type == 'sell'
-            )
-
-            holdings = self.inv_repo.get_holdings(
-                summary_date
-            )
-            holdings_value = float(sum(
-                float(h.current_price) * h.units
-                for h in holdings
-            )) if holdings else 0.0
-
-            capital_risk = float(sum(
-                h.units * (
-                    float(h.entry_price)
-                    - float(h.current_sl)
-                )
-                for h in holdings
-            )) if holdings else 0.0
-
-            remaining_capital = (
-                rolling_capital + sold - bought
-            )
-            portfolio_value = (
-                holdings_value + remaining_capital
-            )
-
-            gain = round(
-                portfolio_value - total_capital, 2
-            )
-            gain_pct = round(
-                (portfolio_value - total_capital)
-                / total_capital * 100, 2
-            ) if total_capital else 0
-
-            stop_value = float(sum(
-                float(h.current_sl) * h.units
-                for h in holdings
-            )) if holdings else 0.0
-            portfolio_risk = round(
-                holdings_value - stop_value, 2
-            )
-
-            corrected = {
-                'date': summary_date,
-                'starting_capital': round(
-                    rolling_capital, 2
-                ),
-                'sold': round(sold, 2),
-                'bought': round(bought, 2),
-                'capital_risk': round(capital_risk, 2),
-                'portfolio_value': round(
-                    portfolio_value, 2
-                ),
-                'portfolio_risk': portfolio_risk,
-                'gain': gain,
-                'gain_percentage': gain_pct,
-            }
-            self.inv_repo.insert_summary(corrected)
-            fixed_count += 1
-
-            rolling_capital = remaining_capital
-
-        return (
-            f"Recalculated {fixed_count} summary records"
-        )
 
     def add_capital_event(
         self,
@@ -557,36 +317,132 @@ class InvestmentService:
         events = self.inv_repo.get_all_capital_events()
         return [e.to_dict() for e in events]
 
-    def _ensure_capital_events_seeded(self) -> None:
+    def update_holding(self, symbol: str, action_date: date, mid_week: bool = False, holding = None) -> Dict:
         """
-        If capital_events table is empty, auto-seed
-        with config.initial_capital at the earliest
-        summary date for backward compatibility.
-        """
-        events = self.inv_repo.get_all_capital_events()
-        if events:
-            return
+        Update an existing holding with current prices.
 
-        config_data = self.config_repo.get_config(
+        Uses shared calculate_effective_stop for consistency with backtesting.
+        Uses weekly low price for stop-loss trigger check.
+
+        Parameters:
+            symbol (str): Trading symbol
+            action_date (date): Current action date
+
+        Returns:
+            Dict: Updated holding data with new price/stop-loss
+        """
+        config = self.config_repo.get_config(
             'momentum_config'
         )
-        initial = float(config_data.initial_capital)
+        if not holding:
+            holding = self.inv_repo.get_holdings_by_symbol(symbol)
+        data_date = get_prev_friday(action_date)
+        raw_atr = self.indicators_repo.get_indicator_by_tradingsymbol('atrr_14', symbol, data_date)
 
-        # Use earliest summary date, or today
-        summaries = self.inv_repo.get_all_summaries()
-        seed_date = (
-            summaries[0].date if summaries
-            else datetime.now().date()
-        )
+        md_obj = self.marketdata_repo.get_marketdata_by_trading_symbol(symbol, data_date)
+        if md_obj:
+            current_price = md_obj.close
+        else:
+            logger.warning(f"Market data missing for {symbol} on {data_date}, using last known price")
+            current_price = holding.current_price
 
-        self.inv_repo.insert_capital_event({
-            'date': seed_date,
-            'amount': initial,
-            'event_type': 'initial',
-            'note': 'Auto-seeded from config',
-        })
-        logger.info(
-            f"Auto-seeded capital event: {initial} "
-            f"on {seed_date}"
-        )
+        if not mid_week:
+            atr = round(raw_atr, 2) if raw_atr is not None else 0.0
+            stoploss = calculate_effective_stop(
+                current_price=float(current_price),
+                current_atr=atr,
+                stop_multiplier=config.sl_multiplier,
+                previous_stop=(
+                    float(holding.current_sl)
+                    if holding.current_sl
+                    else float(holding.entry_sl)
+                )
+            )
+            rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
+            score = round(rank_data.composite_score, 2) if rank_data else 0
+        else:
+            stoploss = holding.current_sl
+            score = holding.score
+            atr = holding.atr
 
+        holding_data = {
+            'symbol': symbol,
+            'date': action_date,
+            'entry_date': holding.entry_date,
+            'entry_price': holding.entry_price,
+            'units': holding.units,
+            'atr': atr,
+            'score': score,
+            'entry_sl': holding.entry_sl,
+            'current_price': current_price,
+            'current_sl': stoploss
+        }
+        return holding_data
+
+    def get_summary(self, week_holdings, sold, override_starting_capital=None, action_date=None):
+        """
+        Build weekly portfolio summary from holdings data.
+
+        Parameters:
+            week_holdings (List[Dict]): Current week's holdings
+            sold (float): Total value of sold positions
+            override_starting_capital (float): Optional override to prevent double-counting
+                                            when updating same-day summary
+
+        Returns:
+            Dict: Summary with capital, risk, and P&L metrics
+        """
+        if override_starting_capital is not None:
+            total_cap = float(override_starting_capital)
+        else:
+            total_cap = float(self.inv_repo.get_total_capital(action_date, include_realized=True))
+
+        if week_holdings:
+            df = pd.DataFrame(week_holdings)
+        else:
+            df = pd.DataFrame(columns=[
+                'entry_price', 'units', 'current_sl', 'current_price',
+                'entry_date', 'date'
+            ])
+
+        for col in ['entry_price', 'units', 'current_sl', 'current_price']:
+            if col in df.columns:
+                df[col] = df[col].astype(float)
+        
+        new_capital_addition = 0
+        prev_summary = self.inv_repo.get_summary()
+        if not prev_summary:
+            prev_remaining_capital = total_cap
+        else:
+            prev_remaining_capital = prev_summary.remaining_capital
+            new_capital_addition = self.inv_repo.get_total_capital_by_date(prev_summary.date)
+
+        bought_mask = df['entry_date'] == df['date']
+        bought = float((df.loc[bought_mask, 'entry_price']* df.loc[bought_mask, 'units']).sum())
+        starting_capital = float(prev_remaining_capital) + new_capital_addition
+
+        capital_risk = float((df['units'] * (df['entry_price'] - df['current_sl'])).sum())
+        holdings_value = float((df['units'] * df['current_price']).sum())
+        remaining_capital = starting_capital - bought + sold
+        portfolio_value = holdings_value + remaining_capital
+
+        stop_value = float((df['units'] * df['current_sl']).sum())
+        portfolio_risk = round(holdings_value - stop_value, 2)
+
+        gain = round(portfolio_value - total_cap, 2)
+        gain_pct = round(
+            (gain) / total_cap * 100, 2
+        ) if total_cap else 0.0
+
+        summary = {
+            'date': week_holdings[0]['date'] if week_holdings else action_date,
+            'starting_capital': round(starting_capital, 2),
+            'sold': round(sold, 2),
+            'bought': round(bought, 2),
+            'capital_risk': round(capital_risk, 2),
+            'portfolio_value': round(portfolio_value, 2),
+            'portfolio_risk': portfolio_risk,
+            'gain': gain,
+            'gain_percentage': gain_pct,
+        }
+        return summary

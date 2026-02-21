@@ -4,6 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from config import setup_logger
 from models import RankingModel
 
+
 logger = setup_logger(name="RankingRepository")
 
 

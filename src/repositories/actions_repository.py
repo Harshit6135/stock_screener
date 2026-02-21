@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from models import ActionsModel
 from config import setup_logger
 
+
 logger = setup_logger(name="ActionsRepository")
 
 
@@ -140,7 +141,7 @@ class ActionsRepository:
             bool: True if successful, None otherwise
         """
         action_id = action_data['action_id']
-        if action_data['status'] == 'Approved':
+        if action_data.get('status', None) == 'Approved':
             if 'execution_price' not in action_data:
                 logger.warning('Missing execution price for approval')
                 return None
@@ -171,6 +172,18 @@ class ActionsRepository:
         """
         return self.session.query(ActionsModel).filter(
             ActionsModel.status == 'Pending'
+        ).all()
+
+    def get_pending_buy_actions(self):
+        """
+        Get all pending actions across all dates.
+        
+        Returns:
+            list: Pending ActionsModel instances
+        """
+        return self.session.query(ActionsModel).filter(
+            ActionsModel.status == 'Pending',
+            ActionsModel.type == 'buy'
         ).all()
 
     def get_all_approved_actions(self):

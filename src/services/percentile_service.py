@@ -1,5 +1,8 @@
 import pandas as pd
+pd.set_option('future.no_silent_downcasting', True)
+
 from datetime import datetime, date
+
 from config import setup_logger, StrategyParameters as StrategyParams
 from repositories import IndicatorsRepository, MarketDataRepository, PercentileRepository
 from utils import percentile_rank
@@ -10,7 +13,6 @@ percentile_repo = PercentileRepository()
 indicators_repo = IndicatorsRepository()
 marketdata_repo = MarketDataRepository()
 logger = setup_logger(name="Orchestrator")
-pd.set_option('future.no_silent_downcasting', True)
 
 
 class PercentileService:
@@ -26,7 +28,6 @@ class PercentileService:
         """Calculate factor scores via FactorsService, then percentiles"""
         metrics_df = self.factors_service.calculate_all_factors(metrics_df)
         
-        # Percentile-rank each factor across the universe
         factor_cols = {
             'factor_trend': 'trend_percentile',
             'factor_momentum': 'momentum_percentile',
@@ -51,9 +52,6 @@ class PercentileService:
 
         Raises:
             ValueError: If the count difference exceeds 5%.
-
-        Example:
-            >>> svc._validate_count(200, date(2025, 1, 10))
         """
 
         last_percentile_rows = percentile_repo.get_percentiles_by_date(
@@ -123,18 +121,23 @@ class PercentileService:
             'tradingsymbol', 
             'percentile_date', 
             'close',
+
             #trend Percentile
             'factor_trend',
             'trend_percentile',
+
             #momentum percentile
             'factor_momentum',
-            'momentum_percentile', 
+            'momentum_percentile',
+
             #efficiency percentile
             'factor_efficiency',
-            'efficiency_percentile', 
+            'efficiency_percentile',
+
             #volume rank
             'factor_volume',
-            'volume_percentile', 
+            'volume_percentile',
+
             #structure rank
             'factor_structure',
             'structure_percentile'

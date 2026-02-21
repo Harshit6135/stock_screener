@@ -8,8 +8,8 @@ from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 
 from config import setup_logger
-from schemas import MessageSchema, BacktestInputSchema
-from backtesting import run_backtest
+from schemas import BacktestInputSchema
+from services import BacktestingService
 
 
 logger = setup_logger(name="BacktestRoutes")
@@ -46,7 +46,7 @@ class RunBacktest(MethodView):
             mid_week_buy = data.get('mid_week_buy', True)
             
             # Now returns 4 values
-            results, summary, risk_data, report_path = run_backtest(
+            results, summary, risk_data, report_path = BacktestingService().run_backtest(
                 start_date, end_date, config_name,
                 check_daily_sl, mid_week_buy
             )
@@ -61,11 +61,18 @@ class RunBacktest(MethodView):
                     logger.error(f"Failed to read report file {report_path}: {e}")
                     report_text = f"Error reading report file: {e}"
             
+            portfolio_values = risk_data.get('portfolio_values', [])
+            portfolio_dates = risk_data.get('portfolio_dates', [])
+            # Zip into [{date, value}] pairs for the chart
+            equity_curve = [
+                {"date": d, "value": v}
+                for d, v in zip(portfolio_dates, portfolio_values)
+            ]
             return {
                 "message": f"Backtest completed. Final: {summary.get('final_value', 0):.2f}",
                 "summary": summary,
                 "trades": risk_data.get('trades', []),
-                "equity_curve": risk_data.get('portfolio_values', []),
+                "equity_curve": equity_curve,
                 "report_text": report_text,
                 "report_path": report_path
             }
