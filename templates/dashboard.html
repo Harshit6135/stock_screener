@@ -683,6 +683,14 @@
                 <div class="metric-label">XIRR (Annualized)</div>
                 <div class="metric-value" id="sum-xirr">-</div>
             </div>
+            <div class="metric-card">
+                <div class="metric-label">Portfolio Risk</div>
+                <div class="metric-value" id="sum-portfolio-risk">-</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Capital Risk</div>
+                <div class="metric-value" id="sum-capital-risk">-</div>
+            </div>
         </div>
 
         <!-- Equity Curve & Drawdown Charts -->
@@ -1281,6 +1289,14 @@
                     const elRealized = document.getElementById('sum-realized');
                     elRealized.innerText = '₹' + fmt(realized);
                     elRealized.className = 'metric-value ' + (realized >= 0 ? 'pos-val' : 'neg-val');
+
+                    const elPortfolioRisk = document.getElementById('sum-portfolio-risk');
+                    elPortfolioRisk.innerText = '₹' + fmt(summary.portfolio_risk || 0);
+                    elPortfolioRisk.className = 'metric-value ' + (summary.portfolio_risk <= 0 ? 'pos-val' : 'neg-val');
+
+                    const elCapitalRisk = document.getElementById('sum-capital-risk');
+                    elCapitalRisk.innerText = '₹' + fmt(summary.capital_risk || 0);
+                    elCapitalRisk.className = 'metric-value ' + (summary.capital_risk <= 0 ? 'pos-val' : 'neg-val');
 
                     document.getElementById('sum-cash').innerText = '₹' + fmt(summary.remaining_capital || 0);
                     document.getElementById('pos-count').innerText = holdings.length;

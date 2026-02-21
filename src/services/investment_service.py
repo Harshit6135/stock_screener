@@ -142,20 +142,23 @@ class InvestmentService:
         holdings = self.inv_repo.get_holdings(summary_date)
         entry_value = float(sum(h.entry_price * h.units for h in holdings))
         current_value = float(sum(h.current_price * h.units for h in holdings)) #TODO Handle split/bonus
+        stoploss_value = float(sum(h.current_sl * h.units for h in holdings))
+        portfolio_risk = current_value - stoploss_value
+        capital_risk = entry_value - stoploss_value
 
-        current_invested = float(sum(a.execution_price or a.prev_close * a.units for a in holdings if a.type == 'buy'))
+        # current_invested = float(sum(a.execution_price or a.prev_close * a.units for a in holdings if a.type == 'buy'))
 
-        remaining_cash = total_capital - current_invested
+        remaining_cash = total_capital - entry_value
         portfolio_value = current_value + remaining_cash
 
-        total_gain = portfolio_value - total_capital
+        total_gain = portfolio_value - total_invested_captial
         unrealized_gain = current_value - entry_value
 
         realized_gain = total_capital - total_invested_captial
 
         absolute_return_pct = (
-            (total_gain / entry_value) * 100
-            if entry_value else 0
+            (total_gain / total_invested_captial) * 100
+            if total_invested_captial else 0
         )
 
         summary['portfolio_value'] = round(portfolio_value, 2)
@@ -166,6 +169,8 @@ class InvestmentService:
         summary['realized_gain'] = round(realized_gain, 2)
         summary['remaining_capital'] = round(remaining_cash, 2)
         summary['xirr'] = self._calculate_xirr(portfolio_value)
+        summary['portfolio_risk'] = round(portfolio_risk, 2)
+        summary['capital_risk'] = round(capital_risk, 2)
 
         return summary
 
@@ -446,3 +451,38 @@ class InvestmentService:
             'gain_percentage': gain_pct,
         }
         return summary
+
+    def sync_prices(self) -> str:
+        """
+        Sync portfolio holdings with latest market prices.
+
+        Returns:
+            Confirmation message
+        """
+        holdings = self.inv_repo.get_holdings()
+        if not holdings:
+            return []
+        
+        for h in holdings:
+            md = self.marketdata_repo.get_latest_marketdata(h.symbol)
+            
+            if not md:
+                logger.warning(f"No market data found for {h.symbol}, skipping sync")
+                continue
+                
+            current_price = float(md.close)
+            h.current_price = current_price
+            self.inv_repo.update_holding(h.symbol, h.date, {'current_price': current_price})
+                    
+        summary = self.inv_repo.get_summary()
+        if summary:
+            h_dicts = [h.to_dict() for h in holdings]
+            
+            new_summary = self.get_summary(
+                h_dicts, 
+                sold=float(summary.sold), 
+                override_starting_capital=float(summary.starting_capital),
+                action_date=summary.date
+            )
+            self.inv_repo.insert_summary(new_summary)
+        return "Portfolio prices synced with latest market data"

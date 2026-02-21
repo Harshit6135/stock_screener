@@ -347,3 +347,33 @@ class InvestmentRepository:
                 f"Error deleting all capital events: {e}"
             )
             self.session.rollback()
+
+    def update_holding(self, symbol, date, holding_data):
+        """
+        Update a holding record for a specific symbol and date.
+
+        Parameters:
+            symbol (str): The ticker symbol.
+            date: The date of the holding.
+            holding_data (dict): Dictionary of fields to update.
+
+        Returns:
+            bool: True if successful, False otherwise.
+        """
+        try:
+            holding = self.session.query(InvestmentsHoldingsModel).filter(
+                InvestmentsHoldingsModel.symbol == symbol,
+                InvestmentsHoldingsModel.date == date
+            ).first()
+
+            if holding:
+                for key, value in holding_data.items():
+                    if hasattr(holding, key):
+                        setattr(holding, key, value)
+                self.session.commit()
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error updating holding: {e}")
+            self.session.rollback()
+            return False
