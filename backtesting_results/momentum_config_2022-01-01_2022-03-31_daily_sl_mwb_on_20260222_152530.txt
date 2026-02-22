@@ -1,0 +1,131 @@
+======================================================================
+  BACKTEST RESULTS REPORT
+  Generated: 2026-02-22 15:25:30
+======================================================================
+
+[ CONFIGURATION ]
+  Config Name       : momentum_config
+  Start Date        : 2022-01-01
+  End Date          : 2022-03-31
+  Daily SL          : True
+  Mid-Week Buy      : True
+  Initial Capital   :      200,000.00
+  Max Positions     : 15
+  Min Position (%)  : 0.05
+  Risk Threshold    : 1.0
+  Buffer Percent    : 0.25
+  Exit Threshold    : 40.0
+  SL Multiplier     : 2.0
+  ATR Fallback Pct   : 0.03
+  Pyramiding        : OFF
+
+[ PERFORMANCE METRICS ]
+  Final Portfolio   :      224,336.88
+  Total Return      :      +24,336.88  (+12.17%)
+  CAGR              :     +60.20%
+  XIRR              :     -36.51%
+  Max Drawdown      :      16.04%
+  Sharpe Ratio      :       1.25
+  Sortino Ratio     :       2.65
+  Calmar Ratio      :       3.75
+
+[ YEAR-ON-YEAR PERFORMANCE ]
+  2022              :     +12.17%  (PnL:   +24,336.88 | End Val:   224,336.88)
+
+[ TRADE STATISTICS ]
+  Total Buys        : 57
+  Pyramid Buys      : 0
+  Total Sells       : 47
+  Win Rate          :      14.89%
+  Profit Factor     :       0.70
+  Expectancy/Trade  :    -293.87
+  Avg Holding Days  :       12.6
+  Winners           : 7
+  Losers            : 40
+  Avg Win           :       +4,703.86
+  Avg Loss          :       -1,168.48
+  Best Trade        : CWD +12,149.90
+  Worst Trade       : CIANAGRO -2,615.90
+
+[ TRANSACTION COSTS ]
+  Total Buy Value   :      772,167.46
+  Total Sell Value  :      758,355.44
+  Total Turnover    :    1,530,522.90
+  ---
+  Buy Side Costs    :          921.07
+  Sell Side Costs   :        1,401.84
+  Total Costs       :        2,322.91
+  ---
+  Brokerage         :            0.00
+  STT               :        1,530.53
+  GST               :            9.78
+  Stamp Duty        :          115.84
+  Cost as % Return  :       9.54%
+
+[ CAPITAL GAINS TAX ]
+  STCG Trades       : 47
+  STCG Gains        :      -13,812.02
+  STCG Tax (20%)    :            0.00
+  ---
+  LTCG Trades       : 0
+  LTCG Gains        :            0.00
+  LTCG Tax (12.5%)  :            0.00
+  ---
+  Total Tax         :            0.00
+  Total Costs+Tax   :        2,322.91
+  Net Post-Tax Ret  :      +22,013.97
+
+[ TRADE LOG ]
+  Symbol                      Entry         Exit    Entry ₹     Exit ₹  Units          PnL Reason
+  -------------------- ------------ ------------ ---------- ---------- ------ ------------ --------------------
+  TAALTECH               2022-01-03   2022-01-13   2,101.00   1,920.35      7    -1,264.55 close-based stoploss sell at open on 2022-01-13
+  BGRENERGY              2022-01-13   2022-01-18      99.50     100.00    137       +68.50 close-based stoploss sell at open on 2022-01-18
+  20MICRONS              2022-01-18   2022-01-19     103.30     100.20    133      -412.30 hard stoploss hit on 2022-01-19 (low=93.00)
+  PANCHMAHQ              2022-01-19   2022-01-20     157.70     152.97     79      -373.67 hard stoploss hit on 2022-01-20 (low=145.55)
+  GOODLUCK               2022-01-03   2022-01-20     357.15     351.74     69      -373.29 hard stoploss hit on 2022-01-20 (low=349.85)
+  TALBROAUTO             2022-01-20   2022-01-21     122.80     119.12    121      -445.28 hard stoploss hit on 2022-01-21 (low=116.00)
+  KPITTECH               2022-01-03   2022-01-24     616.00     619.72     34      +126.48 hard stoploss hit on 2022-01-24 (low=610.00)
+  KINGFA                 2022-01-03   2022-01-24   1,526.60   1,295.24     10    -2,313.60 hard stoploss hit on 2022-01-24 (low=1289.20)
+  PGEL                   2022-01-03   2022-01-24      81.00      72.25    198    -1,732.50 hard stoploss hit on 2022-01-24 (low=70.20)
+  KILITCH                2022-01-03   2022-01-24     256.40     224.85     81    -2,555.55 hard stoploss hit on 2022-01-24 (low=223.60)
+  DLINKINDIA             2022-01-03   2022-01-24     180.40     155.51     99    -2,464.11 hard stoploss hit on 2022-01-24 (low=136.05)
+  GOKEX                  2022-01-03   2022-01-25     324.95     365.00     38    +1,521.90 close-based stoploss sell at open on 2022-01-25
+  AJMERA                 2022-01-24   2022-01-25      88.80      86.14    200      -532.00 hard stoploss hit on 2022-01-25 (low=78.70)
+  ADANIGREEN             2022-01-24   2022-01-25   1,946.25   1,887.86     13      -759.07 hard stoploss hit on 2022-01-25 (low=1746.00)
+  PRAJIND                2022-01-24   2022-01-25     421.80     409.15     48      -607.20 hard stoploss hit on 2022-01-25 (low=380.75)
+  RAYMOND                2022-01-24   2022-01-25     456.30     442.61     40      -547.60 hard stoploss hit on 2022-01-25 (low=433.30)
+  GRAVITA                2022-01-03   2022-01-25     295.90     288.77     64      -456.32 hard stoploss hit on 2022-01-25 (low=288.10)
+  CNL                    2022-01-31   2022-02-04     685.00     592.00     23    -2,139.00 close-based stoploss sell at open on 2022-02-04
+  INFOBEAN               2022-02-04   2022-02-07     590.00     584.55     22      -119.90 stoploss hit
+  SHARDACROP             2022-02-07   2022-02-10     660.10     574.01     21    -1,807.89 hard stoploss hit on 2022-02-10 (low=562.95)
+  POWERINDIA             2022-01-31   2022-02-11   3,286.40   2,863.83      5    -2,112.85 hard stoploss hit on 2022-02-11 (low=2812.00)
+  BLS                    2022-02-10   2022-02-14      60.00      56.25    207      -776.25 stoploss hit
+  MCCHRLS-B              2022-02-11   2022-02-14     850.00     824.50     16      -408.00 hard stoploss hit on 2022-02-14 (low=803.00)
+  INGERRAND              2022-01-31   2022-02-14   1,426.35   1,261.85     14    -2,303.00 hard stoploss hit on 2022-02-14 (low=1250.00)
+  KABRAEXTRU             2022-01-03   2022-02-14     471.00     448.13     33      -754.71 hard stoploss hit on 2022-02-14 (low=440.00)
+  RAYMOND                2022-01-31   2022-02-15     474.10     420.50     36    -1,929.60 close-based stoploss sell at open on 2022-02-15
+  SOUTHWEST-BE           2022-02-14   2022-02-15     228.00     221.16     85      -581.40 hard stoploss hit on 2022-02-15 (low=193.10)
+  JYOTIRES               2022-02-15   2022-02-16     471.30     457.16     27      -381.78 hard stoploss hit on 2022-02-16 (low=446.75)
+  INNOVANA               2022-02-14   2022-02-17     209.10     209.00    125       -12.50 close-based stoploss sell at open on 2022-02-17
+  FREDUN                 2022-01-31   2022-02-17   1,045.00     887.28     12    -1,892.64 hard stoploss hit on 2022-02-17 (low=885.40)
+  DBREALTY               2022-01-31   2022-02-18      82.50     107.80    231    +5,844.30 close-based stoploss sell at open on 2022-02-18
+  KOTHARIPET             2022-01-24   2022-02-18     102.65      84.55    127    -2,298.70 hard stoploss hit on 2022-02-18 (low=83.60)
+  NAHARPOLY              2022-02-15   2022-02-21     409.00     407.00     25       -50.00 stoploss hit
+  AGI                    2022-01-24   2022-02-22     321.00     284.46     57    -2,082.78 hard stoploss hit on 2022-02-22 (low=280.10)
+  RHIM                   2022-02-21   2022-02-23     546.00     495.00     32    -1,632.00 close-based stoploss sell at open on 2022-02-23
+  SWELECTES              2022-02-22   2022-02-23     297.15     288.24     48      -427.68 hard stoploss hit on 2022-02-23 (low=286.40)
+  NDTV                   2022-02-21   2022-02-24     134.86     110.54     83    -2,018.56 hard stoploss hit on 2022-02-24 (low=107.16)
+  CONSOFINVT             2022-02-21   2022-02-24     200.00     168.28     66    -2,093.52 hard stoploss hit on 2022-02-24 (low=165.00)
+  BSE                    2022-02-23   2022-02-24     233.00     226.01     71      -496.29 hard stoploss hit on 2022-02-24 (low=206.50)
+  E2E                    2022-01-03   2022-02-25      78.20     115.00    290   +10,672.00 close-based stoploss sell at open on 2022-02-25
+  RELINFRA-BE            2022-02-14   2022-02-25     120.60     104.00    102    -1,693.20 close-based stoploss sell at open on 2022-02-25
+  CIANAGRO               2022-01-31   2022-03-04      77.95      65.00    202    -2,615.90 close-based stoploss sell at open on 2022-03-04
+  BALAJITELE             2022-02-24   2022-03-07      71.50      70.10    138      -193.20 stoploss hit
+  CWD                    2022-02-28   2022-03-28      76.40     127.45    238   +12,149.90 score degraded to 0.0
+  EXCELINDUS             2022-02-21   2022-03-29   1,209.00   1,390.71     14    +2,543.94 hard stoploss hit on 2022-03-29 (low=1390.00)
+  NDTV                   2022-03-29   2022-03-30     183.44     177.94     77      -423.50 hard stoploss hit on 2022-03-30 (low=171.61)
+  HINDALCO               2022-03-07   2022-04-01     586.75     569.90     39      -657.15 close-based stoploss sell at open on 2022-04-01
+
+======================================================================
+  Weeks Simulated: 13 | Duration: 89 days (0.24 years)
+======================================================================

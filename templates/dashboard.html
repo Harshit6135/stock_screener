@@ -1125,6 +1125,27 @@
                 </div>
             </div>
 
+            <!-- Open Positions at Backtest End -->
+            <div class="card" id="bt-open-positions-card" class="hidden" style="margin-bottom:20px;">
+                <h3>📌 Open Positions at Backtest End (force-closed)</h3>
+                <div style="max-height:400px; overflow-y:auto;">
+                    <table id="bt-open-positions-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Entry Date</th>
+                                <th class="text-right">Units</th>
+                                <th class="text-right">Avg Price</th>
+                                <th class="text-right">Close Price</th>
+                                <th class="text-right">Market Value</th>
+                                <th class="text-right">Unrealized PnL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bt-open-positions-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Raw Report -->
             <div class="card">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -2071,6 +2092,31 @@
                 tbody.innerHTML += tr;
             });
             makeTableSortable('#bt-trades-table', { searching: true, paging: true, pageLength: 10, info: true });
+
+            // Render Open Positions at Backtest End
+            destroyDataTable('#bt-open-positions-table');
+            const openBody = document.getElementById('bt-open-positions-body');
+            openBody.innerHTML = '';
+            const openPositions = sum.open_positions || [];
+            if (openPositions.length > 0) {
+                document.getElementById('bt-open-positions-card').classList.remove('hidden');
+                openPositions.forEach(p => {
+                    const pnlClass = p.unrealized_pnl >= 0 ? 'pos-val' : 'neg-val';
+                    const tr = `<tr>
+                        <td><b>${p.symbol}</b></td>
+                        <td data-sort="${p.entry_date}">${p.entry_date}</td>
+                        <td class="text-right" data-sort="${p.units}">${p.units}</td>
+                        <td class="text-right">₹${p.avg_price.toFixed(2)}</td>
+                        <td class="text-right">₹${p.current_price.toFixed(2)}</td>
+                        <td class="text-right" data-sort="${p.market_value}">₹${p.market_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="text-right ${pnlClass}" data-sort="${p.unrealized_pnl}">₹${p.unrealized_pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    </tr>`;
+                    openBody.innerHTML += tr;
+                });
+                makeTableSortable('#bt-open-positions-table', { searching: false, order: [[5, 'desc']] });
+            } else {
+                document.getElementById('bt-open-positions-card').classList.add('hidden');
+            }
 
             // Raw log
             document.getElementById('bt-raw-log').innerText = data.report_text || '';

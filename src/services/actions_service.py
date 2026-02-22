@@ -435,6 +435,7 @@ class ActionsService:
                     buy_symbols[items.symbol] = items
 
         sold = 0
+        bought_value = 0
         held_symbols = {h.symbol for h in holdings}
         holdings_map = {h.symbol: h for h in holdings}
         
@@ -461,10 +462,12 @@ class ActionsService:
             held_symbols.discard(symbol)
 
             #TODO Handle Split/Bonus
-            buy_value = float(holding.entry_price) * holding.units
+            # Use avg_price if it exists (for pyramided positions), else entry_price
+            cost_basis_price = float(getattr(holding, 'avg_price', None) or holding.entry_price)
+            buy_value = cost_basis_price * holding.units
             pnl = sell_value - buy_value
             logger.info(
-                f"SELL {symbol}: buy={holding.units}u@{holding.entry_price}={buy_value:.2f}"
+                f"SELL {symbol}: buy={holding.units}u@{cost_basis_price}={buy_value:.2f}"
                 f" sell={action.units}u@{action.execution_price}={sell_value:.2f}"
                 f" pnl={pnl:.2f}"
             )
@@ -491,6 +494,7 @@ class ActionsService:
                 old_avg = float(getattr(old, 'avg_price', None) or old.entry_price)
                 old_value = old_avg * old.units
                 new_value = float(action.execution_price) * action.units
+                bought_value += new_value
                 total_units = old.units + action.units
                 avg_price = round((old_value + new_value) / total_units, 2)
 
@@ -509,11 +513,11 @@ class ActionsService:
                 holding_data = {
                     'symbol': symbol,
                     'date': action_date,
-                    'entry_date': action_date,
-                    'entry_price': action.execution_price,
+                    'entry_date': old.entry_date,
+                    'entry_price': old.entry_price,
                     'avg_price': avg_price,
                     'units': total_units,
-                    'atr': action.atr,
+                    'atr': getattr(old, 'atr', action.atr),
                     'score': score,
                     'entry_sl': old_entry_sl,
                     'current_price': action.execution_price,
@@ -528,8 +532,10 @@ class ActionsService:
             initial_sl = round(action.execution_price - action.risk, 2)
             rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
             score = round(rank_data.composite_score, 2) if rank_data else 0
+            buy_value = float(action.execution_price) * action.units
+            bought_value += buy_value
             logger.info(
-                f"BUY {symbol}: units={action.units}u@{action.execution_price}={action.units*action.execution_price:.2f}"
+                f"BUY {symbol}: units={action.units}u@{action.execution_price}={buy_value:.2f}"
             )
 
             holding_data = {
@@ -550,7 +556,7 @@ class ActionsService:
             week_holdings.append(
                 self.investment_service.update_holding(symbol, action_date, midweek, holdings_map[symbol])
             )
-        summary = self.investment_service.get_summary(week_holdings, sold, action_date=action_date)
+        summary = self.investment_service.get_summary(week_holdings, sold, bought=bought_value, action_date=action_date)
 
         self.investment_repo.bulk_insert_holdings(week_holdings)
         self.investment_repo.insert_summary(summary)
