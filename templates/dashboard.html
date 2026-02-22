@@ -9,6 +9,10 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap"
         rel="stylesheet">
+    <!-- DataTables -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <link href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css" rel="stylesheet">
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <style>
         :root {
             --bg-dark: #0f1115;
@@ -248,6 +252,91 @@
 
         tr:hover {
             background: rgba(255, 255, 255, 0.02);
+        }
+
+        /* --- DataTables Dark Theme Overrides --- */
+        table.dataTable {
+            border-collapse: collapse;
+            width: 100%;
+            color: var(--text-main);
+            font-size: 0.9rem;
+            margin-top: 10px !important;
+            margin-bottom: 10px !important;
+            border-bottom: 1px solid var(--border);
+        }
+
+        table.dataTable thead th,
+        table.dataTable thead td {
+            padding: 10px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-input);
+            color: var(--text-muted);
+            font-weight: 600;
+            text-align: left;
+            border-top: none;
+        }
+
+        table.dataTable tbody tr {
+            background-color: transparent !important;
+        }
+
+        table.dataTable tbody th,
+        table.dataTable tbody td {
+            padding: 10px;
+            border-bottom: 1px solid var(--border);
+            border-top: none !important;
+        }
+
+        table.dataTable tbody tr:hover {
+            background: rgba(255, 255, 255, 0.02) !important;
+        }
+
+        table.dataTable.no-footer {
+            border-bottom: 1px solid var(--border);
+        }
+
+        .dataTables_wrapper .dataTables_length,
+        .dataTables_wrapper .dataTables_filter,
+        .dataTables_wrapper .dataTables_info,
+        .dataTables_wrapper .dataTables_processing,
+        .dataTables_wrapper .dataTables_paginate {
+            color: var(--text-muted);
+            margin-bottom: 15px;
+            margin-top: 10px;
+            font-size: 0.85rem;
+        }
+
+        .dataTables_wrapper .dataTables_length select,
+        .dataTables_wrapper .dataTables_filter input {
+            background-color: var(--bg-input);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 4px;
+            outline: none;
+        }
+
+        .dataTables_wrapper .dataTables_paginate .paginate_button {
+            color: var(--text-muted) !important;
+            padding: 4px 10px;
+            margin: 0 2px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+            cursor: pointer;
+        }
+
+        .dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+            background: var(--bg-input) !important;
+            color: white !important;
+            border: 1px solid var(--border);
+        }
+
+        .dataTables_wrapper .dataTables_paginate .paginate_button.current,
+        .dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
+            background: var(--accent) !important;
+            color: white !important;
+            border: 1px solid var(--accent) !important;
+            box-shadow: none !important;
         }
 
         .text-right {
@@ -976,6 +1065,24 @@
                 </div>
             </div>
 
+            <!-- YoY Performance -->
+            <div class="card" id="bt-yoy-card" class="hidden" style="margin-bottom:20px;">
+                <h3>Year-on-Year Performance</h3>
+                <div style="max-height:300px; overflow-y:auto;">
+                    <table id="bt-yoy-table">
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th class="text-right">Return %</th>
+                                <th class="text-right">PnL</th>
+                                <th class="text-right">End Value</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bt-yoy-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Equity Curve -->
             <div class="card">
                 <h3>Portfolio Equity Curve</h3>
@@ -1025,7 +1132,7 @@
                     Refresh</button>
             </div>
             <div style="max-height:350px; overflow-y:auto; margin-top:10px;">
-                <table>
+                <table id="bt-history-table">
                     <thead>
                         <tr>
                             <th>#</th>
@@ -1232,6 +1339,22 @@
             if (units > 0 && price > 0) {
                 document.getElementById('mb-capital').value = (units * price).toFixed(2);
             }
+        }
+
+        // --- DataTables Helper ---
+        function destroyDataTable(tableId) {
+            if ($.fn.DataTable.isDataTable(tableId)) {
+                $(tableId).DataTable().destroy();
+            }
+        }
+        function makeTableSortable(tableId, options = {}) {
+            $(tableId).DataTable(Object.assign({
+                paging: false,
+                searching: false,
+                info: false,
+                order: [],
+                autoWidth: false
+            }, options));
         }
 
         // --- Init Helpers ---
@@ -1443,6 +1566,7 @@
 
 
         function renderHoldings(holdings) {
+            destroyDataTable('#holdings-table');
             const tbody = document.getElementById('holdings-body');
             const tfoot = document.getElementById('holdings-foot');
             tbody.innerHTML = '';
@@ -1492,9 +1616,11 @@
                     <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}">${totalInv !== 0 ? ((totalPnL / totalInv) * 100).toFixed(2) : '0.00'}%</td>
                 </tr>`;
             tfoot.innerHTML = totalRow;
+            makeTableSortable('#holdings-table', { searching: true });
         }
 
         function renderRankings(rankings) {
+            destroyDataTable('#rankings-table');
             const body = document.querySelector('#rankings-table tbody');
             body.innerHTML = '';
             rankings.forEach(r => {
@@ -1505,6 +1631,7 @@
                 </tr>`;
                 body.innerHTML += row;
             });
+            makeTableSortable('#rankings-table', { paging: true, pageLength: 10, info: true });
         }
 
         // --- ACTIONS ---
@@ -1542,6 +1669,7 @@
             const res = await fetch(`/api/v1/actions/?date=${date}`);
             const actions = await res.json();
 
+            destroyDataTable('#actions-table');
             const tbody = document.getElementById('actions-body');
             tbody.innerHTML = '';
 
@@ -1575,6 +1703,7 @@
                 </tr>`;
             });
             hideLoading();
+            makeTableSortable('#actions-table', { searching: true });
         }
 
         async function updateAction(id, status) {
@@ -1741,11 +1870,13 @@
             try {
                 const res = await fetch('/api/v1/investment/trade-journal');
                 const trades = await res.json();
+                destroyDataTable('#journal-table');
                 const tbody = document.getElementById('journal-body');
                 tbody.innerHTML = '';
 
                 if (!trades || !trades.length) {
                     tbody.innerHTML = '<tr><td colspan="10" class="text-center" style="padding:20px;">No closed trades yet</td></tr>';
+                    makeTableSortable('#journal-table');
                     return;
                 }
 
@@ -1764,6 +1895,7 @@
                         <td style="font-size:0.8rem;color:#aaa;">${t.reason}</td>
                     </tr>`;
                 });
+                makeTableSortable('#journal-table', { searching: true, paging: true, pageLength: 15, info: true, order: [[1, 'desc']] });
             } catch (e) {
                 console.error('Trade journal error:', e);
                 document.getElementById('journal-body').innerHTML = '<tr><td colspan="10" class="text-center">Failed to load</td></tr>';
@@ -1871,10 +2003,32 @@
             }
             document.getElementById('bt-efficiency').innerText = eff.toFixed(1) + '% retained';
 
+            // Render YoY Returns
+            destroyDataTable('#bt-yoy-table');
+            const yoyBody = document.getElementById('bt-yoy-body');
+            yoyBody.innerHTML = '';
+            if (sum.yearly_returns && sum.yearly_returns.length > 0) {
+                document.getElementById('bt-yoy-card').classList.remove('hidden');
+                sum.yearly_returns.forEach(y => {
+                    const retClass = y.return_pct >= 0 ? 'pos-val' : 'neg-val';
+                    const tr = `<tr>
+                        <td><strong>${y.year}</strong></td>
+                        <td class="text-right ${retClass}">${y.return_pct.toFixed(2)}%</td>
+                        <td class="text-right ${retClass}">₹${y.pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="text-right">₹${y.end_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    </tr>`;
+                    yoyBody.innerHTML += tr;
+                });
+                makeTableSortable('#bt-yoy-table', { searching: false, paging: false, order: [[0, 'asc']] });
+            } else {
+                document.getElementById('bt-yoy-card').classList.add('hidden');
+            }
+
             // Render Chart
             renderEquityChart(data.equity_curve || []);
 
             // Render Trades
+            destroyDataTable('#bt-trades-table');
             const tbody = document.getElementById('bt-trades-body');
             tbody.innerHTML = '';
             const trades = data.trades || [];
@@ -1893,6 +2047,7 @@
                 </tr>`;
                 tbody.innerHTML += tr;
             });
+            makeTableSortable('#bt-trades-table', { searching: true, paging: true, pageLength: 10, info: true });
 
             // Raw log
             document.getElementById('bt-raw-log').innerText = data.report_text || '';
@@ -1903,11 +2058,13 @@
             try {
                 const res = await fetch('/api/v1/backtest/history');
                 const runs = await res.json();
+                destroyDataTable('#bt-history-table');
                 const tbody = document.getElementById('bt-history-body');
                 tbody.innerHTML = '';
 
                 if (!runs || !runs.length) {
                     tbody.innerHTML = '<tr><td colspan="11" class="text-center">No saved runs</td></tr>';
+                    makeTableSortable('#bt-history-table');
                     return;
                 }
 
@@ -1937,6 +2094,7 @@
                         </td>
                     </tr>`;
                 });
+                makeTableSortable('#bt-history-table', { searching: false, order: [[0, 'desc']] });
             } catch (e) {
                 console.error('Failed to load backtest history:', e);
             }

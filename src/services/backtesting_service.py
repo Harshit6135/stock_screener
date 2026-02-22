@@ -374,6 +374,27 @@ class WeeklyBacktester:
             'net_post_tax_return_pct': round((net_post_tax_return / initial_capital) * 100, 2)
         })
         
+        # --- Year-on-Year Returns ---
+        df_equity = pd.DataFrame({
+            'date': pd.to_datetime(self.risk_monitor.portfolio_dates),
+            'value': self.risk_monitor.portfolio_values
+        })
+        if not df_equity.empty:
+            df_equity['year'] = df_equity['date'].dt.year
+            yearly_start = df_equity.groupby('year')['value'].first()
+            yearly_end = df_equity.groupby('year')['value'].last()
+            yearly_return = (yearly_end - yearly_start) / yearly_start * 100
+            
+            yoy_list = []
+            for year in yearly_return.index:
+                yoy_list.append({
+                    'year': int(year),
+                    'return_pct': round(yearly_return[year], 2),
+                    'pnl': round(yearly_end[year] - yearly_start[year], 2),
+                    'end_value': round(yearly_end[year], 2)
+                })
+            summary['yearly_returns'] = yoy_list
+            
         return summary
 
     def _build_trades_from_db(self) -> None:
@@ -512,6 +533,24 @@ class WeeklyBacktester:
         lines.append(f'  Sharpe Ratio      : {metrics.get("sharpe_ratio", 0):>10.2f}')
         lines.append(f'  Sortino Ratio     : {metrics.get("sortino_ratio", 0):>10.2f}')
         lines.append(f'  Calmar Ratio      : {metrics.get("calmar_ratio", 0):>10.2f}')
+        
+        # --- Section 2.5: Year-on-Year Performance ---
+        lines.append('')
+        lines.append('[ YEAR-ON-YEAR PERFORMANCE ]')
+        df_equity = pd.DataFrame({
+            'date': pd.to_datetime(self.risk_monitor.portfolio_dates),
+            'value': self.risk_monitor.portfolio_values
+        })
+        df_equity['year'] = df_equity['date'].dt.year
+        yearly_start = df_equity.groupby('year')['value'].first()
+        yearly_end = df_equity.groupby('year')['value'].last()
+        yearly_return = (yearly_end - yearly_start) / yearly_start * 100
+        
+        for year in yearly_return.index:
+            ret = yearly_return[year]
+            end_val = yearly_end[year]
+            val_change = end_val - yearly_start[year]
+            lines.append(f'  {year}              : {ret:>+10.2f}%  (PnL: {val_change:>+12,.2f} | End Val: {end_val:>12,.2f})')
         
         # --- Section 3: Trade Statistics ---
         lines.append('')
