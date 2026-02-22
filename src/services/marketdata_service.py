@@ -103,8 +103,9 @@ class MarketDataService:
                     indicators_repository.delete_by_tradingsymbol(tradingsymbol)
                     
                     sleep(max(0, 0.34 - (time() - start_time)))
-                    start_date = fetch_end_date - timedelta(days=HISTORY_LOOKBACK)
-                    records, start_time = self.get_latest_data_by_token(instr_token, start_date, fetch_end_date)
+                    # Fetch full history starting from the default historical date
+                    start_date = pd.Timestamp(historical_start_date)
+                    records, start_time = self.get_historical_data(instr_token, start_date)
                 else:
                     records = records[1:]
 

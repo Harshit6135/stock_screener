@@ -786,6 +786,11 @@
                 <div class="metric-label">Capital Risk</div>
                 <div class="metric-value" id="sum-capital-risk">-</div>
             </div>
+            <div class="metric-card" id="day-pnl-card" style="border-left:3px solid var(--accent);">
+                <div class="metric-label">Today's P&L</div>
+                <div class="metric-value" id="sum-day-pnl">-</div>
+                <div style="font-size:0.75rem; color:var(--text-muted);" id="live-status-label">⏸ Not streaming</div>
+            </div>
         </div>
 
         <!-- Equity Curve & Drawdown Charts -->
@@ -808,6 +813,9 @@
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                 <h3>Current Holdings</h3>
                 <div style="display:flex; gap:10px; align-items:center;">
+                    <button class="btn" id="live-toggle-btn"
+                        style="font-size:0.85rem; padding:6px 12px; background:var(--accent); color:white;"
+                        onclick="toggleLiveStream()">📡 Go Live</button>
                     <button class="btn btn-warning"
                         style="font-size:0.85rem; padding:6px 12px; background:#f59e0b; color:black;"
                         onclick="openCapitalEventModal()">💰 Capital Event</button>
@@ -832,6 +840,7 @@
                             <th class="text-right">Value</th>
                             <th class="text-right">Unrealized P&L</th>
                             <th class="text-right">%</th>
+                            <th class="text-right">Day P&L</th>
                         </tr>
                     </thead>
                     <tbody id="holdings-body"></tbody>
@@ -1573,7 +1582,7 @@
             tfoot.innerHTML = '';
 
             if (!holdings || !holdings.length) {
-                tbody.innerHTML = '<tr><td colspan="9" class="text-center">No holdings found for this date</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" class="text-center">No holdings found for this date</td></tr>';
                 return;
             }
 
@@ -1593,16 +1602,17 @@
                 totalVal += val;
                 totalPnL += pnl;
 
-                const row = `<tr>
+                const row = `<tr data-symbol="${h.symbol}">
                     <td><strong>${h.symbol}</strong></td>
-                    <td>${h.entry_date}</td>
-                    <td>${units}</td>
-                    <td class="text-right">₹${entryPrice.toFixed(2)}</td>
-                    <td class="text-right">₹${currentPrice.toFixed(2)}</td>
-                    <td class="text-right">₹${inv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right">₹${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right ${pnl >= 0 ? 'pos-val' : 'neg-val'}">₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right ${pnl >= 0 ? 'pos-val' : 'neg-val'}">${pnlPct.toFixed(2)}%</td>
+                    <td data-sort="${h.entry_date}">${h.entry_date}</td>
+                    <td data-sort="${units}">${units}</td>
+                    <td class="text-right" data-sort="${entryPrice}">₹${entryPrice.toFixed(2)}</td>
+                    <td class="text-right live-current" data-sort="${currentPrice}">₹${currentPrice.toFixed(2)}</td>
+                    <td class="text-right" data-sort="${inv}">₹${inv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right live-value" data-sort="${val}">₹${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right live-pnl ${pnl >= 0 ? 'pos-val' : 'neg-val'}" data-sort="${pnl}">₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right live-pnlpct ${pnl >= 0 ? 'pos-val' : 'neg-val'}" data-sort="${pnlPct}">${pnlPct.toFixed(2)}%</td>
+                    <td class="text-right live-day-pnl" data-sort="0" style="color:var(--text-muted);">-</td>
                 </tr>`;
                 tbody.innerHTML += row;
             });
@@ -1611,9 +1621,10 @@
             const totalRow = `<tr style="font-weight:700; background:#232730;">
                     <td colspan="5">TOTALS</td>
                     <td class="text-right">₹${totalInv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right">₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}">₹${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right" id="live-total-val">₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}" id="live-total-pnl">₹${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}">${totalInv !== 0 ? ((totalPnL / totalInv) * 100).toFixed(2) : '0.00'}%</td>
+                    <td class="text-right" id="live-total-day-pnl" style="color:var(--text-muted);">-</td>
                 </tr>`;
             tfoot.innerHTML = totalRow;
             makeTableSortable('#holdings-table', { searching: true });
@@ -1625,9 +1636,9 @@
             body.innerHTML = '';
             rankings.forEach(r => {
                 const row = `<tr>
-                    <td>#${r.rank}</td>
+                    <td data-sort="${r.rank}">#${r.rank}</td>
                     <td>${r.tradingsymbol}</td>
-                    <td class="text-right">${r.composite_score.toFixed(2)}</td>
+                    <td class="text-right" data-sort="${r.composite_score}">${r.composite_score.toFixed(2)}</td>
                 </tr>`;
                 body.innerHTML += row;
             });
@@ -1691,13 +1702,13 @@
                 }
 
                 tbody.innerHTML += `<tr>
-                    <td>${a.action_date}</td>
-                    <td><span class="badge ${badgeClass}">${a.type.toUpperCase()}</span></td>
+                    <td data-sort="${a.action_date}">${a.action_date}</td>
+                    <td data-sort="${a.type}"><span class="badge ${badgeClass}">${a.type.toUpperCase()}</span></td>
                     <td><b>${a.symbol}</b></td>
-                    <td>${a.units}</td>
-                    <td>${a.execution_price || a.prev_close || '-'}</td>
-                    <td>${a.stop_loss ? '₹' + parseFloat(a.stop_loss).toFixed(2) : '-'}</td>
-                    <td>${a.status}</td>
+                    <td data-sort="${a.units}">${a.units}</td>
+                    <td data-sort="${a.execution_price || a.prev_close || 0}">${a.execution_price || a.prev_close || '-'}</td>
+                    <td data-sort="${a.stop_loss || 0}">${a.stop_loss ? '₹' + parseFloat(a.stop_loss).toFixed(2) : '-'}</td>
+                    <td data-sort="${a.status}">${a.status}</td>
                     <td style="font-size:0.8rem; color:#aaa;">${a.reason || ''}</td>
                     <td class="text-center">${actionBtn}</td>
                 </tr>`;
@@ -1883,15 +1894,15 @@
                 trades.forEach(t => {
                     const pnlClass = t.pnl >= 0 ? 'pos-val' : 'neg-val';
                     tbody.innerHTML += `<tr>
-                        <td>${t.entry_date}</td>
-                        <td>${t.exit_date}</td>
+                        <td data-sort="${t.entry_date}">${t.entry_date}</td>
+                        <td data-sort="${t.exit_date}">${t.exit_date}</td>
                         <td><b>${t.symbol}</b></td>
-                        <td>${t.units}</td>
-                        <td class="text-right">₹${t.entry_price.toFixed(2)}</td>
-                        <td class="text-right">₹${t.exit_price.toFixed(2)}</td>
-                        <td class="text-right ${pnlClass}">₹${t.pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td class="text-right ${pnlClass}">${t.return_pct.toFixed(2)}%</td>
-                        <td>${t.days_held}</td>
+                        <td data-sort="${t.units}">${t.units}</td>
+                        <td class="text-right" data-sort="${t.entry_price}">₹${t.entry_price.toFixed(2)}</td>
+                        <td class="text-right" data-sort="${t.exit_price}">₹${t.exit_price.toFixed(2)}</td>
+                        <td class="text-right ${pnlClass}" data-sort="${t.pnl}">₹${t.pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="text-right ${pnlClass}" data-sort="${t.return_pct}">${t.return_pct.toFixed(2)}%</td>
+                        <td data-sort="${t.days_held}">${t.days_held}</td>
                         <td style="font-size:0.8rem;color:#aaa;">${t.reason}</td>
                     </tr>`;
                 });
@@ -2039,11 +2050,11 @@
                 const retPct = investedValue > 0 ? ((t.pnl / investedValue) * 100).toFixed(2) : '0.00';
                 const tr = `<tr>
                     <td>${t.symbol}</td>
-                    <td>${t.type}</td>
-                    <td>${t.entry_date}</td>
-                    <td>${t.exit_date}</td>
-                    <td class="text-right ${t.pnl >= 0 ? 'pos-val' : 'neg-val'}">${t.pnl.toFixed(2)}</td>
-                    <td class="text-right">${retPct}%</td>
+                    <td data-sort="${t.type}">${t.type}</td>
+                    <td data-sort="${t.entry_date}">${t.entry_date}</td>
+                    <td data-sort="${t.exit_date}">${t.exit_date}</td>
+                    <td class="text-right ${t.pnl >= 0 ? 'pos-val' : 'neg-val'}" data-sort="${t.pnl}">${t.pnl.toFixed(2)}</td>
+                    <td class="text-right" data-sort="${retPct}">${retPct}%</td>
                 </tr>`;
                 tbody.innerHTML += tr;
             });
@@ -2078,16 +2089,16 @@
                     const mwb = r.mid_week_buy ? '✓' : '✗';
 
                     tbody.innerHTML += `<tr>
-                        <td>${r.id}</td>
+                        <td data-sort="${r.id}">${r.id}</td>
                         <td>${r.run_label || '<em style="color:#666;">—</em>'}</td>
-                        <td>${r.config_name || '-'}</td>
-                        <td style="white-space:nowrap;">${r.start_date} → ${r.end_date}</td>
-                        <td class="text-center">${dailySl}</td>
-                        <td class="text-center">${mwb}</td>
-                        <td class="text-right ${retClass}">${retVal}%</td>
-                        <td class="text-right" style="color:var(--danger);">${ddVal}%</td>
-                        <td class="text-right">${sharpeVal}</td>
-                        <td style="font-size:0.8rem; color:#888;">${created}</td>
+                        <td data-sort="${r.config_name}">${r.config_name || '-'}</td>
+                        <td style="white-space:nowrap;" data-sort="${r.start_date}">${r.start_date} → ${r.end_date}</td>
+                        <td class="text-center" data-sort="${r.check_daily_sl}">${dailySl}</td>
+                        <td class="text-center" data-sort="${r.mid_week_buy}">${mwb}</td>
+                        <td class="text-right ${retClass}" data-sort="${r.total_return}">${retVal}%</td>
+                        <td class="text-right" style="color:var(--danger);" data-sort="${r.max_drawdown}">${ddVal}%</td>
+                        <td class="text-right" data-sort="${r.sharpe_ratio}">${sharpeVal}</td>
+                        <td style="font-size:0.8rem; color:#888;" data-sort="${r.created_at}">${created}</td>
                         <td class="text-center" style="white-space:nowrap;">
                             <button class="badge badge-buy" style="border:none; cursor:pointer; margin-right:4px;" onclick="loadBacktestRun(${r.id})">Load</button>
                             <button class="badge badge-sell" style="border:none; cursor:pointer;" onclick="deleteBacktestRun(${r.id})">Del</button>
@@ -2193,6 +2204,172 @@
             }
             await loadPortfolio();
             hideLoading();
+        }
+
+        // --- LIVE PRICE STREAMING ---
+        let _liveInterval = null;
+        let _isLive = false;
+
+        async function toggleLiveStream() {
+            if (_isLive) {
+                stopLiveStream();
+            } else {
+                await startLiveStream();
+            }
+        }
+
+        async function startLiveStream() {
+            const btn = document.getElementById('live-toggle-btn');
+            const label = document.getElementById('live-status-label');
+            btn.innerText = '⏳ Starting...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/v1/investment/start-ticker', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert('Failed to start ticker: ' + (data.message || 'Unknown error'));
+                    btn.innerText = '📡 Go Live';
+                    btn.disabled = false;
+                    return;
+                }
+
+                _isLive = true;
+                btn.innerText = '⏸ Stop Live';
+                btn.style.background = 'var(--danger)';
+                btn.disabled = false;
+                label.innerText = '🟢 Streaming live';
+                label.style.color = 'var(--accent)';
+
+                // Start polling every 2 seconds
+                pollLivePrices(); // immediate first poll
+                _liveInterval = setInterval(pollLivePrices, 30000);
+
+            } catch (e) {
+                console.error('Start live error:', e);
+                btn.innerText = '📡 Go Live';
+                btn.disabled = false;
+            }
+        }
+
+        function stopLiveStream() {
+            if (_liveInterval) {
+                clearInterval(_liveInterval);
+                _liveInterval = null;
+            }
+            _isLive = false;
+
+            const btn = document.getElementById('live-toggle-btn');
+            btn.innerText = '📡 Go Live';
+            btn.style.background = 'var(--accent)';
+
+            const label = document.getElementById('live-status-label');
+            label.innerText = '⏸ Not streaming';
+            label.style.color = 'var(--text-muted)';
+
+            // Fire-and-forget stop
+            fetch('/api/v1/investment/stop-ticker', { method: 'POST' }).catch(() => { });
+        }
+
+        async function pollLivePrices() {
+            try {
+                const res = await fetch('/api/v1/investment/live-prices');
+                const data = await res.json();
+                if (!data.prices) return;
+
+                const prices = data.prices;
+                const rows = document.querySelectorAll('#holdings-body tr[data-symbol]');
+                let totalDayPnl = 0;
+                let totalVal = 0;
+                let totalPnl = 0;
+
+                rows.forEach(row => {
+                    const sym = row.getAttribute('data-symbol');
+                    const p = prices[sym];
+                    if (!p || !p.last_price) return;
+
+                    const units = parseFloat(row.children[2].getAttribute('data-sort') || 0);
+                    const entryPrice = parseFloat(row.children[3].getAttribute('data-sort') || 0);
+                    const ltp = p.last_price;
+                    const prevClose = p.prev_close || 0;
+
+                    const newVal = ltp * units;
+                    const inv = entryPrice * units;
+                    const pnl = newVal - inv;
+                    const pnlPct = inv !== 0 ? (pnl / inv) * 100 : 0;
+                    const dayPnl = (ltp - prevClose) * units;
+
+                    totalVal += newVal;
+                    totalPnl += pnl;
+                    totalDayPnl += dayPnl;
+
+                    // Update cells
+                    const curCell = row.querySelector('.live-current');
+                    if (curCell) {
+                        curCell.setAttribute('data-sort', ltp);
+                        curCell.innerHTML = `₹${ltp.toFixed(2)}`;
+                    }
+
+                    const valCell = row.querySelector('.live-value');
+                    if (valCell) {
+                        valCell.setAttribute('data-sort', newVal);
+                        valCell.innerHTML = `₹${newVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    }
+
+                    const pnlCell = row.querySelector('.live-pnl');
+                    if (pnlCell) {
+                        pnlCell.setAttribute('data-sort', pnl);
+                        pnlCell.className = `text-right live-pnl ${pnl >= 0 ? 'pos-val' : 'neg-val'}`;
+                        pnlCell.innerHTML = `₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    }
+
+                    const pctCell = row.querySelector('.live-pnlpct');
+                    if (pctCell) {
+                        pctCell.setAttribute('data-sort', pnlPct);
+                        pctCell.className = `text-right live-pnlpct ${pnlPct >= 0 ? 'pos-val' : 'neg-val'}`;
+                        pctCell.innerHTML = `${pnlPct.toFixed(2)}%`;
+                    }
+
+                    const dayCell = row.querySelector('.live-day-pnl');
+                    if (dayCell) {
+                        dayCell.setAttribute('data-sort', dayPnl);
+                        dayCell.className = `text-right live-day-pnl ${dayPnl >= 0 ? 'pos-val' : 'neg-val'}`;
+                        dayCell.innerHTML = `₹${dayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    }
+                });
+
+                // Update footer totals
+                const totalValEl = document.getElementById('live-total-val');
+                if (totalValEl) totalValEl.innerHTML = `₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                const totalPnlEl = document.getElementById('live-total-pnl');
+                if (totalPnlEl) {
+                    totalPnlEl.className = `text-right ${totalPnl >= 0 ? 'pos-val' : 'neg-val'}`;
+                    totalPnlEl.innerHTML = `₹${totalPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+
+                const totalDayEl = document.getElementById('live-total-day-pnl');
+                if (totalDayEl) {
+                    totalDayEl.className = `text-right ${totalDayPnl >= 0 ? 'pos-val' : 'neg-val'}`;
+                    totalDayEl.innerHTML = `₹${totalDayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+
+                // Update summary card
+                const dayPnlCard = document.getElementById('sum-day-pnl');
+                if (dayPnlCard) {
+                    dayPnlCard.className = `metric-value ${totalDayPnl >= 0 ? 'pos-val' : 'neg-val'}`;
+                    dayPnlCard.innerText = `₹${totalDayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+
+                // Update portfolio value card too
+                const valCard = document.getElementById('sum-val');
+                if (valCard && totalVal > 0) {
+                    valCard.innerText = `₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+
+            } catch (e) {
+                console.error('Poll live prices error:', e);
+            }
         }
 
     </script>
