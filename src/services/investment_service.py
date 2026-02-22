@@ -394,9 +394,6 @@ class InvestmentService:
             sold (float): Total value of sold positions
             override_starting_capital (float): Optional override to prevent double-counting
                                             when updating same-day summary
-            action_date: Date for capital calculations
-            bought (float): Optional explicit total buy value. If not provided,
-                          calculated from holdings where entry_date == date.
 
         Returns:
             Dict: Summary with capital, risk, and P&L metrics
@@ -487,7 +484,8 @@ class InvestmentService:
                 h_dicts, 
                 sold=float(summary.sold), 
                 override_starting_capital=float(summary.starting_capital),
-                action_date=summary.date
+                action_date=summary.date,
+                bought=float(summary.bought)
             )
             self.inv_repo.insert_summary(new_summary)
         return "Portfolio prices synced with latest market data"
