@@ -24,7 +24,7 @@ The composite score (0-100) is a weighted sum of 5 factors.
 **Weights:**
 | Factor | Weight | Components |
 |--------|--------|------------|
-| **Trend** | **30%** | EMA Slope (60%), Trend Extension (40%) |
+| **Trend** | **30%** | EMA Slope (60%), Distance from 200 EMA (40%) |
 | **Momentum** | **25%** | RSI (60%), PPO (20%), Pure Momentum (10%), PPO Hist (10%) |
 | **Risk Efficiency** | **20%** | ROC/ATR Ratio |
 | **Volume** | **15%** | Relative Volume (70%), Price-Vol Correlation (30%) |
@@ -59,12 +59,10 @@ We map RSI levels to scores to capture sustainable momentum.
 A stock is assigned a **Score of 0** (disqualified) if:
 
 1. **Below EMA 200**: Price < EMA 200 (Major trend is down).
-2. **ATR Spike**: Current ATR > 2.0x of 20-day average ATR (High volatility event / earnings shock).
-3. **Low Liquidity**: Average daily turnover < ₹1 Crore.
-
-**Soft Penalties (Score Multipliers):**
-- Below EMA 50: **0.7x** penalty
-- Below EMA 200 (if enabled): **0.5x** penalty
+2. **Below EMA 50**: Price < EMA 50 (Medium trend is down).
+3. **ATR Spike**: Current ATR > 2.0x of 20-day average ATR (High volatility event / earnings shock).
+4. **Low Liquidity**: Average daily turnover < min_turnover value.
+5. **Penny Stock**: EMA 50 < min_price value.
 
 ---
 
@@ -121,11 +119,7 @@ We use a **Hybrid Stop-Loss** system combining volatility and hard limits.
    - `Initial SL = Entry Price - (2.0 × ATR)`
    - Trails up only, never moves down.
 
-2. **Hard Trailing Step (10%)**:
-   - Locks in profit every 10% gain.
-   - `Hard SL = Entry Price × (1 + 0.10 × N)`
-
-3. **Intraday Hard SL (Disaster Exit)**:
+2. **Intraday Hard SL (Disaster Exit)**:
    - If `Low` touches `SL × 0.95` (5% below SL), exit immediately intraday.
 
 ---
@@ -136,11 +130,9 @@ Position size is calculated based on **Risk Management**:
 
 `Shares = (Total Capital × Risk Per Trade %) / (ATR × Stop Multiplier)`
 
-**Constraints (Most Restrictive Wins):**
-1. **Risk-Based**: Max 1% of capital at risk per trade.
-2. **Liquidity Cap**: Max 5% of stock's 20-day Average Daily Volume (ADV).
-3. **Concentration Cap**: Max 12% of total portfolio value in one stock.
-4. **Minimum Size**: Trade rejected if position value < 2% of portfolio (avoids tiny positions).
+**Constraints:**
+1. **Risk-Based**: Sizing respects portfolio risk threshold per trade.
+2. **Minimum Size**: Trade rejected if position value < configured minimum % of portfolio (avoids tiny positions).
 
 ---
 
@@ -187,9 +179,9 @@ All parameters are adjustable in `src/config/strategies_config.py`.
 | `trend_strength_weight` | 0.30 | Weight for Trend factor |
 | `momentum_velocity_weight` | 0.25 | Weight for Momentum factor |
 | `atr_threshold` | 2.0 | Multiplier for ATR Spike penalty |
-| `risk_per_trade_percent` | 0.01 | 1% Portfolio Risk |
-| `max_positions` | 10 | Max number of stocks |
+| `risk_threshold` | 1.0 | 1% Portfolio Risk |
+| `max_positions` | 15 | Max number of stocks |
 | `exit_threshold` | 40 | Score exit trigger |
-| `buffer_percent` | 0.10 | Swap buffer (10%) |
+| `buffer_percent` | 0.25 | Swap buffer (25%) |
 
 You can also update these at runtime via the `/api/v1/config/` endpoint.

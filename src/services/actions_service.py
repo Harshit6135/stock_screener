@@ -6,6 +6,7 @@ Handles investment action generation, approval, and processing.
 import pandas as pd
 pd.set_option('future.no_silent_downcasting', True)
 
+from datetime import timedelta
 from sqlalchemy.orm import Session
 from datetime import date
 from typing import Dict, List, Optional, Union
@@ -267,7 +268,9 @@ class ActionsService:
             elif d.action_type == 'SWAP':
                 action, remaining_capital, realized_gain = self.sell_action(
                     d.symbol, action_date, md.close,
-                    d.swap_sell_units, d.reason
+                    d.swap_sell_units, d.reason,
+                    entry_price=holdings_entry_prices[d.symbol]
+
                 )
                 new_actions.append(action)
                 sizing_base += realized_gain
@@ -508,47 +511,55 @@ class ActionsService:
     def create_manual_buy(self, stocks: List[Dict]) -> str:
 
         actions = []
-        total_capital = self.inv_repo.get_total_capital(include_realized=True)
-
+        total_capital = self.investment_repo.get_total_capital(include_realized=True)
+        remaining_capital = self.investment_repo.get_summary()
+    
+        over_capital = []
         for stock in stocks:
-            action = self.buy_action(
+            prev_close = float(self.marketdata_repo.get_marketdata_by_trading_symbol(stock['symbol'], stock['date'] - timedelta(days=1)).close)
+            if remaining_capital < stock['units'] * stock['price']:
+                over_capital.append(stock)
+                continue
+
+            action, remaining_capital = self.buy_action(
                 symbol=stock['symbol'],
                 action_date=stock['date'],
-                prev_close=float(stock['price']),
+                prev_close=prev_close,
+                price=float(stock['price']),
                 reason=stock['reason'],
                 total_capital=total_capital,
+                remaining_capital=remaining_capital,
                 units=stock['units']
             )
             action['execution_price'] = float(stock['price'])
             actions.append(action)
 
-        #TODO Check if symbol exist then only delete it
-        self.actions_repo.bulk_insert_actions(actions)
-        return f"Manual BUY actions created for {[s['symbol'] for s in stocks]}"
+        if actions:
+            self.actions_repo.bulk_insert_actions(actions)
+        return f"Manual BUY actions created for {[s['symbol'] for s in stocks]} and over capital for {[s['symbol'] for s in over_capital]}, before creating buy action infuse capital"
 
-    def create_manual_sell(self, stocks: Dict) -> str:
-
-        # Validate units against current holding
-        holding = self.inv_repo.get_holdings_by_symbol(stocks['symbol'])
-        if not holding:
-            raise ValueError(
-                f"Cannot sell {stocks['symbol']}: not in current holdings"
-            )
-        # if stocks['units'] > holding.units:
-        #     raise ValueError(
-        #         f"Cannot sell {data['units']} units of {data['symbol']}: "
-        #         f"only {holding.units} held"
-        #     )
+    def create_manual_sell(self, stocks: List[Dict]) -> str:
         actions = []
+        not_in_holding = []
         for stock in stocks:
-            action = self.sell_action(
-                stock['symbol'], 
-                stock['date'], 
-                float(stock['price']), 
-                stock['units'], 
-                stock['reason']
+            if stock['symbol'] not in holding_entry_prices:
+                not_in_holding.append(stock['symbol'])
+                continue
+                
+            md = self.marketdata_repo.get_marketdata_by_trading_symbol(stock['symbol'], stock['date'] - timedelta(days=1))
+            prev_close = float(md.close) if md else float(stock['price'])
+
+            action, _, _ = self.sell_action(
+                symbol=stock['symbol'], 
+                action_date=stock['date'], 
+                prev_close=prev_close,
+                units=stock['units'], 
+                reason=stock['reason'],
+                price=float(stock['price'])
             )
             action['execution_price'] = float(stock['price'])
             actions.append(action)
-        self.actions_repo.bulk_insert_actions([actions])
-        return f"Manual SELL action created for {[s['symbol'] for s in stocks]}"
+            
+        if actions:
+            self.actions_repo.bulk_insert_actions(actions)
+        return f"Manual SELL action created for {[s['symbol'] for s in stocks]} and not in holding for {not_in_holding}"

@@ -80,7 +80,6 @@ def calculate_effective_stop(
         current_atr (float): Current ATR value
         initial_stop (float): Initial stop at entry
         stop_multiplier (float): ATR multiplier
-        sl_step_percent (float): Hard trailing step
         previous_stop (float): Previous effective stop
 
     Returns:

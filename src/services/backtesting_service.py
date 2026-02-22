@@ -477,11 +477,11 @@ class WeeklyBacktester:
         lines.append(f'  Mid-Week Buy      : {self.mid_week_buy}')
         lines.append(f'  Initial Capital   : {self.config.initial_capital:>15,.2f}')
         lines.append(f'  Max Positions     : {self.config.max_positions}')
+        lines.append(f'  Min Position (%)  : {self.config.min_position_percent}')
         lines.append(f'  Risk Threshold    : {self.config.risk_threshold}')
         lines.append(f'  Buffer Percent    : {self.config.buffer_percent}')
         lines.append(f'  Exit Threshold    : {self.config.exit_threshold}')
         lines.append(f'  SL Multiplier     : {self.config.sl_multiplier}')
-        lines.append(f'  SL Step Percent   : {self.config.sl_step_percent}')
         lines.append(f'  ATR Fallback Pct   : {self.config.atr_fallback_percent}')
         
         # --- Section 2: Performance Metrics ---

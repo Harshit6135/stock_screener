@@ -607,7 +607,8 @@
             <div class="step-row">
                 <span>2. Update Market Data</span>
                 <div style="display:flex; align-items:center; gap:15px;">
-                    <label style="font-size:0.8rem; color:var(--text-muted); display:flex; align-items:center; gap:5px; cursor:pointer;">
+                    <label
+                        style="font-size:0.8rem; color:var(--text-muted); display:flex; align-items:center; gap:5px; cursor:pointer;">
                         <input type="checkbox" id="step-historical"> Historical
                     </label>
                     <label class="switch"><input type="checkbox" id="step-market" checked><span
@@ -877,7 +878,11 @@
                     <input type="number" id="conf-max" style="width:100%">
                 </div>
                 <div>
-                    <label>Exit Threshold (%)</label>
+                    <label>Mini Position (%)</label>
+                    <input type="number" id="conf-min" style="width:100%">
+                </div>
+                <div>
+                    <label>Exit Threshold Score</label>
                     <input type="number" id="conf-exit" style="width:100%">
                 </div>
                 <div>
@@ -1774,9 +1779,9 @@
             document.getElementById('conf-initial').value = data.initial_capital;
             document.getElementById('conf-risk').value = data.risk_threshold;
             document.getElementById('conf-max').value = data.max_positions;
+            document.getElementById('conf-min').value = data.min_position_percent;
             document.getElementById('conf-exit').value = data.exit_threshold;
             document.getElementById('conf-sl-mult').value = data.sl_multiplier;
-            document.getElementById('conf-sl-step').value = data.sl_step_percent;
         }
 
         async function saveConfig() {
@@ -1785,9 +1790,9 @@
                 initial_capital: parseFloat(document.getElementById('conf-initial').value),
                 risk_threshold: parseFloat(document.getElementById('conf-risk').value),
                 max_positions: parseInt(document.getElementById('conf-max').value),
+                min_position_percent: parseFloat(document.getElementById('conf-min').value),
                 exit_threshold: parseFloat(document.getElementById('conf-exit').value),
                 sl_multiplier: parseFloat(document.getElementById('conf-sl-mult').value),
-                sl_step_percent: parseFloat(document.getElementById('conf-sl-step').value),
             };
 
             await fetch(`/api/v1/config/${name}`, {
