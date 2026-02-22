@@ -50,7 +50,8 @@ class GenerateActions(MethodView):
             action_date = args.get('date')
             if action_date is None:
                 action_date = datetime.now().date()
-            new_actions = actions.generate_actions(action_date)
+            enable_pyramiding = args.get('enable_pyramiding', False)
+            new_actions = actions.generate_actions(action_date, enable_pyramiding=enable_pyramiding)
             return {"message": f"Generated {len(new_actions)} actions"}
         except ValueError as e:
             logger.error(f"Validation error: {e}")

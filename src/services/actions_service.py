@@ -12,7 +12,7 @@ from datetime import date
 from typing import Dict, List, Optional, Union
 from types import SimpleNamespace
 
-from config import setup_logger
+from config import setup_logger, PyramidConfig
 from services import TradingEngine, HoldingSnapshot, CandidateInfo, InvestmentService
 from repositories import (RankingRepository, IndicatorsRepository,
                           MarketDataRepository, InvestmentRepository,
@@ -151,7 +151,7 @@ class ActionsService:
 
         return action, remaining_capital, realized_gain
 
-    def generate_actions(self, action_date: date, skip_pending_check: bool = False) -> Union[str, List[Dict]]:
+    def generate_actions(self, action_date: date, skip_pending_check: bool = False, enable_pyramiding: bool = False) -> Union[str, List[Dict]]:
         """
         Generate trading actions (BUY/SELL/SWAP) for a given date.
         
@@ -211,6 +211,7 @@ class ActionsService:
                 if md:
                     prices[item.tradingsymbol] = float(md.close)
         else:
+            ema_50_values = {}
             for h in current_holdings:
                 holdings_entry_prices[h.symbol] = float(h.entry_price)
                 md_h = self.marketdata_repo.get_marketdata_by_trading_symbol(h.symbol, data_date)
@@ -225,7 +226,13 @@ class ActionsService:
                     units=h.units,
                     stop_loss=h.current_sl,
                     score=h.score,
+                    entry_price=float(h.entry_price),
                 ))
+
+                # Fetch EMA 50 for pyramid check
+                if enable_pyramiding:
+                    ema_50 = self.indicators_repo.get_indicator_by_tradingsymbol('ema_50', h.symbol, data_date)
+                    ema_50_values[h.symbol] = float(ema_50) if ema_50 else 0.0
 
         decisions = TradingEngine.generate_decisions(
             holdings=holdings_snap,
@@ -234,6 +241,8 @@ class ActionsService:
             max_positions=self.config.max_positions,
             swap_buffer=swap_buffer,
             exit_threshold=exit_threshold,
+            ema_50_values=ema_50_values if current_holdings else None,
+            enable_pyramiding=enable_pyramiding,
         )
 
         sizing_base = total_capital
@@ -265,6 +274,16 @@ class ActionsService:
                 )
                 
                 new_actions.append(action)
+            elif d.action_type == 'PYRAMID_ADD':
+                pyramid_cfg = PyramidConfig()
+                action, remaining_capital = self.buy_action(
+                    d.symbol, action_date, md.close,
+                    'pyramid_add',
+                    total_capital=sizing_base * pyramid_cfg.pyramid_fraction,
+                    remaining_capital=remaining_capital
+                )
+                new_actions.append(action)
+                logger.info(f"PYRAMID_ADD {d.symbol}: adding {pyramid_cfg.pyramid_fraction:.0%} position")
             elif d.action_type == 'SWAP':
                 action, remaining_capital, realized_gain = self.sell_action(
                     d.symbol, action_date, md.close,
@@ -461,9 +480,51 @@ class ActionsService:
 
         data_date = get_prev_friday(action_date)
         week_holdings = []
+        pyramid_symbols = set()
         for symbol, action in buy_symbols.items():
             if symbol in sell_symbols:
                 continue
+
+            # Pyramid add: merge into existing holding
+            if action.reason == 'pyramid_add' and symbol in holdings_map:
+                old = holdings_map[symbol]
+                old_avg = float(getattr(old, 'avg_price', None) or old.entry_price)
+                old_value = old_avg * old.units
+                new_value = float(action.execution_price) * action.units
+                total_units = old.units + action.units
+                avg_price = round((old_value + new_value) / total_units, 2)
+
+                rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
+                score = round(rank_data.composite_score, 2) if rank_data else 0
+
+                # Keep old trailing SL — don't reset to a tight new SL
+                old_sl = float(old.current_sl)
+                old_entry_sl = float(getattr(old, 'entry_sl', old_sl))
+
+                logger.info(
+                    f"PYRAMID_ADD {symbol}: {old.units}u@{old_avg:.2f} + {action.units}u@{action.execution_price} "
+                    f"= {total_units}u avg_price={avg_price:.2f} (keeping SL={old_sl:.2f})"
+                )
+
+                holding_data = {
+                    'symbol': symbol,
+                    'date': action_date,
+                    'entry_date': action_date,
+                    'entry_price': action.execution_price,
+                    'avg_price': avg_price,
+                    'units': total_units,
+                    'atr': action.atr,
+                    'score': score,
+                    'entry_sl': old_entry_sl,
+                    'current_price': action.execution_price,
+                    'current_sl': old_sl
+                }
+                week_holdings.append(holding_data)
+                pyramid_symbols.add(symbol)
+                held_symbols.discard(symbol)
+                continue
+
+            # Normal buy
             initial_sl = round(action.execution_price - action.risk, 2)
             rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
             score = round(rank_data.composite_score, 2) if rank_data else 0
@@ -476,6 +537,7 @@ class ActionsService:
                 'date': action_date,
                 'entry_date': action_date,
                 'entry_price': action.execution_price,
+                'avg_price': float(action.execution_price),
                 'units': action.units,
                 'atr': action.atr,
                 'score': score,

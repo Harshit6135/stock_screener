@@ -832,15 +832,16 @@
                     <thead>
                         <tr>
                             <th>Symbol</th>
-                            <th>Entry Date</th>
-                            <th>Units</th>
-                            <th class="text-right">Avg Price</th>
-                            <th class="text-right">Current</th>
-                            <th class="text-right">Invested</th>
-                            <th class="text-right">Value</th>
-                            <th class="text-right">Unrealized P&L</th>
-                            <th class="text-right">%</th>
-                            <th class="text-right">Day P&L</th>
+                            <th class="text-center">Entry Date</th>
+                            <th class="text-center">Units</th>
+                            <th class="text-center">Avg Price</th>
+                            <th class="text-center">Current</th>
+                            <th class="text-center">SL</th>
+                            <th class="text-center">Invested</th>
+                            <th class="text-center">Value</th>
+                            <th class="text-center">Unrealized P&L</th>
+                            <th class="text-center">%</th>
+                            <th class="text-center">Day P&L</th>
                         </tr>
                     </thead>
                     <tbody id="holdings-body"></tbody>
@@ -924,6 +925,8 @@
 
             <div style="margin: 15px 0;">
                 <button class="btn" onclick="generateActions()">✨ Generate New Actions</button>
+                <label style="margin-left:15px; font-size:0.9rem; cursor:pointer;"><input type="checkbox"
+                        id="pyramid-toggle"> Pyramiding</label>
                 <span style="margin-left:10px; font-size:0.8rem; color:var(--text-muted);">
                     Based on latest Friday rankings
                 </span>
@@ -1023,6 +1026,8 @@
                         Daily SL Check</label>
                     <label style="font-size:0.9rem; cursor:pointer;"><input type="checkbox" id="bt-mid-week" checked>
                         Mid-Week Buy</label>
+                    <label style="font-size:0.9rem; cursor:pointer;"><input type="checkbox" id="bt-pyramid">
+                        Pyramiding</label>
                 </div>
                 <div>
                     <label style="display:block; font-size:0.8rem; margin-bottom:5px;">Run Label (optional)</label>
@@ -1590,10 +1595,12 @@
 
             holdings.forEach(h => {
                 const entryPrice = parseFloat(h.entry_price || 0);
+                const avgPrice = parseFloat(h.avg_price || h.entry_price || 0);
                 const currentPrice = parseFloat(h.current_price || 0);
+                const currentSl = parseFloat(h.current_sl || 0);
                 const units = parseFloat(h.units || 0);
 
-                const inv = entryPrice * units;
+                const inv = avgPrice * units;
                 const val = currentPrice * units;
                 const pnl = val - inv;
                 const pnlPct = inv !== 0 ? (pnl / inv) * 100 : 0;
@@ -1604,22 +1611,23 @@
 
                 const row = `<tr data-symbol="${h.symbol}">
                     <td><strong>${h.symbol}</strong></td>
-                    <td data-sort="${h.entry_date}">${h.entry_date}</td>
-                    <td data-sort="${units}">${units}</td>
-                    <td class="text-right" data-sort="${entryPrice}">₹${entryPrice.toFixed(2)}</td>
-                    <td class="text-right live-current" data-sort="${currentPrice}">₹${currentPrice.toFixed(2)}</td>
-                    <td class="text-right" data-sort="${inv}">₹${inv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right live-value" data-sort="${val}">₹${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right live-pnl ${pnl >= 0 ? 'pos-val' : 'neg-val'}" data-sort="${pnl}">₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right live-pnlpct ${pnl >= 0 ? 'pos-val' : 'neg-val'}" data-sort="${pnlPct}">${pnlPct.toFixed(2)}%</td>
-                    <td class="text-right live-day-pnl" data-sort="0" style="color:var(--text-muted);">-</td>
+                    <td class="text-center" data-sort="${h.entry_date}">${h.entry_date}</td>
+                    <td class="text-center" data-sort="${units}">${units}</td>
+                    <td class="text-center" data-sort="${avgPrice}">₹${avgPrice.toFixed(2)}</td>
+                    <td class="text-center live-current" data-sort="${currentPrice}">₹${currentPrice.toFixed(2)}</td>
+                    <td class="text-center" data-sort="${currentSl}" style="color:var(--danger);">₹${currentSl.toFixed(2)}</td>
+                    <td class="text-center" data-sort="${inv}">₹${inv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-center live-value" data-sort="${val}">₹${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-center live-pnl ${pnl >= 0 ? 'pos-val' : 'neg-val'}" data-sort="${pnl}">₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-center live-pnlpct ${pnl >= 0 ? 'pos-val' : 'neg-val'}" data-sort="${pnlPct}">${pnlPct.toFixed(2)}%</td>
+                    <td class="text-center live-day-pnl" data-sort="0" style="color:var(--text-muted);">-</td>
                 </tr>`;
                 tbody.innerHTML += row;
             });
 
             // Totals
             const totalRow = `<tr style="font-weight:700; background:#232730;">
-                    <td colspan="5">TOTALS</td>
+                    <td colspan="6">TOTALS</td>
                     <td class="text-right">₹${totalInv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-right" id="live-total-val">₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}" id="live-total-pnl">₹${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -1658,9 +1666,12 @@
         }
 
         async function generateActions() {
+            const pyramiding = document.getElementById('pyramid-toggle').checked;
             showLoading('Generating Actions...');
             try {
-                const res = await fetch('/api/v1/actions/generate?config_name=momentum_config', { method: 'POST' });
+                let url = '/api/v1/actions/generate?config_name=momentum_config';
+                if (pyramiding) url += '&enable_pyramiding=true';
+                const res = await fetch(url, { method: 'POST' });
                 const data = await res.json();
                 if (res.ok) {
                     alert('Actions Generated: ' + data.message);
@@ -1964,7 +1975,8 @@
                 end_date: document.getElementById('bt-end').value,
                 config_name: document.getElementById('bt-config').value,
                 check_daily_sl: document.getElementById('bt-daily-sl').checked,
-                mid_week_buy: document.getElementById('bt-mid-week').checked
+                mid_week_buy: document.getElementById('bt-mid-week').checked,
+                enable_pyramiding: document.getElementById('bt-pyramid').checked
             };
             if (label) payload.run_label = label;
 

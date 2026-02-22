@@ -6,6 +6,7 @@ from .logger_config import setup_logger
 from .strategies_config import StrategyParameters, GoldilocksConfig, RSIRegimeConfig
 from .tax_config import TaxConfig
 from .cost_config import TransactionCostConfig, ImpactCostConfig
+from .pyramid_config import PyramidConfig
 
 
 __all__ = [
@@ -44,4 +45,7 @@ __all__ = [
     #Cost Config
     "TransactionCostConfig",
     "ImpactCostConfig",
+
+    #Pyramid Config
+    "PyramidConfig",
 ]

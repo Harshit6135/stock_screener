@@ -35,12 +35,13 @@ class WeeklyBacktester:
     and result tracking.
     """
     
-    def __init__(self, start_date: date, end_date: date, config_name: str, check_daily_sl: bool = True, mid_week_buy: bool = True):
+    def __init__(self, start_date: date, end_date: date, config_name: str, check_daily_sl: bool = True, mid_week_buy: bool = True, enable_pyramiding: bool = False):
         self.start_date = start_date
         self.end_date = end_date
         self.config_name = config_name
         self.check_daily_sl = check_daily_sl
         self.mid_week_buy = mid_week_buy
+        self.enable_pyramiding = enable_pyramiding
         
         # Load config from repository
         config_repo = ConfigRepository()
@@ -216,7 +217,8 @@ class WeeklyBacktester:
                     logger.info(f"Rejected {rejected} pending actions from previous week")
 
                 actions = self.actions_service.generate_actions(
-                    week_date, skip_pending_check=True
+                    week_date, skip_pending_check=True,
+                    enable_pyramiding=self.enable_pyramiding
                 )
                 
                 if not actions:
@@ -405,13 +407,10 @@ class WeeklyBacktester:
         nearest earlier date). Populates self.risk_monitor.trades for
         trade-level metrics (win rate, profit factor, XIRR, etc.).
         """
-        from models import ActionsModel
-        all_actions = (
-            self.backtest_session.query(ActionsModel)
-            .filter(ActionsModel.status == 'Approved')
-            .order_by(ActionsModel.action_date)
-            .all()
-        )
+        all_actions = self.actions_repo.get_all_approved_actions(ascending=True)
+
+        self.risk_monitor.total_buys = sum(1 for a in all_actions if a.type == 'buy')
+        self.risk_monitor.pyramid_buys = sum(1 for a in all_actions if a.type == 'buy' and a.reason == 'pyramid_add')
         
         # Index buys by symbol (most recent first for matching)
         buy_pool = {}  # symbol -> list of buy actions
@@ -504,6 +503,11 @@ class WeeklyBacktester:
         lines.append(f'  Exit Threshold    : {self.config.exit_threshold}')
         lines.append(f'  SL Multiplier     : {self.config.sl_multiplier}')
         lines.append(f'  ATR Fallback Pct   : {self.config.atr_fallback_percent}')
+        lines.append(f'  Pyramiding        : {"ON" if self.enable_pyramiding else "OFF"}')
+        if self.enable_pyramiding:
+            from config import PyramidConfig
+            pcfg = PyramidConfig()
+            lines.append(f'  Pyramid Fraction  : {pcfg.pyramid_fraction}')
         
         # --- Section 2: Performance Metrics ---
         equity_curve = pd.Series(self.risk_monitor.portfolio_values)
@@ -555,7 +559,9 @@ class WeeklyBacktester:
         # --- Section 3: Trade Statistics ---
         lines.append('')
         lines.append('[ TRADE STATISTICS ]')
-        lines.append(f'  Total Trades      : {len(sell_trades)}')
+        lines.append(f'  Total Buys        : {getattr(self.risk_monitor, "total_buys", 0)}')
+        lines.append(f'  Pyramid Buys      : {getattr(self.risk_monitor, "pyramid_buys", 0)}')
+        lines.append(f'  Total Sells       : {len(sell_trades)}')
         lines.append(f'  Win Rate          : {metrics.get("win_rate", 0):>10.2f}%')
         lines.append(f'  Profit Factor     : {metrics.get("profit_factor", 0):>10.2f}')
         lines.append(f'  Expectancy/Trade  : {metrics.get("expectancy", 0):>+10.2f}')
@@ -701,7 +707,8 @@ class BacktestingService:
 
     @staticmethod
     def run_backtest(start_date: date, end_date: date, config_name: str = "momentum_config",
-                     check_daily_sl: bool = True, mid_week_buy: bool = True, run_label: str = None):
+                     check_daily_sl: bool = True, mid_week_buy: bool = True, run_label: str = None,
+                     enable_pyramiding: bool = False):
         """
         Convenience function to run a backtest.
         
@@ -712,11 +719,12 @@ class BacktestingService:
             check_daily_sl: Enable daily stop-loss checks
             mid_week_buy: Enable mid-week vacancy fills
             run_label: Optional label/name for this run
+            enable_pyramiding: Enable pyramid adds for winning positions
             
         Returns:
             Tuple of (results, summary, risk_monitor_data, report_path)
         """
-        backtester = WeeklyBacktester(start_date, end_date, config_name, check_daily_sl, mid_week_buy)
+        backtester = WeeklyBacktester(start_date, end_date, config_name, check_daily_sl, mid_week_buy, enable_pyramiding)
         results = backtester.run()
         summary = backtester.get_summary()
         

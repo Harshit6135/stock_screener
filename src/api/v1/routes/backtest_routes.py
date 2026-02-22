@@ -41,11 +41,13 @@ class RunBacktest(MethodView):
             check_daily_sl = data.get('check_daily_sl', True)
             mid_week_buy = data.get('mid_week_buy', True)
             run_label = data.get('run_label')
+            enable_pyramiding = data.get('enable_pyramiding', False)
 
             results, summary, risk_data, report_path = BacktestingService().run_backtest(
                 start_date, end_date, config_name,
                 check_daily_sl, mid_week_buy,
-                run_label=run_label
+                run_label=run_label,
+                enable_pyramiding=enable_pyramiding
             )
 
             # Read report content

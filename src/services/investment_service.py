@@ -375,6 +375,7 @@ class InvestmentService:
             'date': action_date,
             'entry_date': holding.entry_date,
             'entry_price': holding.entry_price,
+            'avg_price': getattr(holding, 'avg_price', None) or holding.entry_price,
             'units': holding.units,
             'atr': atr,
             'score': score,
