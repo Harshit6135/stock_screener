@@ -340,11 +340,11 @@
         }
 
         .text-right {
-            text-align: right;
+            text-align: right !important;
         }
 
         .text-center {
-            text-align: center;
+            text-align: center !important;
         }
 
         .badge {
@@ -837,6 +837,7 @@
                             <th class="text-center">Avg Price</th>
                             <th class="text-center">Current</th>
                             <th class="text-center">SL</th>
+                            <th class="text-center">Cap. Risk</th>
                             <th class="text-center">Invested</th>
                             <th class="text-center">Value</th>
                             <th class="text-center">Unrealized P&L</th>
@@ -847,6 +848,14 @@
                     <tbody id="holdings-body"></tbody>
                     <tfoot id="holdings-foot"></tfoot>
                 </table>
+            </div>
+        </div>
+
+        <!-- Live PnL Chart (Hidden by default) -->
+        <div class="card" id="live-pnl-card" style="display:none; margin-bottom: 20px;">
+            <h3>Live Today's P&L</h3>
+            <div style="height:250px;">
+                <canvas id="livePnlChart"></canvas>
             </div>
         </div>
 
@@ -1612,7 +1621,7 @@
                 return;
             }
 
-            let totalInv = 0, totalVal = 0, totalPnL = 0;
+            let totalInv = 0, totalVal = 0, totalPnL = 0, totalCapRisk = 0;
 
             holdings.forEach(h => {
                 const entryPrice = parseFloat(h.entry_price || 0);
@@ -1625,10 +1634,12 @@
                 const val = currentPrice * units;
                 const pnl = val - inv;
                 const pnlPct = inv !== 0 ? (pnl / inv) * 100 : 0;
+                const capRisk = units * (avgPrice - currentSl);
 
                 totalInv += inv;
                 totalVal += val;
                 totalPnL += pnl;
+                if (currentSl > 0) totalCapRisk += capRisk;
 
                 const row = `<tr data-symbol="${h.symbol}">
                     <td><strong>${h.symbol}</strong></td>
@@ -1637,6 +1648,7 @@
                     <td class="text-center" data-sort="${avgPrice}">₹${avgPrice.toFixed(2)}</td>
                     <td class="text-center live-current" data-sort="${currentPrice}">₹${currentPrice.toFixed(2)}</td>
                     <td class="text-center" data-sort="${currentSl}" style="color:var(--danger);">₹${currentSl.toFixed(2)}</td>
+                    <td class="text-center ${capRisk > 0 ? 'neg-val' : 'pos-val'}" data-sort="${capRisk}">₹${currentSl > 0 ? capRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
                     <td class="text-center" data-sort="${inv}">₹${inv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-center live-value" data-sort="${val}">₹${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-center live-pnl ${pnl >= 0 ? 'pos-val' : 'neg-val'}" data-sort="${pnl}">₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -1649,6 +1661,7 @@
             // Totals
             const totalRow = `<tr style="font-weight:700; background:#232730;">
                     <td colspan="6">TOTALS</td>
+                    <td class="text-right ${totalCapRisk > 0 ? 'neg-val' : 'pos-val'}">₹${totalCapRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-right">₹${totalInv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-right" id="live-total-val">₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}" id="live-total-pnl">₹${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -2268,6 +2281,44 @@
         let _liveInterval = null;
         let _isLive = false;
 
+        // Live PnL Chart vars
+        let livePnlChartInstance = null;
+        let livePnlLabels = [];
+        let livePnlData = [];
+
+        function initLivePnlChart() {
+            const ctx = document.getElementById('livePnlChart').getContext('2d');
+            if (livePnlChartInstance) return;
+
+            livePnlChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: livePnlLabels,
+                    datasets: [{
+                        label: "Today's P&L",
+                        data: livePnlData,
+                        borderColor: '#fbbf24',
+                        backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                        tension: 0.3,
+                        fill: true,
+                        pointRadius: 2,
+                        pointHoverRadius: 4,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: true, ticks: { maxTicksLimit: 10, color: '#888' }, grid: { display: false } },
+                        y: { display: true, ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                    },
+                    animation: { duration: 0 }
+                }
+            });
+        }
+
         async function toggleLiveStream() {
             if (_isLive) {
                 stopLiveStream();
@@ -2299,7 +2350,14 @@
                 label.innerText = '🟢 Streaming live';
                 label.style.color = 'var(--accent)';
 
-                // Start polling every 2 seconds
+                // Initialize live chart
+                livePnlLabels = [];
+                livePnlData = [];
+                document.getElementById('live-pnl-card').style.display = 'block';
+                initLivePnlChart();
+                livePnlChartInstance.update();
+
+                // Start polling every 30 seconds
                 pollLivePrices(); // immediate first poll
                 _liveInterval = setInterval(pollLivePrices, 30000);
 
@@ -2341,6 +2399,8 @@
                 let totalVal = 0;
                 let totalPnl = 0;
 
+                const dt = $('#holdings-table').DataTable();
+
                 rows.forEach(row => {
                     const sym = row.getAttribute('data-symbol');
                     const p = prices[sym];
@@ -2361,40 +2421,43 @@
                     totalPnl += pnl;
                     totalDayPnl += dayPnl;
 
-                    // Update cells
-                    const curCell = row.querySelector('.live-current');
-                    if (curCell) {
-                        curCell.setAttribute('data-sort', ltp);
-                        curCell.innerHTML = `₹${ltp.toFixed(2)}`;
+                    // Update cells using DataTables API to preserve sorting
+                    // Assuming columns: Symbol(0), Entry Date(1), Units(2), Avg Price(3), Current(4), SL(5), Cap Risk(6), Invested(7), Value(8), Unrealized P&L(9), %(10), Day P&L(11)
+
+                    const dtRow = dt.row(row);
+
+                    // Helper to update text and sorting value
+                    function updateCell(colIdx, sortVal, htmlStr) {
+                        const cell = dt.cell(dtRow, colIdx);
+                        const node = cell.node();
+                        if (node) {
+                            node.setAttribute('data-sort', sortVal);
+                            node.innerHTML = htmlStr;
+                        }
+                        cell.invalidate('dom'); // Tell DataTables to re-read the data-sort and text from DOM
                     }
 
-                    const valCell = row.querySelector('.live-value');
-                    if (valCell) {
-                        valCell.setAttribute('data-sort', newVal);
-                        valCell.innerHTML = `₹${newVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                    }
+                    // Col 4: Current Price
+                    updateCell(4, ltp, `₹${ltp.toFixed(2)}`);
 
-                    const pnlCell = row.querySelector('.live-pnl');
-                    if (pnlCell) {
-                        pnlCell.setAttribute('data-sort', pnl);
-                        pnlCell.className = `text-right live-pnl ${pnl >= 0 ? 'pos-val' : 'neg-val'}`;
-                        pnlCell.innerHTML = `₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                    }
+                    // Col 8: Value
+                    updateCell(8, newVal, `₹${newVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 
-                    const pctCell = row.querySelector('.live-pnlpct');
-                    if (pctCell) {
-                        pctCell.setAttribute('data-sort', pnlPct);
-                        pctCell.className = `text-right live-pnlpct ${pnlPct >= 0 ? 'pos-val' : 'neg-val'}`;
-                        pctCell.innerHTML = `${pnlPct.toFixed(2)}%`;
-                    }
+                    // Col 9: Unrealized P&L
+                    const pnlClass = pnl >= 0 ? 'pos-val' : 'neg-val';
+                    updateCell(9, pnl, `<span class="${pnlClass}">₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`);
 
-                    const dayCell = row.querySelector('.live-day-pnl');
-                    if (dayCell) {
-                        dayCell.setAttribute('data-sort', dayPnl);
-                        dayCell.className = `text-right live-day-pnl ${dayPnl >= 0 ? 'pos-val' : 'neg-val'}`;
-                        dayCell.innerHTML = `₹${dayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                    }
+                    // Col 10: %
+                    const pnlPctClass = pnlPct >= 0 ? 'pos-val' : 'neg-val';
+                    updateCell(10, pnlPct, `<span class="${pnlPctClass}">${pnlPct.toFixed(2)}%</span>`);
+
+                    // Col 11: Day P&L
+                    const dayPnlClass = dayPnl >= 0 ? 'pos-val' : 'neg-val';
+                    updateCell(11, dayPnl, `<span class="${dayPnlClass}">₹${dayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`);
                 });
+
+                // Redraw table to apply sorting/filtering updates without resetting pagination
+                dt.draw(false);
 
                 // Update footer totals
                 const totalValEl = document.getElementById('live-total-val');
@@ -2417,6 +2480,25 @@
                 if (dayPnlCard) {
                     dayPnlCard.className = `metric-value ${totalDayPnl >= 0 ? 'pos-val' : 'neg-val'}`;
                     dayPnlCard.innerText = `₹${totalDayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+
+                // Update live chart
+                if (livePnlChartInstance) {
+                    const now = new Date();
+                    const timeStr = String(now.getHours()).padStart(2, '0') + ':' +
+                        String(now.getMinutes()).padStart(2, '0') + ':' +
+                        String(now.getSeconds()).padStart(2, '0');
+                    livePnlLabels.push(timeStr);
+                    livePnlData.push(totalDayPnl);
+
+                    if (livePnlLabels.length > 120) { // keep last 1 hour of points at 30s interval
+                        livePnlLabels.shift();
+                        livePnlData.shift();
+                    }
+
+                    livePnlChartInstance.data.datasets[0].borderColor = totalDayPnl >= 0 ? '#10b981' : '#ef4444';
+                    livePnlChartInstance.data.datasets[0].backgroundColor = totalDayPnl >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+                    livePnlChartInstance.update();
                 }
 
                 // Update portfolio value card too
