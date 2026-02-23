@@ -2504,7 +2504,19 @@
                 // Update portfolio value card too
                 const valCard = document.getElementById('sum-val');
                 if (valCard && totalVal > 0) {
-                    valCard.innerText = `₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    const cashCard = document.getElementById('sum-cash');
+                    let cashVal = 0;
+                    if (cashCard && cashCard.innerText) {
+                        cashVal = parseFloat(cashCard.innerText.replace(/[^0-9.-]+/g, '')) || 0;
+                    }
+                    valCard.innerText = `₹${(totalVal + cashVal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+
+                // Update unrealized PnL card
+                const unrealizedCard = document.getElementById('sum-unrealized');
+                if (unrealizedCard) {
+                    unrealizedCard.className = `metric-value ${totalPnl >= 0 ? 'pos-val' : 'neg-val'}`;
+                    unrealizedCard.innerText = `₹${totalPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 }
 
             } catch (e) {
