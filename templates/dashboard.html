@@ -1475,7 +1475,7 @@
                 if (res.ok) {
                     const aborted = data.message && data.message.includes('aborted');
                     log(aborted ? '⚠️  Pipeline aborted — see steps below:' : '✅ Pipeline Complete!');
-                    Object.entries(data.results).forEach(([step, status]) => {
+                    Object.entries(data.results || {}).forEach(([step, status]) => {
                         const label = stepLabels[step] || step;
                         let icon = '✅';
                         if (typeof status === 'string' && status.startsWith('failed')) icon = '❌';

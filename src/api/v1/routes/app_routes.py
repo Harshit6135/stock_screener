@@ -61,7 +61,6 @@ class LogStream(MethodView):
             headers={
                 'Cache-Control': 'no-cache',
                 'X-Accel-Buffering': 'no',     # disable nginx buffering
-                'Connection': 'keep-alive',
             }
         )
 

@@ -81,8 +81,19 @@ def actions():
 
 
 if __name__ == "__main__":
+    import logging
+    from paste.translogger import TransLogger
+
+    # Waitress's internal logs
+    logging.getLogger('waitress').setLevel(logging.INFO)
+
+    # TransLogger captures HTTP requests and prints them to console
+    logged_app = TransLogger(app, setup_console_handler=False)
+
+    print("Starting Waitress server on http://0.0.0.0:5000 ...")
+
     serve(
-        app,
+        logged_app,
         host='0.0.0.0',
         port=5000,
         threads=8,           # SSE stream + pipeline + dashboard run concurrently

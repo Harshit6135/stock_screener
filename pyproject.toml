@@ -25,6 +25,7 @@ dependencies = [
     "pandas-stubs (>=2.3.3,<2.4.0)",
     "scipy-stubs (>=1.16.3,<1.17.0)",
     "waitress~=3.0",
+    "paste (>=3.10.1,<4.0.0)",
 ]
 
 [project.optional-dependencies]
