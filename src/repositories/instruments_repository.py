@@ -34,6 +34,16 @@ class InstrumentsRepository:
             return -1
 
     @staticmethod
+    def delete_by_token(instrument_token):
+        try:
+            num_deleted = InstrumentsModel.query.filter_by(instrument_token=instrument_token).delete()
+            db.session.commit()
+            return num_deleted
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            return -1
+
+    @staticmethod
     def get_by_token(instrument_token):
         instrument = InstrumentsModel.query.get(instrument_token)
         if instrument:

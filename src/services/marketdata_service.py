@@ -86,7 +86,12 @@ class MarketDataService:
                 records, start_time = self.get_historical_data(instr_token, start_date)
 
             if records is None:
-                logger.warning(f"No data returned for {log_symb}")
+                if not last_data_date:
+                    # No data from Kite AND no history in DB — stock is likely delisted.
+                    logger.warning(f"No data for {log_symb} and no DB history — removing from instruments.")
+                    instr_repository.delete_by_token(instr_token)
+                else:
+                    logger.warning(f"No data returned for {log_symb}")
                 continue
 
             if not historical and last_data_date and len(records) >= 1:
