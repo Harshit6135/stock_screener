@@ -15072,7 +15072,7 @@
     {
         "instrument_token":362753,
         "exchange_token":"1417",
-        "tradingsymbol":"GLOBAL-BE",
+        "tradingsymbol":"GLOBAL",
         "name":"GLOBAL EDUCATION",
         "exchange":"NSE",
         "series":"BE",
@@ -15083,7 +15083,7 @@
     {
         "instrument_token":1226497,
         "exchange_token":"4791",
-        "tradingsymbol":"RELINFRA-BE",
+        "tradingsymbol":"RELINFRA",
         "name":"RELIANCE INFRASTRUCTU",
         "exchange":"NSE",
         "series":"BE",
@@ -15094,7 +15094,7 @@
     {
         "instrument_token":1506305,
         "exchange_token":"5884",
-        "tradingsymbol":"PRECOT-BE",
+        "tradingsymbol":"PRECOT",
         "name":"PRECOT",
         "exchange":"NSE",
         "series":"BE",
@@ -15105,7 +15105,7 @@
     {
         "instrument_token":2013697,
         "exchange_token":"7866",
-        "tradingsymbol":"GVPIL-BE",
+        "tradingsymbol":"GVPIL",
         "name":"GE POWER INDIA",
         "exchange":"NSE",
         "series":"BE",
@@ -15116,7 +15116,7 @@
     {
         "instrument_token":2193409,
         "exchange_token":"8568",
-        "tradingsymbol":"HITECHGEAR-BE",
+        "tradingsymbol":"HITECHGEAR",
         "name":"THE HI-TECH GEARS",
         "exchange":"NSE",
         "series":"BE",
@@ -15127,7 +15127,7 @@
     {
         "instrument_token":2288641,
         "exchange_token":"8940",
-        "tradingsymbol":"E2E-BE",
+        "tradingsymbol":"E2E",
         "name":"E2E NETWORKS",
         "exchange":"NSE",
         "series":"BE",
@@ -15138,7 +15138,7 @@
     {
         "instrument_token":2477825,
         "exchange_token":"9679",
-        "tradingsymbol":"SOUTHWEST-BE",
+        "tradingsymbol":"SOUTHWEST",
         "name":"SOUTH WEST PINNACLE",
         "exchange":"NSE",
         "series":"BE",
@@ -15149,7 +15149,7 @@
     {
         "instrument_token":3003393,
         "exchange_token":"11732",
-        "tradingsymbol":"CONSOFINVT-BE",
+        "tradingsymbol":"CONSOFINVT",
         "name":"CONSO. FIN. & HOLD.",
         "exchange":"NSE",
         "series":"BE",
@@ -15160,7 +15160,7 @@
     {
         "instrument_token":3073537,
         "exchange_token":"12006",
-        "tradingsymbol":"FAZE3Q-BE",
+        "tradingsymbol":"FAZE3Q",
         "name":"FAZE THREE",
         "exchange":"NSE",
         "series":"BE",
@@ -15171,7 +15171,7 @@
     {
         "instrument_token":3358721,
         "exchange_token":"13120",
-        "tradingsymbol":"TVSELECT-BE",
+        "tradingsymbol":"TVSELECT",
         "name":"TVS ELECTRONICS",
         "exchange":"NSE",
         "series":"BE",
@@ -15182,7 +15182,7 @@
     {
         "instrument_token":3547137,
         "exchange_token":"13856",
-        "tradingsymbol":"VENUSREM-BE",
+        "tradingsymbol":"VENUSREM",
         "name":"VENUS REMEDIES",
         "exchange":"NSE",
         "series":"BE",
@@ -15193,7 +15193,7 @@
     {
         "instrument_token":3601153,
         "exchange_token":"14067",
-        "tradingsymbol":"WANBURY-BE",
+        "tradingsymbol":"WANBURY",
         "name":"WANBURY",
         "exchange":"NSE",
         "series":"BE",
@@ -15204,7 +15204,7 @@
     {
         "instrument_token":3629569,
         "exchange_token":"14178",
-        "tradingsymbol":"IZMO-BE",
+        "tradingsymbol":"IZMO",
         "name":"IZMO",
         "exchange":"NSE",
         "series":"BE",
@@ -15215,7 +15215,7 @@
     {
         "instrument_token":3844609,
         "exchange_token":"15018",
-        "tradingsymbol":"MAANALU-BE",
+        "tradingsymbol":"MAANALU",
         "name":"MAAN ALUMINIUM",
         "exchange":"NSE",
         "series":"BE",
@@ -15226,7 +15226,7 @@
     {
         "instrument_token":3889409,
         "exchange_token":"15193",
-        "tradingsymbol":"BGRENERGY-BE",
+        "tradingsymbol":"BGRENERGY",
         "name":"BGR ENERGY SYSTEMS",
         "exchange":"NSE",
         "series":"BE",
@@ -15237,7 +15237,7 @@
     {
         "instrument_token":4186881,
         "exchange_token":"16355",
-        "tradingsymbol":"PANACHE-BE",
+        "tradingsymbol":"PANACHE",
         "name":"PANACHE DIGILIFE",
         "exchange":"NSE",
         "series":"BE",
@@ -15248,7 +15248,7 @@
     {
         "instrument_token":4647169,
         "exchange_token":"18153",
-        "tradingsymbol":"TVSSCS-BE",
+        "tradingsymbol":"TVSSCS",
         "name":"TVS SUPPLY CHAIN SOL L",
         "exchange":"NSE",
         "series":"BE",
@@ -15259,7 +15259,7 @@
     {
         "instrument_token":4856065,
         "exchange_token":"18969",
-        "tradingsymbol":"KAPSTON-BE",
+        "tradingsymbol":"KAPSTON",
         "name":"KAPSTON SERVICES",
         "exchange":"NSE",
         "series":"BE",
@@ -15270,7 +15270,7 @@
     {
         "instrument_token":5041921,
         "exchange_token":"19695",
-        "tradingsymbol":"JITFINFRA-BE",
+        "tradingsymbol":"JITFINFRA",
         "name":"JITF INFRALOGISTICS",
         "exchange":"NSE",
         "series":"BE",
@@ -15281,7 +15281,7 @@
     {
         "instrument_token":5109505,
         "exchange_token":"19959",
-        "tradingsymbol":"WAAREEINDO-BE",
+        "tradingsymbol":"WAAREEINDO",
         "name":"INDOSOLAR",
         "exchange":"NSE",
         "series":"BE",
@@ -15292,7 +15292,7 @@
     {
         "instrument_token":5986817,
         "exchange_token":"23386",
-        "tradingsymbol":"VHLTD-BE",
+        "tradingsymbol":"VHLTD",
         "name":"VICEROY HOTELS",
         "exchange":"NSE",
         "series":"BE",
@@ -15303,7 +15303,7 @@
     {
         "instrument_token":7996929,
         "exchange_token":"31238",
-        "tradingsymbol":"SCHNEIDER-BE",
+        "tradingsymbol":"SCHNEIDER",
         "name":"SCHNEIDER ELECTRIC INFRA",
         "exchange":"NSE",
         "series":"BE",
@@ -15314,7 +15314,7 @@
     {
         "instrument_token":194027521,
         "exchange_token":"757920",
-        "tradingsymbol":"BORANA-BE",
+        "tradingsymbol":"BORANA",
         "name":"BORANA WEAVES",
         "exchange":"NSE",
         "series":"BE",
@@ -15325,7 +15325,7 @@
     {
         "instrument_token":194299905,
         "exchange_token":"758984",
-        "tradingsymbol":"RNBDENIMS-BE",
+        "tradingsymbol":"RNBDENIMS",
         "name":"R&B DENIMS",
         "exchange":"NSE",
         "series":"BE",
@@ -15336,7 +15336,7 @@
     {
         "instrument_token":194300929,
         "exchange_token":"758988",
-        "tradingsymbol":"GCSL-BE",
+        "tradingsymbol":"GCSL",
         "name":"GRETEX CORPORATE SERVICES",
         "exchange":"NSE",
         "series":"BE",
