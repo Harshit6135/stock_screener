@@ -699,6 +699,17 @@
                 <label class="switch"><input type="checkbox" id="step-init" checked><span class="slider"></span></label>
             </div>
             <div class="step-row">
+                <span style="font-size: 0.8rem; margin-left:20px; color:var(--text-muted);">↳ YFinance Batch
+                    Size:</span>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <input type="number" id="yf-batch" value="100"
+                        style="width: 70px; background:var(--bg-lighter); color:white; border:1px solid #333; padding:5px; border-radius:4px;">
+                    <span style="font-size: 0.8rem; color:var(--text-muted);">Sleep (s):</span>
+                    <input type="number" id="yf-sleep" value="4"
+                        style="width: 60px; background:var(--bg-lighter); color:white; border:1px solid #333; padding:5px; border-radius:4px;">
+                </div>
+            </div>
+            <div class="step-row">
                 <span>2. Update Market Data</span>
                 <label class="switch"><input type="checkbox" id="step-market" checked><span
                         class="slider"></span></label>
@@ -1426,7 +1437,9 @@
                 indicators: document.getElementById('step-ind').checked,
                 percentile: document.getElementById('step-pct').checked,
                 score: document.getElementById('step-score').checked,
-                ranking: document.getElementById('step-rank').checked
+                ranking: document.getElementById('step-rank').checked,
+                yfinance_batch_size: parseInt(document.getElementById('yf-batch').value) || 100,
+                yfinance_sleep_time: parseInt(document.getElementById('yf-sleep').value) || 4
             };
 
             const consoleEl = document.getElementById('pipeline-console');

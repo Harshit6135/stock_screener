@@ -136,6 +136,8 @@ class RunPipeline(MethodView):
         """
         results = {}
         failed = False
+        batch_size = args.get("yfinance_batch_size", 100)
+        sleep_time = args.get("yfinance_sleep_time", 4)
 
         # Step 0: Kite Authentication
         # Validates the stored access token (or triggers a fresh login) before
@@ -160,7 +162,7 @@ class RunPipeline(MethodView):
             else:
                 try:
                     init_service = InitService()
-                    init_service.initialize_app()
+                    init_service.initialize_app(batch_size=batch_size, sleep_time=sleep_time)
                     results['init'] = "completed"
                 except Exception as e:
                     traceback.print_exc()

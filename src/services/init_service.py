@@ -23,7 +23,7 @@ class InitService:
         self.dump_path = "data/exports/yfinance_dump.csv"
         self.instr_json = "data/exports/instruments.json"
 
-    def initialize_app(self):
+    def initialize_app(self, batch_size=100, sleep_time=4):
         logger.info("Starting Day 0 Process...")
 
         # 1. Fetch and Merge CSVs
@@ -37,7 +37,8 @@ class InitService:
         # 2. Fetch yfinance data
         try:
             df['yfinance_tickers'] = df.apply(self.generate_yfinance_tickers, axis=1)
-            df = self.fetch_yfinance_data(df)
+            df = self.fetch_yfinance_data(df, batch_size, sleep_time)
+
         except Exception as e:
             logger.error(f"Step 2 (yfinance fetch) failed: {e}")
             raise
@@ -187,7 +188,7 @@ class InitService:
         return tickers
 
     @staticmethod
-    def fetch_yfinance_data(df):
+    def fetch_yfinance_data(df, batch_size=100, sleep_time=4):
         try:
             desired_columns = [
                 'industry', 'sector', 'marketCap', 'regularMarketPrice',
@@ -204,8 +205,10 @@ class InitService:
             failed_downloads = 0
 
             for index, row in df.iterrows():
-                if index % 100 == 0:
-                    time.sleep(4)
+                # Avoid sleeping on the very first row
+                if index > 0 and index % batch_size == 0:
+                    logger.info(f"Sleeping for {sleep_time}s to avoid YFinance rate limits...")
+                    time.sleep(sleep_time)
 
                 yfinance_info, yfinance_ticker_used, yfinance_status = yf.get_stock_info(df.at[index, 'yfinance_tickers'])
                 df.at[index, 'yfinance_info'] = json.dumps(yfinance_info)
