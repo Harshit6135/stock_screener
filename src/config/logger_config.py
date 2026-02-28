@@ -59,6 +59,9 @@ def setup_logger(name="StockScreener", log_dir="logs"):
     # Avoid duplicate handlers if setup is called multiple times
     if logger.hasHandlers():
         logger.handlers.clear()
+        
+    # Prevent logs from bubbling up to the root logger (which causes duplicates)
+    logger.propagate = False
 
     # File Handler with JSON formatting
     file_handler = logging.FileHandler(log_file, mode='a')

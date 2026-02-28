@@ -739,7 +739,7 @@
             <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
                 <button class="btn btn-warning" onclick="syncInstruments()" id="sync-instr-btn">🔄 Sync
                     Instruments</button>
-                <button class="btn" onclick="runPipeline()">Run Selected Steps</button>
+                <button class="btn" onclick="runPipeline()" id="run-pipeline-btn">Run Selected Steps</button>
             </div>
         </div>
 
@@ -1464,7 +1464,11 @@
             };
             es.onerror = () => es.close();
 
-            showLoading('Pipeline running — live logs below...');
+            const runBtn = document.getElementById('run-pipeline-btn');
+            if (runBtn) {
+                runBtn.disabled = true;
+                runBtn.innerHTML = 'Running... <span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;margin-left:5px;"></span>';
+            }
 
             try {
                 const res = await fetch('/api/v1/app/run-pipeline', {
@@ -1502,7 +1506,11 @@
                 log(`❌ Network Error: ${e.message}`);
             } finally {
                 es.close();
-                hideLoading();
+                const runBtn = document.getElementById('run-pipeline-btn');
+                if (runBtn) {
+                    runBtn.disabled = false;
+                    runBtn.innerHTML = 'Run Selected Steps';
+                }
             }
         }
 

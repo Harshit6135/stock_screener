@@ -96,6 +96,6 @@ if __name__ == "__main__":
         logged_app,
         host='0.0.0.0',
         port=5000,
-        threads=8,           # SSE stream + pipeline + dashboard run concurrently
+        threads=3,           # SSE stream + pipeline + dashboard run concurrently
         channel_timeout=600  # keep SSE connections alive up to 10 min
     )
