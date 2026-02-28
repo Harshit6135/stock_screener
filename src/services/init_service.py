@@ -25,29 +25,58 @@ class InitService:
 
     def initialize_app(self):
         logger.info("Starting Day 0 Process...")
-        
+
         # 1. Fetch and Merge CSVs
-        df, nse_tickers, bse_tickers, merged_tickers = self.fetch_and_merge_csvs()
-        logger.info(f"Merged DataFrame shape: {df.shape}")
+        try:
+            df, nse_tickers, bse_tickers, merged_tickers = self.fetch_and_merge_csvs()
+            logger.info(f"Merged DataFrame shape: {df.shape}")
+        except Exception as e:
+            logger.error(f"Step 1 (CSV merge) failed: {e}")
+            raise
 
         # 2. Fetch yfinance data
-        df['yfinance_tickers'] = df.apply(self.generate_yfinance_tickers, axis=1)
-        df = self.fetch_yfinance_data(df)
-        
+        try:
+            df['yfinance_tickers'] = df.apply(self.generate_yfinance_tickers, axis=1)
+            df = self.fetch_yfinance_data(df)
+        except Exception as e:
+            logger.error(f"Step 2 (yfinance fetch) failed: {e}")
+            raise
+
         # 3. Save raw output to CSV
-        df.to_csv(self.dump_path, index=False)
-        logger.info(f"Saved yfinance data to {self.dump_path}")
+        try:
+            df.to_csv(self.dump_path, index=False)
+            logger.info(f"Saved yfinance data to {self.dump_path}")
+        except Exception as e:
+            logger.error(f"Step 3 (CSV dump) failed: {e}")
+            raise
 
         # 4. Push to Master Table
-        self.push_to_master(df)
+        try:
+            self.push_to_master(df)
+        except Exception as e:
+            logger.error(f"Step 4 (push to master) failed: {e}")
+            raise
 
         # 5. Filter stocks (Mcap < 500cr, Price < 75)
-        df_filtered = self.filter_stocks(df)
-        logger.info(f"Filtered DataFrame shape: {df_filtered.shape}")
+        try:
+            df_filtered = self.filter_stocks(df)
+            logger.info(f"Filtered DataFrame shape: {df_filtered.shape}")
+            if df_filtered.empty:
+                raise ValueError("No stocks remain after filtering — aborting.")
+        except Exception as e:
+            logger.error(f"Step 5 (filter stocks) failed: {e}")
+            raise
 
         # 6. Sync with Kite Instruments
-        instruments_df = self.get_instruments()
-        response_code, final_count = self.sync_with_kite(df_filtered, instruments_df)
+        try:
+            instruments_df = self.get_instruments()
+            response_code, final_count = self.sync_with_kite(df_filtered, instruments_df)
+            if response_code not in (200, 201):
+                raise RuntimeError(f"sync_with_kite returned error code {response_code}")
+        except Exception as e:
+            logger.error(f"Step 6 (Kite sync) failed: {e}")
+            raise
+
         logger.info("Day 0 Process Completed Successfully.")
         response = {
             "nse_count": nse_tickers,
