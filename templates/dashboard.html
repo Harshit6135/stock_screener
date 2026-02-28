@@ -723,6 +723,8 @@
             </div>
 
             <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-warning" onclick="syncInstruments()" id="sync-instr-btn">🔄 Sync
+                    Instruments</button>
                 <button class="btn" onclick="runPipeline()">Run Selected Steps</button>
             </div>
         </div>
@@ -1447,6 +1449,29 @@
                 log(`❌ Network Error: ${e.message}`);
             }
             hideLoading();
+        }
+
+        async function syncInstruments() {
+            const btn = document.getElementById('sync-instr-btn');
+            btn.disabled = true;
+            showLoading('Syncing instruments... fetching Kite data');
+            log('--> Starting instrument sync (BE/EQ series detection)...');
+            try {
+                const res = await fetch('/api/v1/init/sync', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    log(`✅ Instrument Sync Complete!`);
+                    log(`   • Checked: ${data.checked} symbols`);
+                    log(`   • Changed: ${data.changed} symbols`);
+                    log(`   • Errors : ${data.errors} symbols`);
+                } else {
+                    log(`❌ Sync Error: ${data.message || JSON.stringify(data)}`);
+                }
+            } catch (e) {
+                log(`❌ Network Error: ${e.message}`);
+            }
+            hideLoading();
+            btn.disabled = false;
         }
 
         async function runCleanup() {

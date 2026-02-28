@@ -8,6 +8,7 @@ class InstrumentsModel(db.Model):
     tradingsymbol = db.Column(db.String, nullable=True)
     name = db.Column(db.String, nullable=True)
     exchange = db.Column(db.String, nullable=True)
+    series = db.Column(db.String(10), nullable=True)  # e.g. 'EQ', 'BE'
     market_cap = db.Column(db.Float, nullable=True)
     industry = db.Column(db.String, nullable=True)
     sector = db.Column(db.String, nullable=True)
