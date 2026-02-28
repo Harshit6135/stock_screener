@@ -31,7 +31,7 @@ class IndicatorsQuery(MethodView):
     @blp.arguments(IndicatorSearchSchema, location="json")
     @blp.response(200, IndicatorsSchema(many=True))
     def get(self, filter_data):
-        """Fetch indicators by instrument_token or tradingsymbol within a date range"""
+        """Fetch indicators by tradingsymbol within a date range"""
         return indicators_repository.query(filter_data)
 
 
@@ -58,7 +58,7 @@ class IndicatorsQueryAll(MethodView):
     @blp.doc(tags=["Indicators"])
     @blp.arguments(IndicatorsSchema, location="json")
     def get(self, filter_data):
-        """Fetch indicators by instrument_token or tradingsymbol within a date range"""
+        """Fetch indicators by tradingsymbol within a date range"""
         response=indicators_repository.get_indicators_for_all_stocks(filter_data)
         indicators = {}
         for data in response:
@@ -73,7 +73,7 @@ class IndicatorsQueryAll(MethodView):
 class IndicatorsDelete(MethodView):
     @blp.doc(tags=["Indicators"])
     def delete(self, tradingsymbol):
-        """Delete indicators by instrument_token or tradingsymbol within a date range"""
+        """Delete indicators by tradingsymbol"""
         response=indicators_repository.delete_by_tradingsymbol(tradingsymbol)
         if response == -1:
             abort(500, message="Failed to delete indicators")

@@ -2,7 +2,6 @@ from db import db
 from sqlalchemy.exc import SQLAlchemyError
 
 from models import InstrumentsModel
-from models.indicators_model import IndicatorsModel
 from models.market_data_model import MarketDataModel
 
 
@@ -106,12 +105,6 @@ class InstrumentsRepository:
 
                 # Update market_data rows
                 MarketDataModel.query.filter_by(instrument_token=old_token).update(
-                    {'instrument_token': new_token},
-                    synchronize_session='fetch'
-                )
-
-                # Update indicators rows
-                IndicatorsModel.query.filter_by(instrument_token=old_token).update(
                     {'instrument_token': new_token},
                     synchronize_session='fetch'
                 )

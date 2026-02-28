@@ -310,7 +310,7 @@ class InitService:
             new_token = int(kite_row['instrument_token'])
             new_exchange_token = str(kite_row['exchange_token'])
             new_series = kite_row['inferred_series']
-            new_tradingsymbol = kite_row['tradingsymbol']
+            new_tradingsymbol = base_symbol
             old_token = existing['instrument_token']
             old_series = existing['series']  # may be None before series column existed
             token_changed = new_token != old_token
@@ -427,6 +427,8 @@ class InitService:
             final_instruments = final_instruments.merge(
                 df_map, left_on='lookup_symbol', right_on='lookup_key', how='left'
             )
+
+            final_instruments['tradingsymbol'] = final_instruments['base_symbol']
 
             output_columns = ['instrument_token', 'exchange_token', 'tradingsymbol', 'name', 'exchange', 'series', 'marketCap', 'industry', 'sector']
             final_instruments = final_instruments[output_columns]

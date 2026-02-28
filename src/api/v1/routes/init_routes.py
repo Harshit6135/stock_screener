@@ -36,7 +36,7 @@ class InstrumentSync(MethodView):
 
         Reads the existing instruments table, fetches the latest Kite instruments CSV,
         detects any series changes (EQ ↔ BE) for tracked symbols, and cascades the
-        new instrument_token + exchange_token into market_data and indicators.
+        new instrument_token + exchange_token into market_data.
         Only changed symbols are touched — no data is deleted or re-inserted.
 
         Returns: { checked: N, changed: M, errors: K }
