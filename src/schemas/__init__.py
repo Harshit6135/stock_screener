@@ -1,4 +1,4 @@
-from .init_app_schema import InitResponseSchema
+from .init_app_schema import InitResponseSchema, InitRequestSchema
 from .market_data_schema import MarketDataSchema, MaxDateSchema, MarketDataQuerySchema
 from .instruments_schema import InstrumentSchema, MessageSchema
 from .indicators_schema import IndicatorsSchema, IndicatorSearchSchema
@@ -24,6 +24,7 @@ CapitalEventSchema
 
 __all__ = [
     "InitResponseSchema",
+    "InitRequestSchema",
     "MarketDataSchema",
     "MaxDateSchema",
     "MarketDataQuerySchema",
