@@ -16,6 +16,7 @@ class ActionQuerySchema(Schema):
     """Schema for querying actions by date and strategy"""
     date = fields.Date(required=False, load_default=None)
     config_name = fields.String(required=False, load_default="momentum_config")
+    enable_pyramiding = fields.Boolean(required=False, load_default=False)
 
 
 class ActionSchema(Schema):

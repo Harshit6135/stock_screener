@@ -93,18 +93,45 @@ class MarketDataService:
                 # Corporate action detection: Compare stored close with fetched close for same date
                 stored_close = last_data_date.close
                 fetched_close = records[0]['close']
-                
+
                 if stored_close != fetched_close:
-                    # Corporate action detected - close values differ for same date
-                    logger.warning(f"Corporate action detected for {log_symb}. Stored close: {stored_close}, Fetched close: {fetched_close}. Triggering full refresh.")
-                    
-                    # Cascading delete: marketdata → indicators → percentile
+                    # Corporate action detected (split/bonus) — close values differ for same date.
+                    logger.warning(
+                        f"Corporate action detected for {log_symb}. "
+                        f"Stored close: {stored_close}, Fetched close: {fetched_close}. "
+                        f"Triggering full refresh."
+                    )
+
+                    # Find the earliest date we have for this stock in the DB
+                    # so the refill starts from the same point, not an arbitrary date.
+                    earliest_row = marketdata_repository.get_earliest_date_by_symbol(tradingsymbol)
+                    if earliest_row:
+                        refill_start = pd.Timestamp(earliest_row.date)
+                    else:
+                        refill_start = pd.Timestamp(historical_start_date)
+
+                    # Decide fetch strategy based on total calendar days to cover.
+                    total_calendar_days = (fetch_end_date - refill_start).days
+                    logger.info(
+                        f"Refill start: {refill_start.date()}, "
+                        f"span: {total_calendar_days} calendar days."
+                    )
+
+                    # Cascading delete: marketdata → indicators
                     marketdata_repository.delete_by_tradingsymbol(tradingsymbol)
                     indicators_repository.delete_by_tradingsymbol(tradingsymbol)
-                    
-                    sleep(max(0, 0.34 - (time() - start_time)))
-                    start_date = fetch_end_date - timedelta(days=HISTORY_LOOKBACK)
-                    records, start_time = self.get_latest_data_by_token(instr_token, start_date, fetch_end_date)
+
+
+                    if total_calendar_days > 2000:
+                        # Use chunked historical fetch to stay within Kite's 2000-day API limit.
+                        logger.info(f"Span > 2000 days — using chunked historical fetch for {log_symb}.")
+                        records, start_time = self.get_historical_data(instr_token, refill_start)
+                    else:
+                        # Single-call fetch is fine within the limit.
+                        logger.info(f"Span <= 2000 days — using single fetch for {log_symb}.")
+                        records, start_time = self.get_latest_data_by_token(
+                            instr_token, refill_start, fetch_end_date
+                        )
                 else:
                     records = records[1:]
 

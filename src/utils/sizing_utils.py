@@ -36,6 +36,14 @@ def calculate_position_size(atr: float, current_price: float,
         position_value = remaining_capital
         shares = int(position_value / current_price)
         position_value = shares * current_price
+
+    if position_value < config.min_position_percent * total_capital:
+        return {
+            "shares": 0,
+            "position_value": 0,
+            "stop_distance": 0,
+            "risk_amount": 0
+        }
     return {
         "shares": shares,
         "position_value": round(position_value, 2),

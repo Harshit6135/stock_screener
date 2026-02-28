@@ -17,6 +17,7 @@ class InvestmentsHoldingsModel(db.Model):
     date = db.Column(db.Date, primary_key=True, nullable=False)
     entry_date = db.Column(db.Date, nullable=False)
     entry_price = db.Column(db.Numeric(10, 2), nullable=False)
+    avg_price = db.Column(db.Numeric(10, 2), nullable=True)  # weighted avg cost for unrealized P&L
     units = db.Column(db.Integer, nullable=False)
     atr = db.Column(db.Numeric(10, 2), nullable=True)
     score = db.Column(db.Numeric(10, 2), nullable=True)

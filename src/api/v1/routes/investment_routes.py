@@ -6,6 +6,7 @@ Thin controller layer — business logic lives in InvestmentService.
 """
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
+from typing import Optional
 import marshmallow as ma
 
 from config import setup_logger
@@ -180,3 +181,114 @@ class CapitalEvents(MethodView):
                 500,
                 message=f"Capital event failed: {str(e)}"
             )
+
+
+# ----------------------------------------------------------------
+# Live Ticker Endpoints
+# ----------------------------------------------------------------
+
+from adaptors import KiteAdaptor
+from config import KITE_CONFIG
+from models import InstrumentsModel
+
+# Singleton adaptor for live streaming (reuse across requests)
+_live_kite: Optional[KiteAdaptor] = None
+
+
+def _get_live_kite() -> KiteAdaptor:
+    """Get or create the singleton KiteAdaptor for live streaming."""
+    global _live_kite
+    if _live_kite is None:
+        _live_kite = KiteAdaptor(KITE_CONFIG, logger)
+    return _live_kite
+
+
+@blp.route("/start-ticker")
+class StartTicker(MethodView):
+    @blp.doc(tags=["Investments"])
+    @blp.response(200, MessageSchema)
+    def post(self):
+        """Start live price streaming for current holdings"""
+        try:
+            kite = _get_live_kite()
+            
+            # 1. Get current holdings
+            holdings = inv_repo.get_holdings()
+            if not holdings:
+                return {"message": "No holdings to stream"}
+            
+            # 2. Resolve symbol -> instrument_token via instruments DB
+            symbols = [h.symbol for h in holdings]
+            instruments = InstrumentsModel.query.filter(
+                InstrumentsModel.tradingsymbol.in_(symbols)
+            ).all()
+            
+            token_symbol_map = {}
+            exchange_symbols = []
+            for inst in instruments:
+                token_symbol_map[inst.instrument_token] = inst.tradingsymbol
+                exchange = inst.exchange or "NSE"
+                exchange_symbols.append(f"{exchange}:{inst.tradingsymbol}")
+            
+            if not token_symbol_map:
+                return {"message": "Could not resolve instrument tokens for holdings"}
+            
+            # 3. Fetch previous close via Kite REST API (kite.ohlc)
+            ohlc_data = kite.fetch_ohlc(exchange_symbols)
+            
+            # 4. Populate prev_close in live_prices cache
+            for key, val in ohlc_data.items():
+                # key is like "NSE:RELIANCE"
+                token = val.get('instrument_token')
+                if token and token in token_symbol_map:
+                    prev_close = val.get('ohlc', {}).get('close', 0)
+                    last_price = val.get('last_price', 0)
+                    symbol = token_symbol_map[token]
+                    kite.live_prices[token] = {
+                        'symbol': symbol,
+                        'last_price': last_price,
+                        'prev_close': prev_close,
+                        'change': ((last_price - prev_close) / prev_close * 100) if prev_close else 0
+                    }
+            
+            # 5. Start WebSocket ticker
+            started = kite.start_ticker(token_symbol_map)
+            
+            return {
+                "message": f"Ticker {'started' if started else 'failed'} for {len(token_symbol_map)} instruments"
+            }
+        except Exception as e:
+            logger.error(f"Failed to start ticker: {e}")
+            abort(500, message=f"Start ticker failed: {str(e)}")
+
+
+@blp.route("/live-prices")
+class LivePrices(MethodView):
+    @blp.doc(tags=["Investments"])
+    def get(self):
+        """Get current live prices snapshot"""
+        try:
+            kite = _get_live_kite()
+            prices = kite.get_live_prices()
+            return {
+                "prices": prices,
+                "is_streaming": kite.is_ticker_running()
+            }
+        except Exception as e:
+            logger.error(f"Failed to get live prices: {e}")
+            abort(500, message=f"Live prices failed: {str(e)}")
+
+
+@blp.route("/stop-ticker")
+class StopTicker(MethodView):
+    @blp.doc(tags=["Investments"])
+    @blp.response(200, MessageSchema)
+    def post(self):
+        """Stop live price streaming"""
+        try:
+            kite = _get_live_kite()
+            kite.stop_ticker()
+            return {"message": "Ticker stopped"}
+        except Exception as e:
+            logger.error(f"Failed to stop ticker: {e}")
+            abort(500, message=f"Stop ticker failed: {str(e)}")

@@ -43,4 +43,13 @@ class BacktestInputSchema(Schema):
             "description": "Optional label/name for this backtest run"
         }
     )
+    enable_pyramiding = fields.Boolean(
+        load_default=False,
+        metadata={
+            "description": (
+                "Enable pyramiding (adding to winning "
+                "positions still in top N)"
+            )
+        }
+    )
 

@@ -101,6 +101,20 @@ class PipelineQuerySchema(Schema):
             "example": True,
         }
     )
+    yfinance_batch_size = fields.Integer(
+        load_default=100,
+        metadata={
+            "description": "Number of stocks to fetch before sleeping (YFinance API limit safeguard)",
+            "example": 100,
+        }
+    )
+    yfinance_sleep_time = fields.Integer(
+        load_default=4,
+        metadata={
+            "description": "Seconds to sleep between YFinance batches",
+            "example": 4,
+        }
+    )
 
 
 class RecalculateQuerySchema(Schema):

@@ -61,6 +61,13 @@ class MarketDataRepository:
         return query.order_by(MarketDataModel.date.desc()).first()
 
     @staticmethod
+    def get_earliest_date_by_symbol(tradingsymbol):
+        """Fetch the oldest market data row for a tradingsymbol (for refill start date after a corporate action)."""
+        return MarketDataModel.query.filter(
+            MarketDataModel.tradingsymbol == tradingsymbol
+        ).order_by(MarketDataModel.date.asc()).first()
+
+    @staticmethod
     def get_latest_marketdata(tradingsymbol):
         """Fetch the latest market data for a tradingsymbol (alias)"""
         return MarketDataRepository.get_latest_date_by_symbol(tradingsymbol)

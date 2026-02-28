@@ -6,12 +6,13 @@ Handles investment action generation, approval, and processing.
 import pandas as pd
 pd.set_option('future.no_silent_downcasting', True)
 
+from datetime import timedelta
 from sqlalchemy.orm import Session
 from datetime import date
 from typing import Dict, List, Optional, Union
 from types import SimpleNamespace
 
-from config import setup_logger
+from config import setup_logger, PyramidConfig
 from services import TradingEngine, HoldingSnapshot, CandidateInfo, InvestmentService
 from repositories import (RankingRepository, IndicatorsRepository,
                           MarketDataRepository, InvestmentRepository,
@@ -150,7 +151,7 @@ class ActionsService:
 
         return action, remaining_capital, realized_gain
 
-    def generate_actions(self, action_date: date, skip_pending_check: bool = False) -> Union[str, List[Dict]]:
+    def generate_actions(self, action_date: date, skip_pending_check: bool = False, enable_pyramiding: bool = False) -> Union[str, List[Dict]]:
         """
         Generate trading actions (BUY/SELL/SWAP) for a given date.
         
@@ -210,6 +211,7 @@ class ActionsService:
                 if md:
                     prices[item.tradingsymbol] = float(md.close)
         else:
+            ema_50_values = {}
             for h in current_holdings:
                 holdings_entry_prices[h.symbol] = float(h.entry_price)
                 md_h = self.marketdata_repo.get_marketdata_by_trading_symbol(h.symbol, data_date)
@@ -224,7 +226,13 @@ class ActionsService:
                     units=h.units,
                     stop_loss=h.current_sl,
                     score=h.score,
+                    entry_price=float(h.entry_price),
                 ))
+
+                # Fetch EMA 50 for pyramid check
+                if enable_pyramiding:
+                    ema_50 = self.indicators_repo.get_indicator_by_tradingsymbol('ema_50', h.symbol, data_date)
+                    ema_50_values[h.symbol] = float(ema_50) if ema_50 else 0.0
 
         decisions = TradingEngine.generate_decisions(
             holdings=holdings_snap,
@@ -233,6 +241,8 @@ class ActionsService:
             max_positions=self.config.max_positions,
             swap_buffer=swap_buffer,
             exit_threshold=exit_threshold,
+            ema_50_values=ema_50_values if current_holdings else None,
+            enable_pyramiding=enable_pyramiding,
         )
 
         sizing_base = total_capital
@@ -264,10 +274,22 @@ class ActionsService:
                 )
                 
                 new_actions.append(action)
+            elif d.action_type == 'PYRAMID_ADD':
+                pyramid_cfg = PyramidConfig()
+                action, remaining_capital = self.buy_action(
+                    d.symbol, action_date, md.close,
+                    'pyramid_add',
+                    total_capital=sizing_base * pyramid_cfg.pyramid_fraction,
+                    remaining_capital=remaining_capital
+                )
+                new_actions.append(action)
+                logger.info(f"PYRAMID_ADD {d.symbol}: adding {pyramid_cfg.pyramid_fraction:.0%} position")
             elif d.action_type == 'SWAP':
                 action, remaining_capital, realized_gain = self.sell_action(
                     d.symbol, action_date, md.close,
-                    d.swap_sell_units, d.reason
+                    d.swap_sell_units, d.reason,
+                    entry_price=holdings_entry_prices[d.symbol]
+
                 )
                 new_actions.append(action)
                 sizing_base += realized_gain
@@ -413,6 +435,7 @@ class ActionsService:
                     buy_symbols[items.symbol] = items
 
         sold = 0
+        bought_value = 0
         held_symbols = {h.symbol for h in holdings}
         holdings_map = {h.symbol: h for h in holdings}
         
@@ -439,10 +462,12 @@ class ActionsService:
             held_symbols.discard(symbol)
 
             #TODO Handle Split/Bonus
-            buy_value = float(holding.entry_price) * holding.units
+            # Use avg_price if it exists (for pyramided positions), else entry_price
+            cost_basis_price = float(getattr(holding, 'avg_price', None) or holding.entry_price)
+            buy_value = cost_basis_price * holding.units
             pnl = sell_value - buy_value
             logger.info(
-                f"SELL {symbol}: buy={holding.units}u@{holding.entry_price}={buy_value:.2f}"
+                f"SELL {symbol}: buy={holding.units}u@{cost_basis_price}={buy_value:.2f}"
                 f" sell={action.units}u@{action.execution_price}={sell_value:.2f}"
                 f" pnl={pnl:.2f}"
             )
@@ -458,14 +483,59 @@ class ActionsService:
 
         data_date = get_prev_friday(action_date)
         week_holdings = []
+        pyramid_symbols = set()
         for symbol, action in buy_symbols.items():
             if symbol in sell_symbols:
                 continue
+
+            # Pyramid add: merge into existing holding
+            if action.reason == 'pyramid_add' and symbol in holdings_map:
+                old = holdings_map[symbol]
+                old_avg = float(getattr(old, 'avg_price', None) or old.entry_price)
+                old_value = old_avg * old.units
+                new_value = float(action.execution_price) * action.units
+                bought_value += new_value
+                total_units = old.units + action.units
+                avg_price = round((old_value + new_value) / total_units, 2)
+
+                rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
+                score = round(rank_data.composite_score, 2) if rank_data else 0
+
+                # Keep old trailing SL — don't reset to a tight new SL
+                old_sl = float(old.current_sl)
+                old_entry_sl = float(getattr(old, 'entry_sl', old_sl))
+
+                logger.info(
+                    f"PYRAMID_ADD {symbol}: {old.units}u@{old_avg:.2f} + {action.units}u@{action.execution_price} "
+                    f"= {total_units}u avg_price={avg_price:.2f} (keeping SL={old_sl:.2f})"
+                )
+
+                holding_data = {
+                    'symbol': symbol,
+                    'date': action_date,
+                    'entry_date': old.entry_date,
+                    'entry_price': old.entry_price,
+                    'avg_price': avg_price,
+                    'units': total_units,
+                    'atr': getattr(old, 'atr', action.atr),
+                    'score': score,
+                    'entry_sl': old_entry_sl,
+                    'current_price': action.execution_price,
+                    'current_sl': old_sl
+                }
+                week_holdings.append(holding_data)
+                pyramid_symbols.add(symbol)
+                held_symbols.discard(symbol)
+                continue
+
+            # Normal buy
             initial_sl = round(action.execution_price - action.risk, 2)
             rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
             score = round(rank_data.composite_score, 2) if rank_data else 0
+            buy_value = float(action.execution_price) * action.units
+            bought_value += buy_value
             logger.info(
-                f"BUY {symbol}: units={action.units}u@{action.execution_price}={action.units*action.execution_price:.2f}"
+                f"BUY {symbol}: units={action.units}u@{action.execution_price}={buy_value:.2f}"
             )
 
             holding_data = {
@@ -473,6 +543,7 @@ class ActionsService:
                 'date': action_date,
                 'entry_date': action_date,
                 'entry_price': action.execution_price,
+                'avg_price': float(action.execution_price),
                 'units': action.units,
                 'atr': action.atr,
                 'score': score,
@@ -485,7 +556,7 @@ class ActionsService:
             week_holdings.append(
                 self.investment_service.update_holding(symbol, action_date, midweek, holdings_map[symbol])
             )
-        summary = self.investment_service.get_summary(week_holdings, sold, action_date=action_date)
+        summary = self.investment_service.get_summary(week_holdings, sold, bought=bought_value, action_date=action_date)
 
         self.investment_repo.bulk_insert_holdings(week_holdings)
         self.investment_repo.insert_summary(summary)
@@ -508,47 +579,55 @@ class ActionsService:
     def create_manual_buy(self, stocks: List[Dict]) -> str:
 
         actions = []
-        total_capital = self.inv_repo.get_total_capital(include_realized=True)
-
+        total_capital = self.investment_repo.get_total_capital(include_realized=True)
+        remaining_capital = self.investment_repo.get_summary()
+    
+        over_capital = []
         for stock in stocks:
-            action = self.buy_action(
+            prev_close = float(self.marketdata_repo.get_marketdata_by_trading_symbol(stock['symbol'], stock['date'] - timedelta(days=1)).close)
+            if remaining_capital < stock['units'] * stock['price']:
+                over_capital.append(stock)
+                continue
+
+            action, remaining_capital = self.buy_action(
                 symbol=stock['symbol'],
                 action_date=stock['date'],
-                prev_close=float(stock['price']),
+                prev_close=prev_close,
+                price=float(stock['price']),
                 reason=stock['reason'],
                 total_capital=total_capital,
+                remaining_capital=remaining_capital,
                 units=stock['units']
             )
             action['execution_price'] = float(stock['price'])
             actions.append(action)
 
-        #TODO Check if symbol exist then only delete it
-        self.actions_repo.bulk_insert_actions(actions)
-        return f"Manual BUY actions created for {[s['symbol'] for s in stocks]}"
+        if actions:
+            self.actions_repo.bulk_insert_actions(actions)
+        return f"Manual BUY actions created for {[s['symbol'] for s in stocks]} and over capital for {[s['symbol'] for s in over_capital]}, before creating buy action infuse capital"
 
-    def create_manual_sell(self, stocks: Dict) -> str:
-
-        # Validate units against current holding
-        holding = self.inv_repo.get_holdings_by_symbol(stocks['symbol'])
-        if not holding:
-            raise ValueError(
-                f"Cannot sell {stocks['symbol']}: not in current holdings"
-            )
-        # if stocks['units'] > holding.units:
-        #     raise ValueError(
-        #         f"Cannot sell {data['units']} units of {data['symbol']}: "
-        #         f"only {holding.units} held"
-        #     )
+    def create_manual_sell(self, stocks: List[Dict]) -> str:
         actions = []
+        not_in_holding = []
         for stock in stocks:
-            action = self.sell_action(
-                stock['symbol'], 
-                stock['date'], 
-                float(stock['price']), 
-                stock['units'], 
-                stock['reason']
+            if stock['symbol'] not in holding_entry_prices:
+                not_in_holding.append(stock['symbol'])
+                continue
+                
+            md = self.marketdata_repo.get_marketdata_by_trading_symbol(stock['symbol'], stock['date'] - timedelta(days=1))
+            prev_close = float(md.close) if md else float(stock['price'])
+
+            action, _, _ = self.sell_action(
+                symbol=stock['symbol'], 
+                action_date=stock['date'], 
+                prev_close=prev_close,
+                units=stock['units'], 
+                reason=stock['reason'],
+                price=float(stock['price'])
             )
             action['execution_price'] = float(stock['price'])
             actions.append(action)
-        self.actions_repo.bulk_insert_actions([actions])
-        return f"Manual SELL action created for {[s['symbol'] for s in stocks]}"
+            
+        if actions:
+            self.actions_repo.bulk_insert_actions(actions)
+        return f"Manual SELL action created for {[s['symbol'] for s in stocks]} and not in holding for {not_in_holding}"

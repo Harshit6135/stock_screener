@@ -375,6 +375,7 @@ class InvestmentService:
             'date': action_date,
             'entry_date': holding.entry_date,
             'entry_price': holding.entry_price,
+            'avg_price': getattr(holding, 'avg_price', None) or holding.entry_price,
             'units': holding.units,
             'atr': atr,
             'score': score,
@@ -384,7 +385,7 @@ class InvestmentService:
         }
         return holding_data
 
-    def get_summary(self, week_holdings, sold, override_starting_capital=None, action_date=None):
+    def get_summary(self, week_holdings, sold, override_starting_capital=None, action_date=None, bought=None):
         """
         Build weekly portfolio summary from holdings data.
 
@@ -422,8 +423,9 @@ class InvestmentService:
             prev_remaining_capital = prev_summary.remaining_capital
             new_capital_addition = self.inv_repo.get_total_capital_by_date(prev_summary.date)
 
-        bought_mask = df['entry_date'] == df['date']
-        bought = float((df.loc[bought_mask, 'entry_price']* df.loc[bought_mask, 'units']).sum())
+        if bought is None:
+            bought_mask = df['entry_date'] == df['date']
+            bought = float((df.loc[bought_mask, 'entry_price']* df.loc[bought_mask, 'units']).sum())
         starting_capital = float(prev_remaining_capital) + new_capital_addition
 
         capital_risk = float((df['units'] * (df['entry_price'] - df['current_sl'])).sum())
@@ -482,7 +484,8 @@ class InvestmentService:
                 h_dicts, 
                 sold=float(summary.sold), 
                 override_starting_capital=float(summary.starting_capital),
-                action_date=summary.date
+                action_date=summary.date,
+                bought=float(summary.bought)
             )
             self.inv_repo.insert_summary(new_summary)
         return "Portfolio prices synced with latest market data"

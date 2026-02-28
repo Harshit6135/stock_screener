@@ -35,12 +35,13 @@ class WeeklyBacktester:
     and result tracking.
     """
     
-    def __init__(self, start_date: date, end_date: date, config_name: str, check_daily_sl: bool = True, mid_week_buy: bool = True):
+    def __init__(self, start_date: date, end_date: date, config_name: str, check_daily_sl: bool = True, mid_week_buy: bool = True, enable_pyramiding: bool = False):
         self.start_date = start_date
         self.end_date = end_date
         self.config_name = config_name
         self.check_daily_sl = check_daily_sl
         self.mid_week_buy = mid_week_buy
+        self.enable_pyramiding = enable_pyramiding
         
         # Load config from repository
         config_repo = ConfigRepository()
@@ -216,7 +217,8 @@ class WeeklyBacktester:
                     logger.info(f"Rejected {rejected} pending actions from previous week")
 
                 actions = self.actions_service.generate_actions(
-                    week_date, skip_pending_check=True
+                    week_date, skip_pending_check=True,
+                    enable_pyramiding=self.enable_pyramiding
                 )
                 
                 if not actions:
@@ -288,6 +290,9 @@ class WeeklyBacktester:
                 )
                 self.weekly_results.append(result)
             
+            # Close all open positions on the last day of backtest
+            self._close_open_positions()
+            
             # Build trade list from DB for trade-level metrics
             self._build_trades_from_db()
             
@@ -333,13 +338,14 @@ class WeeklyBacktester:
         
         total_costs = total_buy_cost + total_sell_cost
 
-        # --- Capital Gains Tax ---
-        stcg_total = 0.0
-        ltcg_total = 0.0
+        # --- Capital Gains Tax (yearly-offset: losses offset gains within same year) ---
+        from config import TaxConfig
+        tax_config = TaxConfig()
+        
+        stcg_by_year = {}
+        ltcg_by_year = {}
         
         for t in sell_trades:
-            if t.get('pnl', 0) <= 0:
-                continue
             tax_info = calculate_capital_gains_tax(
                 purchase_price=t.get('price', 0),
                 current_price=t.get('exit_price', 0),
@@ -347,10 +353,16 @@ class WeeklyBacktester:
                 current_date=t['exit_date'],
                 quantity=t.get('units', 0)
             )
+            pnl = t.get('pnl', 0)
+            yr = t['exit_date'].year
+            
             if tax_info['tax_type'] == 'STCG':
-                stcg_total += tax_info['tax']
+                stcg_by_year[yr] = stcg_by_year.get(yr, 0.0) + pnl
             elif tax_info['tax_type'] == 'LTCG':
-                ltcg_total += tax_info['tax']
+                ltcg_by_year[yr] = ltcg_by_year.get(yr, 0.0) + pnl
+        
+        stcg_total = sum(max(0.0, gain) * tax_config.stcg_rate for gain in stcg_by_year.values())
+        ltcg_total = sum(max(0.0, gain - tax_config.ltcg_exemption) * tax_config.ltcg_rate for gain in ltcg_by_year.values())
         
         total_tax = stcg_total + ltcg_total
         final_value = summary.get('final_value', 0)
@@ -374,6 +386,31 @@ class WeeklyBacktester:
             'net_post_tax_return_pct': round((net_post_tax_return / initial_capital) * 100, 2)
         })
         
+        # --- Year-on-Year Returns ---
+        df_equity = pd.DataFrame({
+            'date': pd.to_datetime(self.risk_monitor.portfolio_dates),
+            'value': self.risk_monitor.portfolio_values
+        })
+        if not df_equity.empty:
+            df_equity['year'] = df_equity['date'].dt.year
+            yearly_start = df_equity.groupby('year')['value'].first()
+            yearly_end = df_equity.groupby('year')['value'].last()
+            yearly_return = (yearly_end - yearly_start) / yearly_start * 100
+            
+            yoy_list = []
+            for year in yearly_return.index:
+                yoy_list.append({
+                    'year': int(year),
+                    'return_pct': round(yearly_return[year], 2),
+                    'pnl': round(yearly_end[year] - yearly_start[year], 2),
+                    'end_value': round(yearly_end[year], 2)
+                })
+            summary['yearly_returns'] = yoy_list
+            
+        # Add open positions snapshot if available
+        if hasattr(self, 'open_positions_snapshot') and self.open_positions_snapshot:
+            summary['open_positions'] = self.open_positions_snapshot
+        
         return summary
 
     def _build_trades_from_db(self) -> None:
@@ -384,13 +421,10 @@ class WeeklyBacktester:
         nearest earlier date). Populates self.risk_monitor.trades for
         trade-level metrics (win rate, profit factor, XIRR, etc.).
         """
-        from models import ActionsModel
-        all_actions = (
-            self.backtest_session.query(ActionsModel)
-            .filter(ActionsModel.status == 'Approved')
-            .order_by(ActionsModel.action_date)
-            .all()
-        )
+        all_actions = self.actions_repo.get_all_approved_actions(ascending=True)
+
+        self.risk_monitor.total_buys = sum(1 for a in all_actions if a.type == 'buy')
+        self.risk_monitor.pyramid_buys = sum(1 for a in all_actions if a.type == 'buy' and a.reason == 'pyramid_add')
         
         # Index buys by symbol (most recent first for matching)
         buy_pool = {}  # symbol -> list of buy actions
@@ -403,18 +437,33 @@ class WeeklyBacktester:
             if a.type != 'sell':
                 continue
             
-            # Find matching buy (earliest unmatched buy for same symbol)
+            # Find all matching buys that sum up to this sell's units
             buys = buy_pool.get(a.symbol, [])
-            matched_buy = None
-            for i, b in enumerate(buys):
-                if b.action_date <= a.action_date:
-                    matched_buy = buys.pop(i)
-                    break
+            matched_buys = []
+            units_to_match = int(a.units)
             
-            entry_price = float(matched_buy.execution_price) if matched_buy else 0
+            for i in range(len(buys)-1, -1, -1):
+                b = buys[i]
+                if b.action_date <= a.action_date:
+                    matched_buys.append(buys.pop(i))
+                    units_to_match -= int(b.units)
+                    if units_to_match <= 0:
+                        break
+            
+            # Reverse back to chronological order
+            matched_buys.reverse()
+            
+            if matched_buys:
+                total_cost = sum(float(b.execution_price) * int(b.units) for b in matched_buys)
+                total_matched_units = sum(int(b.units) for b in matched_buys)
+                entry_price = total_cost / total_matched_units if total_matched_units else float(matched_buys[0].execution_price)
+                entry_date = matched_buys[0].action_date
+            else:
+                entry_price = 0
+                entry_date = a.action_date
+                
             exit_price = float(a.execution_price) if a.execution_price else 0
             units = int(a.units)
-            entry_date = matched_buy.action_date if matched_buy else a.action_date
             exit_date = a.action_date
             pnl = (exit_price - entry_price) * units
             
@@ -430,18 +479,79 @@ class WeeklyBacktester:
                 'reason': a.reason or '',
             })
             
-            # Also record the BUY leg for XIRR cash flow
-            if matched_buy:
+            # Record BUY legs for XIRR
+            for mb in matched_buys:
                 trades.append({
                     'type': 'BUY',
                     'symbol': a.symbol,
-                    'entry_date': entry_date,
-                    'price': entry_price,
-                    'units': units,
+                    'entry_date': mb.action_date,
+                    'price': float(mb.execution_price),
+                    'units': int(mb.units),
                 })
         
         self.risk_monitor.trades = trades
         logger.info(f"Built {len([t for t in trades if t['type'] == 'SELL'])} completed trades from DB")
+
+    def _close_open_positions(self) -> None:
+        """
+        Force-close all open positions on the last day of the backtest.
+        
+        Snapshots the positions before closing them, then generates sell actions
+        at the latest close price so all trades are realized for accurate PnL/STCG.
+        """
+        current_holdings = self.inv_repo.get_holdings()
+        if not current_holdings:
+            self.open_positions_snapshot = []
+            return
+        
+        # Snapshot open positions before closing
+        self.open_positions_snapshot = []
+        for h in current_holdings:
+            avg_price = float(getattr(h, 'avg_price', None) or h.entry_price)
+            current_price = float(h.current_price)
+            unrealized_pnl = (current_price - avg_price) * h.units
+            self.open_positions_snapshot.append({
+                'symbol': h.symbol,
+                'entry_date': str(h.entry_date),
+                'units': h.units,
+                'entry_price': float(h.entry_price),
+                'avg_price': avg_price,
+                'current_price': current_price,
+                'market_value': round(current_price * h.units, 2),
+                'unrealized_pnl': round(unrealized_pnl, 2),
+            })
+        
+        logger.info(f"Force-closing {len(current_holdings)} open positions on backtest end date {self.end_date}")
+        
+        # Generate sell actions for each open position at their last known close price
+        close_date = self.end_date
+        for h in current_holdings:
+            # Use current_price from holding (already set to last Friday close within backtest period)
+            close_price = float(h.current_price)
+            
+            sell_action = {
+                'action_date': close_date,
+                'type': 'sell',
+                'reason': 'backtest_end_close',
+                'symbol': h.symbol,
+                'units': h.units,
+                'prev_close': float(h.current_price),
+                'execution_price': close_price,
+                'capital': float(h.units) * close_price,
+                'status': 'Pending',
+            }
+            self.actions_repo.insert_action(sell_action)
+        
+        # Approve and process the force-close sells
+        self.actions_service.approve_all_actions(close_date)
+        self.actions_service.process_actions(close_date)
+        
+        # Update risk monitor with final portfolio value
+        summary = self.inv_repo.get_summary()
+        if summary:
+            self.risk_monitor.update(float(summary.portfolio_value), close_date)
+        
+        logger.info(f"Force-closed {len(current_holdings)} positions. All trades now realized.")
 
     def _generate_report(self) -> None:
         """
@@ -477,12 +587,17 @@ class WeeklyBacktester:
         lines.append(f'  Mid-Week Buy      : {self.mid_week_buy}')
         lines.append(f'  Initial Capital   : {self.config.initial_capital:>15,.2f}')
         lines.append(f'  Max Positions     : {self.config.max_positions}')
+        lines.append(f'  Min Position (%)  : {self.config.min_position_percent}')
         lines.append(f'  Risk Threshold    : {self.config.risk_threshold}')
         lines.append(f'  Buffer Percent    : {self.config.buffer_percent}')
         lines.append(f'  Exit Threshold    : {self.config.exit_threshold}')
         lines.append(f'  SL Multiplier     : {self.config.sl_multiplier}')
-        lines.append(f'  SL Step Percent   : {self.config.sl_step_percent}')
         lines.append(f'  ATR Fallback Pct   : {self.config.atr_fallback_percent}')
+        lines.append(f'  Pyramiding        : {"ON" if self.enable_pyramiding else "OFF"}')
+        if self.enable_pyramiding:
+            from config import PyramidConfig
+            pcfg = PyramidConfig()
+            lines.append(f'  Pyramid Fraction  : {pcfg.pyramid_fraction}')
         
         # --- Section 2: Performance Metrics ---
         equity_curve = pd.Series(self.risk_monitor.portfolio_values)
@@ -513,10 +628,30 @@ class WeeklyBacktester:
         lines.append(f'  Sortino Ratio     : {metrics.get("sortino_ratio", 0):>10.2f}')
         lines.append(f'  Calmar Ratio      : {metrics.get("calmar_ratio", 0):>10.2f}')
         
+        # --- Section 2.5: Year-on-Year Performance ---
+        lines.append('')
+        lines.append('[ YEAR-ON-YEAR PERFORMANCE ]')
+        df_equity = pd.DataFrame({
+            'date': pd.to_datetime(self.risk_monitor.portfolio_dates),
+            'value': self.risk_monitor.portfolio_values
+        })
+        df_equity['year'] = df_equity['date'].dt.year
+        yearly_start = df_equity.groupby('year')['value'].first()
+        yearly_end = df_equity.groupby('year')['value'].last()
+        yearly_return = (yearly_end - yearly_start) / yearly_start * 100
+        
+        for year in yearly_return.index:
+            ret = yearly_return[year]
+            end_val = yearly_end[year]
+            val_change = end_val - yearly_start[year]
+            lines.append(f'  {year}              : {ret:>+10.2f}%  (PnL: {val_change:>+12,.2f} | End Val: {end_val:>12,.2f})')
+        
         # --- Section 3: Trade Statistics ---
         lines.append('')
         lines.append('[ TRADE STATISTICS ]')
-        lines.append(f'  Total Trades      : {len(sell_trades)}')
+        lines.append(f'  Total Buys        : {getattr(self.risk_monitor, "total_buys", 0)}')
+        lines.append(f'  Pyramid Buys      : {getattr(self.risk_monitor, "pyramid_buys", 0)}')
+        lines.append(f'  Total Sells       : {len(sell_trades)}')
         lines.append(f'  Win Rate          : {metrics.get("win_rate", 0):>10.2f}%')
         lines.append(f'  Profit Factor     : {metrics.get("profit_factor", 0):>10.2f}')
         lines.append(f'  Expectancy/Trade  : {metrics.get("expectancy", 0):>+10.2f}')
@@ -581,16 +716,18 @@ class WeeklyBacktester:
         lines.append(f'  Cost as % Return  : {(total_costs / max(abs(total_return_abs), 1) * 100):>10.2f}%')
         
         # --- Section 5: Capital Gains Tax ---
-        stcg_total = 0.0
-        ltcg_total = 0.0
+        from config import TaxConfig
+        tax_config = TaxConfig()
+        
         stcg_gains = 0.0
         ltcg_gains = 0.0
         stcg_count = 0
         ltcg_count = 0
         
+        stcg_by_year = {}
+        ltcg_by_year = {}
+        
         for t in sell_trades:
-            if t['pnl'] <= 0:
-                continue
             tax_info = calculate_capital_gains_tax(
                 purchase_price=t['price'],
                 current_price=t['exit_price'],
@@ -598,14 +735,22 @@ class WeeklyBacktester:
                 current_date=t['exit_date'],
                 quantity=t['units']
             )
+            
+            pnl = t['pnl']
+            # Calendar year approximation for fiscal year
+            yr = t['exit_date'].year
+            
             if tax_info['tax_type'] == 'STCG':
-                stcg_total += tax_info['tax']
-                stcg_gains += tax_info['gain']
+                stcg_gains += pnl
                 stcg_count += 1
+                stcg_by_year[yr] = stcg_by_year.get(yr, 0.0) + pnl
             elif tax_info['tax_type'] == 'LTCG':
-                ltcg_total += tax_info['tax']
-                ltcg_gains += tax_info['gain']
+                ltcg_gains += pnl
                 ltcg_count += 1
+                ltcg_by_year[yr] = ltcg_by_year.get(yr, 0.0) + pnl
+        
+        stcg_total = sum(max(0.0, gain) * tax_config.stcg_rate for gain in stcg_by_year.values())
+        ltcg_total = sum(max(0.0, gain - tax_config.ltcg_exemption) * tax_config.ltcg_rate for gain in ltcg_by_year.values())
         
         total_tax = stcg_total + ltcg_total
         net_post_tax_return = total_return_abs - total_costs - total_tax
@@ -623,6 +768,31 @@ class WeeklyBacktester:
         lines.append(f'  Total Tax         : {total_tax:>15,.2f}')
         lines.append(f'  Total Costs+Tax   : {(total_costs + total_tax):>15,.2f}')
         lines.append(f'  Net Post-Tax Ret  : {net_post_tax_return:>+15,.2f}')
+        
+        # --- Section 5.5: Open Positions at Backtest End ---
+        if hasattr(self, 'open_positions_snapshot') and self.open_positions_snapshot:
+            lines.append('')
+            lines.append('[ OPEN POSITIONS AT BACKTEST END (force-closed) ]')
+            lines.append(f'  {"Symbol":<20} {"Entry Date":>12} {"Units":>6} {"Avg Price":>10} {"Close Price":>12} {"Market Val":>12} {"Unrealized PnL":>15}')
+            lines.append(f'  {"-"*20} {"-"*12} {"-"*6} {"-"*10} {"-"*12} {"-"*12} {"-"*15}')
+            
+            total_market_val = 0
+            total_unrealized = 0
+            for pos in sorted(self.open_positions_snapshot, key=lambda x: x['market_value'], reverse=True):
+                lines.append(
+                    f'  {pos["symbol"]:<20} '
+                    f'{pos["entry_date"]:>12} '
+                    f'{pos["units"]:>6} '
+                    f'{pos["avg_price"]:>10,.2f} '
+                    f'{pos["current_price"]:>12,.2f} '
+                    f'{pos["market_value"]:>12,.2f} '
+                    f'{pos["unrealized_pnl"]:>+15,.2f}'
+                )
+                total_market_val += pos['market_value']
+                total_unrealized += pos['unrealized_pnl']
+            
+            lines.append(f'  {"-"*20} {"":>12} {"":>6} {"":>10} {"":>12} {"-"*12} {"-"*15}')
+            lines.append(f'  {"TOTAL":<20} {"":>12} {"":>6} {"":>10} {"":>12} {total_market_val:>12,.2f} {total_unrealized:>+15,.2f}')
         
         # --- Section 6: Trade Log ---
         lines.append('')
@@ -662,7 +832,8 @@ class BacktestingService:
 
     @staticmethod
     def run_backtest(start_date: date, end_date: date, config_name: str = "momentum_config",
-                     check_daily_sl: bool = True, mid_week_buy: bool = True, run_label: str = None):
+                     check_daily_sl: bool = True, mid_week_buy: bool = True, run_label: str = None,
+                     enable_pyramiding: bool = False):
         """
         Convenience function to run a backtest.
         
@@ -673,11 +844,12 @@ class BacktestingService:
             check_daily_sl: Enable daily stop-loss checks
             mid_week_buy: Enable mid-week vacancy fills
             run_label: Optional label/name for this run
+            enable_pyramiding: Enable pyramid adds for winning positions
             
         Returns:
             Tuple of (results, summary, risk_monitor_data, report_path)
         """
-        backtester = WeeklyBacktester(start_date, end_date, config_name, check_daily_sl, mid_week_buy)
+        backtester = WeeklyBacktester(start_date, end_date, config_name, check_daily_sl, mid_week_buy, enable_pyramiding)
         results = backtester.run()
         summary = backtester.get_summary()
         

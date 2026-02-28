@@ -143,6 +143,25 @@ Get current portfolio holdings.
 ### `GET /api/v1/investment/summary`
 Get portfolio summary (Total Value, Cash, XIRR).
 
+### `GET /api/v1/investment/summary-history`
+Get historical equity curve and drawdown chart data.
+
+### `POST /api/v1/investment/capital-events`
+Add capital infusion or withdrawal.
+
+**Body (JSON):**
+```json
+{
+  "date": "2024-02-16",
+  "amount": 50000,
+  "event_type": "infusion",
+  "note": "Salary addition"
+}
+```
+
+### `GET /api/v1/investment/capital-events`
+List all capital events.
+
 ### `POST /api/v1/investment/manual/buy`
 Manually add a buy trade (bypassing strategy).
 
@@ -201,3 +220,12 @@ JSON object containing:
 - `equity_curve`: Daily portfolio value series
 - `report_text`: Detailed text report
 - `report_path`: Path to saved CSV report
+
+### `GET /api/v1/backtest/history`
+List all historical backtest runs metadata.
+
+### `GET /api/v1/backtest/history/{id}`
+Get detailed results (holdings, trades, equity curve) for a specific backtest run.
+
+### `DELETE /api/v1/backtest/history/{id}`
+Delete a backtest run and its associated files from disk.

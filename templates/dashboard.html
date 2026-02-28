@@ -9,6 +9,10 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&display=swap"
         rel="stylesheet">
+    <!-- DataTables -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <link href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css" rel="stylesheet">
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <style>
         :root {
             --bg-dark: #0f1115;
@@ -250,12 +254,97 @@
             background: rgba(255, 255, 255, 0.02);
         }
 
+        /* --- DataTables Dark Theme Overrides --- */
+        table.dataTable {
+            border-collapse: collapse;
+            width: 100%;
+            color: var(--text-main);
+            font-size: 0.9rem;
+            margin-top: 10px !important;
+            margin-bottom: 10px !important;
+            border-bottom: 1px solid var(--border);
+        }
+
+        table.dataTable thead th,
+        table.dataTable thead td {
+            padding: 10px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-input);
+            color: var(--text-muted);
+            font-weight: 600;
+            text-align: left;
+            border-top: none;
+        }
+
+        table.dataTable tbody tr {
+            background-color: transparent !important;
+        }
+
+        table.dataTable tbody th,
+        table.dataTable tbody td {
+            padding: 10px;
+            border-bottom: 1px solid var(--border);
+            border-top: none !important;
+        }
+
+        table.dataTable tbody tr:hover {
+            background: rgba(255, 255, 255, 0.02) !important;
+        }
+
+        table.dataTable.no-footer {
+            border-bottom: 1px solid var(--border);
+        }
+
+        .dataTables_wrapper .dataTables_length,
+        .dataTables_wrapper .dataTables_filter,
+        .dataTables_wrapper .dataTables_info,
+        .dataTables_wrapper .dataTables_processing,
+        .dataTables_wrapper .dataTables_paginate {
+            color: var(--text-muted);
+            margin-bottom: 15px;
+            margin-top: 10px;
+            font-size: 0.85rem;
+        }
+
+        .dataTables_wrapper .dataTables_length select,
+        .dataTables_wrapper .dataTables_filter input {
+            background-color: var(--bg-input);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 4px;
+            outline: none;
+        }
+
+        .dataTables_wrapper .dataTables_paginate .paginate_button {
+            color: var(--text-muted) !important;
+            padding: 4px 10px;
+            margin: 0 2px;
+            border-radius: 4px;
+            border: 1px solid transparent;
+            cursor: pointer;
+        }
+
+        .dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+            background: var(--bg-input) !important;
+            color: white !important;
+            border: 1px solid var(--border);
+        }
+
+        .dataTables_wrapper .dataTables_paginate .paginate_button.current,
+        .dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
+            background: var(--accent) !important;
+            color: white !important;
+            border: 1px solid var(--accent) !important;
+            box-shadow: none !important;
+        }
+
         .text-right {
-            text-align: right;
+            text-align: right !important;
         }
 
         .text-center {
-            text-align: center;
+            text-align: center !important;
         }
 
         .badge {
@@ -600,19 +689,34 @@
         <div class="card" style="max-width: 800px; margin: 0 auto;">
             <h3>Data Pipeline Orchestration</h3>
 
+
             <div class="step-row">
-                <span>1. Initialize Instruments (Kite Sync)</span>
+                <span>0. Kite Authentication</span>
+                <span style="font-size:0.8em; color: var(--muted);">always runs</span>
+            </div>
+            <div class="step-row">
+                <span>1. Init App &amp; Instrument Sync</span>
                 <label class="switch"><input type="checkbox" id="step-init" checked><span class="slider"></span></label>
             </div>
             <div class="step-row">
-                <span>2. Update Market Data</span>
-                <div style="display:flex; align-items:center; gap:15px;">
-                    <label style="font-size:0.8rem; color:var(--text-muted); display:flex; align-items:center; gap:5px; cursor:pointer;">
-                        <input type="checkbox" id="step-historical"> Historical
-                    </label>
-                    <label class="switch"><input type="checkbox" id="step-market" checked><span
-                            class="slider"></span></label>
+                <span style="font-size: 0.8rem; margin-left:20px; color:var(--text-muted);">↳ YFinance Batch
+                    Size:</span>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <input type="number" id="yf-batch" value="100"
+                        style="width: 70px; background:var(--bg-lighter); color:white; border:1px solid #333; padding:5px; border-radius:4px;">
+                    <span style="font-size: 0.8rem; color:var(--text-muted);">Sleep (s):</span>
+                    <input type="number" id="yf-sleep" value="4"
+                        style="width: 60px; background:var(--bg-lighter); color:white; border:1px solid #333; padding:5px; border-radius:4px;">
                 </div>
+            </div>
+            <div class="step-row">
+                <span>2. Update Market Data</span>
+                <label class="switch"><input type="checkbox" id="step-market" checked><span
+                        class="slider"></span></label>
+            </div>
+            <div class="step-row">
+                <span style="margin-left: 20px; font-size: 0.9em;">↳ Historical Mode</span>
+                <label class="switch"><input type="checkbox" id="step-historical"><span class="slider"></span></label>
             </div>
             <div class="step-row">
                 <span>3. Calculate Indicators</span>
@@ -633,7 +737,9 @@
             </div>
 
             <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
-                <button class="btn" onclick="runPipeline()">Run Selected Steps</button>
+                <button class="btn btn-warning" onclick="syncInstruments()" id="sync-instr-btn">🔄 Sync
+                    Instruments</button>
+                <button class="btn" onclick="runPipeline()" id="run-pipeline-btn">Run Selected Steps</button>
             </div>
         </div>
 
@@ -696,6 +802,11 @@
                 <div class="metric-label">Capital Risk</div>
                 <div class="metric-value" id="sum-capital-risk">-</div>
             </div>
+            <div class="metric-card" id="day-pnl-card" style="border-left:3px solid var(--accent);">
+                <div class="metric-label">Today's P&L</div>
+                <div class="metric-value" id="sum-day-pnl">-</div>
+                <div style="font-size:0.75rem; color:var(--text-muted);" id="live-status-label">⏸ Not streaming</div>
+            </div>
         </div>
 
         <!-- Equity Curve & Drawdown Charts -->
@@ -718,6 +829,9 @@
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                 <h3>Current Holdings</h3>
                 <div style="display:flex; gap:10px; align-items:center;">
+                    <button class="btn" id="live-toggle-btn"
+                        style="font-size:0.85rem; padding:6px 12px; background:var(--accent); color:white;"
+                        onclick="toggleLiveStream()">📡 Go Live</button>
                     <button class="btn btn-warning"
                         style="font-size:0.85rem; padding:6px 12px; background:#f59e0b; color:black;"
                         onclick="openCapitalEventModal()">💰 Capital Event</button>
@@ -734,19 +848,30 @@
                     <thead>
                         <tr>
                             <th>Symbol</th>
-                            <th>Entry Date</th>
-                            <th>Units</th>
-                            <th class="text-right">Avg Price</th>
-                            <th class="text-right">Current</th>
-                            <th class="text-right">Invested</th>
-                            <th class="text-right">Value</th>
-                            <th class="text-right">Unrealized P&L</th>
-                            <th class="text-right">%</th>
+                            <th class="text-center">Entry Date</th>
+                            <th class="text-center">Units</th>
+                            <th class="text-center">Avg Price</th>
+                            <th class="text-center">Current</th>
+                            <th class="text-center">SL</th>
+                            <th class="text-center">Cap. Risk</th>
+                            <th class="text-center">Invested</th>
+                            <th class="text-center">Value</th>
+                            <th class="text-center">Unrealized P&L</th>
+                            <th class="text-center">%</th>
+                            <th class="text-center">Day P&L</th>
                         </tr>
                     </thead>
                     <tbody id="holdings-body"></tbody>
                     <tfoot id="holdings-foot"></tfoot>
                 </table>
+            </div>
+        </div>
+
+        <!-- Live PnL Chart (Hidden by default) -->
+        <div class="card" id="live-pnl-card" style="display:none; margin-bottom: 20px;">
+            <h3>Live Today's P&L</h3>
+            <div style="height:250px;">
+                <canvas id="livePnlChart"></canvas>
             </div>
         </div>
 
@@ -825,6 +950,8 @@
 
             <div style="margin: 15px 0;">
                 <button class="btn" onclick="generateActions()">✨ Generate New Actions</button>
+                <label style="margin-left:15px; font-size:0.9rem; cursor:pointer;"><input type="checkbox"
+                        id="pyramid-toggle"> Pyramiding</label>
                 <span style="margin-left:10px; font-size:0.8rem; color:var(--text-muted);">
                     Based on latest Friday rankings
                 </span>
@@ -877,7 +1004,11 @@
                     <input type="number" id="conf-max" style="width:100%">
                 </div>
                 <div>
-                    <label>Exit Threshold (%)</label>
+                    <label>Mini Position (%)</label>
+                    <input type="number" id="conf-min" style="width:100%">
+                </div>
+                <div>
+                    <label>Exit Threshold Score</label>
                     <input type="number" id="conf-exit" style="width:100%">
                 </div>
                 <div>
@@ -920,6 +1051,8 @@
                         Daily SL Check</label>
                     <label style="font-size:0.9rem; cursor:pointer;"><input type="checkbox" id="bt-mid-week" checked>
                         Mid-Week Buy</label>
+                    <label style="font-size:0.9rem; cursor:pointer;"><input type="checkbox" id="bt-pyramid">
+                        Pyramiding</label>
                 </div>
                 <div>
                     <label style="display:block; font-size:0.8rem; margin-bottom:5px;">Run Label (optional)</label>
@@ -971,6 +1104,24 @@
                 </div>
             </div>
 
+            <!-- YoY Performance -->
+            <div class="card" id="bt-yoy-card" class="hidden" style="margin-bottom:20px;">
+                <h3>Year-on-Year Performance</h3>
+                <div style="max-height:300px; overflow-y:auto;">
+                    <table id="bt-yoy-table">
+                        <thead>
+                            <tr>
+                                <th>Year</th>
+                                <th class="text-right">Return %</th>
+                                <th class="text-right">PnL</th>
+                                <th class="text-right">End Value</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bt-yoy-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Equity Curve -->
             <div class="card">
                 <h3>Portfolio Equity Curve</h3>
@@ -999,6 +1150,27 @@
                 </div>
             </div>
 
+            <!-- Open Positions at Backtest End -->
+            <div class="card" id="bt-open-positions-card" class="hidden" style="margin-bottom:20px;">
+                <h3>📌 Open Positions at Backtest End (force-closed)</h3>
+                <div style="max-height:400px; overflow-y:auto;">
+                    <table id="bt-open-positions-table">
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Entry Date</th>
+                                <th class="text-right">Units</th>
+                                <th class="text-right">Avg Price</th>
+                                <th class="text-right">Close Price</th>
+                                <th class="text-right">Market Value</th>
+                                <th class="text-right">Unrealized PnL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bt-open-positions-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Raw Report -->
             <div class="card">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -1020,7 +1192,7 @@
                     Refresh</button>
             </div>
             <div style="max-height:350px; overflow-y:auto; margin-top:10px;">
-                <table>
+                <table id="bt-history-table">
                     <thead>
                         <tr>
                             <th>#</th>
@@ -1229,6 +1401,22 @@
             }
         }
 
+        // --- DataTables Helper ---
+        function destroyDataTable(tableId) {
+            if ($.fn.DataTable.isDataTable(tableId)) {
+                $(tableId).DataTable().destroy();
+            }
+        }
+        function makeTableSortable(tableId, options = {}) {
+            $(tableId).DataTable(Object.assign({
+                paging: false,
+                searching: false,
+                info: false,
+                order: [],
+                autoWidth: false
+            }, options));
+        }
+
         // --- Init Helpers ---
         document.addEventListener('DOMContentLoaded', () => {
             // Set today's date for inputs
@@ -1249,11 +1437,38 @@
                 indicators: document.getElementById('step-ind').checked,
                 percentile: document.getElementById('step-pct').checked,
                 score: document.getElementById('step-score').checked,
-                ranking: document.getElementById('step-rank').checked
+                ranking: document.getElementById('step-rank').checked,
+                yfinance_batch_size: parseInt(document.getElementById('yf-batch').value) || 100,
+                yfinance_sleep_time: parseInt(document.getElementById('yf-sleep').value) || 4
             };
 
-            showLoading('Running Pipeline... this may take a while');
-            log('--> Starting pipeline execution...');
+            const consoleEl = document.getElementById('pipeline-console');
+            consoleEl.innerHTML = '';  // clear old output
+
+            // Open SSE log stream BEFORE hitting the pipeline endpoint so every
+            // backend log line appears in the console in real-time.
+            const es = new EventSource('/api/v1/app/logs/stream');
+            es.onmessage = (e) => {
+                if (e.data === '[PING]') return;
+                const line = document.createElement('div');
+                const text = e.data;
+                if (text.startsWith('ERROR')) line.style.color = '#ff6b6b';
+                else if (text.startsWith('WARNING')) line.style.color = '#ffd93d';
+                else line.style.color = '#a8ff78';
+                line.textContent = text;
+                consoleEl.appendChild(line);
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+                // Update the loading overlay with the last log line (strip level/name prefix)
+                const loadingText = document.querySelector('.loading-text');
+                if (loadingText) loadingText.textContent = text.replace(/^[A-Z]+ \| [^\|]+ \| /, '');
+            };
+            es.onerror = () => es.close();
+
+            const runBtn = document.getElementById('run-pipeline-btn');
+            if (runBtn) {
+                runBtn.disabled = true;
+                runBtn.innerHTML = 'Running... <span class="spinner" style="width:12px;height:12px;border-width:2px;display:inline-block;margin-left:5px;"></span>';
+            }
 
             try {
                 const res = await fetch('/api/v1/app/run-pipeline', {
@@ -1263,18 +1478,64 @@
                 });
                 const data = await res.json();
 
+                const stepLabels = {
+                    kite_auth: '0. Kite Auth',
+                    init: '1. Init App',
+                    marketdata: '2. Market Data',
+                    indicators: '3. Indicators',
+                    percentile: '4. Percentiles',
+                    score: '5. Scores',
+                    ranking: '6. Rankings',
+                };
+
+                log('─'.repeat(50));
                 if (res.ok) {
-                    log('✅ Pipeline Complete!');
-                    Object.entries(data.results).forEach(([step, status]) => {
-                        log(`   • ${step}: ${status}`);
+                    const aborted = data.message && data.message.includes('aborted');
+                    log(aborted ? '⚠️  Pipeline aborted — see steps below:' : '✅ Pipeline Complete!');
+                    Object.entries(data.results || {}).forEach(([step, status]) => {
+                        const label = stepLabels[step] || step;
+                        let icon = '✅';
+                        if (typeof status === 'string' && status.startsWith('failed')) icon = '❌';
+                        else if (typeof status === 'string' && status.startsWith('skipped')) icon = '⏭';
+                        log(`   ${icon} ${label}: ${status}`);
                     });
                 } else {
                     log(`❌ Error: ${data.message || 'Unknown error'}`);
                 }
             } catch (e) {
                 log(`❌ Network Error: ${e.message}`);
+            } finally {
+                es.close();
+                const runBtn = document.getElementById('run-pipeline-btn');
+                if (runBtn) {
+                    runBtn.disabled = false;
+                    runBtn.innerHTML = 'Run Selected Steps';
+                }
+            }
+        }
+
+
+        async function syncInstruments() {
+            const btn = document.getElementById('sync-instr-btn');
+            btn.disabled = true;
+            showLoading('Syncing instruments... fetching Kite data');
+            log('--> Starting instrument sync (BE/EQ series detection)...');
+            try {
+                const res = await fetch('/api/v1/init/sync', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    log(`✅ Instrument Sync Complete!`);
+                    log(`   • Checked: ${data.checked} symbols`);
+                    log(`   • Changed: ${data.changed} symbols`);
+                    log(`   • Errors : ${data.errors} symbols`);
+                } else {
+                    log(`❌ Sync Error: ${data.message || JSON.stringify(data)}`);
+                }
+            } catch (e) {
+                log(`❌ Network Error: ${e.message}`);
             }
             hideLoading();
+            btn.disabled = false;
         }
 
         async function runCleanup() {
@@ -1438,68 +1699,81 @@
 
 
         function renderHoldings(holdings) {
+            destroyDataTable('#holdings-table');
             const tbody = document.getElementById('holdings-body');
             const tfoot = document.getElementById('holdings-foot');
             tbody.innerHTML = '';
             tfoot.innerHTML = '';
 
             if (!holdings || !holdings.length) {
-                tbody.innerHTML = '<tr><td colspan="9" class="text-center">No holdings found for this date</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" class="text-center">No holdings found for this date</td></tr>';
                 return;
             }
 
-            let totalInv = 0, totalVal = 0, totalPnL = 0;
+            let totalInv = 0, totalVal = 0, totalPnL = 0, totalCapRisk = 0;
 
             holdings.forEach(h => {
                 const entryPrice = parseFloat(h.entry_price || 0);
+                const avgPrice = parseFloat(h.avg_price || h.entry_price || 0);
                 const currentPrice = parseFloat(h.current_price || 0);
+                const currentSl = parseFloat(h.current_sl || 0);
                 const units = parseFloat(h.units || 0);
 
-                const inv = entryPrice * units;
+                const inv = avgPrice * units;
                 const val = currentPrice * units;
                 const pnl = val - inv;
                 const pnlPct = inv !== 0 ? (pnl / inv) * 100 : 0;
+                const capRisk = units * (avgPrice - currentSl);
 
                 totalInv += inv;
                 totalVal += val;
                 totalPnL += pnl;
+                if (currentSl > 0) totalCapRisk += capRisk;
 
-                const row = `<tr>
+                const row = `<tr data-symbol="${h.symbol}">
                     <td><strong>${h.symbol}</strong></td>
-                    <td>${h.entry_date}</td>
-                    <td>${units}</td>
-                    <td class="text-right">₹${entryPrice.toFixed(2)}</td>
-                    <td class="text-right">₹${currentPrice.toFixed(2)}</td>
-                    <td class="text-right">₹${inv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right">₹${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right ${pnl >= 0 ? 'pos-val' : 'neg-val'}">₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right ${pnl >= 0 ? 'pos-val' : 'neg-val'}">${pnlPct.toFixed(2)}%</td>
+                    <td class="text-center" data-sort="${h.entry_date}">${h.entry_date}</td>
+                    <td class="text-center" data-sort="${units}">${units}</td>
+                    <td class="text-center" data-sort="${avgPrice}">₹${avgPrice.toFixed(2)}</td>
+                    <td class="text-center live-current" data-sort="${currentPrice}">₹${currentPrice.toFixed(2)}</td>
+                    <td class="text-center" data-sort="${currentSl}" style="color:var(--danger);">₹${currentSl.toFixed(2)}</td>
+                    <td class="text-center ${capRisk > 0 ? 'neg-val' : 'pos-val'}" data-sort="${capRisk}">₹${currentSl > 0 ? capRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
+                    <td class="text-center" data-sort="${inv}">₹${inv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-center live-value" data-sort="${val}">₹${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-center live-pnl ${pnl >= 0 ? 'pos-val' : 'neg-val'}" data-sort="${pnl}">₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-center live-pnlpct ${pnl >= 0 ? 'pos-val' : 'neg-val'}" data-sort="${pnlPct}">${pnlPct.toFixed(2)}%</td>
+                    <td class="text-center live-day-pnl" data-sort="0" style="color:var(--text-muted);">-</td>
                 </tr>`;
                 tbody.innerHTML += row;
             });
 
             // Totals
             const totalRow = `<tr style="font-weight:700; background:#232730;">
-                    <td colspan="5">TOTALS</td>
+                    <td colspan="6">TOTALS</td>
+                    <td class="text-right ${totalCapRisk > 0 ? 'neg-val' : 'pos-val'}">₹${totalCapRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-right">₹${totalInv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right">₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}">₹${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right" id="live-total-val">₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}" id="live-total-pnl">₹${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}">${totalInv !== 0 ? ((totalPnL / totalInv) * 100).toFixed(2) : '0.00'}%</td>
+                    <td class="text-right" id="live-total-day-pnl" style="color:var(--text-muted);">-</td>
                 </tr>`;
             tfoot.innerHTML = totalRow;
+            makeTableSortable('#holdings-table', { searching: true });
         }
 
         function renderRankings(rankings) {
+            destroyDataTable('#rankings-table');
             const body = document.querySelector('#rankings-table tbody');
             body.innerHTML = '';
             rankings.forEach(r => {
                 const row = `<tr>
-                    <td>#${r.rank}</td>
+                    <td data-sort="${r.rank}">#${r.rank}</td>
                     <td>${r.tradingsymbol}</td>
-                    <td class="text-right">${r.composite_score.toFixed(2)}</td>
+                    <td class="text-right" data-sort="${r.composite_score}">${r.composite_score.toFixed(2)}</td>
                 </tr>`;
                 body.innerHTML += row;
             });
+            makeTableSortable('#rankings-table', { paging: true, pageLength: 10, info: true });
         }
 
         // --- ACTIONS ---
@@ -1515,9 +1789,12 @@
         }
 
         async function generateActions() {
+            const pyramiding = document.getElementById('pyramid-toggle').checked;
             showLoading('Generating Actions...');
             try {
-                const res = await fetch('/api/v1/actions/generate?config_name=momentum_config', { method: 'POST' });
+                let url = '/api/v1/actions/generate?config_name=momentum_config';
+                if (pyramiding) url += '&enable_pyramiding=true';
+                const res = await fetch(url, { method: 'POST' });
                 const data = await res.json();
                 if (res.ok) {
                     alert('Actions Generated: ' + data.message);
@@ -1537,6 +1814,7 @@
             const res = await fetch(`/api/v1/actions/?date=${date}`);
             const actions = await res.json();
 
+            destroyDataTable('#actions-table');
             const tbody = document.getElementById('actions-body');
             tbody.innerHTML = '';
 
@@ -1558,18 +1836,19 @@
                 }
 
                 tbody.innerHTML += `<tr>
-                    <td>${a.action_date}</td>
-                    <td><span class="badge ${badgeClass}">${a.type.toUpperCase()}</span></td>
+                    <td data-sort="${a.action_date}">${a.action_date}</td>
+                    <td data-sort="${a.type}"><span class="badge ${badgeClass}">${a.type.toUpperCase()}</span></td>
                     <td><b>${a.symbol}</b></td>
-                    <td>${a.units}</td>
-                    <td>${a.execution_price || a.prev_close || '-'}</td>
-                    <td>${a.stop_loss ? '₹' + parseFloat(a.stop_loss).toFixed(2) : '-'}</td>
-                    <td>${a.status}</td>
+                    <td data-sort="${a.units}">${a.units}</td>
+                    <td data-sort="${a.execution_price || a.prev_close || 0}">${a.execution_price || a.prev_close || '-'}</td>
+                    <td data-sort="${a.stop_loss || 0}">${a.stop_loss ? '₹' + parseFloat(a.stop_loss).toFixed(2) : '-'}</td>
+                    <td data-sort="${a.status}">${a.status}</td>
                     <td style="font-size:0.8rem; color:#aaa;">${a.reason || ''}</td>
                     <td class="text-center">${actionBtn}</td>
                 </tr>`;
             });
             hideLoading();
+            makeTableSortable('#actions-table', { searching: true });
         }
 
         async function updateAction(id, status) {
@@ -1736,29 +2015,32 @@
             try {
                 const res = await fetch('/api/v1/investment/trade-journal');
                 const trades = await res.json();
+                destroyDataTable('#journal-table');
                 const tbody = document.getElementById('journal-body');
                 tbody.innerHTML = '';
 
                 if (!trades || !trades.length) {
                     tbody.innerHTML = '<tr><td colspan="10" class="text-center" style="padding:20px;">No closed trades yet</td></tr>';
+                    makeTableSortable('#journal-table');
                     return;
                 }
 
                 trades.forEach(t => {
                     const pnlClass = t.pnl >= 0 ? 'pos-val' : 'neg-val';
                     tbody.innerHTML += `<tr>
-                        <td>${t.entry_date}</td>
-                        <td>${t.exit_date}</td>
+                        <td data-sort="${t.entry_date}">${t.entry_date}</td>
+                        <td data-sort="${t.exit_date}">${t.exit_date}</td>
                         <td><b>${t.symbol}</b></td>
-                        <td>${t.units}</td>
-                        <td class="text-right">₹${t.entry_price.toFixed(2)}</td>
-                        <td class="text-right">₹${t.exit_price.toFixed(2)}</td>
-                        <td class="text-right ${pnlClass}">₹${t.pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        <td class="text-right ${pnlClass}">${t.return_pct.toFixed(2)}%</td>
-                        <td>${t.days_held}</td>
+                        <td data-sort="${t.units}">${t.units}</td>
+                        <td class="text-right" data-sort="${t.entry_price}">₹${t.entry_price.toFixed(2)}</td>
+                        <td class="text-right" data-sort="${t.exit_price}">₹${t.exit_price.toFixed(2)}</td>
+                        <td class="text-right ${pnlClass}" data-sort="${t.pnl}">₹${t.pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="text-right ${pnlClass}" data-sort="${t.return_pct}">${t.return_pct.toFixed(2)}%</td>
+                        <td data-sort="${t.days_held}">${t.days_held}</td>
                         <td style="font-size:0.8rem;color:#aaa;">${t.reason}</td>
                     </tr>`;
                 });
+                makeTableSortable('#journal-table', { searching: true, paging: true, pageLength: 15, info: true, order: [[1, 'desc']] });
             } catch (e) {
                 console.error('Trade journal error:', e);
                 document.getElementById('journal-body').innerHTML = '<tr><td colspan="10" class="text-center">Failed to load</td></tr>';
@@ -1774,9 +2056,9 @@
             document.getElementById('conf-initial').value = data.initial_capital;
             document.getElementById('conf-risk').value = data.risk_threshold;
             document.getElementById('conf-max').value = data.max_positions;
+            document.getElementById('conf-min').value = data.min_position_percent;
             document.getElementById('conf-exit').value = data.exit_threshold;
             document.getElementById('conf-sl-mult').value = data.sl_multiplier;
-            document.getElementById('conf-sl-step').value = data.sl_step_percent;
         }
 
         async function saveConfig() {
@@ -1785,9 +2067,9 @@
                 initial_capital: parseFloat(document.getElementById('conf-initial').value),
                 risk_threshold: parseFloat(document.getElementById('conf-risk').value),
                 max_positions: parseInt(document.getElementById('conf-max').value),
+                min_position_percent: parseFloat(document.getElementById('conf-min').value),
                 exit_threshold: parseFloat(document.getElementById('conf-exit').value),
                 sl_multiplier: parseFloat(document.getElementById('conf-sl-mult').value),
-                sl_step_percent: parseFloat(document.getElementById('conf-sl-step').value),
             };
 
             await fetch(`/api/v1/config/${name}`, {
@@ -1816,7 +2098,8 @@
                 end_date: document.getElementById('bt-end').value,
                 config_name: document.getElementById('bt-config').value,
                 check_daily_sl: document.getElementById('bt-daily-sl').checked,
-                mid_week_buy: document.getElementById('bt-mid-week').checked
+                mid_week_buy: document.getElementById('bt-mid-week').checked,
+                enable_pyramiding: document.getElementById('bt-pyramid').checked
             };
             if (label) payload.run_label = label;
 
@@ -1866,10 +2149,32 @@
             }
             document.getElementById('bt-efficiency').innerText = eff.toFixed(1) + '% retained';
 
+            // Render YoY Returns
+            destroyDataTable('#bt-yoy-table');
+            const yoyBody = document.getElementById('bt-yoy-body');
+            yoyBody.innerHTML = '';
+            if (sum.yearly_returns && sum.yearly_returns.length > 0) {
+                document.getElementById('bt-yoy-card').classList.remove('hidden');
+                sum.yearly_returns.forEach(y => {
+                    const retClass = y.return_pct >= 0 ? 'pos-val' : 'neg-val';
+                    const tr = `<tr>
+                        <td><strong>${y.year}</strong></td>
+                        <td class="text-right ${retClass}">${y.return_pct.toFixed(2)}%</td>
+                        <td class="text-right ${retClass}">₹${y.pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="text-right">₹${y.end_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    </tr>`;
+                    yoyBody.innerHTML += tr;
+                });
+                makeTableSortable('#bt-yoy-table', { searching: false, paging: false, order: [[0, 'asc']] });
+            } else {
+                document.getElementById('bt-yoy-card').classList.add('hidden');
+            }
+
             // Render Chart
             renderEquityChart(data.equity_curve || []);
 
             // Render Trades
+            destroyDataTable('#bt-trades-table');
             const tbody = document.getElementById('bt-trades-body');
             tbody.innerHTML = '';
             const trades = data.trades || [];
@@ -1880,14 +2185,40 @@
                 const retPct = investedValue > 0 ? ((t.pnl / investedValue) * 100).toFixed(2) : '0.00';
                 const tr = `<tr>
                     <td>${t.symbol}</td>
-                    <td>${t.type}</td>
-                    <td>${t.entry_date}</td>
-                    <td>${t.exit_date}</td>
-                    <td class="text-right ${t.pnl >= 0 ? 'pos-val' : 'neg-val'}">${t.pnl.toFixed(2)}</td>
-                    <td class="text-right">${retPct}%</td>
+                    <td data-sort="${t.type}">${t.type}</td>
+                    <td data-sort="${t.entry_date}">${t.entry_date}</td>
+                    <td data-sort="${t.exit_date}">${t.exit_date}</td>
+                    <td class="text-right ${t.pnl >= 0 ? 'pos-val' : 'neg-val'}" data-sort="${t.pnl}">${t.pnl.toFixed(2)}</td>
+                    <td class="text-right" data-sort="${retPct}">${retPct}%</td>
                 </tr>`;
                 tbody.innerHTML += tr;
             });
+            makeTableSortable('#bt-trades-table', { searching: true, paging: true, pageLength: 10, info: true });
+
+            // Render Open Positions at Backtest End
+            destroyDataTable('#bt-open-positions-table');
+            const openBody = document.getElementById('bt-open-positions-body');
+            openBody.innerHTML = '';
+            const openPositions = sum.open_positions || [];
+            if (openPositions.length > 0) {
+                document.getElementById('bt-open-positions-card').classList.remove('hidden');
+                openPositions.forEach(p => {
+                    const pnlClass = p.unrealized_pnl >= 0 ? 'pos-val' : 'neg-val';
+                    const tr = `<tr>
+                        <td><b>${p.symbol}</b></td>
+                        <td data-sort="${p.entry_date}">${p.entry_date}</td>
+                        <td class="text-right" data-sort="${p.units}">${p.units}</td>
+                        <td class="text-right">₹${p.avg_price.toFixed(2)}</td>
+                        <td class="text-right">₹${p.current_price.toFixed(2)}</td>
+                        <td class="text-right" data-sort="${p.market_value}">₹${p.market_value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="text-right ${pnlClass}" data-sort="${p.unrealized_pnl}">₹${p.unrealized_pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    </tr>`;
+                    openBody.innerHTML += tr;
+                });
+                makeTableSortable('#bt-open-positions-table', { searching: false, order: [[5, 'desc']] });
+            } else {
+                document.getElementById('bt-open-positions-card').classList.add('hidden');
+            }
 
             // Raw log
             document.getElementById('bt-raw-log').innerText = data.report_text || '';
@@ -1898,11 +2229,13 @@
             try {
                 const res = await fetch('/api/v1/backtest/history');
                 const runs = await res.json();
+                destroyDataTable('#bt-history-table');
                 const tbody = document.getElementById('bt-history-body');
                 tbody.innerHTML = '';
 
                 if (!runs || !runs.length) {
                     tbody.innerHTML = '<tr><td colspan="11" class="text-center">No saved runs</td></tr>';
+                    makeTableSortable('#bt-history-table');
                     return;
                 }
 
@@ -1916,22 +2249,23 @@
                     const mwb = r.mid_week_buy ? '✓' : '✗';
 
                     tbody.innerHTML += `<tr>
-                        <td>${r.id}</td>
+                        <td data-sort="${r.id}">${r.id}</td>
                         <td>${r.run_label || '<em style="color:#666;">—</em>'}</td>
-                        <td>${r.config_name || '-'}</td>
-                        <td style="white-space:nowrap;">${r.start_date} → ${r.end_date}</td>
-                        <td class="text-center">${dailySl}</td>
-                        <td class="text-center">${mwb}</td>
-                        <td class="text-right ${retClass}">${retVal}%</td>
-                        <td class="text-right" style="color:var(--danger);">${ddVal}%</td>
-                        <td class="text-right">${sharpeVal}</td>
-                        <td style="font-size:0.8rem; color:#888;">${created}</td>
+                        <td data-sort="${r.config_name}">${r.config_name || '-'}</td>
+                        <td style="white-space:nowrap;" data-sort="${r.start_date}">${r.start_date} → ${r.end_date}</td>
+                        <td class="text-center" data-sort="${r.check_daily_sl}">${dailySl}</td>
+                        <td class="text-center" data-sort="${r.mid_week_buy}">${mwb}</td>
+                        <td class="text-right ${retClass}" data-sort="${r.total_return}">${retVal}%</td>
+                        <td class="text-right" style="color:var(--danger);" data-sort="${r.max_drawdown}">${ddVal}%</td>
+                        <td class="text-right" data-sort="${r.sharpe_ratio}">${sharpeVal}</td>
+                        <td style="font-size:0.8rem; color:#888;" data-sort="${r.created_at}">${created}</td>
                         <td class="text-center" style="white-space:nowrap;">
                             <button class="badge badge-buy" style="border:none; cursor:pointer; margin-right:4px;" onclick="loadBacktestRun(${r.id})">Load</button>
                             <button class="badge badge-sell" style="border:none; cursor:pointer;" onclick="deleteBacktestRun(${r.id})">Del</button>
                         </td>
                     </tr>`;
                 });
+                makeTableSortable('#bt-history-table', { searching: false, order: [[0, 'desc']] });
             } catch (e) {
                 console.error('Failed to load backtest history:', e);
             }
@@ -2030,6 +2364,253 @@
             }
             await loadPortfolio();
             hideLoading();
+        }
+
+        // --- LIVE PRICE STREAMING ---
+        let _liveInterval = null;
+        let _isLive = false;
+
+        // Live PnL Chart vars
+        let livePnlChartInstance = null;
+        let livePnlLabels = [];
+        let livePnlData = [];
+
+        function initLivePnlChart() {
+            const ctx = document.getElementById('livePnlChart').getContext('2d');
+            if (livePnlChartInstance) return;
+
+            livePnlChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: livePnlLabels,
+                    datasets: [{
+                        label: "Today's P&L",
+                        data: livePnlData,
+                        borderColor: '#fbbf24',
+                        backgroundColor: 'rgba(251, 191, 36, 0.1)',
+                        tension: 0.3,
+                        fill: true,
+                        pointRadius: 2,
+                        pointHoverRadius: 4,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { display: true, ticks: { maxTicksLimit: 10, color: '#888' }, grid: { display: false } },
+                        y: { display: true, ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+                    },
+                    animation: { duration: 0 }
+                }
+            });
+        }
+
+        async function toggleLiveStream() {
+            if (_isLive) {
+                stopLiveStream();
+            } else {
+                await startLiveStream();
+            }
+        }
+
+        async function startLiveStream() {
+            const btn = document.getElementById('live-toggle-btn');
+            const label = document.getElementById('live-status-label');
+            btn.innerText = '⏳ Starting...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/v1/investment/start-ticker', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) {
+                    alert('Failed to start ticker: ' + (data.message || 'Unknown error'));
+                    btn.innerText = '📡 Go Live';
+                    btn.disabled = false;
+                    return;
+                }
+
+                _isLive = true;
+                btn.innerText = '⏸ Stop Live';
+                btn.style.background = 'var(--danger)';
+                btn.disabled = false;
+                label.innerText = '🟢 Streaming live';
+                label.style.color = 'var(--accent)';
+
+                // Initialize live chart
+                livePnlLabels = [];
+                livePnlData = [];
+                document.getElementById('live-pnl-card').style.display = 'block';
+                initLivePnlChart();
+                livePnlChartInstance.update();
+
+                // Start polling every 30 seconds
+                pollLivePrices(); // immediate first poll
+                _liveInterval = setInterval(pollLivePrices, 30000);
+
+            } catch (e) {
+                console.error('Start live error:', e);
+                btn.innerText = '📡 Go Live';
+                btn.disabled = false;
+            }
+        }
+
+        function stopLiveStream() {
+            if (_liveInterval) {
+                clearInterval(_liveInterval);
+                _liveInterval = null;
+            }
+            _isLive = false;
+
+            const btn = document.getElementById('live-toggle-btn');
+            btn.innerText = '📡 Go Live';
+            btn.style.background = 'var(--accent)';
+
+            const label = document.getElementById('live-status-label');
+            label.innerText = '⏸ Not streaming';
+            label.style.color = 'var(--text-muted)';
+
+            // Fire-and-forget stop
+            fetch('/api/v1/investment/stop-ticker', { method: 'POST' }).catch(() => { });
+        }
+
+        async function pollLivePrices() {
+            try {
+                const res = await fetch('/api/v1/investment/live-prices');
+                const data = await res.json();
+                if (!data.prices) return;
+
+                const prices = data.prices;
+                const rows = document.querySelectorAll('#holdings-body tr[data-symbol]');
+                let totalDayPnl = 0;
+                let totalVal = 0;
+                let totalPnl = 0;
+
+                const dt = $('#holdings-table').DataTable();
+
+                rows.forEach(row => {
+                    const sym = row.getAttribute('data-symbol');
+                    const p = prices[sym];
+                    if (!p || !p.last_price) return;
+
+                    const units = parseFloat(row.children[2].getAttribute('data-sort') || 0);
+                    const entryPrice = parseFloat(row.children[3].getAttribute('data-sort') || 0);
+                    const ltp = p.last_price;
+                    const prevClose = p.prev_close || 0;
+
+                    const newVal = ltp * units;
+                    const inv = entryPrice * units;
+                    const pnl = newVal - inv;
+                    const pnlPct = inv !== 0 ? (pnl / inv) * 100 : 0;
+                    const dayPnl = (ltp - prevClose) * units;
+
+                    totalVal += newVal;
+                    totalPnl += pnl;
+                    totalDayPnl += dayPnl;
+
+                    // Update cells using DataTables API to preserve sorting
+                    // Assuming columns: Symbol(0), Entry Date(1), Units(2), Avg Price(3), Current(4), SL(5), Cap Risk(6), Invested(7), Value(8), Unrealized P&L(9), %(10), Day P&L(11)
+
+                    const dtRow = dt.row(row);
+
+                    // Helper to update text and sorting value
+                    function updateCell(colIdx, sortVal, htmlStr) {
+                        const cell = dt.cell(dtRow, colIdx);
+                        const node = cell.node();
+                        if (node) {
+                            node.setAttribute('data-sort', sortVal);
+                            node.innerHTML = htmlStr;
+                        }
+                        cell.invalidate('dom'); // Tell DataTables to re-read the data-sort and text from DOM
+                    }
+
+                    // Col 4: Current Price
+                    updateCell(4, ltp, `₹${ltp.toFixed(2)}`);
+
+                    // Col 8: Value
+                    updateCell(8, newVal, `₹${newVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+
+                    // Col 9: Unrealized P&L
+                    const pnlClass = pnl >= 0 ? 'pos-val' : 'neg-val';
+                    updateCell(9, pnl, `<span class="${pnlClass}">₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`);
+
+                    // Col 10: %
+                    const pnlPctClass = pnlPct >= 0 ? 'pos-val' : 'neg-val';
+                    updateCell(10, pnlPct, `<span class="${pnlPctClass}">${pnlPct.toFixed(2)}%</span>`);
+
+                    // Col 11: Day P&L
+                    const dayPnlClass = dayPnl >= 0 ? 'pos-val' : 'neg-val';
+                    updateCell(11, dayPnl, `<span class="${dayPnlClass}">₹${dayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`);
+                });
+
+                // Redraw table to apply sorting/filtering updates without resetting pagination
+                dt.draw(false);
+
+                // Update footer totals
+                const totalValEl = document.getElementById('live-total-val');
+                if (totalValEl) totalValEl.innerHTML = `₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+                const totalPnlEl = document.getElementById('live-total-pnl');
+                if (totalPnlEl) {
+                    totalPnlEl.className = `text-right ${totalPnl >= 0 ? 'pos-val' : 'neg-val'}`;
+                    totalPnlEl.innerHTML = `₹${totalPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+
+                const totalDayEl = document.getElementById('live-total-day-pnl');
+                if (totalDayEl) {
+                    totalDayEl.className = `text-right ${totalDayPnl >= 0 ? 'pos-val' : 'neg-val'}`;
+                    totalDayEl.innerHTML = `₹${totalDayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+
+                // Update summary card
+                const dayPnlCard = document.getElementById('sum-day-pnl');
+                if (dayPnlCard) {
+                    dayPnlCard.className = `metric-value ${totalDayPnl >= 0 ? 'pos-val' : 'neg-val'}`;
+                    dayPnlCard.innerText = `₹${totalDayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+
+                // Update live chart
+                if (livePnlChartInstance) {
+                    const now = new Date();
+                    const timeStr = String(now.getHours()).padStart(2, '0') + ':' +
+                        String(now.getMinutes()).padStart(2, '0') + ':' +
+                        String(now.getSeconds()).padStart(2, '0');
+                    livePnlLabels.push(timeStr);
+                    livePnlData.push(totalDayPnl);
+
+                    if (livePnlLabels.length > 120) { // keep last 1 hour of points at 30s interval
+                        livePnlLabels.shift();
+                        livePnlData.shift();
+                    }
+
+                    livePnlChartInstance.data.datasets[0].borderColor = totalDayPnl >= 0 ? '#10b981' : '#ef4444';
+                    livePnlChartInstance.data.datasets[0].backgroundColor = totalDayPnl >= 0 ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)';
+                    livePnlChartInstance.update();
+                }
+
+                // Update portfolio value card too
+                const valCard = document.getElementById('sum-val');
+                if (valCard && totalVal > 0) {
+                    const cashCard = document.getElementById('sum-cash');
+                    let cashVal = 0;
+                    if (cashCard && cashCard.innerText) {
+                        cashVal = parseFloat(cashCard.innerText.replace(/[^0-9.-]+/g, '')) || 0;
+                    }
+                    valCard.innerText = `₹${(totalVal + cashVal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+
+                // Update unrealized PnL card
+                const unrealizedCard = document.getElementById('sum-unrealized');
+                if (unrealizedCard) {
+                    unrealizedCard.className = `metric-value ${totalPnl >= 0 ? 'pos-val' : 'neg-val'}`;
+                    unrealizedCard.innerText = `₹${totalPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                }
+
+            } catch (e) {
+                console.error('Poll live prices error:', e);
+            }
         }
 
     </script>

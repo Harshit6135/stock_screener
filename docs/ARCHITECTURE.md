@@ -255,6 +255,29 @@ erDiagram
         float stop_loss_multiplier
     }
 
+    CAPITAL_EVENTS {
+        int id PK
+        date date
+        float amount
+        string event_type
+        string note
+    }
+
+    BACKTEST_RUNS {
+        int id PK
+        string run_label
+        datetime created_at
+        string config_name
+        date start_date
+        date end_date
+        boolean check_daily_sl
+        boolean mid_week_buy
+        float total_return
+        float max_drawdown
+        float sharpe_ratio
+        string data_dir
+    }
+
     INSTRUMENTS ||--o{ MARKET_DATA : has
     INSTRUMENTS ||--o{ INDICATORS : has
     INSTRUMENTS ||--o{ PERCENTILE : has
@@ -339,6 +362,6 @@ See [API Reference](API.md) for the complete endpoint documentation.
 | **ActionsService reuse in backtest** | Same trading logic for live and backtest ensures consistency |
 | **Friday-anchored rankings** | Weekly rank stability; all dates normalized to nearest Friday |
 | **Three-phase action generation** | SELL first frees capital, SWAP optimizes, BUY fills vacancies — order matters |
-| **Soft penalty multipliers** | Gradual score reduction (0.5x, 0.7x, 0.8x) instead of hard disqualification |
-| **Multi-constraint position sizing** | Most restrictive of ATR risk / liquidity / concentration / minimum wins |
+| **Hard penalty exclusions** | Immediate score of 0 for stocks below EMA 50, EMA 200, low liquidity, or penny stocks |
+| **Multi-constraint position sizing** | Most restrictive of ATR risk / minimum value wins |
 | **Repository pattern** | Clean separation between business logic and DB queries; enables DB injection for backtest |
