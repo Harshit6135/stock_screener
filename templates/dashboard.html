@@ -689,20 +689,23 @@
         <div class="card" style="max-width: 800px; margin: 0 auto;">
             <h3>Data Pipeline Orchestration</h3>
 
+
             <div class="step-row">
-                <span>1. Initialize Instruments (Kite Sync)</span>
+                <span>0. Kite Authentication</span>
+                <span style="font-size:0.8em; color: var(--muted);">always runs</span>
+            </div>
+            <div class="step-row">
+                <span>1. Init App &amp; Instrument Sync</span>
                 <label class="switch"><input type="checkbox" id="step-init" checked><span class="slider"></span></label>
             </div>
             <div class="step-row">
                 <span>2. Update Market Data</span>
-                <div style="display:flex; align-items:center; gap:15px;">
-                    <label
-                        style="font-size:0.8rem; color:var(--text-muted); display:flex; align-items:center; gap:5px; cursor:pointer;">
-                        <input type="checkbox" id="step-historical"> Historical
-                    </label>
-                    <label class="switch"><input type="checkbox" id="step-market" checked><span
-                            class="slider"></span></label>
-                </div>
+                <label class="switch"><input type="checkbox" id="step-market" checked><span
+                        class="slider"></span></label>
+            </div>
+            <div class="step-row">
+                <span style="margin-left: 20px; font-size: 0.9em;">↳ Historical Mode</span>
+                <label class="switch"><input type="checkbox" id="step-historical"><span class="slider"></span></label>
             </div>
             <div class="step-row">
                 <span>3. Calculate Indicators</span>
@@ -1426,8 +1429,29 @@
                 ranking: document.getElementById('step-rank').checked
             };
 
-            showLoading('Running Pipeline... this may take a while');
-            log('--> Starting pipeline execution...');
+            const consoleEl = document.getElementById('pipeline-console');
+            consoleEl.innerHTML = '';  // clear old output
+
+            // Open SSE log stream BEFORE hitting the pipeline endpoint so every
+            // backend log line appears in the console in real-time.
+            const es = new EventSource('/api/v1/app/logs/stream');
+            es.onmessage = (e) => {
+                if (e.data === '[PING]') return;
+                const line = document.createElement('div');
+                const text = e.data;
+                if (text.startsWith('ERROR')) line.style.color = '#ff6b6b';
+                else if (text.startsWith('WARNING')) line.style.color = '#ffd93d';
+                else line.style.color = '#a8ff78';
+                line.textContent = text;
+                consoleEl.appendChild(line);
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+                // Update the loading overlay with the last log line (strip level/name prefix)
+                const loadingText = document.querySelector('.loading-text');
+                if (loadingText) loadingText.textContent = text.replace(/^[A-Z]+ \| [^\|]+ \| /, '');
+            };
+            es.onerror = () => es.close();
+
+            showLoading('Pipeline running — live logs below...');
 
             try {
                 const res = await fetch('/api/v1/app/run-pipeline', {
@@ -1437,19 +1461,38 @@
                 });
                 const data = await res.json();
 
+                const stepLabels = {
+                    kite_auth: '0. Kite Auth',
+                    init: '1. Init App',
+                    marketdata: '2. Market Data',
+                    indicators: '3. Indicators',
+                    percentile: '4. Percentiles',
+                    score: '5. Scores',
+                    ranking: '6. Rankings',
+                };
+
+                log('─'.repeat(50));
                 if (res.ok) {
-                    log('✅ Pipeline Complete!');
+                    const aborted = data.message && data.message.includes('aborted');
+                    log(aborted ? '⚠️  Pipeline aborted — see steps below:' : '✅ Pipeline Complete!');
                     Object.entries(data.results).forEach(([step, status]) => {
-                        log(`   • ${step}: ${status}`);
+                        const label = stepLabels[step] || step;
+                        let icon = '✅';
+                        if (typeof status === 'string' && status.startsWith('failed')) icon = '❌';
+                        else if (typeof status === 'string' && status.startsWith('skipped')) icon = '⏭';
+                        log(`   ${icon} ${label}: ${status}`);
                     });
                 } else {
                     log(`❌ Error: ${data.message || 'Unknown error'}`);
                 }
             } catch (e) {
                 log(`❌ Network Error: ${e.message}`);
+            } finally {
+                es.close();
+                hideLoading();
             }
-            hideLoading();
         }
+
 
         async function syncInstruments() {
             const btn = document.getElementById('sync-instr-btn');

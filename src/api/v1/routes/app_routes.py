@@ -1,9 +1,10 @@
+from flask import Response, stream_with_context
 from flask.views import MethodView
 from flask_smorest import Blueprint
 import traceback
 
 from adaptors import KiteAdaptor
-from config import setup_logger, KITE_CONFIG
+from config import setup_logger, KITE_CONFIG, sse_log_queue
 from schemas import (
     MessageSchema,
     CleanupQuerySchema,
@@ -36,6 +37,33 @@ blp = Blueprint(
     url_prefix="/api/v1/app",
     description="Application Orchestration & Cleanup Operations",
 )
+
+
+@blp.route("/logs/stream")
+class LogStream(MethodView):
+    def get(self):
+        """SSE stream of Orchestrator log lines. Open before running the pipeline."""
+        def _generate():
+            import queue as _queue
+            while True:
+                try:
+                    msg = sse_log_queue.get(timeout=30)
+                    # Escape newlines so SSE stays single-line per event
+                    safe = msg.replace('\n', ' ').replace('\r', '')
+                    yield f"data: {safe}\n\n"
+                except _queue.Empty:
+                    # Keep-alive ping every 30 s so the browser doesn't time out
+                    yield "data: [PING]\n\n"
+
+        return Response(
+            stream_with_context(_generate()),
+            mimetype='text/event-stream',
+            headers={
+                'Cache-Control': 'no-cache',
+                'X-Accel-Buffering': 'no',     # disable nginx buffering
+                'Connection': 'keep-alive',
+            }
+        )
 
 
 @blp.route("/cleanup")
