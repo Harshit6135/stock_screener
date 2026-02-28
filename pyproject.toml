@@ -24,6 +24,7 @@ dependencies = [
     "python-json-logger~=3.2",
     "pandas-stubs (>=2.3.3,<2.4.0)",
     "scipy-stubs (>=1.16.3,<1.17.0)",
+    "waitress~=3.0",
 ]
 
 [project.optional-dependencies]

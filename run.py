@@ -2,6 +2,8 @@ from db import db
 from flask_smorest import Api
 from flask_migrate import Migrate
 from flask import Flask, render_template
+from waitress import serve
+
 
 from src.config import Config
 from src.api.v1.routes import (
@@ -79,4 +81,10 @@ def actions():
 
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=True)
+    serve(
+        app,
+        host='0.0.0.0',
+        port=5000,
+        threads=8,           # SSE stream + pipeline + dashboard run concurrently
+        channel_timeout=600  # keep SSE connections alive up to 10 min
+    )
