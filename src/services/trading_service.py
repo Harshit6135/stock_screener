@@ -34,6 +34,7 @@ class HoldingSnapshot:
     stop_loss: float
     score: float
     entry_price: float = 0.0
+    avg_price: float = 0.0
 
 
 @dataclass
@@ -88,6 +89,7 @@ class TradingEngine:
         exit_threshold: float = 40.0,
         ema_50_values: Dict[str, float] = None,
         enable_pyramiding: bool = False,
+        mid_week_run: bool = False,
     ) -> List[TradingDecision]:
         """
         Generate trading decisions using SELL → Unified Candidate Loop.
@@ -123,7 +125,7 @@ class TradingEngine:
         surviving_holdings = {}  # symbol -> HoldingSnapshot
         for h in holdings:
             price = prices.get(h.symbol, 0)
-            if h.stop_loss >= price:
+            if h.stop_loss > price:
                 decisions.append(TradingDecision(
                     action_type='SELL',
                     symbol=h.symbol,
@@ -131,7 +133,7 @@ class TradingEngine:
                     units=h.units,
                 ))
                 sold_symbols.add(h.symbol)
-                logger.info(f"SELL {h.symbol}: stop-loss {h.stop_loss:.2f} >= price {price:.2f}")
+                logger.info(f"SELL {h.symbol}: stop-loss {h.stop_loss:.2f} > price {price:.2f}")
             elif h.score < exit_threshold:
                 decisions.append(TradingDecision(
                     action_type='SELL',
@@ -146,23 +148,20 @@ class TradingEngine:
                     remaining_holdings.append(h)
                 surviving_holdings[h.symbol] = h
 
+        if mid_week_run:
+            return decisions
         # ========== PHASE 2: UNIFIED CANDIDATE LOOP ==========
         current_count = len(holdings) - len(sold_symbols)
         vacancies = max_positions - current_count
 
         for c in candidates:
-            # --- Already held → check for pyramid ---
             if c.symbol in surviving_holdings:
                 if not enable_pyramiding:
                     continue
                 h = surviving_holdings[c.symbol]
-                # Check 1: Capital risk must be zero (SL >= entry price)
-                if float(h.stop_loss) < float(h.entry_price):
+
+                if (float(h.stop_loss) < float(h.entry_price) or (ema_50_values.get(c.symbol, 0) < float(h.entry_price))):
                     continue
-                # Check 2: EMA 50 above entry price
-                if ema_50_values.get(c.symbol, 0) < float(h.entry_price):
-                    continue
-                # Passed both → pyramid add
                 decisions.append(TradingDecision(
                     action_type='PYRAMID_ADD',
                     symbol=c.symbol,
@@ -170,40 +169,33 @@ class TradingEngine:
                 ))
                 logger.info(
                     f"PYRAMID {c.symbol}: SL {h.stop_loss:.2f} >= entry {h.entry_price:.2f}, "
-                    f"EMA50 {ema_50_values.get(c.symbol, 0):.2f} > entry {h.entry_price:.2f}"
+                    f"EMA50 {ema_50_values.get(c.symbol, 0):.2f} > avg_price {h.avg_price or h.entry_price:.2f}"
                 )
-                continue
-
-            # --- Not held + vacancy → BUY ---
-            if vacancies > 0:
-                decisions.append(TradingDecision(
-                    action_type='BUY',
-                    symbol=c.symbol,
-                    reason='top N buys',
-                ))
-                vacancies -= 1
-                logger.info(f"BUY {c.symbol}: vacancy fill (score {c.score:.1f})")
-                continue
-
-            # --- Not held + no vacancy → SWAP (vs weakest) ---
-            if remaining_holdings:
-                weakest = min(remaining_holdings, key=lambda h: h.score)
-                if c.score > swap_buffer * float(weakest.score):
+            elif c.symbol not in surviving_holdings:
+                if vacancies > 0:
                     decisions.append(TradingDecision(
-                        action_type='SWAP',
-                        symbol=weakest.symbol,
-                        reason=f'swap: score {weakest.score:.1f} → {c.symbol} ({c.score:.1f})',
-                        units=weakest.units,
-                        swap_for=c.symbol,
-                        swap_sell_units=weakest.units,
+                        action_type='BUY',
+                        symbol=c.symbol,
+                        reason='top N buys',
                     ))
-                    remaining_holdings.remove(weakest)
-                    logger.info(
-                        f"SWAP {weakest.symbol} → {c.symbol}: "
-                        f"{c.score:.1f} > {swap_buffer} × {weakest.score:.1f}"
-                    )
-                else:
-                    break  # candidates are sorted by score, no more profitable swaps
+                    vacancies -= 1
+                    logger.info(f"BUY {c.symbol}: vacancy fill (score {c.score:.1f})")
+                    continue
 
+                if remaining_holdings:
+                    weakest = min(remaining_holdings, key=lambda h: h.score)
+                    if c.score > swap_buffer * float(weakest.score):
+                        decisions.append(TradingDecision(
+                            action_type='SWAP',
+                            symbol=weakest.symbol,
+                            reason=f'swap: score {weakest.score:.1f} → {c.symbol} ({c.score:.1f})',
+                            units=weakest.units,
+                            swap_for=c.symbol,
+                            swap_sell_units=weakest.units,
+                        ))
+                        remaining_holdings.remove(weakest)
+                        logger.info(
+                            f"SWAP {weakest.symbol} → {c.symbol}: "
+                            f"{c.score:.1f} > {swap_buffer} × {weakest.score:.1f}"
+                        )
         return decisions
-

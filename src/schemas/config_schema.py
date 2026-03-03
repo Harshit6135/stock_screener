@@ -12,6 +12,7 @@ class ConfigSchema(Schema):
     buffer_percent = fields.Float(load_default=0.25)
     exit_threshold = fields.Float(load_default=40.0)
     sl_multiplier = fields.Float(load_default=2.0)
+    hard_sl_percent = fields.Float(load_default=0.03)
     atr_fallback_percent = fields.Float(load_default=0.03)
     created_at = fields.DateTime(dump_only=True)
     updated_at = fields.DateTime(dump_only=True)
