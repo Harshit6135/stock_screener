@@ -1,11 +1,32 @@
-"""
-Date Utilities
-
-Consolidated date logic for backtesting and live trading services.
-"""
-from typing import List
+import os
+import csv
+from typing import List, Set
 from datetime import date, timedelta
 
+# Load holidays from CSV
+def _load_holidays() -> Set[date]:
+    holidays = set()
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    csv_path = os.path.join(project_root, 'nse_bse_holidays_kite_2015_onwards.csv')
+    
+    if os.path.exists(csv_path):
+        with open(csv_path, mode='r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    d = date.fromisoformat(row['Date'])
+                    holidays.add(d)
+                except (ValueError, KeyError):
+                    continue
+    return holidays
+
+NSE_HOLIDAYS = _load_holidays()
+
+def is_holiday(d: date) -> bool:
+    """Check if a date is a weekend or an NSE/BSE holiday."""
+    if d.weekday() >= 5:  # Saturday or Sunday
+        return True
+    return d in NSE_HOLIDAYS
 
 def get_friday_of_week(d: date) -> date:
     """
@@ -49,12 +70,13 @@ def get_prev_friday(d: date) -> date:
 
 def get_business_days(start_date: date, end_date: date) -> List[date]:
     """
-    Get all business days (Monday-Friday) between start and end dates inclusive.
+    Get all trading days (Mon-Fri, excluding NSE/BSE holidays) between
+    start and end dates inclusive.
     """
     days = []
     current = start_date
     while current <= end_date:
-        if current.weekday() < 5:  # Mon=0 .. Fri=4
+        if not is_holiday(current):
             days.append(current)
         current += timedelta(days=1)
     return days
@@ -62,19 +84,19 @@ def get_business_days(start_date: date, end_date: date) -> List[date]:
 
 def get_next_business_day(d: date) -> date:
     """
-    Get the next business day (skip Sat/Sun).
+    Get the next trading day (skip weekends and NSE/BSE holidays).
     """
     next_day = d + timedelta(days=1)
-    while next_day.weekday() > 4:
+    while is_holiday(next_day):
         next_day += timedelta(days=1)
     return next_day
 
 def get_previous_business_day(d: date) -> date:
     """
-    Get the previous business day (skip Sat/Sun).
+    Get the previous trading day (skip weekends and NSE/BSE holidays).
     """
     prev_day = d - timedelta(days=1)
-    while prev_day.weekday() > 4:
+    while is_holiday(prev_day):
         prev_day -= timedelta(days=1)
     return prev_day
 
@@ -93,14 +115,29 @@ def get_week_fridays(start_date: date, end_date: date) -> list[date]:
         current += timedelta(days=7)
     return fridays
 
-def get_week_mondays(start_date, end_date) -> List[date]:
-    """Get all Mondays between start and end dates"""
-    mondays = []
+def get_week_starts(start_date: date, end_date: date) -> List[date]:
+    """
+    Get all week start dates between start and end dates inclusive.
+    A week start is usually Monday, but moves to Tuesday (or next business day)
+     if Monday is a holiday.
+    """
+    week_starts = []
     current = start_date
+    
+    # Align to first Monday
     while current.weekday() != 0:
         current += timedelta(days=1)
+        
     while current <= end_date:
-        mondays.append(current)
-        current += timedelta(weeks=1)
-    return mondays
+        # Find the first trading day of THIS calendar week (Mon–Fri only).
+        # Stop searching if we cross into the next week (i.e. reach next Mon).
+        first_day = current
+        week_end = current + timedelta(days=4)  # Friday of this week
+        while is_holiday(first_day) and first_day <= week_end:
+            first_day += timedelta(days=1)
 
+        if not is_holiday(first_day) and first_day <= end_date:
+            week_starts.append(first_day)
+
+        current += timedelta(weeks=1)
+    return week_starts

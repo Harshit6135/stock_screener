@@ -51,11 +51,19 @@ class GenerateActions(MethodView):
             if action_date is None:
                 action_date = datetime.now().date()
             enable_pyramiding = args.get('enable_pyramiding', False)
-            new_actions = actions.generate_actions(action_date, enable_pyramiding=enable_pyramiding)
+            check_daily_sl = args.get('check_daily_sl', False)
+            mid_week_buy = args.get('mid_week_buy', False)
+            new_actions = actions.generate_actions(
+                action_date,
+                enable_pyramiding=enable_pyramiding,
+                check_daily_sl=check_daily_sl,
+                mid_week_buy=mid_week_buy,
+            )
             return {"message": f"Generated {len(new_actions)} actions"}
         except ValueError as e:
-            logger.error(f"Validation error: {e}")
-            abort(400, message=str(e))
+            # Pending actions exist from another date — caller must resolve first
+            logger.warning(f"generate_actions blocked: {e}")
+            abort(409, message=str(e))
         except Exception as e:
             logger.error(f"Failed to generate actions: {e}")
             abort(500, message=f"Action generation failed: {str(e)}")

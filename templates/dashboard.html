@@ -852,13 +852,14 @@
                             <th class="text-center">Units</th>
                             <th class="text-center">Avg Price</th>
                             <th class="text-center">Current</th>
-                            <th class="text-center">SL</th>
+                            <th class="text-center" style="color:var(--warning);">SL</th>
+                            <th class="text-center" style="color:var(--danger);">Hard SL</th>
                             <th class="text-center">Cap. Risk</th>
                             <th class="text-center">Invested</th>
                             <th class="text-center">Value</th>
-                            <th class="text-center">Unrealized P&L</th>
+                            <th class="text-center">Unrealized P&amp;L</th>
                             <th class="text-center">%</th>
-                            <th class="text-center">Day P&L</th>
+                            <th class="text-center">Day P&amp;L</th>
                         </tr>
                     </thead>
                     <tbody id="holdings-body"></tbody>
@@ -948,12 +949,16 @@
                 </div>
             </div>
 
-            <div style="margin: 15px 0;">
+            <div style="margin: 15px 0; display:flex; align-items:center; gap:20px; flex-wrap:wrap;">
                 <button class="btn" onclick="generateActions()">✨ Generate New Actions</button>
-                <label style="margin-left:15px; font-size:0.9rem; cursor:pointer;"><input type="checkbox"
-                        id="pyramid-toggle"> Pyramiding</label>
-                <span style="margin-left:10px; font-size:0.8rem; color:var(--text-muted);">
-                    Based on latest Friday rankings
+                <label style="font-size:0.9rem; cursor:pointer;"><input type="checkbox" id="pyramid-toggle">
+                    Pyramiding</label>
+                <label style="font-size:0.9rem; cursor:pointer;"><input type="checkbox" id="daily-sl-toggle"> Daily Sell
+                    (close-based SL)</label>
+                <label style="font-size:0.9rem; cursor:pointer;"><input type="checkbox" id="midweek-buy-toggle">
+                    Mid-Week Buy</label>
+                <span style="font-size:0.8rem; color:var(--text-muted);">
+                    Based on latest Friday rankings (weekly) or today's close vs SL (mid-week)
                 </span>
             </div>
 
@@ -966,6 +971,7 @@
                         <th>Units</th>
                         <th>Price</th>
                         <th>SL</th>
+                        <th style="color:var(--danger);">Hard SL</th>
                         <th>Status</th>
                         <th>Reason</th>
                         <th class="text-center">Action</th>
@@ -1018,6 +1024,16 @@
                 <div>
                     <label>SL Step (% of gain)</label>
                     <input type="number" step="0.01" id="conf-sl-step" style="width:100%">
+                </div>
+                <div>
+                    <label>Swap Buffer (%)</label>
+                    <input type="number" step="0.01" id="conf-buffer" style="width:100%"
+                        title="A SWAP only happens if the new stock score is at least (1 + buffer) × current score. E.g. 0.25 = 25% better">
+                </div>
+                <div>
+                    <label>Hard SL Buffer (%)</label>
+                    <input type="number" step="0.01" id="conf-hard-sl" style="width:100%"
+                        title="Hard SL = trailing_SL × (1 - buffer). E.g. 0.03 = 3% below trailing SL">
                 </div>
             </div>
 
@@ -1567,6 +1583,7 @@
                 const config = await cRes.json();
                 const maxPositions = config.max_positions || 15;
                 document.getElementById('max-pos').innerText = maxPositions;
+                window._portHardSlPct = config.hard_sl_percent || 0.03;  // used by renderHoldings
 
                 // 2. Load Holdings (Latest)
                 const hRes = await fetch('/api/v1/investment/holdings');
@@ -1711,12 +1728,14 @@
             }
 
             let totalInv = 0, totalVal = 0, totalPnL = 0, totalCapRisk = 0;
+            const hardSlPct = window._portHardSlPct || 0.03;
 
             holdings.forEach(h => {
                 const entryPrice = parseFloat(h.entry_price || 0);
                 const avgPrice = parseFloat(h.avg_price || h.entry_price || 0);
                 const currentPrice = parseFloat(h.current_price || 0);
                 const currentSl = parseFloat(h.current_sl || 0);
+                const hardSlPrice = currentSl > 0 ? +(currentSl * (1 - hardSlPct)).toFixed(2) : 0;
                 const units = parseFloat(h.units || 0);
 
                 const inv = avgPrice * units;
@@ -1736,7 +1755,8 @@
                     <td class="text-center" data-sort="${units}">${units}</td>
                     <td class="text-center" data-sort="${avgPrice}">₹${avgPrice.toFixed(2)}</td>
                     <td class="text-center live-current" data-sort="${currentPrice}">₹${currentPrice.toFixed(2)}</td>
-                    <td class="text-center" data-sort="${currentSl}" style="color:var(--danger);">₹${currentSl.toFixed(2)}</td>
+                    <td class="text-center" data-sort="${currentSl}" style="color:var(--warning);">₹${currentSl.toFixed(2)}</td>
+                    <td class="text-center" data-sort="${hardSlPrice}" style="color:var(--danger); font-weight:600;">₹${hardSlPrice > 0 ? hardSlPrice.toFixed(2) : '-'}</td>
                     <td class="text-center ${capRisk > 0 ? 'neg-val' : 'pos-val'}" data-sort="${capRisk}">₹${currentSl > 0 ? capRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-'}</td>
                     <td class="text-center" data-sort="${inv}">₹${inv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-center live-value" data-sort="${val}">₹${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -1749,7 +1769,7 @@
 
             // Totals
             const totalRow = `<tr style="font-weight:700; background:#232730;">
-                    <td colspan="6">TOTALS</td>
+                    <td colspan="7">TOTALS</td>
                     <td class="text-right ${totalCapRisk > 0 ? 'neg-val' : 'pos-val'}">₹${totalCapRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-right">₹${totalInv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td class="text-right" id="live-total-val">₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -1790,10 +1810,16 @@
 
         async function generateActions() {
             const pyramiding = document.getElementById('pyramid-toggle').checked;
+            const dailySl = document.getElementById('daily-sl-toggle').checked;
+            const midWeekBuy = document.getElementById('midweek-buy-toggle').checked;
             showLoading('Generating Actions...');
             try {
                 let url = '/api/v1/actions/generate?config_name=momentum_config';
                 if (pyramiding) url += '&enable_pyramiding=true';
+                if (dailySl) url += '&check_daily_sl=true';
+                if (midWeekBuy) url += '&mid_week_buy=true';
+                const date = document.getElementById('actions-date').value;
+                if (date) url += `&date=${date}`;
                 const res = await fetch(url, { method: 'POST' });
                 const data = await res.json();
                 if (res.ok) {
@@ -1819,7 +1845,7 @@
             tbody.innerHTML = '';
 
             if (!actions.length) {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center">No actions found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center">No actions found</td></tr>';
                 hideLoading();
                 return;
             }
@@ -1841,7 +1867,8 @@
                     <td><b>${a.symbol}</b></td>
                     <td data-sort="${a.units}">${a.units}</td>
                     <td data-sort="${a.execution_price || a.prev_close || 0}">${a.execution_price || a.prev_close || '-'}</td>
-                    <td data-sort="${a.stop_loss || 0}">${a.stop_loss ? '₹' + parseFloat(a.stop_loss).toFixed(2) : '-'}</td>
+                    <td data-sort="${a.stop_loss || 0}">${a.stop_loss ? '&#8377;' + parseFloat(a.stop_loss).toFixed(2) : '-'}</td>
+                    <td data-sort="${a.hard_sl_price || 0}" style="color:var(--danger); font-weight:600;">${a.hard_sl_price ? '&#8377;' + parseFloat(a.hard_sl_price).toFixed(2) : '-'}</td>
                     <td data-sort="${a.status}">${a.status}</td>
                     <td style="font-size:0.8rem; color:#aaa;">${a.reason || ''}</td>
                     <td class="text-center">${actionBtn}</td>
@@ -2059,6 +2086,9 @@
             document.getElementById('conf-min').value = data.min_position_percent;
             document.getElementById('conf-exit').value = data.exit_threshold;
             document.getElementById('conf-sl-mult').value = data.sl_multiplier;
+            document.getElementById('conf-sl-step').value = data.sl_step_percent ?? '';
+            document.getElementById('conf-buffer').value = data.buffer_percent;
+            document.getElementById('conf-hard-sl').value = data.hard_sl_percent ?? 0.03;
         }
 
         async function saveConfig() {
@@ -2070,6 +2100,8 @@
                 min_position_percent: parseFloat(document.getElementById('conf-min').value),
                 exit_threshold: parseFloat(document.getElementById('conf-exit').value),
                 sl_multiplier: parseFloat(document.getElementById('conf-sl-mult').value),
+                buffer_percent: parseFloat(document.getElementById('conf-buffer').value),
+                hard_sl_percent: parseFloat(document.getElementById('conf-hard-sl').value),
             };
 
             await fetch(`/api/v1/config/${name}`, {

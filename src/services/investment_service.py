@@ -322,7 +322,8 @@ class InvestmentService:
         events = self.inv_repo.get_all_capital_events()
         return [e.to_dict() for e in events]
 
-    def update_holding(self, symbol: str, action_date: date, mid_week: bool = False, holding = None) -> Dict:
+    def update_holding(self, symbol: str, action_date: date, mid_week: bool = False,
+                        holding=None, config_name: str = 'momentum_config') -> Dict:
         """
         Update an existing holding with current prices.
 
@@ -332,13 +333,16 @@ class InvestmentService:
         Parameters:
             symbol (str): Trading symbol
             action_date (date): Current action date
+            mid_week (bool): If True, carry forward existing SL/score without update
+            holding: Optional pre-fetched holding object
+            config_name (str): Config to use for sl_multiplier (pass active config name)
 
         Returns:
             Dict: Updated holding data with new price/stop-loss
         """
-        config = self.config_repo.get_config(
-            'momentum_config'
-        )
+        # Bug 16: use the supplied config_name so the active backtest config's
+        # sl_multiplier is applied, not always 'momentum_config'.
+        config = self.config_repo.get_config(config_name)
         if not holding:
             holding = self.inv_repo.get_holdings_by_symbol(symbol)
         data_date = get_prev_friday(action_date)

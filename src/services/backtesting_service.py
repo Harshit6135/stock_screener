@@ -17,7 +17,7 @@ from config import setup_logger
 from models import BacktestResult
 from utils import (calculate_transaction_costs, get_business_days,
                     DatabaseManager, calculate_all_metrics,
-                   calculate_capital_gains_tax, get_week_mondays)
+                   calculate_capital_gains_tax, get_week_starts, get_prev_friday)
 from repositories import (InvestmentRepository, ActionsRepository, RankingRepository, IndicatorsRepository,
                           MarketDataRepository, ConfigRepository)
 from services import ActionsService, InvestmentService
@@ -65,140 +65,126 @@ class WeeklyBacktester:
         self.inv_service.ensure_capital_events_seeded(seed_date=start_date)
 
     def _process_daily_stoploss(self, monday: date, friday: date) -> None:
+        """
+        Process daily stop-loss for the backtest week.
 
+        Two phases per day:
+          Phase 1 — Hard SL (intraday low breach): sell is dated D, approved and
+                    processed immediately so capital is freed on the same day.
+                    Symbols with a pending close-based sell from the previous day
+                    are SKIPPED (they already have a sell queued for today).
+          Phase 2 — Close-based SL (end-of-day breach): sell is dated D+1 by
+                    ActionsService.check_daily_stoploss(), so it is picked up by
+                    the *next* day's approve/process pass. The check runs on the
+                    already-updated holdings (after Phase 1) to avoid acting on
+                    positions that were already force-sold intraday.
+        """
         business_days = get_business_days(monday, friday)
         hard_sl_pct = getattr(self.config, 'hard_sl_percent', 0.03)
-        #TODO Parameterize this
 
-        pending_close_sl: set = set()
+        # Track symbols with pending close-based sells from yesterday's Phase 2.
+        # Phase 1 on the next day must skip these to avoid duplicate sells.
+        pending_close_sl_symbols: set = set()
+
         for day in business_days:
             logger.info(f"Processing Daily SL Check for {day}")
-            day_sold_count = 0
             md_prices = self.marketdata_repo.get_prices_for_all_stocks(
-                {"start_date": day,
-                 "end_date": day
-            })
+                {"start_date": day, "end_date": day}
+            )
             if len(md_prices) < 500:
                 logger.info(f"{day} is Market closed")
                 continue
 
-            current_holdings = self.inv_repo.get_holdings() #TODO What is 100% Cash
+            # ── Fix 2: Set execution_price on pending close-based sells ─────
+            # In live trading, execution_price is already known at order time.
+            # In backtest, we set it here to the day's open price BEFORE
+            # approve_all_actions runs, so approve doesn't need to look it up.
+            if pending_close_sl_symbols:
+                pending_actions = self.actions_repo.get_pending_actions()
+                for pa in (pending_actions or []):
+                    if pa.type == 'sell' and pa.symbol in pending_close_sl_symbols:
+                        md_exec = self.marketdata_repo.get_marketdata_by_trading_symbol(pa.symbol, day)
+                        if md_exec and md_exec.open:
+                            self.actions_repo.update_action({
+                                'action_id': pa.action_id,
+                                'execution_price': float(md_exec.open)
+                            })
+                            logger.info(
+                                f"Close-SL exec price set: {pa.symbol} → "
+                                f"{float(md_exec.open):.2f} (open on {day})"
+                            )
+
+            # ── Phase 1: Hard SL (intraday low breach, same-day execution) ──────
+            current_holdings = self.inv_repo.get_holdings()
             holding_map = {h.symbol: h for h in current_holdings}
-
-            for symbol in pending_close_sl:
-                h = holding_map[symbol]
-                open_price = self.marketdata_repo.get_marketdata_by_trading_symbol(h.symbol, day).open
-                if open_price is None:
-                    open_price = float(h.current_price)
-
-                logger.info(
-                    f"PENDING SL SOLD: {h.symbol} "
-                    f"sold @ open {open_price:.2f} on {day} "
-                    f"(close-based SL triggered previous day)"
-                )
-
-                sell_action = {
-                    'action_date': day,
-                    'type': 'sell',
-                    'reason': (
-                        f'close-based stoploss sell at open on '
-                        f'{day}'
-                    ),
-                    'symbol': h.symbol,
-                    'units': h.units,
-                    'prev_close': float(h.current_price),
-                    'execution_price': open_price,
-                    'capital': float(h.units) * open_price,
-                    'status': 'Pending',
-                }
-                self.actions_repo.insert_action(sell_action)
-                del holding_map[h.symbol]
-                day_sold_count += 1
-            pending_close_sl = set()
+            holding_map_before = set(holding_map)
 
             for h in current_holdings:
-                if h.symbol not in holding_map:
+                # Fix 1: skip symbols that already have a pending close-based
+                # sell from yesterday — they'll be processed in approve/process
+                # below. Creating a hard SL sell too would cause zero-PnL chains.
+                if h.symbol in pending_close_sl_symbols:
+                    logger.info(
+                        f"SKIP HARD SL: {h.symbol} already has pending "
+                        f"close-based sell for {day}"
+                    )
                     continue
-                daily_low = self.marketdata_repo.get_marketdata_by_trading_symbol(
-                    h.symbol, day
-                ).low
 
+                md = self.marketdata_repo.get_marketdata_by_trading_symbol(h.symbol, day)
+                if md is None:
+                    continue
+                daily_low = md.low
                 current_sl = float(h.current_sl)
                 hard_sl_price = round(current_sl * (1 - hard_sl_pct), 2)
 
-                # Tier 1: Hard SL — intraday disaster exit
                 if daily_low <= hard_sl_price:
+                    # Bug 3: execute at min(daily_low, hard_sl_price) — if price
+                    # gapped below hard SL, we fill at the actual low, not the
+                    # threshold (conservative: assumes worst-case gap execution).
+                    execution_price = round(min(float(daily_low), hard_sl_price), 2)
                     logger.info(
-                        f"HARD SL: {h.symbol} low "
-                        f"{daily_low:.2f} <= hard SL "
-                        f"{hard_sl_price:.2f} "
-                        f"(SL={current_sl:.2f}, "
-                        f"{hard_sl_pct * 100:.0f}% buffer) on {day}"
+                        f"HARD SL: {h.symbol} low {daily_low:.2f} <= hard SL "
+                        f"{hard_sl_price:.2f} (SL={current_sl:.2f}) on {day} "
+                        f"→ executing at {execution_price:.2f}"
                     )
-
                     sell_action = {
                         'action_date': day,
                         'type': 'sell',
-                        'reason': (
-                            f'hard stoploss hit on {day} '
-                            f'(low={daily_low:.2f})'
-                        ),
+                        'reason': f'hard stoploss hit on {day} (low={daily_low:.2f})',
                         'symbol': h.symbol,
                         'units': h.units,
                         'prev_close': float(h.current_price),
-                        'execution_price': hard_sl_price,
-                        'capital': (
-                                float(h.units) * hard_sl_price
-                        ),
+                        'execution_price': execution_price,
+                        'capital': float(h.units) * execution_price,
                         'status': 'Pending'
                     }
                     self.actions_repo.insert_action(sell_action)
-                    day_sold_count += 1
-                    continue  # Skip close check — already sold
+                    del holding_map[h.symbol]
 
-                # Tier 2: Close-based SL — sell at next day's open
-                # Skip on Friday — generate_actions handles Friday close SL
-                if day < friday:
-                    daily_close = self.marketdata_repo.get_marketdata_by_trading_symbol(h.symbol, day).close
-                    if daily_close is not None and (daily_close < current_sl):
-                        logger.info(
-                            f"CLOSE-BASED SL: {h.symbol} close "
-                            f"{daily_close:.2f} < SL "
-                            f"{current_sl:.2f} on {day} "
-                            f"→ queued for sell at next open"
-                        )
-                        pending_close_sl.add(h.symbol)
-                        del holding_map[h.symbol]
-
-            if self.mid_week_buy and day_sold_count:
-                current_holding_count = len(holding_map)
-                has_vacancy = current_holding_count < self.config.max_positions
-
-                if has_vacancy:
-                    pending_buys = self.actions_repo.get_pending_buy_actions()
-                    if pending_buys:
-                        for pending in pending_buys:
-                            close_price = self.marketdata_repo.get_marketdata_by_trading_symbol(pending.symbol, day).close
-                            signal_price = float(pending.prev_close)
-                            if signal_price > 0 and close_price > signal_price * 1.03:
-                                logger.info(
-                                    f"STALE BUY SKIP: {pending.symbol} "
-                                    f"close {close_price:.2f} > "
-                                    f"signal {signal_price:.2f} * 1.03 "
-                                    f"= {signal_price * 1.03:.2f} on {day}"
-                                )
-                                continue
-                            self.actions_repo.update_action({
-                                'action_id': pending.action_id,
-                                'action_date': day
-                            })
-
+            # Approve and process hard SL sells + any pending close-based sells
+            # from yesterday. This updates holdings in the DB before Phase 2.
             self.actions_service.approve_all_actions(day)
-            if day == monday:
-                midweek = False
-            else:
-                midweek = True
-            self.actions_service.process_actions(day, midweek=midweek)
+            self.actions_service.process_actions(day, midweek=(day != monday))
+
+            # Clear yesterday's exclusions — they've been processed above.
+            pending_close_sl_symbols.clear()
+
+            # ── Phase 2: Close-based SL (end-of-day, executed next open) ─────────
+            # Runs on the *updated* holdings after Phase 1, so already hard-SL'd
+            # symbols are no longer held and won't be double-checked.
+            # Skip Friday: generate_actions handles Friday close SL on Monday open.
+            if day < friday:
+                close_sells = self.actions_service.check_daily_stoploss(
+                    day, mid_week_buy=self.mid_week_buy
+                )
+                if close_sells:
+                    # Record symbols so Phase 1 skips them tomorrow
+                    pending_close_sl_symbols = {s['symbol'] for s in close_sells}
+                    logger.info(
+                        f"{len(close_sells)} close-based SL sell(s) dated "
+                        f"{close_sells[0]['action_date']} (processed next open)"
+                    )
+
 
     def run(self) -> List[BacktestResult]:
         try:
@@ -208,8 +194,8 @@ class WeeklyBacktester:
                     f"max_positions={self.config.max_positions}, "
                     f"exit_threshold={self.config.exit_threshold}")
             
-            mondays = get_week_mondays(self.start_date, self.end_date)
-            for week_date in mondays:
+            week_starts = get_week_starts(self.start_date, self.end_date)
+            for week_date in week_starts:
                 logger.info(f"Processing week: {week_date}")
                 
                 rejected = self.actions_service.reject_pending_actions()
@@ -238,7 +224,7 @@ class WeeklyBacktester:
                     friday = week_date + timedelta(days=4)
                     self._process_daily_stoploss(week_date, friday)
                 
-                # 5. Track risk metrics from latest summary
+                # 5. Track risk metrics from latest summary (after daily SL processing)
                 summary = self.inv_repo.get_summary()
                 if summary:
                     portfolio_value = float(summary.portfolio_value)
@@ -263,7 +249,9 @@ class WeeklyBacktester:
                     ]
                 
                 # 7. Fetch top rankings for the result record
-                ranking_friday = week_date - timedelta(days=3)
+                # Bug 21: use get_prev_friday() so holiday-adjusted week starts
+                # (e.g. Tuesday) still resolve to the correct data Friday.
+                ranking_friday = get_prev_friday(week_date)
                 rankings_results = self.ranking_repo.get_top_n_by_date(self.config.max_positions, ranking_friday)
                 if not rankings_results:
                     rankings = []
@@ -292,7 +280,8 @@ class WeeklyBacktester:
             
             # Close all open positions on the last day of backtest
             self._close_open_positions()
-            
+
+
             # Build trade list from DB for trade-level metrics
             self._build_trades_from_db()
             
@@ -354,12 +343,15 @@ class WeeklyBacktester:
                 quantity=t.get('units', 0)
             )
             pnl = t.get('pnl', 0)
-            yr = t['exit_date'].year
-            
+            # Bug 14: use Indian fiscal year (Apr–Mar) as grouping key
+            # e.g. exit on 2024-01-15 → FY 2023, exit on 2024-06-01 → FY 2024
+            exit_d = t['exit_date']
+            fy = exit_d.year if exit_d.month >= 4 else exit_d.year - 1
+
             if tax_info['tax_type'] == 'STCG':
-                stcg_by_year[yr] = stcg_by_year.get(yr, 0.0) + pnl
+                stcg_by_year[fy] = stcg_by_year.get(fy, 0.0) + pnl
             elif tax_info['tax_type'] == 'LTCG':
-                ltcg_by_year[yr] = ltcg_by_year.get(yr, 0.0) + pnl
+                ltcg_by_year[fy] = ltcg_by_year.get(fy, 0.0) + pnl
         
         stcg_total = sum(max(0.0, gain) * tax_config.stcg_rate for gain in stcg_by_year.values())
         ltcg_total = sum(max(0.0, gain - tax_config.ltcg_exemption) * tax_config.ltcg_rate for gain in ltcg_by_year.values())
@@ -417,49 +409,62 @@ class WeeklyBacktester:
         """
         Build trade list from backtest DB actions.
         
-        Matches each Approved sell to its corresponding buy (same symbol,
-        nearest earlier date). Populates self.risk_monitor.trades for
-        trade-level metrics (win rate, profit factor, XIRR, etc.).
+        Matches each Approved sell to its corresponding buy via proper FIFO
+        with remaining-unit tracking, so partial sells don't consume buy lots
+        that are still needed by later sells (e.g. backtest_end_close).
+        Populates self.risk_monitor.trades for trade-level metrics.
         """
         all_actions = self.actions_repo.get_all_approved_actions(ascending=True)
 
         self.risk_monitor.total_buys = sum(1 for a in all_actions if a.type == 'buy')
         self.risk_monitor.pyramid_buys = sum(1 for a in all_actions if a.type == 'buy' and a.reason == 'pyramid_add')
         
-        # Index buys by symbol (most recent first for matching)
-        buy_pool = {}  # symbol -> list of buy actions
+        # Build FIFO queues: symbol -> list of (action, remaining_units)
+        # We keep track of how many units are left in each buy lot so that
+        # a partial sell only consumes as many units as it needs — later sells
+        # for the same symbol can then match against the remaining balance.
+        buy_pool: dict = {}  # symbol -> list of [action, remaining_units]
         for a in all_actions:
             if a.type == 'buy':
-                buy_pool.setdefault(a.symbol, []).append(a)
+                buy_pool.setdefault(a.symbol, []).append([a, int(a.units)])
         
         trades = []
         for a in all_actions:
             if a.type != 'sell':
                 continue
             
-            # Find all matching buys that sum up to this sell's units
             buys = buy_pool.get(a.symbol, [])
-            matched_buys = []
             units_to_match = int(a.units)
             
-            for i in range(len(buys)-1, -1, -1):
-                b = buys[i]
-                if b.action_date <= a.action_date:
-                    matched_buys.append(buys.pop(i))
-                    units_to_match -= int(b.units)
-                    if units_to_match <= 0:
-                        break
+            # FIFO: build a list of (buy_action, units_consumed) for this sell
+            matched: list = []  # list of (action, units_consumed)
+            for slot in buys:
+                if units_to_match <= 0:
+                    break
+                b, remaining = slot
+                if b.action_date > a.action_date:
+                    break
+                consume = min(remaining, units_to_match)
+                if consume <= 0:
+                    continue
+                matched.append((b, consume))
+                slot[1] -= consume          # reduce remaining in the pool
+                units_to_match -= consume
             
-            # Reverse back to chronological order
-            matched_buys.reverse()
+            # Remove fully consumed lots from the front of the queue
+            while buys and buys[0][1] <= 0:
+                buys.pop(0)
             
-            if matched_buys:
-                total_cost = sum(float(b.execution_price) * int(b.units) for b in matched_buys)
-                total_matched_units = sum(int(b.units) for b in matched_buys)
-                entry_price = total_cost / total_matched_units if total_matched_units else float(matched_buys[0].execution_price)
-                entry_date = matched_buys[0].action_date
+            if matched:
+                total_cost = sum(float(b.execution_price) * consumed for b, consumed in matched)
+                total_units = sum(consumed for _, consumed in matched)
+                entry_price = total_cost / total_units if total_units else float(matched[0][0].execution_price)
+                entry_date = matched[0][0].action_date
             else:
-                entry_price = 0
+                # No matching buys found — record at cost=0 so the bad trade
+                # is visible but doesn't inflate PnL (price=0 → PnL = exit value,
+                # which would be wrong; flag with reason so it can be inspected)
+                entry_price = float(a.execution_price) if a.execution_price else 0
                 entry_date = a.action_date
                 
             exit_price = float(a.execution_price) if a.execution_price else 0
@@ -479,14 +484,14 @@ class WeeklyBacktester:
                 'reason': a.reason or '',
             })
             
-            # Record BUY legs for XIRR
-            for mb in matched_buys:
+            # Record BUY legs for XIRR cash-flow reconstruction
+            for b, consumed in matched:
                 trades.append({
                     'type': 'BUY',
                     'symbol': a.symbol,
-                    'entry_date': mb.action_date,
-                    'price': float(mb.execution_price),
-                    'units': int(mb.units),
+                    'entry_date': b.action_date,
+                    'price': float(b.execution_price),
+                    'units': consumed,
                 })
         
         self.risk_monitor.trades = trades
@@ -735,19 +740,20 @@ class WeeklyBacktester:
                 current_date=t['exit_date'],
                 quantity=t['units']
             )
-            
+
             pnl = t['pnl']
-            # Calendar year approximation for fiscal year
-            yr = t['exit_date'].year
-            
+            # Bug 14: use Indian fiscal year (Apr–Mar) as grouping key
+            exit_d = t['exit_date']
+            fy = exit_d.year if exit_d.month >= 4 else exit_d.year - 1
+
             if tax_info['tax_type'] == 'STCG':
                 stcg_gains += pnl
                 stcg_count += 1
-                stcg_by_year[yr] = stcg_by_year.get(yr, 0.0) + pnl
+                stcg_by_year[fy] = stcg_by_year.get(fy, 0.0) + pnl
             elif tax_info['tax_type'] == 'LTCG':
                 ltcg_gains += pnl
                 ltcg_count += 1
-                ltcg_by_year[yr] = ltcg_by_year.get(yr, 0.0) + pnl
+                ltcg_by_year[fy] = ltcg_by_year.get(fy, 0.0) + pnl
         
         stcg_total = sum(max(0.0, gain) * tax_config.stcg_rate for gain in stcg_by_year.values())
         ltcg_total = sum(max(0.0, gain - tax_config.ltcg_exemption) * tax_config.ltcg_rate for gain in ltcg_by_year.values())
@@ -944,15 +950,24 @@ class BacktestRiskMonitor:
         """Get comprehensive risk summary using metrics module"""
         # Build equity curve
         equity_curve = pd.Series(self.portfolio_values) if self.portfolio_values else pd.Series(dtype=float)
-        
+
+        # Bug 23: compute actual backtest duration so CAGR/Sharpe are annualised
+        # correctly instead of defaulting to 1 year inside calculate_all_metrics.
+        dates = [d for d in self.portfolio_dates if d is not None]
+        if len(dates) >= 2:
+            years = max((dates[-1] - dates[0]).days / 365.25, 0.01)
+        else:
+            years = 1.0
+
         # Use master metrics calculator
         metrics = calculate_all_metrics(
             equity_curve=equity_curve,
             trades=self.trades,
-            initial_value=self.initial_capital
+            initial_value=self.initial_capital,
+            years=years
         )
-        
+
         # Add fields not covered by metrics module
         metrics['initial_capital'] = self.initial_capital
-        
+
         return metrics
