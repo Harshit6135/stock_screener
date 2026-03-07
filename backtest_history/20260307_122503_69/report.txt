@@ -1,0 +1,98 @@
+======================================================================
+  BACKTEST RESULTS REPORT
+  Generated: 2026-03-07 12:25:03
+======================================================================
+
+[ CONFIGURATION ]
+  Config Name       : momentum_config
+  Start Date        : 2023-01-01
+  End Date          : 2026-03-07
+  Daily SL          : False
+  Mid-Week Buy      : False
+  Initial Capital   :      200,000.00
+  Max Positions     : 15
+  Min Position (%)  : 0.05
+  Risk Threshold    : 1.0
+  Buffer Percent    : 0.25
+  Exit Threshold    : 40.0
+  SL Multiplier     : 2.0
+  ATR Fallback Pct   : 0.03
+  Pyramiding        : OFF
+
+[ PERFORMANCE METRICS ]
+  Final Portfolio   :        3,506.35
+  Total Return      :     -196,493.65  (-98.25%)
+  CAGR              :     -71.98%
+  XIRR              :      +0.00%
+  Max Drawdown      :      98.25%
+  Sharpe Ratio      :      -0.67
+  Sortino Ratio     :      -0.67
+  Calmar Ratio      :      -0.73
+
+[ YEAR-ON-YEAR PERFORMANCE ]
+  2023              :     -98.25%  (PnL:  -196,493.65 | End Val:     3,506.35)
+  2024              :      +0.00%  (PnL:        +0.00 | End Val:     3,506.35)
+  2025              :      +0.00%  (PnL:        +0.00 | End Val:     3,506.35)
+  2026              :      +0.00%  (PnL:        +0.00 | End Val:     3,506.35)
+
+[ TRADE STATISTICS ]
+  Total Buys        : 11
+  Pyramid Buys      : 0
+  Total Sells       : 0
+  Win Rate          :       0.00%
+  Profit Factor     :       0.00
+  Expectancy/Trade  :      +0.00
+  Avg Holding Days  :        0.0
+
+[ TRANSACTION COSTS ]
+  Total Buy Value   :            0.00
+  Total Sell Value  :            0.00
+  Total Turnover    :            0.00
+  ---
+  Buy Side Costs    :            0.00
+  Sell Side Costs   :            0.00
+  Total Costs       :            0.00
+  ---
+  Brokerage         :            0.00
+  STT               :            0.00
+  GST               :            0.00
+  Stamp Duty        :            0.00
+  Cost as % Return  :       0.00%
+
+[ CAPITAL GAINS TAX ]
+  STCG Trades       : 0
+  STCG Gains        :            0.00
+  STCG Tax (20%)    :            0.00
+  ---
+  LTCG Trades       : 0
+  LTCG Gains        :            0.00
+  LTCG Tax (12.5%)  :            0.00
+  ---
+  Total Tax         :            0.00
+  Total Costs+Tax   :            0.00
+  Net Post-Tax Ret  :     -196,493.65
+
+[ OPEN POSITIONS AT BACKTEST END (force-closed) ]
+  Symbol                 Entry Date  Units  Avg Price  Close Price   Market Val  Unrealized PnL
+  -------------------- ------------ ------ ---------- ------------ ------------ ---------------
+  JSL                    2023-01-02     87     241.00       241.00    20,967.00           +0.00
+  USHAMART               2023-01-02    115     176.00       176.00    20,240.00           +0.00
+  BSHSL                  2023-01-02     89     225.70       225.70    20,087.30           +0.00
+  JBMA                   2023-01-02     76     258.40       258.40    19,638.40           +0.00
+  NAVA                   2023-01-02    157     123.75       123.75    19,428.75           +0.00
+  SUNFLAG                2023-01-02    162     113.00       113.00    18,306.00           +0.00
+  SHRIPISTON             2023-01-02     30     604.00       604.00    18,120.00           +0.00
+  CENTUM                 2023-01-02     24     718.50       718.50    17,244.00           +0.00
+  GICHSGFIN              2023-01-02     79     214.70       214.70    16,961.30           +0.00
+  NFL                    2023-01-02    177      77.70        77.70    13,752.90           +0.00
+  INDOKEM                2023-01-02     89     132.00       132.00    11,748.00           +0.00
+  --------------------                                             ------------ ---------------
+  TOTAL                                                              196,493.65           +0.00
+
+[ TRADE LOG ]
+  Symbol                      Entry         Exit    Entry ₹     Exit ₹  Units          PnL Reason
+  -------------------- ------------ ------------ ---------- ---------- ------ ------------ --------------------
+
+======================================================================
+  Weeks Simulated: 166 | Duration: 1161 days (3.18 years)
+======================================================================

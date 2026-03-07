@@ -182,20 +182,21 @@ class TradingEngine:
                     logger.info(f"BUY {c.symbol}: vacancy fill (score {c.score:.1f})")
                     continue
 
-                if remaining_holdings:
-                    weakest = min(remaining_holdings, key=lambda h: h.score)
-                    if c.score > swap_buffer * float(weakest.score):
-                        decisions.append(TradingDecision(
-                            action_type='SWAP',
-                            symbol=weakest.symbol,
-                            reason=f'swap: score {weakest.score:.1f} → {c.symbol} ({c.score:.1f})',
-                            units=weakest.units,
-                            swap_for=c.symbol,
-                            swap_sell_units=weakest.units,
-                        ))
-                        remaining_holdings.remove(weakest)
-                        logger.info(
-                            f"SWAP {weakest.symbol} → {c.symbol}: "
-                            f"{c.score:.1f} > {swap_buffer} × {weakest.score:.1f}"
-                        )
+                if not remaining_holdings:
+                    continue
+                weakest = min(remaining_holdings, key=lambda h: h.score)
+                if c.score > swap_buffer * float(weakest.score):
+                    decisions.append(TradingDecision(
+                        action_type='SWAP',
+                        symbol=weakest.symbol,
+                        reason=f'swap: score {weakest.score:.1f} → {c.symbol} ({c.score:.1f})',
+                        units=weakest.units,
+                        swap_for=c.symbol,
+                        swap_sell_units=weakest.units,
+                    ))
+                    remaining_holdings.remove(weakest)
+                    logger.info(
+                        f"SWAP {weakest.symbol} → {c.symbol}: "
+                        f"{c.score:.1f} > {swap_buffer} × {weakest.score:.1f}"
+                    )
         return decisions

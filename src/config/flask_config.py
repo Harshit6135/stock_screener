@@ -43,3 +43,8 @@ class Config:
         "personal": "sqlite:///personal.db",
         "backtest": "sqlite:///backtest.db"
     }
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,       # Verify connections are alive before use
+        "pool_recycle": 1800,        # Recycle connections every 30 min
+        "connect_args": {"timeout": 30, "check_same_thread": False},
+    }

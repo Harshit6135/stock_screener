@@ -7,7 +7,12 @@ def calculate_capital_gains_tax(purchase_price: float, current_price: float,
                                  quantity: int = 1,
                                  config: TaxConfig = None) -> dict:
     """
-    Calculate capital gains tax for Indian equity
+    Calculate capital gains tax for Indian equity (per-trade estimation).
+    
+    NOTE (R-11): This computes tax for a single trade. It does NOT net
+    gains/losses across the financial year. For accurate FY-level netting,
+    use the backtester's _compute_costs_and_taxes() which aggregates by FY.
+    Per-action tax from this function is an upper-bound estimate.
     
     STCG: < 12 months holding, taxed at 20%
     LTCG: >= 12 months holding, taxed at 12.5% above ₹1.25L exemption

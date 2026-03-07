@@ -115,6 +115,26 @@ class ActionsRepository:
             logger.error(f"Error delete_actions {e}")
             self.session.rollback()
 
+    def delete_actions_by_symbols(self, action_date, symbols):
+        """
+        Delete actions for a specific date and set of symbols only.
+
+        Preserves actions for other symbols on the same date (e.g., mid-week SL sells).
+
+        Parameters:
+            action_date: Date to delete actions for
+            symbols (set): Set of symbols whose actions should be deleted
+        """
+        try:
+            self.session.query(ActionsModel).filter(
+                ActionsModel.action_date == action_date,
+                ActionsModel.symbol.in_(symbols)
+            ).delete(synchronize_session='fetch')
+            self.session.commit()
+        except Exception as e:
+            logger.error(f"Error delete_actions_by_symbols {e}")
+            self.session.rollback()
+
     def check_other_pending_actions(self, action_date):
         """
         Check for pending actions on other dates.
@@ -186,9 +206,13 @@ class ActionsRepository:
             ActionsModel.type == 'buy'
         ).all()
 
-    def get_all_approved_actions(self, ascending=False):
+    def get_all_approved_actions(self, ascending=False, symbol=None):
         """
         Get all approved actions ordered by date.
+        
+        Parameters:
+            ascending: Sort by date ascending if True
+            symbol: Optional. Filter by a single trading symbol for efficiency.
         
         Returns:
             list: Approved ActionsModel instances
@@ -196,6 +220,8 @@ class ActionsRepository:
         query = self.session.query(ActionsModel).filter(
             ActionsModel.status == 'Approved'
         )
+        if symbol:
+            query = query.filter(ActionsModel.symbol == symbol)
         if ascending:
             query = query.order_by(ActionsModel.action_date.asc())
         else:
@@ -233,3 +259,27 @@ class ActionsRepository:
         except Exception as e:
             logger.error(f"Error delete_all_actions {e}")
             self.session.rollback()
+
+    def get_total_value_by_type(self, action_type: str) -> float:
+        """
+        Compute total trade value (execution_price * units) for a given action type
+        using a SQL aggregate instead of loading all rows into Python.
+
+        Parameters:
+            action_type: 'buy' or 'sell'
+
+        Returns:
+            float: Sum of (execution_price or prev_close) * units for the type
+        """
+        from sqlalchemy import case
+        price_col = case(
+            (ActionsModel.execution_price.isnot(None), ActionsModel.execution_price),
+            else_=ActionsModel.prev_close
+        )
+        result = self.session.query(
+            func.sum(price_col * ActionsModel.units)
+        ).filter(
+            ActionsModel.status == 'Approved',
+            ActionsModel.type == action_type
+        ).scalar()
+        return float(result) if result else 0.0

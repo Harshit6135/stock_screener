@@ -4,6 +4,10 @@ from sqlalchemy import and_, or_, func
 from sqlalchemy.exc import SQLAlchemyError
 
 from models import MarketDataModel
+from config import setup_logger
+
+
+_md_logger = setup_logger(name="MarketDataRepository")
 
 
 class MarketDataRepository:
@@ -14,6 +18,7 @@ class MarketDataRepository:
             db.session.bulk_insert_mappings(MarketDataModel, market_data, return_defaults=True)
             db.session.commit()
         except SQLAlchemyError as e:
+            _md_logger.error(f"bulk_insert failed: {e}")
             db.session.rollback()
             return None
         return market_data
@@ -74,7 +79,7 @@ class MarketDataRepository:
 
     @staticmethod
     def get_prices_for_all_stocks(date_range):
-        """Fetch the latest market data for a tradingsymbol"""
+        """Fetch all market data within a date range"""
         query = MarketDataModel.query
         date_filter = []
         if "start_date" in date_range:
@@ -97,6 +102,7 @@ class MarketDataRepository:
             db.session.commit()
             return num_rows_deleted
         except SQLAlchemyError as e:
+            _md_logger.error(f"delete_by_tradingsymbol failed: {e}")
             db.session.rollback()
             return -1
 
@@ -121,7 +127,7 @@ class MarketDataRepository:
 
     @staticmethod
     def get_marketdata_by_trading_symbol(tradingsymbol:str, date):
-        """Fetch market data for a tradingsymbol, on a specific date"""
+        """Fetch market data for a tradingsymbol, on or before a specific date."""
         query = MarketDataModel.query.filter(
             MarketDataModel.tradingsymbol == tradingsymbol,
             MarketDataModel.date <= date
@@ -138,5 +144,6 @@ class MarketDataRepository:
             db.session.commit()
             return num_deleted
         except SQLAlchemyError as e:
+            _md_logger.error(f"delete_after_date failed: {e}")
             db.session.rollback()
             return -1

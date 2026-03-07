@@ -22,6 +22,11 @@ def _load_holidays() -> Set[date]:
 
 NSE_HOLIDAYS = _load_holidays()
 
+def reload_holidays():
+    """O-9: Reload NSE_HOLIDAYS from CSV without restarting the app."""
+    global NSE_HOLIDAYS
+    NSE_HOLIDAYS = _load_holidays()
+
 def is_holiday(d: date) -> bool:
     """Check if a date is a weekend or an NSE/BSE holiday."""
     if d.weekday() >= 5:  # Saturday or Sunday

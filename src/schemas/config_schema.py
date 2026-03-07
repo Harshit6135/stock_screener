@@ -14,5 +14,6 @@ class ConfigSchema(Schema):
     sl_multiplier = fields.Float(load_default=2.0)
     hard_sl_percent = fields.Float(load_default=0.03)
     atr_fallback_percent = fields.Float(load_default=0.03)
+    max_concentration_pct = fields.Float(load_default=0.25)
     created_at = fields.DateTime(dump_only=True)
     updated_at = fields.DateTime(dump_only=True)

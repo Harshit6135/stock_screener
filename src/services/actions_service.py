@@ -116,8 +116,7 @@ class ActionsService:
         remaining_capital -= action['capital']
         return action, remaining_capital
 
-    @staticmethod
-    def sell_action(symbol: str, action_date: date, prev_close: float, units: int, reason: str, price: float = 0, remaining_capital = 0,
+    def sell_action(self, symbol: str, action_date: date, prev_close: float, units: int, reason: str, price: float = 0, remaining_capital = 0,
     entry_price = 0) -> tuple[Dict, float, float]:
         """
         Generate a SELL action.
@@ -312,6 +311,7 @@ class ActionsService:
         holdings_snap = []
         holdings_entry_prices = {}
         prices = {}
+        ema_50_values = {}
 
         if not current_holdings:
             for item in top_n:
@@ -321,7 +321,6 @@ class ActionsService:
                 if md:
                     prices[item.tradingsymbol] = float(md.close)
         else:
-            ema_50_values = {}
             for h in current_holdings:
                 holdings_entry_prices[h.symbol] = float(h.entry_price)
                 md_h = self.marketdata_repo.get_marketdata_by_trading_symbol(h.symbol, data_date)
@@ -439,8 +438,8 @@ class ActionsService:
 
         new_actions = [a for a in new_actions if a is not None]
         if new_actions:
-            #TODO Check for symbol, if symbol exist then only delete
-            self.actions_repo.delete_actions(new_actions[0]['action_date'])
+            new_symbols = {a['symbol'] for a in new_actions}
+            self.actions_repo.delete_actions_by_symbols(new_actions[0]['action_date'], new_symbols)
             self.actions_repo.bulk_insert_actions(new_actions)
 
             pending_buys = [a for a in new_actions if a.get('units', 1) == 0]

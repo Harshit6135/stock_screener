@@ -12,7 +12,10 @@ from sqlalchemy.orm import Session
 from datetime import datetime, date
 from typing import Dict, List, Optional
 
-from repositories import *
+from repositories import (
+    InvestmentRepository, ActionsRepository, ConfigRepository,
+    IndicatorsRepository, MarketDataRepository, RankingRepository
+)
 from config import setup_logger
 from utils import calculate_xirr, get_prev_friday, calculate_effective_stop
 
@@ -70,25 +73,18 @@ class InvestmentService:
         """
         Compute remaining cash = total_capital - bought + sold.
 
+        Uses SQL aggregates instead of loading all actions into memory.
+
         Returns:
             float: Cash remaining in the portfolio
         """
         total_capital = self.inv_repo.get_total_capital()
-        all_actions = (
-            self.actions_repo.get_all_approved_actions()
-        )
-        total_bought = sum(
-            float(a.execution_price or a.prev_close) * a.units
-            for a in all_actions if a.type == 'buy'
-        )
-        total_sold = sum(
-            float(a.execution_price or a.prev_close) * a.units
-            for a in all_actions if a.type == 'sell'
-        )
+        total_bought = self.actions_repo.get_total_value_by_type('buy')
+        total_sold = self.actions_repo.get_total_value_by_type('sell')
         return total_capital - total_bought + total_sold
 
     def _calculate_xirr(
-        self, portfolio_value
+        self, portfolio_value, as_of_date=None
     ) -> Optional[float]:
         """
         Calculate XIRR from capital events (infusions as
@@ -113,7 +109,7 @@ class InvestmentService:
                     (-float(ev.amount), ev.date)
                 )
             cashflows.append(
-                (portfolio_value, datetime.now().date())
+                (portfolio_value, as_of_date or datetime.now().date())
             )
 
             xirr_val = calculate_xirr(cashflows)
@@ -140,7 +136,7 @@ class InvestmentService:
         total_invested_captial = self.inv_repo.get_total_capital(summary_date, include_realized=False)
 
         holdings = self.inv_repo.get_holdings(summary_date)
-        entry_value = float(sum(h.entry_price * h.units for h in holdings))
+        entry_value = float(sum((getattr(h, 'avg_price', None) or h.entry_price) * h.units for h in holdings))
         current_value = float(sum(h.current_price * h.units for h in holdings)) #TODO Handle split/bonus
         stoploss_value = float(sum(h.current_sl * h.units for h in holdings))
         portfolio_risk = current_value - stoploss_value
@@ -168,7 +164,7 @@ class InvestmentService:
         summary['unrealized_gain'] = round(unrealized_gain, 2)
         summary['realized_gain'] = round(realized_gain, 2)
         summary['remaining_capital'] = round(remaining_cash, 2)
-        summary['xirr'] = self._calculate_xirr(portfolio_value)
+        summary['xirr'] = self._calculate_xirr(portfolio_value, as_of_date=summary_date)
         summary['portfolio_risk'] = round(portfolio_risk, 2)
         summary['capital_risk'] = round(capital_risk, 2)
 
@@ -227,7 +223,9 @@ class InvestmentService:
                     buy = buys[symbol][0]
                     buy_price = float(buy.execution_price or buy.prev_close)
                     
-                    available = buy.units
+                    # B-7: Use shadow tracking to avoid mutating ORM object
+                    remaining_buy_units = getattr(buy, '_remaining', buy.units)
+                    available = remaining_buy_units
                     needed = sell_units - matched_units
                     take = min(available, needed)
                     
@@ -240,7 +238,7 @@ class InvestmentService:
                     if take >= available:
                         buys[symbol].pop(0)
                     else:
-                        buy.units -= take
+                        buy._remaining = available - take
                 else:
                     remaining = sell_units - matched_units
                     matched_units += remaining
@@ -425,11 +423,15 @@ class InvestmentService:
             prev_remaining_capital = total_cap
         else:
             prev_remaining_capital = prev_summary.remaining_capital
+            # R-5: use capital events added *on* prev_summary.date (not chaining)
             new_capital_addition = self.inv_repo.get_total_capital_by_date(prev_summary.date)
 
         if bought is None:
             bought_mask = df['entry_date'] == df['date']
             bought = float((df.loc[bought_mask, 'entry_price']* df.loc[bought_mask, 'units']).sum())
+
+        # R-5: Use capital events to compute starting_capital rather than
+        # chaining from prev_remaining_capital which can compound errors.
         starting_capital = float(prev_remaining_capital) + new_capital_addition
 
         capital_risk = float((df['units'] * (df['entry_price'] - df['current_sl'])).sum())

@@ -51,8 +51,9 @@ def calculate_position_size(atr: float, current_price: float,
         shares = int(position_value / current_price)
         position_value = shares * current_price
 
-    # 3. Concentration cap: existing + new ≤ 25% of total portfolio
-    max_total_exposure = total_capital * 0.25
+    # 3. Concentration cap: existing + new ≤ max_concentration_pct of total portfolio
+    concentration_limit = getattr(config, 'max_concentration_pct', 0.25)
+    max_total_exposure = total_capital * concentration_limit
     headroom = max(0.0, max_total_exposure - existing_position_value)
     if position_value > headroom:
         position_value = headroom

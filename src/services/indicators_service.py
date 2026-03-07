@@ -1,4 +1,5 @@
 
+import time as _time
 import pandas as pd
 import pandas_ta as ta
 pd.set_option('future.no_silent_downcasting', True)
@@ -81,26 +82,33 @@ class IndicatorsService:
         return df
 
     def calculate_indicators(self):
+        t_total = _time.time()
         logger.info("Starting to update Indicators (API Mode)...")
 
         logger.info("Fetching Instruments from DB...")
         instruments = instr_repo.get_all_instruments()
+        total = len(instruments)
 
-        logger.info("Calculating Indicators for Instruments...")
+        logger.info(f"Calculating Indicators for {total} Instruments...")
         yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
         
+        processed = 0
+        skipped = 0
         for i, instr in enumerate(instruments):
             tradingsymbol = instr.tradingsymbol
             instr_token = instr.instrument_token
             exchange = instr.exchange
             log_symb = f"{tradingsymbol} ({instr_token})"
-            logger.info(f"Processing {i+1}/{len(instruments)} {log_symb})...")
+            if (i + 1) % 50 == 0 or i == 0:
+                logger.info(f"Progress: {i+1}/{total} ({processed} processed, {skipped} skipped)")
+            logger.info(f"Processing {i+1}/{total} {log_symb})...")
 
             last_data_date = marketdata_repo.get_latest_date_by_symbol(tradingsymbol)
             if last_data_date:
                 last_data_date = pd.to_datetime(last_data_date.date)
             else:
                 logger.error(f"No market data found for {log_symb}")
+                skipped += 1
                 continue
 
             last_ind_date = indicators_repo.get_latest_date_by_symbol(tradingsymbol)
@@ -108,6 +116,7 @@ class IndicatorsService:
                 last_ind_date = pd.to_datetime(last_ind_date.date)
                 if last_ind_date == last_data_date:
                     logger.info(f"Indicators up to date for {log_symb}.")
+                    skipped += 1
                     continue
                 calc_start_date = last_ind_date - timedelta(days=additional_parameters['ema_200_lookback'])
             else:
@@ -124,6 +133,7 @@ class IndicatorsService:
 
             if len(md_list)<200:
                 logger.error(f"Less than 200 days data")
+                skipped += 1
                 continue        
 
             df_for_ind = pd.DataFrame(md_list)
@@ -138,6 +148,7 @@ class IndicatorsService:
                 ind_df = self._calculate_derived_indicators(ind_df)
             except Exception as e:
                 logger.error(f"Error calculating derived indicators for {log_symb}: {str(e)}")
+                skipped += 1
                 continue
             ind_df.columns = ind_df.columns.str.lower().str.replace(".0", "")
             ind_df = ind_df.drop(columns=['open', 'high', 'low', 'close', 'volume'], errors='ignore')
@@ -147,15 +158,21 @@ class IndicatorsService:
 
             if last_ind_date:
                 next_day = last_ind_date + timedelta(days=1)
-                ind_df_filtered = ind_df[ind_df['date'] >= next_day]
+                ind_df_filtered = ind_df[ind_df['date'] >= next_day].copy()
             else:
-                ind_df_filtered = ind_df
+                ind_df_filtered = ind_df.copy()
             if ind_df_filtered.empty:
                 logger.info(f"No new data to calculate indicators for {log_symb}")
+                skipped += 1
                 continue
             
             ind_df_filtered['date'] = ind_df_filtered['date'].dt.date   
             ind_json = ind_df_filtered.to_dict(orient='records')
             indicators_repo.bulk_insert(ind_json)
+            processed += 1
 
-        logger.info("Indicators updated successfully.")
+        elapsed = _time.time() - t_total
+        logger.info(
+            f"Indicators updated: {processed} processed, {skipped} skipped, "
+            f"{total} total in {elapsed:.1f}s"
+        )

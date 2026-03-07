@@ -187,7 +187,10 @@ class InvestmentRepository:
 
     def insert_summary(self, summary):
         """
-        Insert summary with optional session injection for backtest.
+        Insert summary — delegates to upsert_summary for consistency.
+        
+        Q-2: This was a duplicate of upsert_summary. Now redirects to avoid
+        maintaining two identical code paths.
         
         Parameters:
             summary (dict): Summary data
@@ -195,24 +198,7 @@ class InvestmentRepository:
         Returns:
             bool: True if successful, None otherwise
         """
-        summary_data = InvestmentsSummaryModel(**summary)
-        try:
-            self.session.query(InvestmentsSummaryModel).filter(
-                InvestmentsSummaryModel.date == summary['date']
-            ).delete()
-            self.session.commit()
-        except Exception as e:
-            logger.error(f"Error deleting summary {e}")
-            self.session.rollback()
-
-        try:
-            self.session.add(summary_data)
-            self.session.commit()
-            return True
-        except Exception as e:
-            logger.error(f"Error inserting summary {e}")
-            self.session.rollback()
-            return None
+        return self.upsert_summary(summary)
 
     def delete_holdings(self, date):
         """

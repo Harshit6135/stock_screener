@@ -3,6 +3,7 @@ Database Manager
 
 Utility for managing multiple database sessions (main, personal, backtest).
 """
+import threading
 from typing import Optional
 from sqlalchemy.orm import scoped_session, sessionmaker
 
@@ -23,6 +24,7 @@ class DatabaseManager:
     """
     
     _sessions = {}
+    _lock = threading.Lock()
     
     @classmethod
     def get_session(cls, bind_key: Optional[str] = None):
@@ -38,10 +40,11 @@ class DatabaseManager:
         if bind_key is None:
             return db.session
         
-        if bind_key not in cls._sessions:
-            engine = db.get_engine(bind=bind_key)
-            session_factory = sessionmaker(bind=engine)
-            cls._sessions[bind_key] = scoped_session(session_factory)
+        with cls._lock:
+            if bind_key not in cls._sessions:
+                engine = db.get_engine(bind=bind_key)
+                session_factory = sessionmaker(bind=engine)
+                cls._sessions[bind_key] = scoped_session(session_factory)
         
         return cls._sessions[bind_key]
     

@@ -13,11 +13,12 @@ from flask import current_app
 from typing import List
 from datetime import date, datetime, timedelta
 
-from config import setup_logger
+from config import setup_logger, TaxConfig
 from models import BacktestResult
 from utils import (calculate_transaction_costs, get_business_days,
                     DatabaseManager, calculate_all_metrics,
-                   calculate_capital_gains_tax, get_week_starts, get_prev_friday)
+                   calculate_capital_gains_tax, get_week_starts, get_prev_friday,
+                   get_friday_of_week)
 from repositories import (InvestmentRepository, ActionsRepository, RankingRepository, IndicatorsRepository,
                           MarketDataRepository, ConfigRepository)
 from services import ActionsService, InvestmentService
@@ -221,7 +222,7 @@ class WeeklyBacktester:
                         logger.info(f"Processed {len(week_holdings)} holdings for {week_date}")
 
                 if self.check_daily_sl:
-                    friday = week_date + timedelta(days=4)
+                    friday = get_friday_of_week(week_date)
                     self._process_daily_stoploss(week_date, friday)
                 
                 # 5. Track risk metrics from latest summary (after daily SL processing)
@@ -299,22 +300,33 @@ class WeeklyBacktester:
             logger.error(traceback.format_exc())
             return []
 
-    def get_summary(self) -> dict:
-        """Get comprehensive backtest summary including costs and tax"""
-        summary = self.risk_monitor.get_summary()
+    def _compute_costs_and_taxes(self, sell_trades):
+        """
+        Compute transaction costs and capital gains tax from completed sell trades.
         
-        # --- Transaction Costs ---
-        sell_trades = [t for t in self.risk_monitor.trades if t.get('type') == 'SELL']
+        Shared helper used by both get_summary() and _generate_report() to avoid
+        duplicating ~80 lines of identical logic.
+        
+        Returns:
+            dict with cost/tax breakdown
+        """
+        
+        tax_config = TaxConfig()
+
         total_buy_cost = 0.0
         total_sell_cost = 0.0
         total_stt = 0.0
         total_gst = 0.0
         total_stamp = 0.0
         total_brokerage = 0.0
+        total_buy_value = 0.0
+        total_sell_value = 0.0
         
         for t in sell_trades:
             buy_value = t.get('price', 0) * t.get('units', 0)
             sell_value = t.get('exit_price', 0) * t.get('units', 0)
+            total_buy_value += buy_value
+            total_sell_value += sell_value
             
             bc = calculate_transaction_costs(buy_value, 'buy')
             sc = calculate_transaction_costs(sell_value, 'sell')
@@ -328,11 +340,12 @@ class WeeklyBacktester:
         total_costs = total_buy_cost + total_sell_cost
 
         # --- Capital Gains Tax (yearly-offset: losses offset gains within same year) ---
-        from config import TaxConfig
-        tax_config = TaxConfig()
-        
         stcg_by_year = {}
         ltcg_by_year = {}
+        stcg_gains = 0.0
+        ltcg_gains = 0.0
+        stcg_count = 0
+        ltcg_count = 0
         
         for t in sell_trades:
             tax_info = calculate_capital_gains_tax(
@@ -343,27 +356,23 @@ class WeeklyBacktester:
                 quantity=t.get('units', 0)
             )
             pnl = t.get('pnl', 0)
-            # Bug 14: use Indian fiscal year (Apr–Mar) as grouping key
-            # e.g. exit on 2024-01-15 → FY 2023, exit on 2024-06-01 → FY 2024
             exit_d = t['exit_date']
             fy = exit_d.year if exit_d.month >= 4 else exit_d.year - 1
 
             if tax_info['tax_type'] == 'STCG':
+                stcg_gains += pnl
+                stcg_count += 1
                 stcg_by_year[fy] = stcg_by_year.get(fy, 0.0) + pnl
             elif tax_info['tax_type'] == 'LTCG':
+                ltcg_gains += pnl
+                ltcg_count += 1
                 ltcg_by_year[fy] = ltcg_by_year.get(fy, 0.0) + pnl
         
         stcg_total = sum(max(0.0, gain) * tax_config.stcg_rate for gain in stcg_by_year.values())
         ltcg_total = sum(max(0.0, gain - tax_config.ltcg_exemption) * tax_config.ltcg_rate for gain in ltcg_by_year.values())
-        
         total_tax = stcg_total + ltcg_total
-        final_value = summary.get('final_value', 0)
-        initial_capital = summary.get('initial_capital', self.config.initial_capital)
-        total_return_abs = final_value - initial_capital
-        
-        net_post_tax_return = total_return_abs - total_costs - total_tax
 
-        summary.update({
+        return {
             'total_buy_cost': round(total_buy_cost, 2),
             'total_sell_cost': round(total_sell_cost, 2),
             'total_transaction_costs': round(total_costs, 2),
@@ -371,32 +380,40 @@ class WeeklyBacktester:
             'total_stt': round(total_stt, 2),
             'total_gst': round(total_gst, 2),
             'total_stamp': round(total_stamp, 2),
+            'total_buy_value': round(total_buy_value, 2),
+            'total_sell_value': round(total_sell_value, 2),
             'total_tax': round(total_tax, 2),
             'stcg_tax': round(stcg_total, 2),
             'ltcg_tax': round(ltcg_total, 2),
+            'stcg_gains': round(stcg_gains, 2),
+            'ltcg_gains': round(ltcg_gains, 2),
+            'stcg_count': stcg_count,
+            'ltcg_count': ltcg_count,
+        }
+
+    def get_summary(self) -> dict:
+        """Get comprehensive backtest summary including costs and tax"""
+        summary = self.risk_monitor.get_summary()
+        
+        sell_trades = [t for t in self.risk_monitor.trades if t.get('type') == 'SELL']
+        cost_tax = self._compute_costs_and_taxes(sell_trades)
+
+        final_value = summary.get('final_value', 0)
+        initial_capital = summary.get('initial_capital', self.config.initial_capital)
+        total_return_abs = final_value - initial_capital
+        
+        # NOTE: total_return_abs is GROSS return (before costs and tax).
+        #       net_post_tax_return below is the NET figure.
+        net_post_tax_return = total_return_abs - cost_tax['total_transaction_costs'] - cost_tax['total_tax']
+
+        summary.update(cost_tax)
+        summary.update({
             'net_post_tax_return': round(net_post_tax_return, 2),
             'net_post_tax_return_pct': round((net_post_tax_return / initial_capital) * 100, 2)
         })
         
-        # --- Year-on-Year Returns ---
-        df_equity = pd.DataFrame({
-            'date': pd.to_datetime(self.risk_monitor.portfolio_dates),
-            'value': self.risk_monitor.portfolio_values
-        })
-        if not df_equity.empty:
-            df_equity['year'] = df_equity['date'].dt.year
-            yearly_start = df_equity.groupby('year')['value'].first()
-            yearly_end = df_equity.groupby('year')['value'].last()
-            yearly_return = (yearly_end - yearly_start) / yearly_start * 100
-            
-            yoy_list = []
-            for year in yearly_return.index:
-                yoy_list.append({
-                    'year': int(year),
-                    'return_pct': round(yearly_return[year], 2),
-                    'pnl': round(yearly_end[year] - yearly_start[year], 2),
-                    'end_value': round(yearly_end[year], 2)
-                })
+        yoy_list = self._compute_yoy_returns()
+        if yoy_list:
             summary['yearly_returns'] = yoy_list
             
         # Add open positions snapshot if available
@@ -404,6 +421,30 @@ class WeeklyBacktester:
             summary['open_positions'] = self.open_positions_snapshot
         
         return summary
+
+    def _compute_yoy_returns(self) -> list:
+        """Compute year-on-year returns from risk_monitor equity curve."""
+        if not self.risk_monitor.portfolio_dates:
+            return []
+        df_equity = pd.DataFrame({
+            'date': pd.to_datetime(self.risk_monitor.portfolio_dates),
+            'value': self.risk_monitor.portfolio_values
+        })
+        if df_equity.empty:
+            return []
+        df_equity['year'] = df_equity['date'].dt.year
+        yearly_start = df_equity.groupby('year')['value'].first()
+        yearly_end = df_equity.groupby('year')['value'].last()
+        yearly_return = (yearly_end - yearly_start) / yearly_start * 100
+        yoy_list = []
+        for year in yearly_return.index:
+            yoy_list.append({
+                'year': int(year),
+                'return_pct': round(yearly_return[year], 2),
+                'pnl': round(yearly_end[year] - yearly_start[year], 2),
+                'end_value': round(yearly_end[year], 2)
+            })
+        return yoy_list
 
     def _build_trades_from_db(self) -> None:
         """
@@ -551,10 +592,12 @@ class WeeklyBacktester:
         self.actions_service.approve_all_actions(close_date)
         self.actions_service.process_actions(close_date)
         
-        # Update risk monitor with final portfolio value
+        # Update risk monitor with final portfolio value (avoid duplicate if already recorded)
         summary = self.inv_repo.get_summary()
         if summary:
-            self.risk_monitor.update(float(summary.portfolio_value), close_date)
+            last_recorded = self.risk_monitor.portfolio_dates[-1] if self.risk_monitor.portfolio_dates else None
+            if last_recorded != close_date:
+                self.risk_monitor.update(float(summary.portfolio_value), close_date)
         
         logger.info(f"Force-closed {len(current_holdings)} positions. All trades now realized.")
 
@@ -636,19 +679,12 @@ class WeeklyBacktester:
         # --- Section 2.5: Year-on-Year Performance ---
         lines.append('')
         lines.append('[ YEAR-ON-YEAR PERFORMANCE ]')
-        df_equity = pd.DataFrame({
-            'date': pd.to_datetime(self.risk_monitor.portfolio_dates),
-            'value': self.risk_monitor.portfolio_values
-        })
-        df_equity['year'] = df_equity['date'].dt.year
-        yearly_start = df_equity.groupby('year')['value'].first()
-        yearly_end = df_equity.groupby('year')['value'].last()
-        yearly_return = (yearly_end - yearly_start) / yearly_start * 100
-        
-        for year in yearly_return.index:
-            ret = yearly_return[year]
-            end_val = yearly_end[year]
-            val_change = end_val - yearly_start[year]
+        yoy_list = self._compute_yoy_returns()
+        for entry in yoy_list:
+            year = entry['year']
+            ret = entry['return_pct']
+            val_change = entry['pnl']
+            end_val = entry['end_value']
             lines.append(f'  {year}              : {ret:>+10.2f}%  (PnL: {val_change:>+12,.2f} | End Val: {end_val:>12,.2f})')
         
         # --- Section 3: Trade Statistics ---
@@ -677,99 +713,37 @@ class WeeklyBacktester:
             lines.append(f'  Best Trade        : {best_trade["symbol"]} {best_trade["pnl"]:>+,.2f}')
             lines.append(f'  Worst Trade       : {worst_trade["symbol"]} {worst_trade["pnl"]:>+,.2f}')
         
-        # --- Section 4: Transaction Costs (calculated from trades) ---
-        total_buy_cost = 0.0
-        total_sell_cost = 0.0
-        total_buy_value = 0.0
-        total_sell_value = 0.0
-        total_stt = 0.0
-        total_gst = 0.0
-        total_stamp = 0.0
-        total_brokerage = 0.0
-        
-        for t in sell_trades:
-            buy_value = t['price'] * t['units']
-            sell_value = t['exit_price'] * t['units']
-            total_buy_value += buy_value
-            total_sell_value += sell_value
-            
-            bc = calculate_transaction_costs(buy_value, 'buy')
-            sc = calculate_transaction_costs(sell_value, 'sell')
-            total_buy_cost += bc['total']
-            total_sell_cost += sc['total']
-            total_stt += bc['stt'] + sc['stt']
-            total_gst += bc['gst'] + sc['gst']
-            total_stamp += bc['stamp'] + sc['stamp']
-            total_brokerage += bc['brokerage'] + sc['brokerage']
-        
-        total_costs = total_buy_cost + total_sell_cost
-        
-        lines.append('')
-        lines.append('[ TRANSACTION COSTS ]')
-        lines.append(f'  Total Buy Value   : {total_buy_value:>15,.2f}')
-        lines.append(f'  Total Sell Value  : {total_sell_value:>15,.2f}')
-        lines.append(f'  Total Turnover    : {(total_buy_value + total_sell_value):>15,.2f}')
-        lines.append(f'  ---')
-        lines.append(f'  Buy Side Costs    : {total_buy_cost:>15,.2f}')
-        lines.append(f'  Sell Side Costs   : {total_sell_cost:>15,.2f}')
-        lines.append(f'  Total Costs       : {total_costs:>15,.2f}')
-        lines.append(f'  ---')
-        lines.append(f'  Brokerage         : {total_brokerage:>15,.2f}')
-        lines.append(f'  STT               : {total_stt:>15,.2f}')
-        lines.append(f'  GST               : {total_gst:>15,.2f}')
-        lines.append(f'  Stamp Duty        : {total_stamp:>15,.2f}')
-        lines.append(f'  Cost as % Return  : {(total_costs / max(abs(total_return_abs), 1) * 100):>10.2f}%')
-        
-        # --- Section 5: Capital Gains Tax ---
-        from config import TaxConfig
-        tax_config = TaxConfig()
-        
-        stcg_gains = 0.0
-        ltcg_gains = 0.0
-        stcg_count = 0
-        ltcg_count = 0
-        
-        stcg_by_year = {}
-        ltcg_by_year = {}
-        
-        for t in sell_trades:
-            tax_info = calculate_capital_gains_tax(
-                purchase_price=t['price'],
-                current_price=t['exit_price'],
-                purchase_date=t['entry_date'],
-                current_date=t['exit_date'],
-                quantity=t['units']
-            )
-
-            pnl = t['pnl']
-            # Bug 14: use Indian fiscal year (Apr–Mar) as grouping key
-            exit_d = t['exit_date']
-            fy = exit_d.year if exit_d.month >= 4 else exit_d.year - 1
-
-            if tax_info['tax_type'] == 'STCG':
-                stcg_gains += pnl
-                stcg_count += 1
-                stcg_by_year[fy] = stcg_by_year.get(fy, 0.0) + pnl
-            elif tax_info['tax_type'] == 'LTCG':
-                ltcg_gains += pnl
-                ltcg_count += 1
-                ltcg_by_year[fy] = ltcg_by_year.get(fy, 0.0) + pnl
-        
-        stcg_total = sum(max(0.0, gain) * tax_config.stcg_rate for gain in stcg_by_year.values())
-        ltcg_total = sum(max(0.0, gain - tax_config.ltcg_exemption) * tax_config.ltcg_rate for gain in ltcg_by_year.values())
-        
-        total_tax = stcg_total + ltcg_total
+        # --- Section 4: Transaction Costs & Section 5: Tax (via shared helper) ---
+        cost_tax = self._compute_costs_and_taxes(sell_trades)
+        total_costs = cost_tax['total_transaction_costs']
+        total_tax = cost_tax['total_tax']
         net_post_tax_return = total_return_abs - total_costs - total_tax
         
         lines.append('')
-        lines.append('[ CAPITAL GAINS TAX ]')
-        lines.append(f'  STCG Trades       : {stcg_count}')
-        lines.append(f'  STCG Gains        : {stcg_gains:>15,.2f}')
-        lines.append(f'  STCG Tax (20%)    : {stcg_total:>15,.2f}')
+        lines.append('[ TRANSACTION COSTS ]')
+        lines.append(f'  Total Buy Value   : {cost_tax["total_buy_value"]:>15,.2f}')
+        lines.append(f'  Total Sell Value  : {cost_tax["total_sell_value"]:>15,.2f}')
+        lines.append(f'  Total Turnover    : {(cost_tax["total_buy_value"] + cost_tax["total_sell_value"]):>15,.2f}')
         lines.append(f'  ---')
-        lines.append(f'  LTCG Trades       : {ltcg_count}')
-        lines.append(f'  LTCG Gains        : {ltcg_gains:>15,.2f}')
-        lines.append(f'  LTCG Tax (12.5%)  : {ltcg_total:>15,.2f}')
+        lines.append(f'  Buy Side Costs    : {cost_tax["total_buy_cost"]:>15,.2f}')
+        lines.append(f'  Sell Side Costs   : {cost_tax["total_sell_cost"]:>15,.2f}')
+        lines.append(f'  Total Costs       : {total_costs:>15,.2f}')
+        lines.append(f'  ---')
+        lines.append(f'  Brokerage         : {cost_tax["total_brokerage"]:>15,.2f}')
+        lines.append(f'  STT               : {cost_tax["total_stt"]:>15,.2f}')
+        lines.append(f'  GST               : {cost_tax["total_gst"]:>15,.2f}')
+        lines.append(f'  Stamp Duty        : {cost_tax["total_stamp"]:>15,.2f}')
+        lines.append(f'  Cost as % Return  : {(total_costs / max(abs(total_return_abs), 1) * 100):>10.2f}%')
+        
+        lines.append('')
+        lines.append('[ CAPITAL GAINS TAX ]')
+        lines.append(f'  STCG Trades       : {cost_tax["stcg_count"]}')
+        lines.append(f'  STCG Gains        : {cost_tax["stcg_gains"]:>15,.2f}')
+        lines.append(f'  STCG Tax (20%)    : {cost_tax["stcg_tax"]:>15,.2f}')
+        lines.append(f'  ---')
+        lines.append(f'  LTCG Trades       : {cost_tax["ltcg_count"]}')
+        lines.append(f'  LTCG Gains        : {cost_tax["ltcg_gains"]:>15,.2f}')
+        lines.append(f'  LTCG Tax (12.5%)  : {cost_tax["ltcg_tax"]:>15,.2f}')
         lines.append(f'  ---')
         lines.append(f'  Total Tax         : {total_tax:>15,.2f}')
         lines.append(f'  Total Costs+Tax   : {(total_costs + total_tax):>15,.2f}')

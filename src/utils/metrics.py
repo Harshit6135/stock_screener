@@ -87,7 +87,8 @@ def calculate_sortino_ratio(
     downside = excess_returns[excess_returns < 0]
     
     if downside.empty or downside.std() == 0:
-        return float('inf') if excess_returns.mean() > 0 else 0.0
+        # O-8: Return a large sentinel instead of float('inf') to prevent JSON serialization issues
+        return 99.99 if excess_returns.mean() > 0 else 0.0
     
     return float(
         (excess_returns.mean() / downside.std()) * np.sqrt(periods_per_year)
@@ -360,5 +361,11 @@ def calculate_xirr(cash_flows: List[Tuple[float, date]], guess: float = 0.1) -> 
 
     try:
         return optimize.newton(npv, guess)
-    except (RuntimeError, OverflowError):
+    except (RuntimeError, OverflowError, ValueError):
+        pass
+
+    # O-7: Fallback to brentq with bracket search if Newton fails
+    try:
+        return optimize.brentq(npv, -0.99, 10.0)
+    except (ValueError, RuntimeError):
         return 0.0

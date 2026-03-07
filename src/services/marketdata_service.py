@@ -80,10 +80,12 @@ class MarketDataService:
                 logger.info(f"Fetching from Kite for {log_symb}) starting {start_date.date()}...")
 
             if not historical:
-                records, start_time = self.get_latest_data_by_token(instr_token, start_date, fetch_end_date)
+                start_time = time()
+                records, _ = self.get_latest_data_by_token(instr_token, start_date, fetch_end_date)
             else:
                 logger.info(f"Fetching Historical data from Kite for {log_symb}) starting {start_date.date()}...")
-                records, start_time = self.get_historical_data(instr_token, start_date)
+                start_time = time()
+                records, _ = self.get_historical_data(instr_token, start_date)
 
             if records is None:
                 if not last_data_date:
@@ -95,50 +97,61 @@ class MarketDataService:
                 continue
 
             if not historical and last_data_date and len(records) >= 1:
-                # Corporate action detection: Compare stored close with fetched close for same date
-                stored_close = last_data_date.close
-                fetched_close = records[0]['close']
+                # B-10: Validate date alignment before comparing close prices
+                record_date = records[0].get('date')
+                if hasattr(record_date, 'date'):
+                    record_date = record_date.date()
+                stored_date = last_data_date.date
+                if hasattr(stored_date, 'date'):
+                    stored_date = stored_date.date()
 
-                if stored_close != fetched_close:
-                    # Corporate action detected (split/bonus) — close values differ for same date.
-                    logger.warning(
-                        f"Corporate action detected for {log_symb}. "
-                        f"Stored close: {stored_close}, Fetched close: {fetched_close}. "
-                        f"Triggering full refresh."
-                    )
-
-                    # Find the earliest date we have for this stock in the DB
-                    # so the refill starts from the same point, not an arbitrary date.
-                    earliest_row = marketdata_repository.get_earliest_date_by_symbol(tradingsymbol)
-                    if earliest_row:
-                        refill_start = pd.Timestamp(earliest_row.date)
-                    else:
-                        refill_start = pd.Timestamp(historical_start_date)
-
-                    # Decide fetch strategy based on total calendar days to cover.
-                    total_calendar_days = (fetch_end_date - refill_start).days
-                    logger.info(
-                        f"Refill start: {refill_start.date()}, "
-                        f"span: {total_calendar_days} calendar days."
-                    )
-
-                    # Cascading delete: marketdata → indicators
-                    marketdata_repository.delete_by_tradingsymbol(tradingsymbol)
-                    indicators_repository.delete_by_tradingsymbol(tradingsymbol)
-
-
-                    if total_calendar_days > 2000:
-                        # Use chunked historical fetch to stay within Kite's 2000-day API limit.
-                        logger.info(f"Span > 2000 days — using chunked historical fetch for {log_symb}.")
-                        records, start_time = self.get_historical_data(instr_token, refill_start)
-                    else:
-                        # Single-call fetch is fine within the limit.
-                        logger.info(f"Span <= 2000 days — using single fetch for {log_symb}.")
-                        records, start_time = self.get_latest_data_by_token(
-                            instr_token, refill_start, fetch_end_date
-                        )
+                if record_date != stored_date:
+                    # Dates don't align — skip corp-action check, just append new data
+                    logger.info(f"Date mismatch for {log_symb}: record={record_date}, stored={stored_date} — skipping corp-action check")
                 else:
-                    records = records[1:]
+                    # Corporate action detection: Compare stored close with fetched close for same date
+                    stored_close = last_data_date.close
+                    fetched_close = records[0]['close']
+
+                    if stored_close != fetched_close:
+                        # Corporate action detected (split/bonus) — close values differ for same date.
+                        logger.warning(
+                            f"Corporate action detected for {log_symb}. "
+                            f"Stored close: {stored_close}, Fetched close: {fetched_close}. "
+                            f"Triggering full refresh."
+                        )
+
+                        # Find the earliest date we have for this stock in the DB
+                        # so the refill starts from the same point, not an arbitrary date.
+                        earliest_row = marketdata_repository.get_earliest_date_by_symbol(tradingsymbol)
+                        if earliest_row:
+                            refill_start = pd.Timestamp(earliest_row.date)
+                        else:
+                            refill_start = pd.Timestamp(historical_start_date)
+
+                        # Decide fetch strategy based on total calendar days to cover.
+                        total_calendar_days = (fetch_end_date - refill_start).days
+                        logger.info(
+                            f"Refill start: {refill_start.date()}, "
+                            f"span: {total_calendar_days} calendar days."
+                        )
+
+                        # Cascading delete: marketdata → indicators
+                        marketdata_repository.delete_by_tradingsymbol(tradingsymbol)
+                        indicators_repository.delete_by_tradingsymbol(tradingsymbol)
+
+                        if total_calendar_days > 2000:
+                            # Use chunked historical fetch to stay within Kite's 2000-day API limit.
+                            logger.info(f"Span > 2000 days — using chunked historical fetch for {log_symb}.")
+                            records, _ = self.get_historical_data(instr_token, refill_start)
+                        else:
+                            # Single-call fetch is fine within the limit.
+                            logger.info(f"Span <= 2000 days — using single fetch for {log_symb}.")
+                            records, _ = self.get_latest_data_by_token(
+                                instr_token, refill_start, fetch_end_date
+                            )
+                    else:
+                        records = records[1:]
 
             records_df = pd.DataFrame(records)
             records_df.reset_index(inplace=True)
@@ -146,7 +159,7 @@ class MarketDataService:
             records_df['tradingsymbol'] = tradingsymbol
             records_df['exchange'] = exchange if exchange else "NSE"
             marketdata_repository.bulk_insert(records_df.to_dict('records'))
-            sleep(max(0,0.34-time()+start_time))
+            sleep(max(0, 0.34 - (time() - start_time)))
 
     def get_historical_data(self, ticker, start_date=None):
         """
@@ -173,8 +186,9 @@ class MarketDataService:
                     current_start = target_start_date
                 
                 self.logger.info(f"Fetching chunk: {current_start.date()} to {current_end.date()}")
-                records = self.kite_client.fetch_ticker_data(ticker, current_start, current_end)
+                # B-9: start_time BEFORE fetch for accurate rate limiting
                 start_time = time()
+                records = self.kite_client.fetch_ticker_data(ticker, current_start, current_end)
                 if records:
                     all_records.extend(records)
                 else:
@@ -191,6 +205,15 @@ class MarketDataService:
             if not all_records:
                 self.logger.warning(f"No long-term data found for {ticker}")
                 return None, None
+
+            # Deduplicate overlapping chunk boundaries by date
+            seen = {}
+            for rec in all_records:
+                rec_date = rec.get('date')
+                if rec_date not in seen:
+                    seen[rec_date] = rec
+            all_records = sorted(seen.values(), key=lambda r: r['date'])
+
             return all_records, start_time
 
         except Exception as e:

@@ -72,15 +72,15 @@ class ScoreService:
 
         mask_200 = df['ema_200'] > df['close']
         df.loc[mask_200, 'penalty_reason'] += 'below_ema_200; '
-        df.loc[mask_200, 'penalty'] = 0
+        df.loc[mask_200, 'penalty'] *= 0.5
 
         mask_50 = df['ema_50'] > df['close']
         df.loc[mask_50, 'penalty_reason'] += 'below_ema_50; '
-        df.loc[mask_50, 'penalty'] = 0
+        df.loc[mask_50, 'penalty'] *= 0.7
 
         mask_atr = df['atr_spike'] > self.params.atr_threshold
         df.loc[mask_atr, 'penalty_reason'] += 'atr_spike; '
-        df.loc[mask_atr, 'penalty'] = 0
+        df.loc[mask_atr, 'penalty'] *= 0.8
 
         mask_price = df['ema_50'] < self.params.min_price
         df.loc[mask_price, 'penalty_reason'] += 'penny_stock; '
@@ -135,10 +135,7 @@ class ScoreService:
             t0 = time.time()
             logger.info("[2/6] Building percentiles DataFrame...")
             percentiles_df = pd.DataFrame([
-                {
-                    c.name: getattr(r, c.name)
-                    for c in r.__table__.columns
-                }
+                {c.name: getattr(r, c.name) for c in r.__table__.columns}
                 for r in percentiles
             ])
             n_dates = percentiles_df[
@@ -200,7 +197,7 @@ class ScoreService:
             if not indicators_df.empty:
                 penalty_cols = [
                     'tradingsymbol', 'date',
-                    'ema_200', 'ema_50',
+                    'ema_200', 'ema_50', 'close',
                     'atr_spike', 'avg_turnover_ema_20'
                 ]
                 available_cols = [

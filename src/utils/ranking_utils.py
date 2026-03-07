@@ -6,6 +6,11 @@ from scipy import stats
 from config import GoldilocksConfig, RSIRegimeConfig
 
 
+# Module-level singletons — these are immutable configs, no need to re-create per call
+_RSI_CONFIG = RSIRegimeConfig()
+_GOLDILOCKS_CONFIG = GoldilocksConfig()
+
+
 def percentile_rank(series: pd.Series) -> pd.Series:
     """
     Calculate percentile rank (0-100) for a series
@@ -29,7 +34,7 @@ def z_score_normalize(series: pd.Series, cap_at: float = 3.0) -> pd.Series:
 
 def rsi_regime_score(rsi: float) -> float:
     """Non-linear RSI scoring using configurable zones"""
-    cfg = RSIRegimeConfig()
+    cfg = _RSI_CONFIG
     if rsi < cfg.zone1_end:
         return 0
     elif rsi <= cfg.zone2_end:
@@ -48,7 +53,7 @@ def rsi_regime_score(rsi: float) -> float:
 
 def goldilocks_score(distance: float) -> float:
     """Non-linear distance scoring using configurable zones"""
-    cfg = GoldilocksConfig()
+    cfg = _GOLDILOCKS_CONFIG
     if distance < 0:
         return 0
     elif distance <= cfg.zone1_end:

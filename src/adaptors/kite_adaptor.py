@@ -56,8 +56,13 @@ class KiteAdaptor:
         except Exception as e:
             self.logger.error(f"Failed to initialize Kite Client: {e}")
 
+    def _get_token_path(self):
+        """Resolve access_token.txt relative to project root, not CWD."""
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        return os.path.join(project_root, 'access_token.txt')
+
     def _ensure_session(self):
-        token_file = "access_token.txt"
+        token_file = self._get_token_path()
         access_token = None
         
         if os.path.exists(token_file):
@@ -122,6 +127,12 @@ class KiteAdaptor:
         
         # 5. Wait for token
         server_thread.join(timeout=120) # Wait max 2 minutes
+
+        # Gracefully shut down the HTTP server regardless of outcome
+        try:
+            server.server_close()
+        except Exception:
+            pass
         
         if self.request_token:
             self.logger.info("Request Token received via callback.")
@@ -130,7 +141,7 @@ class KiteAdaptor:
                 access_token = data["access_token"]
                 self.kite.set_access_token(access_token)
                 
-                with open("access_token.txt", "w") as f:
+                with open(self._get_token_path(), "w") as f:
                     f.write(access_token)
                 self.logger.info("New Access Token generated and saved.")
             except Exception as e:
@@ -223,7 +234,6 @@ class KiteAdaptor:
             self.logger.warning("Kite client not initialised, cannot fetch OHLC")
             return {}
         try:
-            print(exchange_symbols)
             data = self.kite.ohlc(exchange_symbols)
             return data
         except Exception as e:

@@ -204,25 +204,27 @@ class InitService:
             successful_downloads = 0
             failed_downloads = 0
 
-            for index, row in df.iterrows():
+            for i, row in enumerate(df.itertuples()):
                 # Avoid sleeping on the very first row
-                if index > 0 and index % batch_size == 0:
+                if i > 0 and i % batch_size == 0:
                     logger.info(f"Sleeping for {sleep_time}s to avoid YFinance rate limits...")
                     time.sleep(sleep_time)
 
-                yfinance_info, yfinance_ticker_used, yfinance_status = yf.get_stock_info(df.at[index, 'yfinance_tickers'])
-                df.at[index, 'yfinance_info'] = json.dumps(yfinance_info)
-                df.at[index, 'yfinance_ticker_used'] = yfinance_ticker_used
-                df.at[index, 'yfinance_status'] = yfinance_status
+                idx = row.Index
+                yfinance_info, yfinance_ticker_used, yfinance_status = yf.get_stock_info(df.at[idx, 'yfinance_tickers'])
+                df.at[idx, 'yfinance_info'] = json.dumps(yfinance_info)
+                df.at[idx, 'yfinance_ticker_used'] = yfinance_ticker_used
+                df.at[idx, 'yfinance_status'] = yfinance_status
                 if yfinance_status != 'Failed':
                     successful_downloads += 1
                     for col in desired_columns:
-                        df.at[index, col] = yfinance_info.get(col, None)
+                        df.at[idx, col] = yfinance_info.get(col, None)
                 else:
                     failed_downloads += 1
                 logger.info(f"Status - Successful - {successful_downloads}, Failed - {failed_downloads}, Total - {total}")
         except Exception as e:
             logger.error(f"Failed to fetch yfinance data: {str(e)}")
+            raise
         return df
 
     @staticmethod
@@ -444,8 +446,13 @@ class InitService:
             response = instr_repo.delete_all()
             if response == -1:
                 return 500, 0
-            response = instr_repo.bulk_insert(instruments_json)
-            if response is None:
+            try:
+                response = instr_repo.bulk_insert(instruments_json)
+                if response is None:
+                    logger.error("bulk_insert returned None after delete — instruments table may be empty!")
+                    return 500, 0
+            except Exception as insert_err:
+                logger.error(f"bulk_insert failed after delete_all — instruments table is empty! {insert_err}")
                 return 500, 0
 
             # After re-inserting, cascade any token/series changes into market_data + indicators.
