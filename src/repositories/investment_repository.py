@@ -130,6 +130,61 @@ class InvestmentRepository:
             return None
         return True
 
+    def upsert_holdings(self, holdings, date):
+        """
+        Atomically replace all holdings for a given date.
+
+        Deletes existing rows for `date` and bulk-inserts the new set inside
+        the same transaction.  If the insert fails the delete is also rolled
+        back, so the old data is preserved.
+
+        Parameters:
+            holdings (list): List of holding dicts for the date
+            date: The date to replace
+
+        Returns:
+            bool: True if successful, None otherwise
+        """
+        if not holdings:
+            return True
+        try:
+            self.session.query(InvestmentsHoldingsModel).filter(
+                InvestmentsHoldingsModel.date == date
+            ).delete()
+            self.session.bulk_insert_mappings(InvestmentsHoldingsModel, holdings, return_defaults=True)
+            self.session.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error upsert_holdings {e}")
+            self.session.rollback()
+            return None
+
+    def upsert_summary(self, summary):
+        """
+        Atomically replace the summary row for a given date.
+
+        Deletes the existing row (if any) and inserts the new one inside the
+        same transaction.  On failure the delete is rolled back.
+
+        Parameters:
+            summary (dict): Summary data including 'date' key
+
+        Returns:
+            bool: True if successful, None otherwise
+        """
+        try:
+            self.session.query(InvestmentsSummaryModel).filter(
+                InvestmentsSummaryModel.date == summary['date']
+            ).delete()
+            self.session.add(InvestmentsSummaryModel(**summary))
+            self.session.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error upsert_summary {e}")
+            self.session.rollback()
+            return None
+
+
     def insert_summary(self, summary):
         """
         Insert summary with optional session injection for backtest.

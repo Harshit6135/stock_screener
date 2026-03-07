@@ -142,7 +142,6 @@ class IndicatorsService:
             ind_df.columns = ind_df.columns.str.lower().str.replace(".0", "")
             ind_df = ind_df.drop(columns=['open', 'high', 'low', 'close', 'volume'], errors='ignore')
             ind_df.reset_index(inplace=True)
-            ind_df['instrument_token'] = instr_token
             ind_df['tradingsymbol'] = tradingsymbol
             ind_df['exchange'] = exchange
 

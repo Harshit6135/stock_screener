@@ -149,12 +149,8 @@ stocks_screener_v2/
 │   │   ├── actions_service.py     # SELL/SWAP/BUY action generation
 │   │   ├── trading_service.py     # Trade execution logic
 │   │   ├── investment_service.py  # Portfolio management
-│   │   └── portfolio_controls_service.py  # Risk controls
+│   │   └── backtesting_service.py # Backtest Engine
 │   ├── utils/                     # Helpers (sizing, stoploss, costs, tax)
-│   ├── backtesting/               # Backtest engine
-│   │   ├── runner.py              # WeeklyBacktester (daily/weekly SL modes)
-│   │   ├── models.py              # Position, BacktestResult, RiskMonitor
-│   │   └── config.py              # API-based config loader
 │   └── adaptors/                  # External API adaptors (Kite)
 ├── templates/                     # HTML (dashboard, backtest, actions)
 ├── docs/                          # Documentation

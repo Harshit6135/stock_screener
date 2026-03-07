@@ -25,14 +25,8 @@ class IndicatorsRepository:
         if not filter_data.get("end_date"):
             filter_data['end_date'] = datetime.now().date()
 
-        instrument_filter = []
-        if "instrument_token" in filter_data:
-            instrument_filter.append(IndicatorsModel.instrument_token == filter_data["instrument_token"])
         if "tradingsymbol" in filter_data:
-            instrument_filter.append(IndicatorsModel.tradingsymbol == filter_data["tradingsymbol"])
-
-        if instrument_filter:
-            query = query.filter(or_(*instrument_filter))
+            query = query.filter(IndicatorsModel.tradingsymbol == filter_data["tradingsymbol"])
 
         query = query.filter(
             and_(
@@ -47,9 +41,9 @@ class IndicatorsRepository:
     def get_latest_date_for_all():
         """Fetch the max date for each instrument"""
         query = db.session.query(
-            IndicatorsModel.instrument_token,
+            IndicatorsModel.tradingsymbol,
             func.max(IndicatorsModel.date).label("max_date")
-        ).group_by(IndicatorsModel.instrument_token)
+        ).group_by(IndicatorsModel.tradingsymbol)
 
         return query.all()
 

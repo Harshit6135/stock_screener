@@ -16,6 +16,9 @@ class ActionQuerySchema(Schema):
     """Schema for querying actions by date and strategy"""
     date = fields.Date(required=False, load_default=None)
     config_name = fields.String(required=False, load_default="momentum_config")
+    enable_pyramiding = fields.Boolean(required=False, load_default=False)
+    check_daily_sl = fields.Boolean(required=False, load_default=False)
+    mid_week_buy = fields.Boolean(required=False, load_default=False)
 
 
 class ActionSchema(Schema):
@@ -31,6 +34,8 @@ class ActionSchema(Schema):
     prev_close = fields.Decimal(as_string=True, dump_only=True)
     execution_price = fields.Decimal(as_string=True, dump_only=True)
     capital = fields.Decimal(as_string=True, dump_only=True)
+    stop_loss = fields.Decimal(as_string=True, dump_only=True, allow_none=True)
+    hard_sl_price = fields.Decimal(as_string=True, dump_only=True, allow_none=True)
     status = fields.String(dump_only=True)
 
 class ActionUpdateSchema(Schema):

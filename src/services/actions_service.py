@@ -6,18 +6,19 @@ Handles investment action generation, approval, and processing.
 import pandas as pd
 pd.set_option('future.no_silent_downcasting', True)
 
+from datetime import timedelta
 from sqlalchemy.orm import Session
 from datetime import date
 from typing import Dict, List, Optional, Union
 from types import SimpleNamespace
 
-from config import setup_logger
+from config import setup_logger, PyramidConfig
 from services import TradingEngine, HoldingSnapshot, CandidateInfo, InvestmentService
 from repositories import (RankingRepository, IndicatorsRepository,
                           MarketDataRepository, InvestmentRepository,
                           ConfigRepository, ActionsRepository)
 from utils import (calculate_position_size, calculate_capital_gains_tax,
-                   calculate_transaction_costs, get_prev_friday)
+                   calculate_transaction_costs, get_prev_friday, get_next_business_day)
 
 
 logger = setup_logger(name="ActionsService")
@@ -41,7 +42,7 @@ class ActionsService:
         self.investment_service = InvestmentService(session)
 
     def buy_action(self, symbol: str, action_date: date, prev_close: float, reason: str,
-                   total_capital: float, remaining_capital: float = None, units: int = 0, price: float = 0) -> Dict:
+                   total_capital: float, remaining_capital: float = None, units: int = 0, price: float = 0, **kwargs) -> tuple[Dict, float]:
         """
         Generate a BUY action with position sizing.
 
@@ -55,7 +56,7 @@ class ActionsService:
             units (int): Optional explicit units override (default 0 = auto-calculate)
         
         Returns:
-            Dict: BUY action with units, risk, ATR, capital needed
+            tuple: BUY action with units, risk, ATR, capital needed, remaining capital
         
         Raises:
             ValueError: If symbol is empty or ATR unavailable
@@ -71,13 +72,12 @@ class ActionsService:
             'atrr_14', symbol, data_date
         )
         if atr is None:
-            # Fallback if ATR is missing: assume 6% volatility (or config value)
-            atr_percent = getattr(self.config, 'atr_fallback_percent')
             logger.warning(
-                f"ATR not available for {symbol} on {data_date}. "
-                f"Using fallback ATR {atr_percent*100}%"
+                f"ATR not available for {symbol} on {data_date} — skipping buy."
             )
-            atr = prev_close * atr_percent
+            return {'type': 'buy', 'symbol': symbol, 'units': 0, 'capital': 0,
+                    'action_date': action_date, 'reason': reason,
+                    'prev_close': prev_close}, remaining_capital
         atr = round(atr, 2)
 
         if units > 0:
@@ -89,11 +89,16 @@ class ActionsService:
                 current_price=float(prev_close),
                 total_capital=total_capital,
                 remaining_capital=remaining_capital,
-                config=self.config
+                config=self.config,
+                existing_position_value=kwargs.get('existing_position_value', 0.0)
             )
             units = sizing['shares']
             capital_needed = sizing['position_value']
             risk_per_unit = sizing['stop_distance']
+
+        hard_sl_pct = getattr(self.config, 'hard_sl_percent', 0.03)
+        stop_loss = round(float(prev_close) - risk_per_unit, 2)
+        hard_sl_price = round(stop_loss * (1 - hard_sl_pct), 2)
 
         action = {
             'action_date' : action_date,
@@ -104,14 +109,16 @@ class ActionsService:
             'atr' : atr,
             'units' : units,
             'prev_close' : prev_close,
-            'capital' : capital_needed
+            'capital' : capital_needed,
+            'stop_loss' : stop_loss,
+            'hard_sl_price' : hard_sl_price,  # user places exchange SL order here
         }
         remaining_capital -= action['capital']
         return action, remaining_capital
 
     @staticmethod
     def sell_action(symbol: str, action_date: date, prev_close: float, units: int, reason: str, price: float = 0, remaining_capital = 0,
-    entry_price = 0) -> Dict:
+    entry_price = 0) -> tuple[Dict, float, float]:
         """
         Generate a SELL action.
         
@@ -146,33 +153,137 @@ class ActionsService:
             'capital' : capital_released
         }
         remaining_capital += action['capital']
-        realized_gain = (float(prev_close) - entry_price)*units
-
+        # Bug 17: use actual execution price (price), not prev_close, for realized gain
+        realized_gain = (float(price) - entry_price) * units
         return action, remaining_capital, realized_gain
 
-    def generate_actions(self, action_date: date, skip_pending_check: bool = False) -> Union[str, List[Dict]]:
+    def check_daily_stoploss(self, day: date, mid_week_buy: bool = False) -> List[Dict]:
+        """
+        Close-based SL check for a single day (live mid-week use).
+
+        For each current holding, if today's close < current_sl, generate a
+        Pending SELL action (to be executed at next day's open).
+        Optionally advance stale pending BUY actions to fill any new vacancies.
+        Holdings already hard-SL'd earlier the same day are no longer in the
+        DB (Phase 1 already called process_actions), so no duplicate-sell guard
+        is needed.
+
+        Parameters:
+            day: The date to check (must have market data)
+            mid_week_buy: If True, advance pending buys when vacancies open
+
+        Returns:
+            List of generated sell action dicts (may be empty)
+        """
+        # Verify the market was open (≥500 prices means a trading day)
+        md_prices = self.marketdata_repo.get_prices_for_all_stocks(
+            {"start_date": day, "end_date": day}
+        )
+        if len(md_prices) < 500:
+            logger.info(f"check_daily_stoploss: {day} appears to be a market holiday — skipping")
+            return []
+
+        current_holdings = self.investment_repo.get_holdings()
+        if not current_holdings:
+            logger.info(f"check_daily_stoploss: no holdings on {day}")
+            return []
+
+        holding_map = {h.symbol: h for h in current_holdings}
+        sold_count = 0
+        sell_actions = []
+
+        for h in current_holdings:
+            md = self.marketdata_repo.get_marketdata_by_trading_symbol(h.symbol, day)
+            if md is None or md.close is None:
+                logger.warning(f"check_daily_stoploss: no market data for {h.symbol} on {day} — skipping")
+                continue
+
+            current_sl = float(h.current_sl)
+            daily_close = float(md.close)
+
+            if daily_close < current_sl:
+                next_day = get_next_business_day(day)
+                logger.info(
+                    f"CLOSE-BASED SL: {h.symbol} close {daily_close:.2f} < SL {current_sl:.2f} on {day} "
+                    f"→ generating SELL for next open ({next_day})"
+                )
+                sell_action = {
+                    'action_date': next_day,
+                    'type': 'sell',
+                    'reason': f'close-based stoploss on {day} (close={daily_close:.2f} < SL={current_sl:.2f})',
+                    'symbol': h.symbol,
+                    'units': h.units,
+                    'prev_close': daily_close,
+                    'capital': float(h.units) * daily_close,
+                    'status': 'Pending',
+                }
+                self.actions_repo.insert_action(sell_action)
+                sell_actions.append(sell_action)
+                del holding_map[h.symbol]
+                sold_count += 1
+
+        if mid_week_buy and sold_count:
+            vacancies = self.config.max_positions - len(holding_map)
+            if vacancies > 0:
+                # Vacancies open on next_day (when close-SL sell is processed)
+                # Advance pending buys to next_day so they fill on the same open
+                next_day = get_next_business_day(day)
+                pending_buys = self.actions_repo.get_pending_buy_actions()
+                for pending in (pending_buys or []):
+                    md_pb = self.marketdata_repo.get_marketdata_by_trading_symbol(pending.symbol, day)
+                    if md_pb is None:
+                        continue
+                    close_price = float(md_pb.close)
+                    signal_price = float(pending.prev_close)
+                    if signal_price > 0 and close_price > signal_price * 1.05:
+                        logger.info(
+                            f"STALE BUY SKIP: {pending.symbol} close {close_price:.2f} > "
+                            f"signal {signal_price:.2f} × 1.05 on {day}"
+                        )
+                        continue
+                    self.actions_repo.update_action({
+                        'action_id': pending.action_id,
+                        'action_date': next_day
+                    })
+                    logger.info(f"MID-WEEK BUY: advanced {pending.symbol} buy to {next_day} (vacancy opens after close-SL on {day})")
+
+        if sell_actions:
+            logger.info(f"check_daily_stoploss: {len(sell_actions)} close-based SL sell(s) generated for {day}")
+        return sell_actions
+
+    def generate_actions(self, action_date: date, skip_pending_check: bool = False,
+                         enable_pyramiding: bool = False,
+                         check_daily_sl: bool = False,
+                         mid_week_buy: bool = False) -> List[Dict]:
         """
         Generate trading actions (BUY/SELL/SWAP) for a given date.
-        
+
         Delegates core decision logic to TradingEngine.generate_decisions(),
         which implements the shared SELL → BUY → SWAP algorithm.
-        
+
         Parameters:
             action_date (date): Date to generate actions for
             skip_pending_check (bool): Skip pending actions guard (for backtesting)
+            enable_pyramiding (bool): Allow pyramid adds on existing positions
+            check_daily_sl (bool): Run close-based SL check only (mid-week)
+            mid_week_buy (bool): Advance pending buys when SL vacancies open
 
         Returns:
-            Union[str, List[Dict]]: Error message if actions pending, 
-                                    otherwise list of action dictionaries
+            List[Dict]: List of generated action dictionaries (may be empty)
 
         Raises:
-            ValueError: If action_date is None
+            ValueError: If pending actions from another date exist (not skipped)
         """
 
         if not skip_pending_check:
             pending_actions = self.actions_repo.check_other_pending_actions(action_date)
             if pending_actions:
-                return 'Actions pending from another date, please take action before proceeding'
+                raise ValueError(
+                    f"Actions pending from another date — approve or reject them before generating new actions."
+                )
+
+        if check_daily_sl:
+            return self.check_daily_stoploss(action_date, mid_week_buy=mid_week_buy)
 
         swap_buffer = 1 + self.config.buffer_percent
         exit_threshold = self.config.exit_threshold
@@ -210,6 +321,7 @@ class ActionsService:
                 if md:
                     prices[item.tradingsymbol] = float(md.close)
         else:
+            ema_50_values = {}
             for h in current_holdings:
                 holdings_entry_prices[h.symbol] = float(h.entry_price)
                 md_h = self.marketdata_repo.get_marketdata_by_trading_symbol(h.symbol, data_date)
@@ -224,7 +336,14 @@ class ActionsService:
                     units=h.units,
                     stop_loss=h.current_sl,
                     score=h.score,
+                    entry_price=float(h.entry_price),
+                    avg_price=float(h.avg_price or h.entry_price),
                 ))
+
+                # Fetch EMA 50 for pyramid check
+                if enable_pyramiding:
+                    ema_50 = self.indicators_repo.get_indicator_by_tradingsymbol('ema_50', h.symbol, data_date)
+                    ema_50_values[h.symbol] = float(ema_50) if ema_50 else 0.0
 
         decisions = TradingEngine.generate_decisions(
             holdings=holdings_snap,
@@ -233,6 +352,8 @@ class ActionsService:
             max_positions=self.config.max_positions,
             swap_buffer=swap_buffer,
             exit_threshold=exit_threshold,
+            ema_50_values=ema_50_values if current_holdings else None,
+            enable_pyramiding=enable_pyramiding,
         )
 
         sizing_base = total_capital
@@ -247,37 +368,74 @@ class ActionsService:
             md = self.marketdata_repo.get_marketdata_by_trading_symbol(
                 d.symbol, data_date
             )
+
             if d.action_type == 'SELL':
+                if md is None:
+                    logger.warning(f"generate_actions: no market data for {d.symbol} on {data_date}, skipping SELL")
+                    continue
                 action, remaining_capital, realized_gain = self.sell_action(
                     d.symbol, action_date, md.close,
-                    d.units, d.reason, remaining_capital=remaining_capital, 
+                    d.units, d.reason, remaining_capital=remaining_capital,
                     entry_price=holdings_entry_prices[d.symbol]
                 )
                 new_actions.append(action)
                 sizing_base += realized_gain
             elif d.action_type == 'BUY':
+                if md is None:
+                    logger.warning(f"generate_actions: no market data for {d.symbol} on {data_date}, skipping BUY")
+                    continue
                 action, remaining_capital = self.buy_action(
                     d.symbol, action_date, md.close,
                     d.reason,
                     total_capital=sizing_base,
                     remaining_capital=remaining_capital
                 )
-                
                 new_actions.append(action)
+            elif d.action_type == 'PYRAMID_ADD':
+                if md is None:
+                    logger.warning(f"generate_actions: no market data for {d.symbol} on {data_date}, skipping PYRAMID_ADD")
+                    continue
+                pyramid_cfg = PyramidConfig()
+                # Concentration cap: existing position value counts against the 25% cap
+                existing_holding = self.investment_repo.get_holdings_by_symbol(d.symbol)
+                existing_value = (
+                    float(existing_holding.avg_price or existing_holding.entry_price) * existing_holding.units
+                    if existing_holding else 0.0
+                )
+                action, remaining_capital = self.buy_action(
+                    d.symbol, action_date, md.close,
+                    'pyramid_add',
+                    total_capital=sizing_base * pyramid_cfg.pyramid_fraction,
+                    remaining_capital=remaining_capital,
+                    existing_position_value=existing_value
+                )
+                new_actions.append(action)
+                logger.info(f"PYRAMID_ADD {d.symbol}: adding {pyramid_cfg.pyramid_fraction:.0%} position, existing_value={existing_value:.0f}")
             elif d.action_type == 'SWAP':
+                if md is None:
+                    logger.warning(f"generate_actions: no market data for {d.symbol} on {data_date}, skipping SWAP")
+                    continue
+                # Bug 12: pass remaining_capital so freed cash is preserved across the loop
                 action, remaining_capital, realized_gain = self.sell_action(
                     d.symbol, action_date, md.close,
-                    d.swap_sell_units, d.reason
+                    d.swap_sell_units, d.reason,
+                    remaining_capital=remaining_capital,
+                    entry_price=holdings_entry_prices[d.symbol]
                 )
                 new_actions.append(action)
                 sizing_base += realized_gain
 
                 md_swap_for = self.marketdata_repo.get_marketdata_by_trading_symbol(d.swap_for, data_date)
+                if md_swap_for is None:
+                    logger.warning(f"generate_actions: no market data for swap target {d.swap_for} on {data_date}, skipping BUY leg")
+                    continue
+
                 action, remaining_capital = self.buy_action(
                     d.swap_for, action_date, md_swap_for.close, d.reason,
                     total_capital=sizing_base, remaining_capital=remaining_capital
                 )
                 new_actions.append(action)
+
 
         new_actions = [a for a in new_actions if a is not None]
         if new_actions:
@@ -316,11 +474,10 @@ class ActionsService:
         summary = self.investment_repo.get_summary()
         remaining_capital = (
             float(summary.remaining_capital) if summary
-            else self.investment_repo.get_total_capital(
-                action_date
-            )
+            else self.investment_repo.get_total_capital(action_date)
         )
-        sizing_base =  self.investment_repo.get_total_capital(
+
+        sizing_base = self.investment_repo.get_total_capital(
             action_date, include_realized=True
         )
 
@@ -328,7 +485,22 @@ class ActionsService:
         for item in actions_list:
             if item.type == 'sell' and item.status == 'Pending':
                 entry_data = self.investment_repo.get_holdings_by_symbol(item.symbol)
-                execution_price = item.execution_price or self.marketdata_repo.get_marketdata_by_trading_symbol(item.symbol, action_date).open
+                if entry_data is None:
+                    logger.warning(
+                        f"approve_all_actions: no holding for sell {item.symbol} on {action_date} — rejecting"
+                    )
+                    self.actions_repo.update_action({
+                        'action_id': item.action_id,
+                        'status': 'Rejected',
+                    })
+                    continue
+
+                md_obj = self.marketdata_repo.get_marketdata_by_trading_symbol(item.symbol, action_date)
+                execution_price = item.execution_price or (md_obj.open if md_obj else None)
+                if execution_price is None:
+                    logger.warning(f"approve_all_actions: no market data for {item.symbol} on {action_date} — skipping sell")
+                    continue
+
                 costs = calculate_transaction_costs(float(item.units * execution_price), 'sell')
                 tax = calculate_capital_gains_tax(float(entry_data.entry_price), float(execution_price), entry_data.entry_date,
                                                   action_date, item.units)
@@ -339,17 +511,35 @@ class ActionsService:
                     'sell_cost': costs.get('total', 0),
                     'tax': tax['tax']
                 })
-                remaining_capital += float(item.units * execution_price)
-                sizing_base += float(item.units * execution_price) - float(entry_data.entry_price * entry_data.units)
+                sell_proceeds = float(item.units * execution_price)
+                remaining_capital += sell_proceeds
+                # Bug 4: only add the *gain* (not full proceeds) to sizing_base,
+                # and only if this gain isn't already captured in capital_events.
+                # We accumulate it here so subsequent buys in this batch see it.
+                pnl = sell_proceeds - float(entry_data.entry_price * entry_data.units)
+                sizing_base += pnl
                 approved_count += 1
 
         for item in actions_list:
             if item.type == 'buy' and item.status == 'Pending':
-                execution_price = item.execution_price or self.marketdata_repo.get_marketdata_by_trading_symbol(item.symbol, action_date).open
+                md_obj = self.marketdata_repo.get_marketdata_by_trading_symbol(item.symbol, action_date)
+                execution_price = item.execution_price or (md_obj.open if md_obj else None)
+                if execution_price is None:
+                    logger.warning(f"approve_all_actions: no market data for {item.symbol} on {action_date} — skipping buy")
+                    continue
+
+                is_pyramid = (item.reason == 'pyramid_add')
+                alloc_capital = sizing_base * PyramidConfig().pyramid_fraction if is_pyramid else sizing_base
+
+                # Bug 5: recalculate stop distance using actual execution price so
+                # initial_sl in process_actions is consistent with the fill price.
+                atr = float(item.atr) if item.atr else 0.0
+                risk_per_unit = round(atr * self.config.sl_multiplier, 2)
+
                 sizing = calculate_position_size(
-                    atr=float(item.atr),
+                    atr=atr,
                     current_price=float(execution_price),
-                    total_capital=sizing_base,
+                    total_capital=alloc_capital,
                     remaining_capital=remaining_capital,
                     config=self.config
                 )
@@ -366,8 +556,9 @@ class ActionsService:
                     'execution_price': execution_price,
                     'buy_cost': costs.get('total', 0),
                     'tax': 0,
-                    'units' : units,
-                    'capital' : capital_needed
+                    'units': units,
+                    'capital': capital_needed,
+                    'risk': risk_per_unit,
                 })
                 remaining_capital -= capital_needed
                 approved_count += 1
@@ -388,8 +579,10 @@ class ActionsService:
         """
         holdings = self.investment_repo.get_holdings(action_date)
         if holdings:
-            self.investment_repo.delete_holdings(action_date)
-            self.investment_repo.delete_summary(action_date)
+            # Upsert pattern: don't pre-delete here — we'll atomically replace
+            # at the end of the function via upsert_holdings/upsert_summary.
+            # But we DO need to check the date guard first.
+            pass
 
         holdings = self.investment_repo.get_holdings()
         actions_list = self.actions_repo.get_actions(action_date)
@@ -413,6 +606,7 @@ class ActionsService:
                     buy_symbols[items.symbol] = items
 
         sold = 0
+        bought_value = 0
         held_symbols = {h.symbol for h in holdings}
         holdings_map = {h.symbol: h for h in holdings}
         
@@ -430,7 +624,12 @@ class ActionsService:
                 holding = holdings_map.get(symbol)
 
             if not holding:
-                logger.warning(f"No holding found for {symbol} to sell.")
+                logger.warning(f"No holding found for {symbol} to sell — rejecting orphaned action.")
+                # Bug 9: mark the action rejected so it doesn't pollute trade log
+                self.actions_repo.update_action({
+                    'action_id': action.action_id,
+                    'status': 'Rejected',
+                })
                 continue
 
             # Use action's own units for sell value (handles stock splits)
@@ -439,10 +638,12 @@ class ActionsService:
             held_symbols.discard(symbol)
 
             #TODO Handle Split/Bonus
-            buy_value = float(holding.entry_price) * holding.units
+            # Use avg_price if it exists (for pyramided positions), else entry_price
+            cost_basis_price = float(getattr(holding, 'avg_price', None) or holding.entry_price)
+            buy_value = cost_basis_price * holding.units
             pnl = sell_value - buy_value
             logger.info(
-                f"SELL {symbol}: buy={holding.units}u@{holding.entry_price}={buy_value:.2f}"
+                f"SELL {symbol}: buy={holding.units}u@{cost_basis_price}={buy_value:.2f}"
                 f" sell={action.units}u@{action.execution_price}={sell_value:.2f}"
                 f" pnl={pnl:.2f}"
             )
@@ -458,14 +659,59 @@ class ActionsService:
 
         data_date = get_prev_friday(action_date)
         week_holdings = []
+        pyramid_symbols = set()
         for symbol, action in buy_symbols.items():
             if symbol in sell_symbols:
                 continue
+
+            # Pyramid add: merge into existing holding
+            if action.reason == 'pyramid_add' and symbol in holdings_map:
+                old = holdings_map[symbol]
+                old_avg = float(getattr(old, 'avg_price', None) or old.entry_price)
+                old_value = old_avg * old.units
+                new_value = float(action.execution_price) * action.units
+                bought_value += new_value
+                total_units = old.units + action.units
+                avg_price = round((old_value + new_value) / total_units, 2)
+
+                rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
+                score = round(rank_data.composite_score, 2) if rank_data else 0
+
+                # Keep old trailing SL — don't reset to a tight new SL
+                old_sl = float(old.current_sl)
+                old_entry_sl = float(getattr(old, 'entry_sl', old_sl))
+
+                logger.info(
+                    f"PYRAMID_ADD {symbol}: {old.units}u@{old_avg:.2f} + {action.units}u@{action.execution_price} "
+                    f"= {total_units}u avg_price={avg_price:.2f} (keeping SL={old_sl:.2f})"
+                )
+
+                holding_data = {
+                    'symbol': symbol,
+                    'date': action_date,
+                    'entry_date': old.entry_date,
+                    'entry_price': old.entry_price,
+                    'avg_price': avg_price,
+                    'units': total_units,
+                    'atr': getattr(old, 'atr', action.atr),
+                    'score': score,
+                    'entry_sl': old_entry_sl,
+                    'current_price': action.execution_price,
+                    'current_sl': old_sl
+                }
+                week_holdings.append(holding_data)
+                pyramid_symbols.add(symbol)
+                held_symbols.discard(symbol)
+                continue
+
+            # Normal buy
             initial_sl = round(action.execution_price - action.risk, 2)
             rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
             score = round(rank_data.composite_score, 2) if rank_data else 0
+            buy_value = float(action.execution_price) * action.units
+            bought_value += buy_value
             logger.info(
-                f"BUY {symbol}: units={action.units}u@{action.execution_price}={action.units*action.execution_price:.2f}"
+                f"BUY {symbol}: units={action.units}u@{action.execution_price}={buy_value:.2f}"
             )
 
             holding_data = {
@@ -473,6 +719,7 @@ class ActionsService:
                 'date': action_date,
                 'entry_date': action_date,
                 'entry_price': action.execution_price,
+                'avg_price': float(action.execution_price),
                 'units': action.units,
                 'atr': action.atr,
                 'score': score,
@@ -483,13 +730,17 @@ class ActionsService:
             week_holdings.append(holding_data)
         for symbol in held_symbols:
             week_holdings.append(
-                self.investment_service.update_holding(symbol, action_date, midweek, holdings_map[symbol])
+                self.investment_service.update_holding(
+                    symbol, action_date, midweek, holdings_map[symbol],
+                    config_name=self.config.name if hasattr(self.config, 'name') else 'momentum_config'
+                )
             )
-        summary = self.investment_service.get_summary(week_holdings, sold, action_date=action_date)
+        summary = self.investment_service.get_summary(week_holdings, sold, bought=bought_value, action_date=action_date)
 
-        self.investment_repo.bulk_insert_holdings(week_holdings)
-        self.investment_repo.insert_summary(summary)
-        return  week_holdings
+        # Atomic upsert: if insert fails, delete is also rolled back
+        self.investment_repo.upsert_holdings(week_holdings, action_date)
+        self.investment_repo.upsert_summary(summary)
+        return week_holdings
 
     def reject_pending_actions(self) -> int:
         """Reject all pending actions (unfilled buys at end of week).
@@ -508,47 +759,61 @@ class ActionsService:
     def create_manual_buy(self, stocks: List[Dict]) -> str:
 
         actions = []
-        total_capital = self.inv_repo.get_total_capital(include_realized=True)
-
+        total_capital = self.investment_repo.get_total_capital(include_realized=True)
+        # Bug 19: get_summary() returns a model object, not a float
+        summary = self.investment_repo.get_summary()
+        remaining_capital = float(summary.remaining_capital) if summary else total_capital
+    
+        over_capital = []
         for stock in stocks:
-            action = self.buy_action(
+            prev_close = float(self.marketdata_repo.get_marketdata_by_trading_symbol(stock['symbol'], stock['date'] - timedelta(days=1)).close)
+            if remaining_capital < stock['units'] * stock['price']:
+                over_capital.append(stock)
+                continue
+
+            action, remaining_capital = self.buy_action(
                 symbol=stock['symbol'],
                 action_date=stock['date'],
-                prev_close=float(stock['price']),
+                prev_close=prev_close,
+                price=float(stock['price']),
                 reason=stock['reason'],
                 total_capital=total_capital,
+                remaining_capital=remaining_capital,
                 units=stock['units']
             )
             action['execution_price'] = float(stock['price'])
             actions.append(action)
 
-        #TODO Check if symbol exist then only delete it
-        self.actions_repo.bulk_insert_actions(actions)
-        return f"Manual BUY actions created for {[s['symbol'] for s in stocks]}"
+        if actions:
+            self.actions_repo.bulk_insert_actions(actions)
+        return f"Manual BUY actions created for {[s['symbol'] for s in stocks]} and over capital for {[s['symbol'] for s in over_capital]}, before creating buy action infuse capital"
 
-    def create_manual_sell(self, stocks: Dict) -> str:
-
-        # Validate units against current holding
-        holding = self.inv_repo.get_holdings_by_symbol(stocks['symbol'])
-        if not holding:
-            raise ValueError(
-                f"Cannot sell {stocks['symbol']}: not in current holdings"
-            )
-        # if stocks['units'] > holding.units:
-        #     raise ValueError(
-        #         f"Cannot sell {data['units']} units of {data['symbol']}: "
-        #         f"only {holding.units} held"
-        #     )
+    def create_manual_sell(self, stocks: List[Dict]) -> str:
         actions = []
+        not_in_holding = []
+        # Bug 18: build holding lookup from DB instead of referencing undefined var
+        current_holdings = self.investment_repo.get_holdings()
+        holding_entry_prices = {h.symbol: float(h.entry_price) for h in (current_holdings or [])}
+
         for stock in stocks:
-            action = self.sell_action(
-                stock['symbol'], 
-                stock['date'], 
-                float(stock['price']), 
-                stock['units'], 
-                stock['reason']
+            if stock['symbol'] not in holding_entry_prices:
+                not_in_holding.append(stock['symbol'])
+                continue
+                
+            md = self.marketdata_repo.get_marketdata_by_trading_symbol(stock['symbol'], stock['date'] - timedelta(days=1))
+            prev_close = float(md.close) if md else float(stock['price'])
+
+            action, _, _ = self.sell_action(
+                symbol=stock['symbol'], 
+                action_date=stock['date'], 
+                prev_close=prev_close,
+                units=stock['units'], 
+                reason=stock['reason'],
+                price=float(stock['price'])
             )
             action['execution_price'] = float(stock['price'])
             actions.append(action)
-        self.actions_repo.bulk_insert_actions([actions])
-        return f"Manual SELL action created for {[s['symbol'] for s in stocks]}"
+            
+        if actions:
+            self.actions_repo.bulk_insert_actions(actions)
+        return f"Manual SELL action created for {[s['symbol'] for s in stocks]} and not in holding for {not_in_holding}"

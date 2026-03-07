@@ -2,6 +2,8 @@ from db import db
 from flask_smorest import Api
 from flask_migrate import Migrate
 from flask import Flask, render_template
+from waitress import serve
+
 
 from src.config import Config
 from src.api.v1.routes import (
@@ -79,4 +81,21 @@ def actions():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, use_reloader=True)
+    import logging
+    from paste.translogger import TransLogger
+
+    # Waitress's internal logs
+    logging.getLogger('waitress').setLevel(logging.INFO)
+
+    # TransLogger captures HTTP requests and prints them to console
+    logged_app = TransLogger(app, setup_console_handler=False)
+
+    print("Starting Waitress server on http://0.0.0.0:5000 ...")
+
+    serve(
+        logged_app,
+        host='0.0.0.0',
+        port=5000,
+        threads=3,           # SSE stream + pipeline + dashboard run concurrently
+        channel_timeout=600  # keep SSE connections alive up to 10 min
+    )

@@ -5,10 +5,8 @@ from sqlalchemy import PrimaryKeyConstraint, Index
 class IndicatorsModel(db.Model):
     __tablename__ = "indicators"
 
-    instrument_token = db.Column(db.Integer, nullable=False)
-    date = db.Column(db.Date, nullable=False)
-
     tradingsymbol = db.Column(db.String, nullable=False)
+    date = db.Column(db.Date, nullable=False)
     exchange = db.Column(db.String, nullable=False)
 
     ema_50 = db.Column(db.Float, nullable=True) 
@@ -50,10 +48,7 @@ class IndicatorsModel(db.Model):
 
     __table_args__ = (
         # composite primary key
-        PrimaryKeyConstraint("instrument_token", "date"),
-
-        # fast lookup by ticker + date
-        Index("idx_indicator_tradingsymbol_date", "tradingsymbol", "date"),
+        PrimaryKeyConstraint("tradingsymbol", "date"),
     )
 
     def __repr__(self):

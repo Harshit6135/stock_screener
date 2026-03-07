@@ -30,22 +30,13 @@ def calculate_capital_gains_tax(purchase_price: float, current_price: float,
     gain_per_share = current_price - purchase_price
     total_gain = gain_per_share * quantity
     
-    if total_gain <= 0:
-        return {
-            "gain": round(total_gain, 2),
-            "holding_days": holding_days,
-            "tax_type": "loss",
-            "tax": 0,
-            "net_gain": round(total_gain, 2)
-        }
-    
     if holding_days < config.ltcg_holding_days:
-        # Short-term capital gains
-        tax = float(total_gain) * config.stcg_rate
+        # Short-term capital gains/losses
+        tax = max(0.0, float(total_gain) * config.stcg_rate)
         tax_type = "STCG"
     else:
-        # Long-term capital gains
-        taxable_gain = max(0, total_gain - config.ltcg_exemption)
+        # Long-term capital gains/losses
+        taxable_gain = max(0.0, float(total_gain) - config.ltcg_exemption)
         tax = taxable_gain * config.ltcg_rate
         tax_type = "LTCG"
     

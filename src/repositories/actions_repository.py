@@ -186,19 +186,21 @@ class ActionsRepository:
             ActionsModel.type == 'buy'
         ).all()
 
-    def get_all_approved_actions(self):
+    def get_all_approved_actions(self, ascending=False):
         """
-        Get all approved actions ordered by date descending.
-        Used for trade journal.
+        Get all approved actions ordered by date.
         
         Returns:
             list: Approved ActionsModel instances
         """
-        return self.session.query(ActionsModel).filter(
+        query = self.session.query(ActionsModel).filter(
             ActionsModel.status == 'Approved'
-        ).order_by(
-            ActionsModel.action_date.desc()
-        ).all()
+        )
+        if ascending:
+            query = query.order_by(ActionsModel.action_date.asc())
+        else:
+            query = query.order_by(ActionsModel.action_date.desc())
+        return query.all()
 
     def insert_action(self, action_dict):
         """

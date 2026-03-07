@@ -94,6 +94,10 @@ Includes every trade with:
 - **Trigger**: Why it was sold (SL Hit, Ranking Drop, Swap, Target)
 - **P&L**: Net profit after transaction costs.
 
+### Backtest History
+- Every backtest run is saved to the Main DB (`backtest_runs` table).
+- You can retrieve historical runs, equity curves, and trade journals via `/api/v1/backtest/history`.
+
 ---
 
 ## 🛠️ Data Handling
