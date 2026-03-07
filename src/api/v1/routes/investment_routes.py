@@ -15,7 +15,7 @@ from schemas import (
 ManualBuySchema, ManualSellSchema, CapitalEventSchema
 )
 from repositories import InvestmentRepository
-from services import InvestmentService
+from services import InvestmentService, ActionsService
 
 
 logger = setup_logger(name="InvestmentRoutes")
@@ -72,7 +72,7 @@ class ManualBuy(MethodView):
     def post(self, data):
         """Manually create BUY actions with position sizing"""
         try:
-            message = inv_service.create_manual_buy(data)
+            message = ActionsService(config_name="momentum_config").create_manual_buy(data)
             return {"message": message}
         except ValueError as e:
             logger.error(f"Validation error: {e}")
@@ -90,7 +90,7 @@ class ManualSell(MethodView):
     def post(self, data):
         """Manually create a SELL action"""
         try:
-            message = inv_service.create_manual_sell(data)
+            message = ActionsService(config_name="momentum_config").create_manual_sell([data])
             return {"message": message}
         except ValueError as e:
             logger.error(f"Validation error: {e}")
@@ -226,19 +226,19 @@ class StartTicker(MethodView):
             token_symbol_map = {}
             exchange_symbols = []
             for inst in instruments:
-                token_symbol_map[inst.instrument_token] = inst.tradingsymbol
+                token_symbol_map[inst.instrument_token] = inst.tradingsymbol if inst.series == "EQ" else f"{inst.tradingsymbol}-{inst.series}"
                 exchange = inst.exchange or "NSE"
-                exchange_symbols.append(f"{exchange}:{inst.tradingsymbol}")
+                exchange_symbols.append(f"{exchange}:{token_symbol_map[inst.instrument_token]}")
             
             if not token_symbol_map:
                 return {"message": "Could not resolve instrument tokens for holdings"}
             
             # 3. Fetch previous close via Kite REST API (kite.ohlc)
             ohlc_data = kite.fetch_ohlc(exchange_symbols)
-            
             # 4. Populate prev_close in live_prices cache
             for key, val in ohlc_data.items():
                 # key is like "NSE:RELIANCE"
+
                 token = val.get('instrument_token')
                 if token and token in token_symbol_map:
                     prev_close = val.get('ohlc', {}).get('close', 0)

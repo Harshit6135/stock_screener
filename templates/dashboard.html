@@ -858,7 +858,7 @@
                             <th class="text-center">Invested</th>
                             <th class="text-center">Value</th>
                             <th class="text-center">Unrealized P&amp;L</th>
-                            <th class="text-center">%</th>
+                            <th class="text-center">Unrealized %</th>
                             <th class="text-center">Day P&amp;L</th>
                         </tr>
                     </thead>
@@ -1769,13 +1769,13 @@
 
             // Totals
             const totalRow = `<tr style="font-weight:700; background:#232730;">
-                    <td colspan="7">TOTALS</td>
-                    <td class="text-right ${totalCapRisk > 0 ? 'neg-val' : 'pos-val'}">₹${totalCapRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right">₹${totalInv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right" id="live-total-val">₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}" id="live-total-pnl">₹${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}">${totalInv !== 0 ? ((totalPnL / totalInv) * 100).toFixed(2) : '0.00'}%</td>
-                    <td class="text-right" id="live-total-day-pnl" style="color:var(--text-muted);">-</td>
+                    <td colspan="7" class="text-center">TOTALS</td>
+                    <td class="text-center ${totalCapRisk > 0 ? 'neg-val' : 'pos-val'}">₹${totalCapRisk.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-center">₹${totalInv.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-center" id="live-total-val">₹${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-center ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}" id="live-total-pnl">₹${totalPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-center ${totalPnL >= 0 ? 'pos-val' : 'neg-val'}">${totalInv !== 0 ? ((totalPnL / totalInv) * 100).toFixed(2) : '0.00'}%</td>
+                    <td class="text-center" id="live-total-day-pnl" style="color:var(--text-muted);">-</td>
                 </tr>`;
             tfoot.innerHTML = totalRow;
             makeTableSortable('#holdings-table', { searching: true });
@@ -2524,7 +2524,8 @@
 
                 rows.forEach(row => {
                     const sym = row.getAttribute('data-symbol');
-                    const p = prices[sym];
+
+                    const p = prices[sym] || prices[sym + '-BE'];
                     if (!p || !p.last_price) return;
 
                     const units = parseFloat(row.children[2].getAttribute('data-sort') || 0);
@@ -2543,7 +2544,7 @@
                     totalDayPnl += dayPnl;
 
                     // Update cells using DataTables API to preserve sorting
-                    // Assuming columns: Symbol(0), Entry Date(1), Units(2), Avg Price(3), Current(4), SL(5), Cap Risk(6), Invested(7), Value(8), Unrealized P&L(9), %(10), Day P&L(11)
+                    // Columns: Symbol(0), Entry Date(1), Units(2), Avg Price(3), Current(4), SL(5), Hard SL(6), Cap Risk(7), Invested(8), Value(9), Unrealized P&L(10), %(11), Day P&L(12)
 
                     const dtRow = dt.row(row);
 
@@ -2561,20 +2562,20 @@
                     // Col 4: Current Price
                     updateCell(4, ltp, `₹${ltp.toFixed(2)}`);
 
-                    // Col 8: Value
-                    updateCell(8, newVal, `₹${newVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+                    // Col 9: Value
+                    updateCell(9, newVal, `₹${newVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
 
-                    // Col 9: Unrealized P&L
+                    // Col 10: Unrealized P&L
                     const pnlClass = pnl >= 0 ? 'pos-val' : 'neg-val';
-                    updateCell(9, pnl, `<span class="${pnlClass}">₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`);
+                    updateCell(10, pnl, `<span class="${pnlClass}">₹${pnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`);
 
-                    // Col 10: %
+                    // Col 11: %
                     const pnlPctClass = pnlPct >= 0 ? 'pos-val' : 'neg-val';
-                    updateCell(10, pnlPct, `<span class="${pnlPctClass}">${pnlPct.toFixed(2)}%</span>`);
+                    updateCell(11, pnlPct, `<span class="${pnlPctClass}">${pnlPct.toFixed(2)}%</span>`);
 
-                    // Col 11: Day P&L
+                    // Col 12: Day P&L
                     const dayPnlClass = dayPnl >= 0 ? 'pos-val' : 'neg-val';
-                    updateCell(11, dayPnl, `<span class="${dayPnlClass}">₹${dayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`);
+                    updateCell(12, dayPnl, `<span class="${dayPnlClass}">₹${dayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>`);
                 });
 
                 // Redraw table to apply sorting/filtering updates without resetting pagination
@@ -2592,6 +2593,7 @@
 
                 const totalDayEl = document.getElementById('live-total-day-pnl');
                 if (totalDayEl) {
+                    totalDayEl.style.color = '';  // clear inline style so class colors apply
                     totalDayEl.className = `text-right ${totalDayPnl >= 0 ? 'pos-val' : 'neg-val'}`;
                     totalDayEl.innerHTML = `₹${totalDayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 }

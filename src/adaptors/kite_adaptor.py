@@ -223,6 +223,7 @@ class KiteAdaptor:
             self.logger.warning("Kite client not initialised, cannot fetch OHLC")
             return {}
         try:
+            print(exchange_symbols)
             data = self.kite.ohlc(exchange_symbols)
             return data
         except Exception as e:
