@@ -962,6 +962,39 @@
                 </span>
             </div>
 
+            <!-- Cash Projections Panel -->
+            <div id="cash-projections-panel" class="card"
+                style="margin-top: 20px; display: none; padding: 15px; background: var(--bg-card); border-radius: 8px;">
+                <div
+                    style="display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap;">
+                    <div style="flex: 1; text-align: center;">
+                        <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">Available
+                            Cash</div>
+                        <div id="proj-avail-cash" style="font-size: 1.2rem; font-weight: 600;">₹0</div>
+                    </div>
+                    <div style="font-size: 1.5rem; color: var(--text-muted); padding-top: 20px;">+</div>
+                    <div style="flex: 1; text-align: center;">
+                        <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">Est. Sells
+                        </div>
+                        <div id="proj-est-sells" style="font-size: 1.2rem; font-weight: 600; color: var(--success);">₹0
+                        </div>
+                    </div>
+                    <div style="font-size: 1.5rem; color: var(--text-muted); padding-top: 20px;">-</div>
+                    <div style="flex: 1; text-align: center;">
+                        <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">Est. Buys
+                        </div>
+                        <div id="proj-est-buys" style="font-size: 1.2rem; font-weight: 600; color: var(--danger);">₹0
+                        </div>
+                    </div>
+                    <div style="font-size: 1.5rem; color: var(--text-muted); padding-top: 20px;">=</div>
+                    <div style="flex: 1; text-align: center; border-left: 1px solid var(--border); padding-left: 20px;">
+                        <div style="font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase;">Projected
+                            Cash</div>
+                        <div id="proj-final-cash" style="font-size: 1.4rem; font-weight: 700;">₹0</div>
+                    </div>
+                </div>
+            </div>
+
             <table id="actions-table">
                 <thead>
                     <tr>
@@ -1850,23 +1883,40 @@
                 return;
             }
 
+            const summaryRes = await fetch('/api/v1/investment/summary');
+            const summaryData = await summaryRes.json();
+            const availableCash = summaryData ? parseFloat(summaryData.remaining_capital || 0) : 0;
+
+            window._actionsData = actions; // Store for projection updates
+            window._baseCash = availableCash;
+
             actions.forEach(a => {
                 const badgeClass = a.type === 'buy' ? 'badge-buy' : a.type === 'sell' ? 'badge-sell' : 'badge-swap';
 
                 let actionBtn = '';
+                let unitsTd = `<td data-sort="${a.units}">${a.units}</td>`;
+                let priceTd = `<td data-sort="${a.execution_price || a.prev_close || 0}">${a.execution_price || a.prev_close || '-'}</td>`;
+
                 if (a.status === 'Pending') {
+                    // Make inputs for units & price
+                    const curUnits = a.units || 0;
+                    const curPrice = a.execution_price || a.prev_close || 0;
+
+                    unitsTd = `<td><input type="number" id="units-${a.action_id}" value="${curUnits}" class="table-input" style="width: 70px; padding: 2px 5px;" onchange="updateProjection('${a.action_id}')" min="0"></td>`;
+                    priceTd = `<td><input type="number" step="0.05" id="price-${a.action_id}" value="${curPrice}" class="table-input" style="width: 90px; padding: 2px 5px;" onchange="updateProjection('${a.action_id}')" min="0"></td>`;
+
                     actionBtn = `
-                    <button class="badge badge-buy" style="border:none;cursor:pointer;" onclick="openApproveModal('${a.action_id}', '${a.symbol}', ${a.units}, ${a.execution_price || a.prev_close || 0})">Approve</button>
+                        <button class="badge badge-buy" style="border:none;cursor:pointer;" onclick="confirmInlineApprove('${a.action_id}', '${a.symbol}')">Approve</button>
                         <button class="badge badge-sell" style="border:none;cursor:pointer;" onclick="updateAction('${a.action_id}', 'Rejected')">Reject</button>
-                `;
+                    `;
                 }
 
                 tbody.innerHTML += `<tr>
                     <td data-sort="${a.action_date}">${a.action_date}</td>
                     <td data-sort="${a.type}"><span class="badge ${badgeClass}">${a.type.toUpperCase()}</span></td>
                     <td><b>${a.symbol}</b></td>
-                    <td data-sort="${a.units}">${a.units}</td>
-                    <td data-sort="${a.execution_price || a.prev_close || 0}">${a.execution_price || a.prev_close || '-'}</td>
+                    ${unitsTd}
+                    ${priceTd}
                     <td data-sort="${a.stop_loss || 0}">${a.stop_loss ? '&#8377;' + parseFloat(a.stop_loss).toFixed(2) : '-'}</td>
                     <td data-sort="${a.hard_sl_price || 0}" style="color:var(--danger); font-weight:600;">${a.hard_sl_price ? '&#8377;' + parseFloat(a.hard_sl_price).toFixed(2) : '-'}</td>
                     <td data-sort="${a.status}">${a.status}</td>
@@ -1876,6 +1926,76 @@
             });
             hideLoading();
             makeTableSortable('#actions-table', { searching: true });
+
+            // Initial projection calc
+            updateProjection();
+        }
+
+        function updateProjection(changedActionId = null) {
+            if (!window._actionsData || window._actionsData.length === 0) {
+                document.getElementById('cash-projections-panel').style.display = 'none';
+                return;
+            }
+
+            // Show panel
+            document.getElementById('cash-projections-panel').style.display = 'block';
+
+            let estSells = 0;
+            let estBuys = 0;
+
+            window._actionsData.forEach(a => {
+                if (a.status !== 'Pending' && a.status !== 'Approved') return;
+
+                let units = a.units || 0;
+                let price = parseFloat(a.execution_price || a.prev_close || 0);
+
+                // If Pending, check if user modified inline inputs
+                if (a.status === 'Pending') {
+                    const uInput = document.getElementById(`units-${a.action_id}`);
+                    const pInput = document.getElementById(`price-${a.action_id}`);
+                    if (uInput) units = parseInt(uInput.value) || 0;
+                    if (pInput) price = parseFloat(pInput.value) || 0;
+                }
+
+                const val = units * price;
+                if (a.type === 'sell') estSells += val;
+                if (a.type === 'buy') estBuys += val;
+                // For 'swap', normally there's a sell leg and a buy leg separate. 
+                // If it's a single swap action covering both conceptually, sum accordingly, but in backend swap generates buy/sell pairs.
+            });
+
+            const fmt = v => '₹' + v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+            const finalCash = window._baseCash + estSells - estBuys;
+
+            document.getElementById('proj-avail-cash').innerText = fmt(window._baseCash);
+            document.getElementById('proj-est-sells').innerText = fmt(estSells);
+            document.getElementById('proj-est-buys').innerText = fmt(estBuys);
+
+            const finalEl = document.getElementById('proj-final-cash');
+            finalEl.innerText = fmt(finalCash);
+            finalEl.style.color = finalCash < 0 ? 'var(--danger)' : 'white';
+        }
+
+        async function confirmInlineApprove(actionId, symbol) {
+            const uInput = document.getElementById(`units-${actionId}`);
+            const pInput = document.getElementById(`price-${actionId}`);
+            const units = uInput ? parseInt(uInput.value) : 0;
+            const price = pInput ? parseFloat(pInput.value) : 0;
+
+            if (!units || !price) {
+                alert('Please enter valid units and execution price.');
+                return;
+            }
+
+            if (!confirm(`Approve ${symbol} for ${units} units @ ₹${price}?`)) return;
+
+            await fetch(`/api/v1/actions/${actionId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'Approved', units: units, execution_price: price.toString() })
+            });
+            loadActions();
         }
 
         async function updateAction(id, status) {
