@@ -18,6 +18,7 @@ class HoldingSchema(Schema):
     date = fields.Date(dump_only=True)
     entry_date = fields.Date(dump_only=True)
     entry_price = fields.Decimal(as_string=True, dump_only=True)
+    avg_price = fields.Decimal(as_string=True, dump_only=True)
     units = fields.Integer(dump_only=True)
     atr = fields.Decimal(as_string=True, dump_only=True)
     score = fields.Decimal(as_string=True, dump_only=True)

@@ -2649,12 +2649,12 @@
                     if (!p || !p.last_price) return;
 
                     const units = parseFloat(row.children[2].getAttribute('data-sort') || 0);
-                    const entryPrice = parseFloat(row.children[3].getAttribute('data-sort') || 0);
+                    const avgPrice = parseFloat(row.children[3].getAttribute('data-sort') || 0);
                     const ltp = p.last_price;
                     const prevClose = p.prev_close || 0;
 
                     const newVal = ltp * units;
-                    const inv = entryPrice * units;
+                    const inv = avgPrice * units;
                     const pnl = newVal - inv;
                     const pnlPct = inv !== 0 ? (pnl / inv) * 100 : 0;
                     const dayPnl = (ltp - prevClose) * units;
