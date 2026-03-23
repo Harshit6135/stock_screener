@@ -176,7 +176,10 @@ class InvestmentRepository:
             self.session.query(InvestmentsSummaryModel).filter(
                 InvestmentsSummaryModel.date == summary['date']
             ).delete()
-            self.session.add(InvestmentsSummaryModel(**summary))
+            # remaining_capital is a DB-generated column (starting_capital + sold - bought)
+            # — strip it before insert so SQLAlchemy doesn't try to write it.
+            db_summary = {k: v for k, v in summary.items() if k != 'remaining_capital'}
+            self.session.add(InvestmentsSummaryModel(**db_summary))
             self.session.commit()
             return True
         except Exception as e:
@@ -310,6 +313,27 @@ class InvestmentRepository:
             )
         result = query.scalar()
         return float(result) if result else 0.0
+
+    def get_remaining_capital(self, target_date=None):
+        """
+        Compute real cash available = total_capital(include_realized) - cost_basis_of_holdings.
+
+        This derives remaining capital directly from first principles (capital events
+        and current holdings cost basis) and is immune to any drift in the summary chain.
+
+        Parameters:
+            target_date: Passed to get_total_capital (None = all events).
+
+        Returns:
+            float: Cash available to deploy
+        """
+        total = self.get_total_capital(target_date=target_date, include_realized=True)
+        holdings = self.get_holdings()
+        invested = sum(
+            float(h.avg_price or h.entry_price) * h.units
+            for h in (holdings or [])
+        )
+        return round(total - invested, 2)
     
     def get_total_capital_by_date(self, date, include_realized=False):
         """

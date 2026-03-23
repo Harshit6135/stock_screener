@@ -424,7 +424,7 @@ class InvestmentService:
         else:
             prev_remaining_capital = prev_summary.remaining_capital
             # R-5: use capital events added *on* prev_summary.date (not chaining)
-            new_capital_addition = self.inv_repo.get_total_capital_by_date(prev_summary.date)
+            new_capital_addition = self.inv_repo.get_total_capital_by_date(action_date)
 
         if bought is None:
             bought_mask = df['entry_date'] == df['date']
@@ -457,6 +457,7 @@ class InvestmentService:
             'portfolio_risk': portfolio_risk,
             'gain': gain,
             'gain_percentage': gain_pct,
+            'remaining_capital': round(remaining_capital, 2),  # in-memory only; stripped before DB insert (generated column)
         }
         return summary
 

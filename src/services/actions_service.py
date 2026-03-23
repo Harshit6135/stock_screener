@@ -363,6 +363,7 @@ class ActionsService:
                 f"Position sizes will be 0."
             )
 
+        pending_vacancies: list = []  # capital-constrained top-N BUY symbols, in priority order
         for d in decisions:
             md = self.marketdata_repo.get_marketdata_by_trading_symbol(
                 d.symbol, data_date
@@ -390,6 +391,12 @@ class ActionsService:
                     remaining_capital=remaining_capital
                 )
                 new_actions.append(action)
+                if action.get('units', 0) == 0:
+                    pending_vacancies.append(d.symbol)
+                    logger.info(
+                        f"generate_actions: BUY {d.symbol} is capital-constrained — "
+                        f"queued as pending vacancy (priority {len(pending_vacancies)})"
+                    )
             elif d.action_type == 'PYRAMID_ADD':
                 if md is None:
                     logger.warning(f"generate_actions: no market data for {d.symbol} on {data_date}, skipping PYRAMID_ADD")
@@ -424,13 +431,28 @@ class ActionsService:
                 new_actions.append(action)
                 sizing_base += realized_gain
 
-                md_swap_for = self.marketdata_repo.get_marketdata_by_trading_symbol(d.swap_for, data_date)
-                if md_swap_for is None:
-                    logger.warning(f"generate_actions: no market data for swap target {d.swap_for} on {data_date}, skipping BUY leg")
+                # If there's a capital-constrained top-N BUY pending, redirect the swap's
+                # buy leg to that higher-priority candidate instead of the original swap target.
+                # The displaced original target cascades into the queue for the next swap.
+                if pending_vacancies:
+                    buy_symbol = pending_vacancies.pop(0)
+                    pending_vacancies.append(d.swap_for)  # cascade: displaced target available for next swap
+                    buy_reason = f'swap-redirected vacancy fill (was: {d.reason})'
+                    logger.info(
+                        f"generate_actions: SWAP buy redirected from {d.swap_for} → {buy_symbol} "
+                        f"(pending top-N vacancy takes priority, {d.swap_for} cascaded to queue)"
+                    )
+                else:
+                    buy_symbol = d.swap_for
+                    buy_reason = d.reason
+
+                md_buy = self.marketdata_repo.get_marketdata_by_trading_symbol(buy_symbol, data_date)
+                if md_buy is None:
+                    logger.warning(f"generate_actions: no market data for buy target {buy_symbol} on {data_date}, skipping BUY leg")
                     continue
 
                 action, remaining_capital = self.buy_action(
-                    d.swap_for, action_date, md_swap_for.close, d.reason,
+                    buy_symbol, action_date, md_buy.close, buy_reason,
                     total_capital=sizing_base, remaining_capital=remaining_capital
                 )
                 new_actions.append(action)
