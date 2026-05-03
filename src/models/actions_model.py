@@ -4,15 +4,19 @@ Actions Model
 Database model for trading actions (BUY/SELL/SWAP).
 Separated from investment module for clarity.
 """
-from db import db
-from sqlalchemy import Index
+
 import uuid
+
+from sqlalchemy import Index
+
+from db import db
 
 
 class ActionsModel(db.Model):
     """Trading actions for buy/sell decisions with risk and ATR data"""
-    __tablename__ = 'actions'
-    __bind_key__ = 'personal'
+
+    __tablename__ = "actions"
+    __bind_key__ = "personal"
 
     action_id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     action_date = db.Column(db.Date, nullable=False)
@@ -22,13 +26,13 @@ class ActionsModel(db.Model):
     risk = db.Column(db.Numeric(10, 2), nullable=True)
     atr = db.Column(db.Numeric(10, 2), nullable=True)
     units = db.Column(db.Integer, nullable=False)
-    prev_close = db.Column(db.Numeric(10,2), nullable=False)
-    execution_price = db.Column(db.Numeric(10,2), nullable=True)
-    capital = db.Column(db.Numeric(10,2), nullable=False)
-    status = db.Column(db.String(20), nullable=False, default='Pending')
-    buy_cost = db.Column(db.Numeric(10,2), nullable=True)
-    sell_cost = db.Column(db.Numeric(10,2), nullable=True)
-    tax = db.Column(db.Numeric(10,2), nullable=True)
+    prev_close = db.Column(db.Numeric(10, 2), nullable=False)
+    execution_price = db.Column(db.Numeric(10, 2), nullable=True)
+    capital = db.Column(db.Numeric(10, 2), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="Pending")
+    buy_cost = db.Column(db.Numeric(10, 2), nullable=True)
+    sell_cost = db.Column(db.Numeric(10, 2), nullable=True)
+    tax = db.Column(db.Numeric(10, 2), nullable=True)
 
     __table_args__ = (
         Index("idx_actions_action_date", "action_date"),

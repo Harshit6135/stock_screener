@@ -1,9 +1,8 @@
-from db import db
 from sqlalchemy.exc import SQLAlchemyError
 
-from models import MasterModel
 from config import setup_logger
-
+from db import db
+from models import MasterModel
 
 logger = setup_logger(name="MasterRepository")
 

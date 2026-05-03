@@ -1,14 +1,14 @@
-import os
 import json
+import os
 import time
 
 import pandas as pd
-pd.set_option('future.no_silent_downcasting', True)
 
-from adaptors import YFinanceAdaptor, RateLimitError
-from config import setup_logger, MCAP_THRESHOLD, PRICE_THRESHOLD
-from repositories import MasterRepository, InstrumentsRepository
+pd.set_option("future.no_silent_downcasting", True)
 
+from adaptors import RateLimitError, YFinanceAdaptor
+from config import MCAP_THRESHOLD, PRICE_THRESHOLD, setup_logger
+from repositories import InstrumentsRepository, MasterRepository
 
 yf = YFinanceAdaptor()
 master_repo = MasterRepository()
@@ -36,7 +36,7 @@ class InitService:
 
         # 2. Fetch yfinance data
         try:
-            df['yfinance_tickers'] = df.apply(self.generate_yfinance_tickers, axis=1)
+            df["yfinance_tickers"] = df.apply(self.generate_yfinance_tickers, axis=1)
             df = self.fetch_yfinance_data(df, batch_size, sleep_time, rate_limit_wait)
 
         except Exception as e:
@@ -83,93 +83,116 @@ class InitService:
             "nse_count": nse_tickers,
             "bse_count": bse_tickers,
             "merged_count": merged_tickers,
-            "final_count": final_count
+            "final_count": final_count,
         }
         return response_code, response
 
     def fetch_and_merge_csvs(self):
         # Load NSE
         if not os.path.exists(self.nse_path):
-             raise FileNotFoundError(f"NSE file not found at {self.nse_path}")
-        
+            raise FileNotFoundError(f"NSE file not found at {self.nse_path}")
+
         df_nse = pd.read_csv(self.nse_path)
-        df_nse = df_nse.rename(columns=lambda x: 'NSE_' + x.strip().replace(" ", "_"))
-        
+        df_nse = df_nse.rename(columns=lambda x: "NSE_" + x.strip().replace(" ", "_"))
+
         # Load BSE
         if not os.path.exists(self.bse_path):
-             raise FileNotFoundError(f"BSE file not found at {self.bse_path}")
+            raise FileNotFoundError(f"BSE file not found at {self.bse_path}")
 
         df_bse = pd.read_csv(self.bse_path)
         df_bse.reset_index(inplace=True)
         rename_map = {
-            "level_0":	"bse_Security Code",
+            "level_0": "bse_Security Code",
             "level_1": "bse_Issuer Name",
-            "level_2":	"bse_Symbol",
-            "level_3":	"bse_Security Name",
-            "level_4":	"bse_Status",
+            "level_2": "bse_Symbol",
+            "level_3": "bse_Security Name",
+            "level_4": "bse_Status",
             "Security Code": "bse_Group",
-            "Issuer Name":	"bse_Face Value",
-            "Security Id":	"bse_ISIN No",
-            "Security Name":	"bse_Instrument"
+            "Issuer Name": "bse_Face Value",
+            "Security Id": "bse_ISIN No",
+            "Security Name": "bse_Instrument",
         }
         df_bse = df_bse.rename(columns=rename_map)
-        df_bse = df_bse[[
-            "bse_Face Value",
-            "bse_Issuer Name",
-            "bse_ISIN No",
-            "bse_Instrument",
-            "bse_Security Code",
-            "bse_Symbol",
-            "bse_Security Name",
-            "bse_Status"
-        ]]
+        df_bse = df_bse[
+            [
+                "bse_Face Value",
+                "bse_Issuer Name",
+                "bse_ISIN No",
+                "bse_Instrument",
+                "bse_Security Code",
+                "bse_Symbol",
+                "bse_Security Name",
+                "bse_Status",
+            ]
+        ]
         df_bse = df_bse.rename(columns=lambda x: x.strip().replace(" ", "_").upper())
-        df_bse = df_bse[df_bse['BSE_STATUS'] == 'Active']
+        df_bse = df_bse[df_bse["BSE_STATUS"] == "Active"]
 
         # Merge
-        df_nse['ISIN'] = df_nse['NSE_ISIN_NUMBER']
-        df_bse['ISIN'] = df_bse['BSE_ISIN_NO']
-        df_consolidated = pd.merge(df_nse, df_bse, on='ISIN', how='outer')
-        
+        df_nse["ISIN"] = df_nse["NSE_ISIN_NUMBER"]
+        df_bse["ISIN"] = df_bse["BSE_ISIN_NO"]
+        df_consolidated = pd.merge(df_nse, df_bse, on="ISIN", how="outer")
+
         # Filter Logic (Mutual Funds, ISIN prefix)
         # 1. ISIN starts with IN
-        df_consolidated = df_consolidated[df_consolidated['ISIN'].astype(str).str.startswith('IN', na=False)]
-        
+        df_consolidated = df_consolidated[
+            df_consolidated["ISIN"].astype(str).str.startswith("IN", na=False)
+        ]
+
         # 2. Remove Mutual Funds
         # Check BSE_ISSUER_NAME (originally 'Issuer Name')
-        if 'BSE_ISSUER_NAME' in df_consolidated.columns:
-             df_consolidated = df_consolidated[~df_consolidated['BSE_ISSUER_NAME'].astype(str).str.contains('Mutual Fund', case=False, na=False)]
+        if "BSE_ISSUER_NAME" in df_consolidated.columns:
+            df_consolidated = df_consolidated[
+                ~df_consolidated["BSE_ISSUER_NAME"]
+                .astype(str)
+                .str.contains("Mutual Fund", case=False, na=False)
+            ]
 
         # 3. Remove Asset Management & ETF
-        if 'BSE_ISSUER_NAME' in df_consolidated.columns and 'BSE_SECURITY_NAME' in df_consolidated.columns:
-            df_consolidated = df_consolidated[~
-                (df_consolidated['BSE_ISSUER_NAME'].astype(str).str.contains('asset management', case=False, na=False) &
-                 df_consolidated['BSE_SECURITY_NAME'].astype(str).str.contains('etf', case=False, na=False))
+        if (
+            "BSE_ISSUER_NAME" in df_consolidated.columns
+            and "BSE_SECURITY_NAME" in df_consolidated.columns
+        ):
+            df_consolidated = df_consolidated[
+                ~(
+                    df_consolidated["BSE_ISSUER_NAME"]
+                    .astype(str)
+                    .str.contains("asset management", case=False, na=False)
+                    & df_consolidated["BSE_SECURITY_NAME"]
+                    .astype(str)
+                    .str.contains("etf", case=False, na=False)
+                )
             ]
 
         # Cleanup columns
         # NSE_SYMBOL, BSE_SECURITY_CODE (as string), BSE_SECURITY_ID (as alphanumeric)
         # Prioritize NSE Symbol
-        df_consolidated['NSE_SYMBOL'] = df_consolidated['NSE_SYMBOL'].fillna('')
-        df_consolidated['BSE_SYMBOL'] = df_consolidated['BSE_SYMBOL'].fillna('')
-        df_consolidated['BSE_SECURITY_CODE'] = df_consolidated['BSE_SECURITY_CODE'].fillna(0).astype(int).astype(str)
-        df_consolidated['NAME_OF_COMPANY'] = df_consolidated['NSE_NAME_OF_COMPANY'].fillna(df_consolidated['BSE_ISSUER_NAME'])
+        df_consolidated["NSE_SYMBOL"] = df_consolidated["NSE_SYMBOL"].fillna("")
+        df_consolidated["BSE_SYMBOL"] = df_consolidated["BSE_SYMBOL"].fillna("")
+        df_consolidated["BSE_SECURITY_CODE"] = (
+            df_consolidated["BSE_SECURITY_CODE"].fillna(0).astype(int).astype(str)
+        )
+        df_consolidated["NAME_OF_COMPANY"] = df_consolidated["NSE_NAME_OF_COMPANY"].fillna(
+            df_consolidated["BSE_ISSUER_NAME"]
+        )
         unwanted_cols = [
-            'NSE_ISIN_NUMBER',
-            'BSE_ISIN_NO',
-            'NSE_NAME_OF_COMPANY',
-            'NSE_SERIES',
-            'NSE_DATE_OF_LISTING',
-            'NSE_PAID_UP_VALUE',
-            'NSE_MARKET_LOT',
-            'NSE_FACE_VALUE',
-            'BSE_FACE_VALUE',
-            'BSE_ISSUER_NAME',
-            'BSE_INSTRUMENT',
-            'BSE_STATUS'
+            "NSE_ISIN_NUMBER",
+            "BSE_ISIN_NO",
+            "NSE_NAME_OF_COMPANY",
+            "NSE_SERIES",
+            "NSE_DATE_OF_LISTING",
+            "NSE_PAID_UP_VALUE",
+            "NSE_MARKET_LOT",
+            "NSE_FACE_VALUE",
+            "BSE_FACE_VALUE",
+            "BSE_ISSUER_NAME",
+            "BSE_INSTRUMENT",
+            "BSE_STATUS",
         ]
-        df_consolidated = df_consolidated.drop(columns=unwanted_cols, errors='ignore')
-        df_consolidated = df_consolidated[['ISIN', 'NSE_SYMBOL', 'BSE_SYMBOL', 'BSE_SECURITY_CODE', 'NAME_OF_COMPANY']]
+        df_consolidated = df_consolidated.drop(columns=unwanted_cols, errors="ignore")
+        df_consolidated = df_consolidated[
+            ["ISIN", "NSE_SYMBOL", "BSE_SYMBOL", "BSE_SECURITY_CODE", "NAME_OF_COMPANY"]
+        ]
 
         return df_consolidated, len(df_nse), len(df_bse), len(df_consolidated)
 
@@ -177,13 +200,15 @@ class InitService:
     def generate_yfinance_tickers(row):
         tickers = []
         # Priority 1: NSE symbol
-        if pd.notna(row['NSE_SYMBOL']) and row['NSE_SYMBOL'] != '':
+        if pd.notna(row["NSE_SYMBOL"]) and row["NSE_SYMBOL"] != "":
             tickers.append(f"{row['NSE_SYMBOL']}.NS")
         # Priority 2: BSE alphanumeric symbol
-        if pd.notna(row['BSE_SYMBOL']) and row['BSE_SYMBOL'] != '':
+        if pd.notna(row["BSE_SYMBOL"]) and row["BSE_SYMBOL"] != "":
             tickers.append(f"{row['BSE_SYMBOL']}.BO")
         # Priority 3: BSE numeric security code
-        if pd.notna(row['BSE_SECURITY_CODE']) and row['BSE_SECURITY_CODE'] != '0': # '0' after conversion from NaN
+        if (
+            pd.notna(row["BSE_SECURITY_CODE"]) and row["BSE_SECURITY_CODE"] != "0"
+        ):  # '0' after conversion from NaN
             tickers.append(f"{row['BSE_SECURITY_CODE']}.BO")
         return tickers
 
@@ -191,9 +216,16 @@ class InitService:
     def fetch_yfinance_data(df, batch_size=100, sleep_time=4, rate_limit_wait=120):
         try:
             desired_columns = [
-                'industry', 'sector', 'marketCap', 'regularMarketPrice',
-                'allTimeHigh', 'allTimeLow', 'floatShares', 'sharesOutstanding',
-                'heldPercentInsiders', 'heldPercentInstitutions'
+                "industry",
+                "sector",
+                "marketCap",
+                "regularMarketPrice",
+                "allTimeHigh",
+                "allTimeLow",
+                "floatShares",
+                "sharesOutstanding",
+                "heldPercentInsiders",
+                "heldPercentInstitutions",
             ]
             for col in desired_columns:
                 df[col] = None
@@ -211,7 +243,7 @@ class InitService:
                     time.sleep(sleep_time)
 
                 idx = row.Index
-                tickers = df.at[idx, 'yfinance_tickers']
+                tickers = df.at[idx, "yfinance_tickers"]
 
                 # --- 429 retry loop ---
                 # We attempt the fetch once.  If we receive a RateLimitError we
@@ -219,7 +251,9 @@ class InitService:
                 # exactly once more before giving up.
                 for attempt in range(2):
                     try:
-                        yfinance_info, yfinance_ticker_used, yfinance_status = yf.get_stock_info(tickers)
+                        yfinance_info, yfinance_ticker_used, yfinance_status = yf.get_stock_info(
+                            tickers
+                        )
                         break  # success or normal failure — exit retry loop
                     except RateLimitError as rle:
                         if attempt == 0:
@@ -233,12 +267,16 @@ class InitService:
                             logger.error(
                                 f"Retry after 429 back-off still failed for stock {i + 1}/{total}: {rle}"
                             )
-                            yfinance_info, yfinance_ticker_used, yfinance_status = None, None, 'Failed'
+                            yfinance_info, yfinance_ticker_used, yfinance_status = (
+                                None,
+                                None,
+                                "Failed",
+                            )
 
-                df.at[idx, 'yfinance_info'] = json.dumps(yfinance_info)
-                df.at[idx, 'yfinance_ticker_used'] = yfinance_ticker_used
-                df.at[idx, 'yfinance_status'] = yfinance_status
-                if yfinance_status != 'Failed':
+                df.at[idx, "yfinance_info"] = json.dumps(yfinance_info)
+                df.at[idx, "yfinance_ticker_used"] = yfinance_ticker_used
+                df.at[idx, "yfinance_status"] = yfinance_status
+                if yfinance_status != "Failed":
                     successful_downloads += 1
                     for col in desired_columns:
                         df.at[idx, col] = yfinance_info.get(col, None)
@@ -257,18 +295,29 @@ class InitService:
     def push_to_master(df):
         try:
             req_cols = [
-                'ISIN', 'NSE_SYMBOL', 'BSE_SYMBOL', 'BSE_SECURITY_CODE', 
-                'NAME_OF_COMPANY', 'industry', 'sector', 'marketCap', 'regularMarketPrice',
-                'allTimeHigh', 'allTimeLow', 'sharesOutstanding', 
-                'floatShares', 'heldPercentInsiders', 'heldPercentInstitutions'
+                "ISIN",
+                "NSE_SYMBOL",
+                "BSE_SYMBOL",
+                "BSE_SECURITY_CODE",
+                "NAME_OF_COMPANY",
+                "industry",
+                "sector",
+                "marketCap",
+                "regularMarketPrice",
+                "allTimeHigh",
+                "allTimeLow",
+                "sharesOutstanding",
+                "floatShares",
+                "heldPercentInsiders",
+                "heldPercentInstitutions",
             ]
             df = df[req_cols]
             df.columns = df.columns.str.lower()
-            
+
             # Replace NaN with None (which becomes NULL in DB)
             df = df.where(pd.notnull(df), None)
-            
-            master_data = json.loads(df.to_json(orient='records', indent=4))
+
+            master_data = json.loads(df.to_json(orient="records", indent=4))
             master_repo.delete_all()
             master_repo.bulk_insert(master_data)
         except Exception as e:
@@ -277,16 +326,18 @@ class InitService:
     @staticmethod
     def filter_stocks(df):
         mcap_threshold = MCAP_THRESHOLD * 10000000
-        df['marketCap'] = pd.to_numeric(df['marketCap'], errors='coerce')
-        df['regularMarketPrice'] = pd.to_numeric(df['regularMarketPrice'], errors='coerce')
-        
+        df["marketCap"] = pd.to_numeric(df["marketCap"], errors="coerce")
+        df["regularMarketPrice"] = pd.to_numeric(df["regularMarketPrice"], errors="coerce")
+
         # Filter Mcap
-        df_filtered = df[df['marketCap'] >= mcap_threshold]
+        df_filtered = df[df["marketCap"] >= mcap_threshold]
         logger.info(f"Dropped {len(df) - len(df_filtered)} stocks due to Mcap < {MCAP_THRESHOLD}cr")
 
         current_len = len(df_filtered)
-        df_filtered = df_filtered[df_filtered['regularMarketPrice'] >= PRICE_THRESHOLD]
-        logger.info(f"Dropped {current_len - len(df_filtered)} stocks due to Price < {PRICE_THRESHOLD}")
+        df_filtered = df_filtered[df_filtered["regularMarketPrice"] >= PRICE_THRESHOLD]
+        logger.info(
+            f"Dropped {current_len - len(df_filtered)} stocks due to Price < {PRICE_THRESHOLD}"
+        )
 
         return df_filtered
 
@@ -305,19 +356,19 @@ class InitService:
         column ('EQ' or 'BE').
         """
         df = instruments_df.copy()
-        df['base_symbol'] = df['tradingsymbol'].apply(
-            lambda s: s[:-3] if isinstance(s, str) and s.endswith('-BE') else s
+        df["base_symbol"] = df["tradingsymbol"].apply(
+            lambda s: s[:-3] if isinstance(s, str) and s.endswith("-BE") else s
         )
-        kite_nse = df[df['exchange'] == 'NSE'].copy()
+        kite_nse = df[df["exchange"] == "NSE"].copy()
         # EQ: tradingsymbol has no -BE suffix
-        kite_eq = kite_nse[kite_nse['tradingsymbol'] == kite_nse['base_symbol']].copy()
-        kite_eq['inferred_series'] = 'EQ'
+        kite_eq = kite_nse[kite_nse["tradingsymbol"] == kite_nse["base_symbol"]].copy()
+        kite_eq["inferred_series"] = "EQ"
         # BE: tradingsymbol ends with -BE
-        kite_be = kite_nse[kite_nse['tradingsymbol'].str.endswith('-BE', na=False)].copy()
-        kite_be['inferred_series'] = 'BE'
+        kite_be = kite_nse[kite_nse["tradingsymbol"].str.endswith("-BE", na=False)].copy()
+        kite_be["inferred_series"] = "BE"
         # Merge; 'BE' > 'EQ' alphabetically so ascending sort puts EQ first → keep first = EQ wins
-        combined = pd.concat([kite_eq, kite_be]).sort_values('inferred_series', ascending=True)
-        return combined.drop_duplicates('base_symbol', keep='first').set_index('base_symbol')
+        combined = pd.concat([kite_eq, kite_be]).sort_values("inferred_series", ascending=True)
+        return combined.drop_duplicates("base_symbol", keep="first").set_index("base_symbol")
 
     def _detect_and_cascade_changes(self, existing_map, kite_lookup):
         """
@@ -335,12 +386,12 @@ class InitService:
                 errors += 1
                 continue
             kite_row = kite_lookup.loc[base_symbol]
-            new_token = int(kite_row['instrument_token'])
-            new_exchange_token = str(kite_row['exchange_token'])
-            new_series = kite_row['inferred_series']
+            new_token = int(kite_row["instrument_token"])
+            new_exchange_token = str(kite_row["exchange_token"])
+            new_series = kite_row["inferred_series"]
             new_tradingsymbol = base_symbol
-            old_token = existing['instrument_token']
-            old_series = existing['series']  # may be None before series column existed
+            old_token = existing["instrument_token"]
+            old_series = existing["series"]  # may be None before series column existed
             token_changed = new_token != old_token
             series_changed = old_series is not None and new_series != old_series
             if token_changed or series_changed:
@@ -348,123 +399,158 @@ class InitService:
                     f"Change detected '{base_symbol}': "
                     f"{old_series}({old_token}) -> {new_series}({new_token})"
                 )
-                changes.append({
-                    'base_symbol': base_symbol,
-                    'old_token': old_token,
-                    'new_token': new_token,
-                    'new_exchange_token': new_exchange_token,
-                    'new_series': new_series,
-                    'new_tradingsymbol': new_tradingsymbol,
-                })
+                changes.append(
+                    {
+                        "base_symbol": base_symbol,
+                        "old_token": old_token,
+                        "new_token": new_token,
+                        "new_exchange_token": new_exchange_token,
+                        "new_series": new_series,
+                        "new_tradingsymbol": new_tradingsymbol,
+                    }
+                )
 
         for change in changes:
             try:
-                instr_repo.cascade_token_update([{
-                    'old_token': change['old_token'],
-                    'new_token': change['new_token'],
-                    'new_exchange_token': change['new_exchange_token'],
-                }])
-                instr_repo.update_instrument_tokens(
-                    old_token=change['old_token'],
-                    new_token=change['new_token'],
-                    new_exchange_token=change['new_exchange_token'],
-                    new_series=change['new_series'],
-                    new_tradingsymbol=change['new_tradingsymbol'],
+                instr_repo.cascade_token_update(
+                    [
+                        {
+                            "old_token": change["old_token"],
+                            "new_token": change["new_token"],
+                            "new_exchange_token": change["new_exchange_token"],
+                        }
+                    ]
                 )
-                logger.info(f"Cascaded '{change['base_symbol']}': {change['old_token']} -> {change['new_token']}")
+                instr_repo.update_instrument_tokens(
+                    old_token=change["old_token"],
+                    new_token=change["new_token"],
+                    new_exchange_token=change["new_exchange_token"],
+                    new_series=change["new_series"],
+                    new_tradingsymbol=change["new_tradingsymbol"],
+                )
+                logger.info(
+                    f"Cascaded '{change['base_symbol']}': {change['old_token']} -> {change['new_token']}"
+                )
             except Exception as e:
                 logger.error(f"Failed to cascade '{change['base_symbol']}': {e}")
                 errors += 1
 
-        return {'checked': len(existing_map), 'changed': len(changes), 'errors': errors}
+        return {"checked": len(existing_map), "changed": len(changes), "errors": errors}
 
     def sync_with_kite(self, df, instruments_df):
         try:
-            valid_symbols_nse = set(df.loc[df['NSE_SYMBOL'] != '', 'NSE_SYMBOL'])
+            valid_symbols_nse = set(df.loc[df["NSE_SYMBOL"] != "", "NSE_SYMBOL"])
 
             # Build base_symbol: strip '-BE' suffix only when symbol genuinely ends with it.
             instruments_df = instruments_df.copy()
-            instruments_df['base_symbol'] = instruments_df['tradingsymbol'].apply(
-                lambda s: s[:-3] if isinstance(s, str) and s.endswith('-BE') else s
+            instruments_df["base_symbol"] = instruments_df["tradingsymbol"].apply(
+                lambda s: s[:-3] if isinstance(s, str) and s.endswith("-BE") else s
             )
 
             # 1. Exact Match First (EQ series — tradingsymbol == NSE_SYMBOL)
             kite_nse_exact = instruments_df[
-                (instruments_df['exchange'] == 'NSE') &
-                (instruments_df['tradingsymbol'].isin(valid_symbols_nse))
+                (instruments_df["exchange"] == "NSE")
+                & (instruments_df["tradingsymbol"].isin(valid_symbols_nse))
             ].copy()
-            kite_nse_exact['match_type'] = 'exact'
-            kite_nse_exact['lookup_symbol'] = kite_nse_exact['tradingsymbol']
-            kite_nse_exact['series'] = 'EQ'
+            kite_nse_exact["match_type"] = "exact"
+            kite_nse_exact["lookup_symbol"] = kite_nse_exact["tradingsymbol"]
+            kite_nse_exact["series"] = "EQ"
 
             # 2. Find unmatched symbols
-            matched_base = set(kite_nse_exact['base_symbol'])
+            matched_base = set(kite_nse_exact["base_symbol"])
             remaining_symbols_nse = valid_symbols_nse - matched_base
 
             # 3. BE series match — Kite uses 'SYMBOL-BE' for BE-series stocks
-            be_tradingsymbols = {s + '-BE' for s in remaining_symbols_nse}
+            be_tradingsymbols = {s + "-BE" for s in remaining_symbols_nse}
             kite_nse_be = instruments_df[
-                (instruments_df['exchange'] == 'NSE') &
-                (instruments_df['tradingsymbol'].isin(be_tradingsymbols))
+                (instruments_df["exchange"] == "NSE")
+                & (instruments_df["tradingsymbol"].isin(be_tradingsymbols))
             ].copy()
-            kite_nse_be = kite_nse_be.drop_duplicates('base_symbol', keep='first')
-            kite_nse_be['match_type'] = 'be'
-            kite_nse_be['lookup_symbol'] = kite_nse_be['base_symbol']
-            kite_nse_be['series'] = 'BE'
+            kite_nse_be = kite_nse_be.drop_duplicates("base_symbol", keep="first")
+            kite_nse_be["match_type"] = "be"
+            kite_nse_be["lookup_symbol"] = kite_nse_be["base_symbol"]
+            kite_nse_be["series"] = "BE"
 
             # 4. Any still-unmatched symbols: try generic hyphen-split fallback
-            matched_base_2 = matched_base | set(kite_nse_be['base_symbol'])
+            matched_base_2 = matched_base | set(kite_nse_be["base_symbol"])
             remaining_symbols_nse_2 = valid_symbols_nse - matched_base_2
             kite_nse_hyphen = instruments_df[
-                (instruments_df['exchange'] == 'NSE') &
-                (instruments_df['base_symbol'].isin(remaining_symbols_nse_2))
+                (instruments_df["exchange"] == "NSE")
+                & (instruments_df["base_symbol"].isin(remaining_symbols_nse_2))
             ].copy()
-            kite_nse_hyphen = kite_nse_hyphen.sort_values('tradingsymbol').drop_duplicates('base_symbol', keep='first')
-            kite_nse_hyphen['match_type'] = 'hyphen'
-            kite_nse_hyphen['lookup_symbol'] = kite_nse_hyphen['base_symbol']
-            kite_nse_hyphen['series'] = kite_nse_hyphen['tradingsymbol'].apply(
-                lambda s: 'BE' if str(s).endswith('-BE') else 'EQ'
+            kite_nse_hyphen = kite_nse_hyphen.sort_values("tradingsymbol").drop_duplicates(
+                "base_symbol", keep="first"
+            )
+            kite_nse_hyphen["match_type"] = "hyphen"
+            kite_nse_hyphen["lookup_symbol"] = kite_nse_hyphen["base_symbol"]
+            kite_nse_hyphen["series"] = kite_nse_hyphen["tradingsymbol"].apply(
+                lambda s: "BE" if str(s).endswith("-BE") else "EQ"
             )
 
             # 5. Combine NSE results
             kite_nse = pd.concat([kite_nse_exact, kite_nse_be, kite_nse_hyphen])
 
-            valid_symbols_bse = set(df.loc[(df['BSE_SYMBOL'] != '') & (df['NSE_SYMBOL'] == ''), 'BSE_SYMBOL'])
+            valid_symbols_bse = set(
+                df.loc[(df["BSE_SYMBOL"] != "") & (df["NSE_SYMBOL"] == ""), "BSE_SYMBOL"]
+            )
             kite_bse = instruments_df[
-                (instruments_df['exchange'] == 'BSE') &
-                (instruments_df['tradingsymbol'].isin(valid_symbols_bse))
+                (instruments_df["exchange"] == "BSE")
+                & (instruments_df["tradingsymbol"].isin(valid_symbols_bse))
             ].copy()
-            kite_bse['match_type'] = 'exact'
-            kite_bse['lookup_symbol'] = kite_bse['tradingsymbol']
-            if 'series' not in kite_bse.columns:
-                kite_bse['series'] = None
+            kite_bse["match_type"] = "exact"
+            kite_bse["lookup_symbol"] = kite_bse["tradingsymbol"]
+            if "series" not in kite_bse.columns:
+                kite_bse["series"] = None
 
             final_instruments = pd.concat([kite_nse, kite_bse])
 
-            req_columns = ['instrument_token', 'exchange_token', 'tradingsymbol', 'name', 'exchange', 'series', 'lookup_symbol', 'base_symbol']
+            req_columns = [
+                "instrument_token",
+                "exchange_token",
+                "tradingsymbol",
+                "name",
+                "exchange",
+                "series",
+                "lookup_symbol",
+                "base_symbol",
+            ]
             for col in req_columns:
                 if col not in final_instruments.columns:
                     final_instruments[col] = None
 
-            final_instruments['exchange_token'] = final_instruments['exchange_token'].astype(str)
+            final_instruments["exchange_token"] = final_instruments["exchange_token"].astype(str)
 
-            df_nse = df[df['NSE_SYMBOL'] != ''][['NSE_SYMBOL', 'marketCap', 'industry', 'sector']].rename(columns={'NSE_SYMBOL': 'lookup_key'})
-            df_bse = df[df['BSE_SYMBOL'] != ''][['BSE_SYMBOL', 'marketCap', 'industry', 'sector']].rename(columns={'BSE_SYMBOL': 'lookup_key'})
-            df_map = pd.concat([df_nse, df_bse]).drop_duplicates('lookup_key')
+            df_nse = df[df["NSE_SYMBOL"] != ""][
+                ["NSE_SYMBOL", "marketCap", "industry", "sector"]
+            ].rename(columns={"NSE_SYMBOL": "lookup_key"})
+            df_bse = df[df["BSE_SYMBOL"] != ""][
+                ["BSE_SYMBOL", "marketCap", "industry", "sector"]
+            ].rename(columns={"BSE_SYMBOL": "lookup_key"})
+            df_map = pd.concat([df_nse, df_bse]).drop_duplicates("lookup_key")
 
             final_instruments = final_instruments.merge(
-                df_map, left_on='lookup_symbol', right_on='lookup_key', how='left'
+                df_map, left_on="lookup_symbol", right_on="lookup_key", how="left"
             )
 
-            final_instruments['tradingsymbol'] = final_instruments['base_symbol']
+            final_instruments["tradingsymbol"] = final_instruments["base_symbol"]
 
-            output_columns = ['instrument_token', 'exchange_token', 'tradingsymbol', 'name', 'exchange', 'series', 'marketCap', 'industry', 'sector']
+            output_columns = [
+                "instrument_token",
+                "exchange_token",
+                "tradingsymbol",
+                "name",
+                "exchange",
+                "series",
+                "marketCap",
+                "industry",
+                "sector",
+            ]
             final_instruments = final_instruments[output_columns]
-            final_instruments.rename(columns={'marketCap': 'marketcap'}, inplace=True)
+            final_instruments.rename(columns={"marketCap": "marketcap"}, inplace=True)
 
-            instruments_json = json.loads(final_instruments.to_json(orient='records', indent=4))
+            instruments_json = json.loads(final_instruments.to_json(orient="records", indent=4))
             logger.info(f"Syncing {len(final_instruments)} instruments to Kite")
-            final_instruments.to_json(self.instr_json, orient='records', indent=4)
+            final_instruments.to_json(self.instr_json, orient="records", indent=4)
 
             # Snapshot existing tokens BEFORE wiping the table so we can cascade changes.
             existing_map = instr_repo.get_token_map()
@@ -475,10 +561,14 @@ class InitService:
             try:
                 response = instr_repo.bulk_insert(instruments_json)
                 if response is None:
-                    logger.error("bulk_insert returned None after delete — instruments table may be empty!")
+                    logger.error(
+                        "bulk_insert returned None after delete — instruments table may be empty!"
+                    )
                     return 500, 0
             except Exception as insert_err:
-                logger.error(f"bulk_insert failed after delete_all — instruments table is empty! {insert_err}")
+                logger.error(
+                    f"bulk_insert failed after delete_all — instruments table is empty! {insert_err}"
+                )
                 return 500, 0
 
             # After re-inserting, cascade any token/series changes into market_data + indicators.
@@ -508,7 +598,7 @@ class InitService:
             existing_map = instr_repo.get_token_map()
             if not existing_map:
                 logger.warning("No existing NSE instruments found — run full init first.")
-                return {'checked': 0, 'changed': 0, 'errors': 0}
+                return {"checked": 0, "changed": 0, "errors": 0}
 
             # 2. Fetch fresh Kite instruments and build lookup
             instruments_df = self.get_instruments()

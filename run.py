@@ -1,27 +1,27 @@
-from db import db
-from flask_smorest import Api
-from flask_migrate import Migrate
 from flask import Flask, render_template
+from flask_migrate import Migrate
+from flask_smorest import Api
 from waitress import serve
 
-
-from src.config import Config
+from db import db
 from src.api.v1.routes import (
-    instruments_bp,
-    marketdata_bp,
-    indicators_bp,
-    percentile_bp,
-    init_bp,
-    score_bp,
-    app_bp,
-    ranking_bp,
     actions_bp,
-    investment_bp,
+    app_bp,
+    backtest_bp,
     config_bp,
     costs_bp,
+    index_bp,
+    indicators_bp,
+    init_bp,
+    instruments_bp,
+    investment_bp,
+    marketdata_bp,
+    percentile_bp,
+    ranking_bp,
+    score_bp,
     tax_bp,
-    backtest_bp
 )
+from src.config import Config
 
 
 def create_app(config_class=Config):
@@ -29,6 +29,7 @@ def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
     return app
+
 
 app = create_app()
 db.init_app(app)
@@ -59,33 +60,36 @@ api.register_blueprint(costs_bp)
 api.register_blueprint(tax_bp)
 # Backtest
 api.register_blueprint(backtest_bp)
+# Market Indices (live ticker)
+api.register_blueprint(index_bp)
 
 
 # Main Dashboard Route
 @app.route("/")
 def dashboard():
     """Render the main dashboard"""
-    return render_template('dashboard.html')
+    return render_template("dashboard.html")
 
 
 @app.route("/backtest")
 def backtest():
     """Render the backtest page"""
-    return render_template('backtest.html')
+    return render_template("backtest.html")
 
 
 @app.route("/actions")
 def actions():
     """Render the actions page"""
-    return render_template('actions.html')
+    return render_template("actions.html")
 
 
 if __name__ == "__main__":
     import logging
+
     from paste.translogger import TransLogger
 
     # Waitress's internal logs
-    logging.getLogger('waitress').setLevel(logging.INFO)
+    logging.getLogger("waitress").setLevel(logging.INFO)
 
     # TransLogger captures HTTP requests and prints them to console
     logged_app = TransLogger(app, setup_console_handler=False)
@@ -94,8 +98,8 @@ if __name__ == "__main__":
 
     serve(
         logged_app,
-        host='0.0.0.0',
+        host="0.0.0.0",
         port=5000,
-        threads=3,           # SSE stream + pipeline + dashboard run concurrently
-        channel_timeout=600  # keep SSE connections alive up to 10 min
+        threads=3,  # SSE stream + pipeline + dashboard run concurrently
+        channel_timeout=600,  # keep SSE connections alive up to 10 min
     )

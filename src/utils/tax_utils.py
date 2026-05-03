@@ -1,22 +1,27 @@
 from datetime import date
+
 from config import TaxConfig
 
 
-def calculate_capital_gains_tax(purchase_price: float, current_price: float,
-                                 purchase_date: date, current_date: date,
-                                 quantity: int = 1,
-                                 config: TaxConfig = None) -> dict:
+def calculate_capital_gains_tax(
+    purchase_price: float,
+    current_price: float,
+    purchase_date: date,
+    current_date: date,
+    quantity: int = 1,
+    config: TaxConfig = None,
+) -> dict:
     """
     Calculate capital gains tax for Indian equity (per-trade estimation).
-    
+
     NOTE (R-11): This computes tax for a single trade. It does NOT net
     gains/losses across the financial year. For accurate FY-level netting,
     use the backtester's _compute_costs_and_taxes() which aggregates by FY.
     Per-action tax from this function is an upper-bound estimate.
-    
+
     STCG: < 12 months holding, taxed at 20%
     LTCG: >= 12 months holding, taxed at 12.5% above ₹1.25L exemption
-    
+
     Args:
         purchase_price: Buy price per share
         current_price: Sell price per share
@@ -24,17 +29,17 @@ def calculate_capital_gains_tax(purchase_price: float, current_price: float,
         current_date: Date of sale
         quantity: Number of shares
         config: TaxConfig with rates
-        
+
     Returns:
         dict with gain, tax type, tax amount, and net proceeds
     """
     if config is None:
         config = TaxConfig()
-    
+
     holding_days = (current_date - purchase_date).days
     gain_per_share = current_price - purchase_price
     total_gain = gain_per_share * quantity
-    
+
     if holding_days < config.ltcg_holding_days:
         # Short-term capital gains/losses
         tax = max(0.0, float(total_gain) * config.stcg_rate)
@@ -44,81 +49,78 @@ def calculate_capital_gains_tax(purchase_price: float, current_price: float,
         taxable_gain = max(0.0, float(total_gain) - config.ltcg_exemption)
         tax = taxable_gain * config.ltcg_rate
         tax_type = "LTCG"
-    
+
     return {
         "gain": round(total_gain, 2),
         "holding_days": holding_days,
         "tax_type": tax_type,
         "tax": round(tax, 2),
-        "net_gain": round(total_gain - tax, 2)
+        "net_gain": round(total_gain - tax, 2),
     }
 
 
-def should_hold_for_ltcg(purchase_date: date, current_date: date,
-                          current_score: float,
-                          config: TaxConfig = None) -> dict:
+def should_hold_for_ltcg(
+    purchase_date: date, current_date: date, current_score: float, config: TaxConfig = None
+) -> dict:
     """
     Check if holding for LTCG is beneficial.
-    
+
     Recommends holding if:
     - In tax hold window (300-365 days)
     - Score >= minimum threshold
-    
+
     Parameters:
         purchase_date: Date of purchase
         current_date: Current date
         current_score: Current composite score
         config: TaxConfig with rates
-    
+
     Returns:
         dict with hold_for_ltcg (bool), reason (str), days_to_ltcg (int)
     """
     if config is None:
         config = TaxConfig()
-    
+
     holding_days = (current_date - purchase_date).days
     days_to_ltcg = config.ltcg_holding_days - holding_days
-    
+
     # Already LTCG eligible
     if days_to_ltcg <= 0:
-        return {
-            "hold_for_ltcg": False,
-            "reason": "already_ltcg",
-            "days_to_ltcg": 0
-        }
-    
+        return {"hold_for_ltcg": False, "reason": "already_ltcg", "days_to_ltcg": 0}
+
     # Not in tax hold window
     if holding_days < config.tax_hold_window_start:
-        return {
-            "hold_for_ltcg": False,
-            "reason": "too_early",
-            "days_to_ltcg": days_to_ltcg
-        }
-    
+        return {"hold_for_ltcg": False, "reason": "too_early", "days_to_ltcg": days_to_ltcg}
+
     # In window, check score
     if current_score >= config.tax_hold_min_score:
         return {
             "hold_for_ltcg": True,
             "reason": f"score>={config.tax_hold_min_score}_and_{days_to_ltcg}d_to_ltcg",
-            "days_to_ltcg": days_to_ltcg
+            "days_to_ltcg": days_to_ltcg,
         }
-    
+
     return {
         "hold_for_ltcg": False,
         "reason": f"score<{config.tax_hold_min_score}",
-        "days_to_ltcg": days_to_ltcg
+        "days_to_ltcg": days_to_ltcg,
     }
 
 
-def calculate_tax_adjusted_cost(purchase_price: float, current_price: float,
-                                 purchase_date: date, current_date: date,
-                                 quantity: int, switching_cost_pct: float,
-                                 config: TaxConfig = None) -> float:
+def calculate_tax_adjusted_cost(
+    purchase_price: float,
+    current_price: float,
+    purchase_date: date,
+    current_date: date,
+    quantity: int,
+    switching_cost_pct: float,
+    config: TaxConfig = None,
+) -> float:
     """
     Calculate effective switching cost including tax impact.
-    
+
     Useful for swap decisions where tax must be considered.
-    
+
     Parameters:
         purchase_price: Buy price per share
         current_price: Current/sell price per share
@@ -127,18 +129,18 @@ def calculate_tax_adjusted_cost(purchase_price: float, current_price: float,
         quantity: Number of shares
         switching_cost_pct: Transaction cost percentage (from costs utils)
         config: TaxConfig with rates
-    
+
     Returns:
         float: Total switching cost percentage (transaction + tax)
     """
     if config is None:
         config = TaxConfig()
-    
-    tax_info = calculate_capital_gains_tax(
-        purchase_price, current_price, purchase_date, current_date, quantity, config)
-    
-    trade_value = current_price * quantity
-    tax_pct = tax_info['tax'] / trade_value if trade_value > 0 else 0
-    
-    return round(switching_cost_pct + tax_pct, 4)
 
+    tax_info = calculate_capital_gains_tax(
+        purchase_price, current_price, purchase_date, current_date, quantity, config
+    )
+
+    trade_value = current_price * quantity
+    tax_pct = tax_info["tax"] / trade_value if trade_value > 0 else 0
+
+    return round(switching_cost_pct + tax_pct, 4)

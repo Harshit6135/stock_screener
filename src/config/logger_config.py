@@ -1,12 +1,11 @@
-
+import logging
 import os
 import queue
-import logging
-
 from datetime import datetime
 
 try:
     from pythonjsonlogger import jsonlogger
+
     HAS_JSON_LOGGER = True
 except ImportError:
     HAS_JSON_LOGGER = False
@@ -34,7 +33,7 @@ class SSELogHandler(logging.Handler):
 # Single shared SSE handler instance (plain-text, lightweight)
 _sse_handler = SSELogHandler()
 _sse_handler.setLevel(logging.INFO)
-_sse_handler.setFormatter(logging.Formatter('%(levelname)s | %(name)s | %(message)s'))
+_sse_handler.setFormatter(logging.Formatter("%(levelname)s | %(name)s | %(message)s"))
 
 
 def setup_logger(name="StockScreener", log_dir="logs"):
@@ -59,28 +58,28 @@ def setup_logger(name="StockScreener", log_dir="logs"):
     # Avoid duplicate handlers if setup is called multiple times
     if logger.hasHandlers():
         logger.handlers.clear()
-        
+
     # Prevent logs from bubbling up to the root logger (which causes duplicates)
     logger.propagate = False
 
     # File Handler with JSON formatting
-    file_handler = logging.FileHandler(log_file, mode='a')
+    file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setLevel(logging.INFO)
 
     if HAS_JSON_LOGGER:
         json_format = jsonlogger.JsonFormatter(
-            '%(asctime)s %(levelname)s %(name)s %(message)s',
-            rename_fields={'asctime': 'timestamp', 'levelname': 'level'}
+            "%(asctime)s %(levelname)s %(name)s %(message)s",
+            rename_fields={"asctime": "timestamp", "levelname": "level"},
         )
         file_handler.setFormatter(json_format)
     else:
-        file_format = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+        file_format = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
         file_handler.setFormatter(file_format)
 
     # Console Handler (human-readable for debugging)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
-    console_format = logging.Formatter('%(levelname)s | %(name)s | %(message)s')
+    console_format = logging.Formatter("%(levelname)s | %(name)s | %(message)s")
     console_handler.setFormatter(console_format)
 
     logger.addHandler(file_handler)
@@ -89,4 +88,3 @@ def setup_logger(name="StockScreener", log_dir="logs"):
     logger.addHandler(_sse_handler)
 
     return logger
-

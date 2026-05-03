@@ -3,10 +3,11 @@ from db import db
 
 class ConfigModel(db.Model):
     """Portfolio-level risk configuration parameters"""
+
     __tablename__ = "config"
     __bind_key__ = "personal"
 
-    id = db.Column(db.Integer, primary_key=True, autoincrement = True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     config_name = db.Column(db.String, nullable=False)
     initial_capital = db.Column(db.Float, nullable=False, default=100000.0)
     risk_threshold = db.Column(db.Float, nullable=False, default=1.0)

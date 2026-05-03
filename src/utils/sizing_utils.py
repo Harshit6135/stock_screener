@@ -1,9 +1,11 @@
-
-def calculate_position_size(atr: float, current_price: float,
-                             total_capital: float,
-                             remaining_capital: float = None,
-                             config=None,
-                             existing_position_value: float = 0.0) -> dict:
+def calculate_position_size(
+    atr: float,
+    current_price: float,
+    total_capital: float,
+    remaining_capital: float = None,
+    config=None,
+    existing_position_value: float = 0.0,
+) -> dict:
     """
     Calculate position size with multiple constraints.
 
@@ -56,7 +58,7 @@ def calculate_position_size(atr: float, current_price: float,
         position_value = shares * current_price
 
     # 3. Concentration cap (based on total_capital)
-    concentration_limit = getattr(config, 'max_concentration_pct', 0.25)
+    concentration_limit = getattr(config, "max_concentration_pct", 0.25)
     max_total_exposure = total_capital * concentration_limit
     headroom = max(0.0, max_total_exposure - existing_position_value)
     if position_value > headroom:
@@ -74,5 +76,5 @@ def calculate_position_size(atr: float, current_price: float,
         "shares": shares,
         "position_value": round(position_value, 2),
         "stop_distance": round(stop_distance, 2),
-        "risk_amount": round(shares * stop_distance, 2)
+        "risk_amount": round(shares * stop_distance, 2),
     }

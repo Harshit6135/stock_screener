@@ -1,26 +1,26 @@
 import os
 import threading
-import webbrowser
 import urllib.parse
+import webbrowser
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Any, Dict, List, Optional
 
 from kiteconnect import KiteConnect, KiteTicker
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 
 class KiteAdaptor:
     """
     Kite Connect API adaptor for stock market data.
-    
+
     Handles authentication, session management, and data fetching
     for NSE/BSE market data via Zerodha Kite Connect API.
     """
-    
+
     def __init__(self, config: Dict[str, str], logger: Any) -> None:
         """
         Initialize Kite adaptor with credentials.
-        
+
         Parameters:
             config (Dict[str, str]): API configuration with keys:
                 - api_key: Kite Connect API key
@@ -28,21 +28,21 @@ class KiteAdaptor:
                 - redirect_url: OAuth callback URL
             logger: Logger instance for logging
         """
-        self.api_key = config['api_key']
-        self.api_secret = config['api_secret']
-        self.redirect_url = config['redirect_url']
+        self.api_key = config["api_key"]
+        self.api_secret = config["api_secret"]
+        self.redirect_url = config["redirect_url"]
         self.logger = logger
         self.kite: Optional[KiteConnect] = None
         self.instrument_map: Dict[int, str] = {}
         self.request_token: Optional[str] = None
-        
+
         # --- Live Ticker State ---
         self.kws: Optional[KiteTicker] = None
         self.live_prices: Dict[int, Dict] = {}  # {token: {last_price, prev_close, change, symbol}}
         self._ticker_lock = threading.Lock()
         self._ticker_running = False
         self._tick_count = 0  # for periodic logging
-        
+
         self._initialize_kite()
 
     def _initialize_kite(self):
@@ -53,23 +53,23 @@ class KiteAdaptor:
 
             self.kite = KiteConnect(api_key=self.api_key)
             self._ensure_session()
-            self.logger.info("Kite Connect initialized.")            
+            self.logger.info("Kite Connect initialized.")
         except Exception as e:
             self.logger.error(f"Failed to initialize Kite Client: {e}")
 
     def _get_token_path(self):
         """Resolve access_token.txt relative to project root, not CWD."""
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-        return os.path.join(project_root, 'access_token.txt')
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        return os.path.join(project_root, "access_token.txt")
 
     def _ensure_session(self):
         token_file = self._get_token_path()
         access_token = None
-        
+
         if os.path.exists(token_file):
             with open(token_file, "r") as f:
                 access_token = f.read().strip()
-                
+
         if access_token:
             self.kite.set_access_token(access_token)
             try:
@@ -78,70 +78,72 @@ class KiteAdaptor:
                 return
             except Exception:
                 self.logger.warning("Existing Access Token invalid.")
-        
+
         # Start Automated Login Flow
         self._start_login_flow()
 
     def _start_login_flow(self):
         self.logger.info("Starting automated login flow...")
-        
+
         # 1. Parse Redirect URL to find port
         parsed_url = urllib.parse.urlparse(self.redirect_url)
         port = parsed_url.port if parsed_url.port else 80
         host = parsed_url.hostname
-        
+
         # 2. Define Callback Handler
         class CallbackHandler(BaseHTTPRequestHandler):
             client_instance = self
-            
+
             def do_GET(self):
                 # Extract query parameters
                 parsed_path = urllib.parse.urlparse(self.path)
                 query_params = urllib.parse.parse_qs(parsed_path.query)
-                
-                if 'request_token' in query_params:
+
+                if "request_token" in query_params:
                     # Capture token
-                    self.client_instance.request_token = query_params['request_token'][0]
-                    
+                    self.client_instance.request_token = query_params["request_token"][0]
+
                     # Send response to browser
                     self.send_response(200)
-                    self.send_header('Content-type', 'text/html')
+                    self.send_header("Content-type", "text/html")
                     self.end_headers()
-                    self.wfile.write(b"<h1>Login Successful!</h1><p>You can close this window now.</p>")
+                    self.wfile.write(
+                        b"<h1>Login Successful!</h1><p>You can close this window now.</p>"
+                    )
                 else:
                     self.send_response(400)
                     self.end_headers()
-            
+
             def log_message(self, format, *args):
-                pass # Suppress logging
+                pass  # Suppress logging
 
         # 3. Start Local Server
         server = HTTPServer((host, port), CallbackHandler)
         server_thread = threading.Thread(target=server.handle_request)
         server_thread.start()
-        
+
         # 4. Open Browser
         login_url = self.kite.login_url()
         self.logger.info(f"Opening Login URL: {login_url}")
         self.logger.info(f"Listening for callback on {host}:{port}...")
         webbrowser.open(login_url)
-        
+
         # 5. Wait for token
-        server_thread.join(timeout=120) # Wait max 2 minutes
+        server_thread.join(timeout=120)  # Wait max 2 minutes
 
         # Gracefully shut down the HTTP server regardless of outcome
         try:
             server.server_close()
         except Exception:
             pass
-        
+
         if self.request_token:
             self.logger.info("Request Token received via callback.")
             try:
                 data = self.kite.generate_session(self.request_token, api_secret=self.api_secret)
                 access_token = data["access_token"]
                 self.kite.set_access_token(access_token)
-                
+
                 with open(self._get_token_path(), "w") as f:
                     f.write(access_token)
                 self.logger.info("New Access Token generated and saved.")
@@ -152,22 +154,23 @@ class KiteAdaptor:
             self.logger.error("Login timed out or failed to receive token.")
             raise TimeoutError("Login timed out")
 
-    def fetch_ticker_data(self, ticker: int, start_date: datetime, 
-                          end_date: Optional[datetime] = None) -> Optional[List[Dict]]:
+    def fetch_ticker_data(
+        self, ticker: int, start_date: datetime, end_date: Optional[datetime] = None
+    ) -> Optional[List[Dict]]:
         """
         Fetch historical OHLCV data for a ticker.
-        
+
         Parameters:
             ticker (int): Instrument token from Kite
             start_date (datetime): Start date for data
             end_date (Optional[datetime]): End date, defaults to now
-        
+
         Returns:
             Optional[List[Dict]]: OHLCV records, or None if fetch fails
-        
+
         Raises:
             Exception: If API call fails (logged, returns None)
-        
+
         Example:
             >>> data = adaptor.fetch_ticker_data(738561, datetime(2024, 1, 1))
         """
@@ -175,11 +178,11 @@ class KiteAdaptor:
             if not end_date:
                 end_date = datetime.now()
             records = self.kite.historical_data(ticker, start_date, end_date, interval="day")
-            
+
             if not records:
                 self.logger.warning(f"No data returned for {ticker}")
                 return None
-            
+
             return records
 
         except Exception as e:
@@ -189,13 +192,13 @@ class KiteAdaptor:
     def get_instruments(self, exchange: Optional[str] = None) -> Optional[List[Dict]]:
         """
         Get list of tradable instruments from Kite.
-        
+
         Parameters:
             exchange (Optional[str]): Specific exchange (NSE/BSE) or None for all
-        
+
         Returns:
             Optional[List[Dict]]: Instrument data, or None if fetch fails
-        
+
         Example:
             >>> instruments = adaptor.get_instruments("NSE")
         """
@@ -224,10 +227,10 @@ class KiteAdaptor:
     def fetch_ohlc(self, exchange_symbols: List[str]) -> Dict[str, Dict]:
         """
         Fetch OHLC + LTP for a list of instruments via Kite REST API.
-        
+
         Parameters:
             exchange_symbols: List like ["NSE:RELIANCE", "NSE:TCS"]
-        
+
         Returns:
             Dict keyed by exchange:symbol with {last_price, ohlc: {open, high, low, close}, instrument_token}
         """
@@ -244,10 +247,10 @@ class KiteAdaptor:
     def start_ticker(self, token_symbol_map: Dict[int, str]) -> bool:
         """
         Start KiteTicker WebSocket for live price streaming.
-        
+
         Parameters:
             token_symbol_map: {instrument_token: symbol} for current holdings
-        
+
         Returns:
             True if started successfully
         """
@@ -270,10 +273,10 @@ class KiteAdaptor:
                 for token, symbol in token_symbol_map.items():
                     if token not in self.live_prices:
                         self.live_prices[token] = {
-                            'symbol': symbol,
-                            'last_price': 0,
-                            'prev_close': 0,
-                            'change': 0
+                            "symbol": symbol,
+                            "last_price": 0,
+                            "prev_close": 0,
+                            "change": 0,
                         }
 
             tokens = list(token_symbol_map.keys())
@@ -281,12 +284,12 @@ class KiteAdaptor:
             def on_ticks(ws, ticks):
                 with self._ticker_lock:
                     for tick in ticks:
-                        t = tick['instrument_token']
-                        ltp = tick.get('last_price', 0)
+                        t = tick["instrument_token"]
+                        ltp = tick.get("last_price", 0)
                         if t in self.live_prices:
-                            prev = self.live_prices[t].get('prev_close', 0)
-                            self.live_prices[t]['last_price'] = ltp
-                            self.live_prices[t]['change'] = (
+                            prev = self.live_prices[t].get("prev_close", 0)
+                            self.live_prices[t]["last_price"] = ltp
+                            self.live_prices[t]["change"] = (
                                 ((ltp - prev) / prev * 100) if prev else 0
                             )
                         else:
@@ -299,13 +302,10 @@ class KiteAdaptor:
                     if self._tick_count % 50 == 0:
                         summary_parts = []
                         for tk, d in self.live_prices.items():
-                            sym = d.get('symbol', str(tk))
-                            summary_parts.append(
-                                f"{sym}={d.get('last_price', 0):.2f}"
-                            )
+                            sym = d.get("symbol", str(tk))
+                            summary_parts.append(f"{sym}={d.get('last_price', 0):.2f}")
                         self.logger.info(
-                            f"WS tick batch #{self._tick_count}: "
-                            f"{', '.join(summary_parts)}"
+                            f"WS tick batch #{self._tick_count}: " f"{', '.join(summary_parts)}"
                         )
 
             def on_connect(ws, response):
@@ -345,19 +345,19 @@ class KiteAdaptor:
         """Update subscriptions on an already-running ticker."""
         if not self.kws or not self._ticker_running:
             return
-        
+
         old_tokens = set(self.instrument_map.keys())
         new_tokens = set(token_symbol_map.keys())
-        
+
         to_unsub = old_tokens - new_tokens
         to_sub = new_tokens - old_tokens
-        
+
         if to_unsub:
             self.kws.unsubscribe(list(to_unsub))
         if to_sub:
             self.kws.subscribe(list(to_sub))
             self.kws.set_mode(self.kws.MODE_LTP, list(to_sub))
-        
+
         self.instrument_map = token_symbol_map
         with self._ticker_lock:
             # Remove old, add new
@@ -365,10 +365,10 @@ class KiteAdaptor:
                 self.live_prices.pop(t, None)
             for t in to_sub:
                 self.live_prices[t] = {
-                    'symbol': token_symbol_map[t],
-                    'last_price': 0,
-                    'prev_close': 0,
-                    'change': 0
+                    "symbol": token_symbol_map[t],
+                    "last_price": 0,
+                    "prev_close": 0,
+                    "change": 0,
                 }
 
     def stop_ticker(self):
@@ -384,19 +384,19 @@ class KiteAdaptor:
     def get_live_prices(self) -> Dict[str, Dict]:
         """
         Return current live prices snapshot keyed by symbol.
-        
+
         Returns:
             {"RELIANCE": {"last_price": 2400, "prev_close": 2380, "change": 0.84}, ...}
         """
         with self._ticker_lock:
             result = {}
             for token, data in self.live_prices.items():
-                symbol = data.get('symbol', str(token))
+                symbol = data.get("symbol", str(token))
                 result[symbol] = {
-                    'last_price': data.get('last_price', 0),
-                    'prev_close': data.get('prev_close', 0),
-                    'change': round(data.get('change', 0), 2),
-                    'instrument_token': token
+                    "last_price": data.get("last_price", 0),
+                    "prev_close": data.get("prev_close", 0),
+                    "change": round(data.get("change", 0), 2),
+                    "instrument_token": token,
                 }
             return result
 

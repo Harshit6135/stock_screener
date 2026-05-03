@@ -1,34 +1,34 @@
+import traceback
+
 from flask import Response, stream_with_context
 from flask.views import MethodView
 from flask_smorest import Blueprint
-import traceback
 
 from adaptors import KiteAdaptor
-from config import setup_logger, KITE_CONFIG, sse_log_queue
+from config import KITE_CONFIG, setup_logger, sse_log_queue
+from repositories import (
+    IndicatorsRepository,
+    MarketDataRepository,
+    PercentileRepository,
+    RankingRepository,
+    ScoreRepository,
+)
 from schemas import (
-    MessageSchema,
     CleanupQuerySchema,
+    MessageSchema,
     PipelineQuerySchema,
     RecalculateQuerySchema,
 )
 from services import (
+    IndicatorsService,
     InitService,
     MarketDataService,
-    IndicatorsService,
     PercentileService,
-    ScoreService,
     RankingService,
-)
-from repositories import (
-    MarketDataRepository,
-    IndicatorsRepository,
-    PercentileRepository,
-    ScoreRepository,
-    RankingRepository,
+    ScoreService,
 )
 
-logger = setup_logger(name='Orchestrator')
-
+logger = setup_logger(name="Orchestrator")
 
 
 blp = Blueprint(
@@ -43,13 +43,15 @@ blp = Blueprint(
 class LogStream(MethodView):
     def get(self):
         """SSE stream of Orchestrator log lines. Open before running the pipeline."""
+
         def _generate():
             import queue as _queue
+
             while True:
                 try:
                     msg = sse_log_queue.get(timeout=30)
                     # Escape newlines so SSE stays single-line per event
-                    safe = msg.replace('\n', ' ').replace('\r', '')
+                    safe = msg.replace("\n", " ").replace("\r", "")
                     yield f"data: {safe}\n\n"
                 except _queue.Empty:
                     # Keep-alive ping every 30 s so the browser doesn't time out
@@ -57,11 +59,11 @@ class LogStream(MethodView):
 
         return Response(
             stream_with_context(_generate()),
-            mimetype='text/event-stream',
+            mimetype="text/event-stream",
             headers={
-                'Cache-Control': 'no-cache',
-                'X-Accel-Buffering': 'no',     # disable nginx buffering
-            }
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",  # disable nginx buffering
+            },
         )
 
 
@@ -76,38 +78,28 @@ class CleanupAfterDate(MethodView):
         Toggle individual tables via boolean query params.
         All default to true (delete from all tables).
         """
-        start_date = args['start_date']
+        start_date = args["start_date"]
         deleted_counts = {}
 
-        if args.get('marketdata', True):
+        if args.get("marketdata", True):
             repo = MarketDataRepository()
-            deleted_counts['marketdata'] = repo.delete_after_date(
-                start_date
-            )
+            deleted_counts["marketdata"] = repo.delete_after_date(start_date)
 
-        if args.get('indicators', True):
+        if args.get("indicators", True):
             repo = IndicatorsRepository()
-            deleted_counts['indicators'] = repo.delete_after_date(
-                start_date
-            )
+            deleted_counts["indicators"] = repo.delete_after_date(start_date)
 
-        if args.get('percentile', True):
+        if args.get("percentile", True):
             repo = PercentileRepository()
-            deleted_counts['percentile'] = repo.delete_after_date(
-                start_date
-            )
+            deleted_counts["percentile"] = repo.delete_after_date(start_date)
 
-        if args.get('score', True):
+        if args.get("score", True):
             repo = ScoreRepository()
-            deleted_counts['score'] = repo.delete_after_date(
-                start_date
-            )
+            deleted_counts["score"] = repo.delete_after_date(start_date)
 
-        if args.get('ranking', True):
+        if args.get("ranking", True):
             repo = RankingRepository()
-            deleted_counts['ranking'] = repo.delete_after_date(
-                start_date
-            )
+            deleted_counts["ranking"] = repo.delete_after_date(start_date)
 
         return {
             "message": f"Deleted data after {start_date}",
@@ -149,17 +141,19 @@ class RunPipeline(MethodView):
             # the constructor.  If the token is invalid it triggers the login flow.
             # If the constructor raises, we treat it as an auth failure.
             if kite_client.kite is None:
-                raise RuntimeError("Kite client failed to initialise (check API key / credentials).")
-            results['kite_auth'] = "completed"
+                raise RuntimeError(
+                    "Kite client failed to initialise (check API key / credentials)."
+                )
+            results["kite_auth"] = "completed"
         except Exception as e:
             traceback.print_exc()
-            results['kite_auth'] = f"failed: {str(e)}"
+            results["kite_auth"] = f"failed: {str(e)}"
             failed = True
 
         # Step 1: Init App
-        if args.get('init', True):
+        if args.get("init", True):
             if failed:
-                results['init'] = "skipped (previous step failed)"
+                results["init"] = "skipped (previous step failed)"
             else:
                 try:
                     init_service = InitService()
@@ -168,85 +162,89 @@ class RunPipeline(MethodView):
                         sleep_time=sleep_time,
                         rate_limit_wait=rate_limit_wait,
                     )
-                    results['init'] = "completed"
+                    results["init"] = "completed"
                 except Exception as e:
                     traceback.print_exc()
-                    results['init'] = f"failed: {str(e)}"
+                    results["init"] = f"failed: {str(e)}"
                     failed = True
 
         # Step 2: Update Market Data
-        if args.get('marketdata', True):
+        if args.get("marketdata", True):
             if failed:
-                results['marketdata'] = "skipped (previous step failed)"
+                results["marketdata"] = "skipped (previous step failed)"
             else:
                 try:
                     marketdata_service = MarketDataService()
-                    historical = args.get('historical', False)
+                    historical = args.get("historical", False)
                     marketdata_service.update_latest_data_for_all(historical=historical)
-                    results['marketdata'] = "completed"
+                    results["marketdata"] = "completed"
                 except Exception as e:
                     traceback.print_exc()
-                    results['marketdata'] = f"failed: {str(e)}"
+                    results["marketdata"] = f"failed: {str(e)}"
                     failed = True
 
         # Step 3: Calculate Indicators
-        if args.get('indicators', True):
+        if args.get("indicators", True):
             if failed:
-                results['indicators'] = "skipped (previous step failed)"
+                results["indicators"] = "skipped (previous step failed)"
             else:
                 try:
                     indicators_service = IndicatorsService()
                     indicators_service.calculate_indicators()
-                    results['indicators'] = "completed"
+                    results["indicators"] = "completed"
                 except Exception as e:
                     traceback.print_exc()
-                    results['indicators'] = f"failed: {str(e)}"
+                    results["indicators"] = f"failed: {str(e)}"
                     failed = True
 
         # Step 4: Calculate Percentiles
-        if args.get('percentile', True):
+        if args.get("percentile", True):
             if failed:
-                results['percentile'] = "skipped (previous step failed)"
+                results["percentile"] = "skipped (previous step failed)"
             else:
                 try:
                     percentile_service = PercentileService()
                     percentile_service.backfill_percentiles()
-                    results['percentile'] = "completed"
+                    results["percentile"] = "completed"
                 except Exception as e:
                     traceback.print_exc()
-                    results['percentile'] = f"failed: {str(e)}"
+                    results["percentile"] = f"failed: {str(e)}"
                     failed = True
 
         # Step 5: Calculate Scores
-        if args.get('score', True):
+        if args.get("score", True):
             if failed:
-                results['score'] = "skipped (previous step failed)"
+                results["score"] = "skipped (previous step failed)"
             else:
                 try:
                     score_service = ScoreService()
                     score_service.generate_composite_scores()
-                    results['score'] = "completed"
+                    results["score"] = "completed"
                 except Exception as e:
                     traceback.print_exc()
-                    results['score'] = f"failed: {str(e)}"
+                    results["score"] = f"failed: {str(e)}"
                     failed = True
 
         # Step 6: Calculate Rankings
-        if args.get('ranking', True):
+        if args.get("ranking", True):
             if failed:
-                results['ranking'] = "skipped (previous step failed)"
+                results["ranking"] = "skipped (previous step failed)"
             else:
                 try:
                     ranking_service = RankingService()
                     ranking_service.generate_rankings()
-                    results['ranking'] = "completed"
+                    results["ranking"] = "completed"
                 except Exception as e:
                     traceback.print_exc()
-                    results['ranking'] = f"failed: {str(e)}"
+                    results["ranking"] = f"failed: {str(e)}"
                     failed = True
 
         return {
-            "message": "Pipeline aborted due to a step failure" if failed else "Pipeline execution completed",
+            "message": (
+                "Pipeline aborted due to a step failure"
+                if failed
+                else "Pipeline execution completed"
+            ),
             "results": results,
         }
 
@@ -266,66 +264,66 @@ class RecalculateFromDate(MethodView):
         Toggle individual tables via boolean query params.
         All default to true.
         """
-        start_date = args['start_date']
+        start_date = args["start_date"]
         results = {}
         failed = False
 
         # Percentile: delete + regenerate
-        if args.get('percentile', True):
+        if args.get("percentile", True):
             if failed:
-                results['percentile'] = "skipped (previous step failed)"
+                results["percentile"] = "skipped (previous step failed)"
             else:
                 try:
                     percentile_repo = PercentileRepository()
                     deleted = percentile_repo.delete_after_date(start_date)
-                    results['percentile_deleted'] = deleted
+                    results["percentile_deleted"] = deleted
 
                     percentile_service = PercentileService()
                     percentile_service.backfill_percentiles()
-                    results['percentile'] = "recalculated"
+                    results["percentile"] = "recalculated"
                 except Exception as e:
-                    results['percentile'] = f"failed: {str(e)}"
+                    results["percentile"] = f"failed: {str(e)}"
                     failed = True
 
         # Score: delete + regenerate
-        if args.get('score', True):
+        if args.get("score", True):
             if failed:
-                results['score'] = "skipped (previous step failed)"
+                results["score"] = "skipped (previous step failed)"
             else:
                 try:
                     score_repo = ScoreRepository()
                     deleted = score_repo.delete_after_date(start_date)
-                    results['score_deleted'] = deleted
+                    results["score_deleted"] = deleted
 
                     score_service = ScoreService()
                     score_service.generate_composite_scores()
-                    results['score'] = "recalculated"
+                    results["score"] = "recalculated"
                 except Exception as e:
-                    results['score'] = f"failed: {str(e)}"
+                    results["score"] = f"failed: {str(e)}"
                     failed = True
 
         # Ranking: delete + regenerate
-        if args.get('ranking', True):
+        if args.get("ranking", True):
             if failed:
-                results['ranking'] = "skipped (previous step failed)"
+                results["ranking"] = "skipped (previous step failed)"
             else:
                 try:
                     ranking_repo = RankingRepository()
                     deleted = ranking_repo.delete_after_date(start_date)
-                    results['ranking_deleted'] = deleted
+                    results["ranking_deleted"] = deleted
 
                     ranking_service = RankingService()
                     ranking_service.generate_rankings()
-                    results['ranking'] = "recalculated"
+                    results["ranking"] = "recalculated"
                 except Exception as e:
-                    results['ranking'] = f"failed: {str(e)}"
+                    results["ranking"] = f"failed: {str(e)}"
                     failed = True
 
         return {
             "message": (
                 f"Recalculation from {start_date} aborted due to a step failure"
-                if failed else
-                f"Recalculation from {start_date} completed"
+                if failed
+                else f"Recalculation from {start_date} completed"
             ),
             "results": results,
         }

@@ -1,5 +1,6 @@
+from sqlalchemy import PrimaryKeyConstraint
+
 from db import db
-from sqlalchemy import PrimaryKeyConstraint, Index
 
 
 class IndicatorsModel(db.Model):
@@ -9,7 +10,7 @@ class IndicatorsModel(db.Model):
     date = db.Column(db.Date, nullable=False)
     exchange = db.Column(db.String, nullable=False)
 
-    ema_50 = db.Column(db.Float, nullable=True) 
+    ema_50 = db.Column(db.Float, nullable=True)
     ema_200 = db.Column(db.Float, nullable=True)
     rsi_14 = db.Column(db.Float, nullable=True)
     roc_10 = db.Column(db.Float, nullable=True)

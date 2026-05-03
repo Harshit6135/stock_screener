@@ -1,10 +1,8 @@
 import numpy as np
 import pandas as pd
-
 from scipy import stats
 
 from config import GoldilocksConfig, RSIRegimeConfig
-
 
 # Module-level singletons — these are immutable configs, no need to re-create per call
 _RSI_CONFIG = RSIRegimeConfig()
@@ -26,7 +24,7 @@ def z_score_normalize(series: pd.Series, cap_at: float = 3.0) -> pd.Series:
     Z-Score normalization with winsorization
     Maps to 0-100 scale: Score = 50 + (Z * 16.66)
     """
-    z_scores = stats.zscore(series, nan_policy='omit')
+    z_scores = stats.zscore(series, nan_policy="omit")
     z_scores = np.clip(z_scores, -cap_at, cap_at)
     normalized = 50 + (z_scores * 16.66)
     return pd.Series(np.clip(normalized, 0, 100), index=series.index)
@@ -59,17 +57,16 @@ def goldilocks_score(distance: float) -> float:
     elif distance <= cfg.zone1_end:
         # 0-10%: rising from 70 to 85
         return cfg.zone1_score_start + (distance / cfg.zone1_end) * (
-            cfg.zone1_score_end - cfg.zone1_score_start)
+            cfg.zone1_score_end - cfg.zone1_score_start
+        )
     elif distance <= cfg.zone2_end:
         # 10-35%: sweet spot, rising from 85 to 100
         progress = (distance - cfg.zone1_end) / (cfg.zone2_end - cfg.zone1_end)
-        return cfg.zone2_score_start + progress * (
-            cfg.zone2_score_end - cfg.zone2_score_start)
+        return cfg.zone2_score_start + progress * (cfg.zone2_score_end - cfg.zone2_score_start)
     elif distance <= cfg.zone3_end:
         # 35-50%: extended, declining from 100 to 60
         progress = (distance - cfg.zone2_end) / (cfg.zone3_end - cfg.zone2_end)
-        return cfg.zone3_score_start - progress * (
-            cfg.zone3_score_start - cfg.zone3_score_end)
+        return cfg.zone3_score_start - progress * (cfg.zone3_score_start - cfg.zone3_score_end)
     else:
         # >50%: over-extended, decaying from 60 toward 0
         decay = ((distance - cfg.zone3_end) / 50) * cfg.zone4_decay

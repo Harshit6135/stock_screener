@@ -4,13 +4,15 @@ Actions Repository
 Data access layer for trading actions.
 Supports session injection for multi-database (personal/backtest) operations.
 """
+
 from typing import Optional
-from db import db
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from models import ActionsModel
-from config import setup_logger
 
+from config import setup_logger
+from db import db
+from models import ActionsModel
 
 logger = setup_logger(name="ActionsRepository")
 
@@ -31,60 +33,60 @@ class ActionsRepository:
     def get_action_dates(self):
         """
         Get distinct action dates from actions table.
-        
+
         Returns:
             list: action dates in descending order
         """
-        dates = self.session.query(
-            ActionsModel.action_date
-        ).distinct().order_by(
-            ActionsModel.action_date.desc()
-        ).all()
+        dates = (
+            self.session.query(ActionsModel.action_date)
+            .distinct()
+            .order_by(ActionsModel.action_date.desc())
+            .all()
+        )
         return [d[0] for d in dates]
 
     def get_actions(self, action_date=None):
         """
         Get all actions for a given action date.
-        
+
         Parameters:
             action_date: Date to query, defaults to latest
-        
+
         Returns:
             list: ActionsModel instances
         """
         if not action_date:
-            action_date = self.session.query(
-                func.max(ActionsModel.action_date)
-            ).scalar()
-        return self.session.query(ActionsModel).filter(
-            ActionsModel.action_date == action_date
-        ).all()
+            action_date = self.session.query(func.max(ActionsModel.action_date)).scalar()
+        return (
+            self.session.query(ActionsModel).filter(ActionsModel.action_date == action_date).all()
+        )
 
     def get_action_by_symbol(self, symbol, action_date=None):
         """
         Get action for a specific symbol and date.
-        
+
         Parameters:
             symbol (str): Trading symbol
             action_date: Date to query, defaults to latest
-        
+
         Returns:
             ActionsModel: Action instance or None
         """
         if not action_date:
             action_date = self.session.query(func.max(ActionsModel.action_date)).scalar()
-        return self.session.query(ActionsModel).filter(
-            ActionsModel.action_date == action_date,
-            ActionsModel.symbol == symbol
-        ).first()
+        return (
+            self.session.query(ActionsModel)
+            .filter(ActionsModel.action_date == action_date, ActionsModel.symbol == symbol)
+            .first()
+        )
 
     def bulk_insert_actions(self, actions):
         """
         Bulk insert action records.
-        
+
         Parameters:
             actions (list): List of action dictionaries
-        
+
         Returns:
             bool: True if successful, None otherwise
         """
@@ -102,7 +104,7 @@ class ActionsRepository:
     def delete_actions(self, action_date):
         """
         Delete actions for a specific date.
-        
+
         Parameters:
             action_date: Date to delete actions for
         """
@@ -127,9 +129,8 @@ class ActionsRepository:
         """
         try:
             self.session.query(ActionsModel).filter(
-                ActionsModel.action_date == action_date,
-                ActionsModel.symbol.in_(symbols)
-            ).delete(synchronize_session='fetch')
+                ActionsModel.action_date == action_date, ActionsModel.symbol.in_(symbols)
+            ).delete(synchronize_session="fetch")
             self.session.commit()
         except Exception as e:
             logger.error(f"Error delete_actions_by_symbols {e}")
@@ -138,37 +139,38 @@ class ActionsRepository:
     def check_other_pending_actions(self, action_date):
         """
         Check for pending actions on other dates.
-        
+
         Parameters:
             action_date: Date to exclude from check
-        
+
         Returns:
             list: Pending actions from other dates
         """
-        return self.session.query(ActionsModel).filter(
-            ActionsModel.action_date != action_date,
-            ActionsModel.status == 'Pending'
-        ).all()
+        return (
+            self.session.query(ActionsModel)
+            .filter(ActionsModel.action_date != action_date, ActionsModel.status == "Pending")
+            .all()
+        )
 
     def update_action(self, action_data):
         """
         Update an action (typically for approval/rejection).
-        
+
         Parameters:
             action_data (dict): Action data with action_id and fields to update
-        
+
         Returns:
             bool: True if successful, None otherwise
         """
-        action_id = action_data['action_id']
-        if action_data.get('status', None) == 'Approved':
-            if 'execution_price' not in action_data:
-                logger.warning('Missing execution price for approval')
+        action_id = action_data["action_id"]
+        if action_data.get("status", None) == "Approved":
+            if "execution_price" not in action_data:
+                logger.warning("Missing execution price for approval")
                 return None
         try:
-            action = self.session.query(ActionsModel).filter(
-                ActionsModel.action_id == action_id
-            ).first()
+            action = (
+                self.session.query(ActionsModel).filter(ActionsModel.action_id == action_id).first()
+            )
             if action:
                 for key, value in action_data.items():
                     if hasattr(action, key):
@@ -186,40 +188,37 @@ class ActionsRepository:
     def get_pending_actions(self):
         """
         Get all pending actions across all dates.
-        
+
         Returns:
             list: Pending ActionsModel instances
         """
-        return self.session.query(ActionsModel).filter(
-            ActionsModel.status == 'Pending'
-        ).all()
+        return self.session.query(ActionsModel).filter(ActionsModel.status == "Pending").all()
 
     def get_pending_buy_actions(self):
         """
         Get all pending actions across all dates.
-        
+
         Returns:
             list: Pending ActionsModel instances
         """
-        return self.session.query(ActionsModel).filter(
-            ActionsModel.status == 'Pending',
-            ActionsModel.type == 'buy'
-        ).all()
+        return (
+            self.session.query(ActionsModel)
+            .filter(ActionsModel.status == "Pending", ActionsModel.type == "buy")
+            .all()
+        )
 
     def get_all_approved_actions(self, ascending=False, symbol=None):
         """
         Get all approved actions ordered by date.
-        
+
         Parameters:
             ascending: Sort by date ascending if True
             symbol: Optional. Filter by a single trading symbol for efficiency.
-        
+
         Returns:
             list: Approved ActionsModel instances
         """
-        query = self.session.query(ActionsModel).filter(
-            ActionsModel.status == 'Approved'
-        )
+        query = self.session.query(ActionsModel).filter(ActionsModel.status == "Approved")
         if symbol:
             query = query.filter(ActionsModel.symbol == symbol)
         if ascending:
@@ -232,10 +231,10 @@ class ActionsRepository:
         """
         Insert a single action without deleting existing actions for that date.
         Used for mid-week SL sells and pending buy fills.
-        
+
         Parameters:
             action_dict (dict): Action data dictionary
-        
+
         Returns:
             ActionsModel: Inserted action or None on error
         """
@@ -272,14 +271,14 @@ class ActionsRepository:
             float: Sum of (execution_price or prev_close) * units for the type
         """
         from sqlalchemy import case
+
         price_col = case(
             (ActionsModel.execution_price.isnot(None), ActionsModel.execution_price),
-            else_=ActionsModel.prev_close
+            else_=ActionsModel.prev_close,
         )
-        result = self.session.query(
-            func.sum(price_col * ActionsModel.units)
-        ).filter(
-            ActionsModel.status == 'Approved',
-            ActionsModel.type == action_type
-        ).scalar()
+        result = (
+            self.session.query(func.sum(price_col * ActionsModel.units))
+            .filter(ActionsModel.status == "Approved", ActionsModel.type == action_type)
+            .scalar()
+        )
         return float(result) if result else 0.0

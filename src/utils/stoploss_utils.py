@@ -3,14 +3,12 @@ Stop-loss calculation utilities.
 
 All configuration values come from ConfigModel - no hardcoding.
 """
+
 from typing import Optional
 
 
 def calculate_initial_stop_loss(
-    buy_price: float,
-    atr: Optional[float],
-    stop_multiplier: float,
-    config=None
+    buy_price: float, atr: Optional[float], stop_multiplier: float, config=None
 ) -> float:
     """
     Calculate initial ATR-based stop-loss at entry.
@@ -38,7 +36,7 @@ def calculate_atr_trailing_stop(
     current_price: float,
     current_atr: Optional[float],
     stop_multiplier: float,
-    previous_stop: float = 0
+    previous_stop: float = 0,
 ) -> float:
     """
     Calculate ATR trailing stop based on current price and ATR.
@@ -61,11 +59,12 @@ def calculate_atr_trailing_stop(
     # Trail only upward
     return max(new_stop, previous_stop)
 
+
 def calculate_effective_stop(
     current_price: float,
     current_atr: Optional[float],
     stop_multiplier: float,
-    previous_stop: float = 0
+    previous_stop: float = 0,
 ):
     """
     Calculate effective stop-loss using ATR trailing method.

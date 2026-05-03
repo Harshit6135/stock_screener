@@ -4,19 +4,25 @@ Investment Routes
 API endpoints for investment holdings, summary, and manual trades.
 Thin controller layer — business logic lives in InvestmentService.
 """
+
+from typing import Optional
+
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
-from typing import Optional
-import marshmallow as ma
 
 from config import setup_logger
-from schemas import (
-    ActionQuerySchema, HoldingDateSchema, HoldingSchema, SummarySchema, MessageSchema,
-ManualBuySchema, ManualSellSchema, CapitalEventSchema
-)
 from repositories import InvestmentRepository
-from services import InvestmentService, ActionsService
-
+from schemas import (
+    ActionQuerySchema,
+    CapitalEventSchema,
+    HoldingDateSchema,
+    HoldingSchema,
+    ManualBuySchema,
+    ManualSellSchema,
+    MessageSchema,
+    SummarySchema,
+)
+from services import ActionsService, InvestmentService
 
 logger = setup_logger(name="InvestmentRoutes")
 inv_repo = InvestmentRepository()
@@ -24,10 +30,7 @@ inv_service = InvestmentService()
 
 
 blp = Blueprint(
-    "Investments",
-    __name__,
-    url_prefix="/api/v1/investment",
-    description="Investment Operations"
+    "Investments", __name__, url_prefix="/api/v1/investment", description="Investment Operations"
 )
 
 
@@ -48,7 +51,7 @@ class Holdings(MethodView):
     @blp.response(200, HoldingSchema(many=True))
     def get(self, args):
         """Get holdings for a specific date"""
-        working_date = args.get('date')
+        working_date = args.get("date")
         holdings = inv_repo.get_holdings(working_date)
         return [h.to_dict() for h in holdings]
 
@@ -60,7 +63,7 @@ class Summary(MethodView):
     @blp.response(200, SummarySchema)
     def get(self, args):
         """Get summary for a specific date with live recalculation"""
-        result = inv_service.get_portfolio_summary(args.get('date'))
+        result = inv_service.get_portfolio_summary(args.get("date"))
         return result if result else {}
 
 
@@ -164,23 +167,18 @@ class CapitalEvents(MethodView):
         """Record a capital infusion or withdrawal"""
         try:
             message = inv_service.add_capital_event(
-                event_date=data['date'],
-                amount=data['amount'],
-                event_type=data['event_type'],
-                note=data.get('note', ''),
+                event_date=data["date"],
+                amount=data["amount"],
+                event_type=data["event_type"],
+                note=data.get("note", ""),
             )
             return {"message": message}
         except ValueError as e:
             logger.error(f"Validation error: {e}")
             abort(400, message=str(e))
         except Exception as e:
-            logger.error(
-                f"Failed to add capital event: {e}"
-            )
-            abort(
-                500,
-                message=f"Capital event failed: {str(e)}"
-            )
+            logger.error(f"Failed to add capital event: {e}")
+            abort(500, message=f"Capital event failed: {str(e)}")
 
 
 # ----------------------------------------------------------------
@@ -211,18 +209,18 @@ class StartTicker(MethodView):
         """Start live price streaming for current holdings"""
         try:
             kite = _get_live_kite()
-            
+
             # 1. Get current holdings
             holdings = inv_repo.get_holdings()
             if not holdings:
                 return {"message": "No holdings to stream"}
-            
+
             # 2. Resolve symbol -> instrument_token via instruments DB
             symbols = [h.symbol for h in holdings]
             instruments = InstrumentsModel.query.filter(
                 InstrumentsModel.tradingsymbol.in_(symbols)
             ).all()
-            
+
             token_symbol_map = {}
             exchange_symbols = []
             for inst in instruments:
@@ -232,7 +230,11 @@ class StartTicker(MethodView):
                 if exchange == "BSE":
                     mapped_symbol = inst.tradingsymbol
                 else:
-                    mapped_symbol = inst.tradingsymbol if inst.series == "EQ" else f"{inst.tradingsymbol}-{inst.series}"
+                    mapped_symbol = (
+                        inst.tradingsymbol
+                        if inst.series == "EQ"
+                        else f"{inst.tradingsymbol}-{inst.series}"
+                    )
                 token_symbol_map[inst.instrument_token] = mapped_symbol
                 exchange_symbols.append(f"{exchange}:{mapped_symbol}")
                 logger.info(
@@ -240,31 +242,33 @@ class StartTicker(MethodView):
                     f"(token={inst.instrument_token}, exchange={exchange}, "
                     f"series={inst.series}) → {mapped_symbol}"
                 )
-            
+
             if not token_symbol_map:
                 return {"message": "Could not resolve instrument tokens for holdings"}
-            
+
             # 3. Fetch previous close via Kite REST API (kite.ohlc)
             ohlc_data = kite.fetch_ohlc(exchange_symbols)
             # 4. Populate prev_close in live_prices cache
             for key, val in ohlc_data.items():
                 # key is like "NSE:RELIANCE"
 
-                token = val.get('instrument_token')
+                token = val.get("instrument_token")
                 if token and token in token_symbol_map:
-                    prev_close = val.get('ohlc', {}).get('close', 0)
-                    last_price = val.get('last_price', 0)
+                    prev_close = val.get("ohlc", {}).get("close", 0)
+                    last_price = val.get("last_price", 0)
                     symbol = token_symbol_map[token]
                     kite.live_prices[token] = {
-                        'symbol': symbol,
-                        'last_price': last_price,
-                        'prev_close': prev_close,
-                        'change': ((last_price - prev_close) / prev_close * 100) if prev_close else 0
+                        "symbol": symbol,
+                        "last_price": last_price,
+                        "prev_close": prev_close,
+                        "change": (
+                            ((last_price - prev_close) / prev_close * 100) if prev_close else 0
+                        ),
                     }
-            
+
             # 5. Start WebSocket ticker
             started = kite.start_ticker(token_symbol_map)
-            
+
             return {
                 "message": f"Ticker {'started' if started else 'failed'} for {len(token_symbol_map)} instruments"
             }
@@ -281,10 +285,7 @@ class LivePrices(MethodView):
         try:
             kite = _get_live_kite()
             prices = kite.get_live_prices()
-            return {
-                "prices": prices,
-                "is_streaming": kite.is_ticker_running()
-            }
+            return {"prices": prices, "is_streaming": kite.is_ticker_running()}
         except Exception as e:
             logger.error(f"Failed to get live prices: {e}")
             abort(500, message=f"Live prices failed: {str(e)}")

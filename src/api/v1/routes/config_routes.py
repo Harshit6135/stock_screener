@@ -3,17 +3,15 @@ Configuration API Routes
 
 GET/POST/PUT endpoints for runtime configuration management.
 """
+
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 
-from schemas import ConfigSchema
 from repositories import ConfigRepository
+from schemas import ConfigSchema
 
 blp = Blueprint(
-    "Configuration",
-    __name__,
-    url_prefix="/api/v1/config",
-    description="Configuration Management"
+    "Configuration", __name__, url_prefix="/api/v1/config", description="Configuration Management"
 )
 
 
@@ -57,7 +55,7 @@ class ConfigResource(MethodView):
         existing = config_repo.get_config(config_name)
         if existing is None:
             abort(404, message=f"Configuration not found for {config_name}")
-        
+
         # Update only provided fields
         config_repo.update_config(data)
         return config_repo.get_config(config_name)

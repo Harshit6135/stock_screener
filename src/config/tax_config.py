@@ -1,5 +1,6 @@
 class TaxConfig:
     """Capital gains tax parameters (India)"""
+
     stcg_rate: float = 0.20  # 20% for < 12 months
     ltcg_rate: float = 0.125  # 12.5% for >= 12 months
     ltcg_exemption: float = 125000  # ₹1.25L per year

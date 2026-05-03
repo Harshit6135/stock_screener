@@ -1,9 +1,11 @@
+from sqlalchemy import Index, PrimaryKeyConstraint
+
 from db import db
-from sqlalchemy import PrimaryKeyConstraint, Index
 
 
 class RankingModel(db.Model):
     """Weekly rankings with avg composite scores (renamed from AvgScoreModel)"""
+
     __tablename__ = "ranking"
 
     tradingsymbol = db.Column(db.String(50), nullable=False)

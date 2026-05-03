@@ -1,6 +1,6 @@
 import yfinance as yf
-from config import setup_logger
 
+from config import setup_logger
 
 logger = setup_logger(name="YFinanceAdaptor")
 
@@ -29,15 +29,15 @@ class YFinanceAdaptor:
         """
         yfinance_info = None
         yfinance_ticker_used = None
-        yfinance_status = 'Failed'
+        yfinance_status = "Failed"
 
         for ticker in tickers_list:
             try:
                 info = yf.Ticker(ticker).info
-                if info and 'regularMarketPrice' in info:
+                if info and "regularMarketPrice" in info:
                     yfinance_info = info
                     yfinance_ticker_used = ticker
-                    yfinance_status = 'Success'
+                    yfinance_status = "Success"
                     break
             except Exception as e:
                 err_lower = str(e).lower()

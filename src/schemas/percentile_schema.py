@@ -3,9 +3,10 @@ from marshmallow import Schema, fields
 
 class PercentileSchema(Schema):
     """Schema for daily percentile ranks (renamed from RankingSchema)"""
+
     tradingsymbol = fields.Str(required=True)
     percentile_date = fields.Date(required=True)
-    
+
     ema_50_slope = fields.Float(allow_none=True)
     trend_rank = fields.Float(allow_none=True)
     distance_from_ema_200 = fields.Float(allow_none=True)
@@ -32,4 +33,5 @@ class PercentileSchema(Schema):
 
 class PercentileAllSchema(Schema):
     """Schema for querying all percentile data by date"""
+
     date = fields.Date()

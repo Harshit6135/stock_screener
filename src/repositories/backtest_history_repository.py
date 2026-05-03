@@ -4,22 +4,22 @@ Backtest History Repository
 Data access layer for persisting and retrieving backtest run history.
 Heavy data (summary, equity curve, trades, report) is stored as files on disk.
 """
-import os
+
 import json
+import os
 import shutil
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
 
+from config import setup_logger
 from db import db
 from models import BacktestRunModel
-from config import setup_logger
-
 
 logger = setup_logger(name="BacktestHistoryRepository")
 
 # Base directory for backtest history data files
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-HISTORY_REL_DIR = 'backtest_history'
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+HISTORY_REL_DIR = "backtest_history"
 HISTORY_ABS_DIR = os.path.join(PROJECT_ROOT, HISTORY_REL_DIR)
 
 
@@ -54,7 +54,7 @@ class BacktestHistoryRepository:
             BacktestRunModel instance
         """
         now = datetime.now()
-        timestamp = now.strftime('%Y%m%d_%H%M%S')
+        timestamp = now.strftime("%Y%m%d_%H%M%S")
 
         # Insert DB row first to get the auto-increment id
         run = BacktestRunModel(
@@ -65,10 +65,10 @@ class BacktestHistoryRepository:
             end_date=end_date,
             check_daily_sl=check_daily_sl,
             mid_week_buy=mid_week_buy,
-            total_return=summary.get('total_return'),
-            max_drawdown=summary.get('max_drawdown'),
-            sharpe_ratio=summary.get('sharpe_ratio'),
-            data_dir='',  # placeholder, updated after we know the id
+            total_return=summary.get("total_return"),
+            max_drawdown=summary.get("max_drawdown"),
+            sharpe_ratio=summary.get("sharpe_ratio"),
+            data_dir="",  # placeholder, updated after we know the id
         )
         try:
             db.session.add(run)
@@ -81,11 +81,11 @@ class BacktestHistoryRepository:
             os.makedirs(abs_dir, exist_ok=True)
 
             # Write data files
-            self._write_json(os.path.join(abs_dir, 'summary.json'), summary)
-            self._write_json(os.path.join(abs_dir, 'equity_curve.json'), equity_curve)
-            self._write_json(os.path.join(abs_dir, 'trades.json'), trades)
-            with open(os.path.join(abs_dir, 'report.txt'), 'w', encoding='utf-8') as f:
-                f.write(report_text or '')
+            self._write_json(os.path.join(abs_dir, "summary.json"), summary)
+            self._write_json(os.path.join(abs_dir, "equity_curve.json"), equity_curve)
+            self._write_json(os.path.join(abs_dir, "trades.json"), trades)
+            with open(os.path.join(abs_dir, "report.txt"), "w", encoding="utf-8") as f:
+                f.write(report_text or "")
 
             # Store relative path in DB
             run.data_dir = rel_dir
@@ -100,11 +100,7 @@ class BacktestHistoryRepository:
 
     def list_runs(self) -> List[BacktestRunModel]:
         """List all runs ordered by most recent first (metadata only)."""
-        return (
-            db.session.query(BacktestRunModel)
-            .order_by(BacktestRunModel.created_at.desc())
-            .all()
-        )
+        return db.session.query(BacktestRunModel).order_by(BacktestRunModel.created_at.desc()).all()
 
     def get_run(self, run_id: int) -> Optional[dict]:
         """
@@ -122,10 +118,10 @@ class BacktestHistoryRepository:
         result = run.to_dict()
 
         # Read data files
-        result['summary'] = self._read_json(os.path.join(abs_dir, 'summary.json'))
-        result['equity_curve'] = self._read_json(os.path.join(abs_dir, 'equity_curve.json'))
-        result['trades'] = self._read_json(os.path.join(abs_dir, 'trades.json'))
-        result['report_text'] = self._read_text(os.path.join(abs_dir, 'report.txt'))
+        result["summary"] = self._read_json(os.path.join(abs_dir, "summary.json"))
+        result["equity_curve"] = self._read_json(os.path.join(abs_dir, "equity_curve.json"))
+        result["trades"] = self._read_json(os.path.join(abs_dir, "trades.json"))
+        result["report_text"] = self._read_text(os.path.join(abs_dir, "report.txt"))
 
         return result
 
@@ -162,13 +158,13 @@ class BacktestHistoryRepository:
 
     @staticmethod
     def _write_json(path: str, data) -> None:
-        with open(path, 'w', encoding='utf-8') as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, default=str)
 
     @staticmethod
     def _read_json(path: str):
         try:
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except (FileNotFoundError, json.JSONDecodeError) as e:
             logger.warning(f"Could not read {path}: {e}")
@@ -177,7 +173,7 @@ class BacktestHistoryRepository:
     @staticmethod
     def _read_text(path: str) -> str:
         try:
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(path, "r", encoding="utf-8") as f:
                 return f.read()
         except FileNotFoundError:
-            return ''
+            return ""

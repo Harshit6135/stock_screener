@@ -1,4 +1,5 @@
-from marshmallow import Schema, fields, validates_schema, ValidationError
+from marshmallow import Schema, ValidationError, fields, validates_schema
+
 
 class MarketDataSchema(Schema):
     instrument_token = fields.Int(required=True)
@@ -11,6 +12,7 @@ class MarketDataSchema(Schema):
     close = fields.Float()
     volume = fields.Float()
 
+
 class MarketDataQuerySchema(Schema):
     instrument_token = fields.Int()
     tradingsymbol = fields.Str()
@@ -22,9 +24,11 @@ class MarketDataQuerySchema(Schema):
         if "instrument_token" not in data and "tradingsymbol" not in data:
             raise ValidationError("Either instrument_token or ticker must be provided.")
 
+
 class MaxDateSchema(Schema):
     instrument_token = fields.Int(required=True)
     max_date = fields.Date(required=True)
+
 
 class LatestMarketDataQuerySchema(Schema):
     instrument_token = fields.Int()

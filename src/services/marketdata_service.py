@@ -1,15 +1,15 @@
-from time import time, sleep
 from datetime import timedelta
+from time import sleep, time
 
 import pandas as pd
-pd.set_option('future.no_silent_downcasting', True)
+
+pd.set_option("future.no_silent_downcasting", True)
 
 from adaptors import KiteAdaptor
-from config import setup_logger, KITE_CONFIG, HISTORY_LOOKBACK
-from repositories import MarketDataRepository, InstrumentsRepository, IndicatorsRepository
+from config import HISTORY_LOOKBACK, KITE_CONFIG, setup_logger
+from repositories import IndicatorsRepository, InstrumentsRepository, MarketDataRepository
 
-
-logger = setup_logger(name='Orchestrator')
+logger = setup_logger(name="Orchestrator")
 instr_repository = InstrumentsRepository()
 marketdata_repository = MarketDataRepository()
 indicators_repository = IndicatorsRepository()
@@ -21,7 +21,7 @@ class MarketDataService:
         self.logger = logger
 
     def _get_fetch_end_date(self):
-        now_ist = pd.Timestamp.now(tz='Asia/Kolkata')
+        now_ist = pd.Timestamp.now(tz="Asia/Kolkata")
         # if now_ist.hour >= 18:
         #     return pd.Timestamp(now_ist.date())
         # else:
@@ -35,7 +35,7 @@ class MarketDataService:
         try:
             start_time = time()
             records = self.kite_client.fetch_ticker_data(token, start_date, end_date)
-            
+
             if not records:
                 self.logger.warning(f"No data returned for {token}")
                 return None, None
@@ -60,7 +60,7 @@ class MarketDataService:
             exchange = instr.exchange
             log_symb = f"{tradingsymbol} ({instr_token})"
             logger.info(f"Processing {i+1}/{len(instruments)} {log_symb})...")
-            
+
             last_date = None
             last_data_date = marketdata_repository.get_latest_date_by_symbol(tradingsymbol)
             if last_data_date:
@@ -83,14 +83,18 @@ class MarketDataService:
                 start_time = time()
                 records, _ = self.get_latest_data_by_token(instr_token, start_date, fetch_end_date)
             else:
-                logger.info(f"Fetching Historical data from Kite for {log_symb}) starting {start_date.date()}...")
+                logger.info(
+                    f"Fetching Historical data from Kite for {log_symb}) starting {start_date.date()}..."
+                )
                 start_time = time()
                 records, _ = self.get_historical_data(instr_token, start_date)
 
             if records is None:
                 if not last_data_date:
                     # No data from Kite AND no history in DB — stock is likely delisted.
-                    logger.warning(f"No data for {log_symb} and no DB history — removing from instruments.")
+                    logger.warning(
+                        f"No data for {log_symb} and no DB history — removing from instruments."
+                    )
                     instr_repository.delete_by_token(instr_token)
                 else:
                     logger.warning(f"No data returned for {log_symb}")
@@ -98,20 +102,22 @@ class MarketDataService:
 
             if not historical and last_data_date and len(records) >= 1:
                 # B-10: Validate date alignment before comparing close prices
-                record_date = records[0].get('date')
-                if hasattr(record_date, 'date'):
+                record_date = records[0].get("date")
+                if hasattr(record_date, "date"):
                     record_date = record_date.date()
                 stored_date = last_data_date.date
-                if hasattr(stored_date, 'date'):
+                if hasattr(stored_date, "date"):
                     stored_date = stored_date.date()
 
                 if record_date != stored_date:
                     # Dates don't align — skip corp-action check, just append new data
-                    logger.info(f"Date mismatch for {log_symb}: record={record_date}, stored={stored_date} — skipping corp-action check")
+                    logger.info(
+                        f"Date mismatch for {log_symb}: record={record_date}, stored={stored_date} — skipping corp-action check"
+                    )
                 else:
                     # Corporate action detection: Compare stored close with fetched close for same date
                     stored_close = last_data_date.close
-                    fetched_close = records[0]['close']
+                    fetched_close = records[0]["close"]
 
                     if stored_close != fetched_close:
                         # Corporate action detected (split/bonus) — close values differ for same date.
@@ -123,7 +129,9 @@ class MarketDataService:
 
                         # Find the earliest date we have for this stock in the DB
                         # so the refill starts from the same point, not an arbitrary date.
-                        earliest_row = marketdata_repository.get_earliest_date_by_symbol(tradingsymbol)
+                        earliest_row = marketdata_repository.get_earliest_date_by_symbol(
+                            tradingsymbol
+                        )
                         if earliest_row:
                             refill_start = pd.Timestamp(earliest_row.date)
                         else:
@@ -142,7 +150,9 @@ class MarketDataService:
 
                         if total_calendar_days > 2000:
                             # Use chunked historical fetch to stay within Kite's 2000-day API limit.
-                            logger.info(f"Span > 2000 days — using chunked historical fetch for {log_symb}.")
+                            logger.info(
+                                f"Span > 2000 days — using chunked historical fetch for {log_symb}."
+                            )
                             records, _ = self.get_historical_data(instr_token, refill_start)
                         else:
                             # Single-call fetch is fine within the limit.
@@ -155,10 +165,10 @@ class MarketDataService:
 
             records_df = pd.DataFrame(records)
             records_df.reset_index(inplace=True)
-            records_df['instrument_token'] = instr_token
-            records_df['tradingsymbol'] = tradingsymbol
-            records_df['exchange'] = exchange if exchange else "NSE"
-            marketdata_repository.bulk_insert(records_df.to_dict('records'))
+            records_df["instrument_token"] = instr_token
+            records_df["tradingsymbol"] = tradingsymbol
+            records_df["exchange"] = exchange if exchange else "NSE"
+            marketdata_repository.bulk_insert(records_df.to_dict("records"))
             sleep(max(0, 0.34 - (time() - start_time)))
 
     def get_historical_data(self, ticker, start_date=None):
@@ -168,23 +178,25 @@ class MarketDataService:
         Default start_date is Jan 1, 2010.
         """
         target_start_date = pd.to_datetime(start_date)
-        self.logger.info(f"Starting long-term history fetch for {ticker} (Target Start: {target_start_date.date()})...")
-        
+        self.logger.info(
+            f"Starting long-term history fetch for {ticker} (Target Start: {target_start_date.date()})..."
+        )
+
         all_records = []
-        
+
         # We start from NOW and go backwards
         current_end = self._get_fetch_end_date()
-        chunk_days = 1900 
-        
+        chunk_days = 1900
+
         try:
             while current_end > target_start_date:
                 # Calculate start for this chunk
                 current_start = current_end - pd.Timedelta(days=chunk_days)
-                
+
                 # Clamp to target start
                 if current_start < target_start_date:
                     current_start = target_start_date
-                
+
                 self.logger.info(f"Fetching chunk: {current_start.date()} to {current_end.date()}")
                 # B-9: start_time BEFORE fetch for accurate rate limiting
                 start_time = time()
@@ -192,15 +204,17 @@ class MarketDataService:
                 if records:
                     all_records.extend(records)
                 else:
-                    self.logger.info("No data in this chunk, assuming reached start of history. Stopping fetch.")
+                    self.logger.info(
+                        "No data in this chunk, assuming reached start of history. Stopping fetch."
+                    )
                     break
-                
+
                 current_end = current_start - pd.Timedelta(days=1)
-                
+
                 if current_end < target_start_date:
                     break
 
-                sleep(max(0, 0.34 - (time() - start_time))) # Rate limiting
+                sleep(max(0, 0.34 - (time() - start_time)))  # Rate limiting
 
             if not all_records:
                 self.logger.warning(f"No long-term data found for {ticker}")
@@ -209,10 +223,10 @@ class MarketDataService:
             # Deduplicate overlapping chunk boundaries by date
             seen = {}
             for rec in all_records:
-                rec_date = rec.get('date')
+                rec_date = rec.get("date")
                 if rec_date not in seen:
                     seen[rec_date] = rec
-            all_records = sorted(seen.values(), key=lambda r: r['date'])
+            all_records = sorted(seen.values(), key=lambda r: r["date"])
 
             return all_records, start_time
 

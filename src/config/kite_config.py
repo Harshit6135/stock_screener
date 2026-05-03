@@ -1,8 +1,7 @@
 import os
 import sys
 
-
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
@@ -15,5 +14,5 @@ except ImportError:
 KITE_CONFIG = {
     "api_key": KITE_API_KEY,
     "api_secret": KITE_API_SECRET,
-    "redirect_url": "http://127.0.0.1"
+    "redirect_url": "http://127.0.0.1",
 }

@@ -8,11 +8,11 @@ Both ActionsService and WeeklyBacktester convert their data to
 normalized dataclasses, call generate_decisions(), then execute
 the returned decisions in their own way.
 """
+
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from config import setup_logger
-
 
 logger = setup_logger(name="TradingEngine")
 
@@ -29,6 +29,7 @@ class HoldingSnapshot:
         score: Current composite score for the position
         entry_price: Entry price (for pyramid risk check)
     """
+
     symbol: str
     units: int
     stop_loss: float
@@ -46,6 +47,7 @@ class CandidateInfo:
         symbol: Trading symbol
         score: Composite score from ranking
     """
+
     symbol: str
     score: float
 
@@ -63,6 +65,7 @@ class TradingDecision:
         swap_for: Replacement symbol (for SWAP: the new buy)
         swap_sell_units: Units to sell in a swap
     """
+
     action_type: str
     symbol: str
     reason: str
@@ -126,21 +129,25 @@ class TradingEngine:
         for h in holdings:
             price = prices.get(h.symbol, 0)
             if h.stop_loss > price:
-                decisions.append(TradingDecision(
-                    action_type='SELL',
-                    symbol=h.symbol,
-                    reason='stoploss hit',
-                    units=h.units,
-                ))
+                decisions.append(
+                    TradingDecision(
+                        action_type="SELL",
+                        symbol=h.symbol,
+                        reason="stoploss hit",
+                        units=h.units,
+                    )
+                )
                 sold_symbols.add(h.symbol)
                 logger.info(f"SELL {h.symbol}: stop-loss {h.stop_loss:.2f} > price {price:.2f}")
             elif h.score < exit_threshold:
-                decisions.append(TradingDecision(
-                    action_type='SELL',
-                    symbol=h.symbol,
-                    reason=f'score degraded to {h.score:.1f}',
-                    units=h.units,
-                ))
+                decisions.append(
+                    TradingDecision(
+                        action_type="SELL",
+                        symbol=h.symbol,
+                        reason=f"score degraded to {h.score:.1f}",
+                        units=h.units,
+                    )
+                )
                 sold_symbols.add(h.symbol)
                 logger.info(f"SELL {h.symbol}: score {h.score:.1f} < threshold {exit_threshold}")
             else:
@@ -160,24 +167,30 @@ class TradingEngine:
                     continue
                 h = surviving_holdings[c.symbol]
 
-                if (float(h.stop_loss) < float(h.entry_price) or (ema_50_values.get(c.symbol, 0) < float(h.entry_price))):
+                if float(h.stop_loss) < float(h.entry_price) or (
+                    ema_50_values.get(c.symbol, 0) < float(h.entry_price)
+                ):
                     continue
-                decisions.append(TradingDecision(
-                    action_type='PYRAMID_ADD',
-                    symbol=c.symbol,
-                    reason='pyramid add',
-                ))
+                decisions.append(
+                    TradingDecision(
+                        action_type="PYRAMID_ADD",
+                        symbol=c.symbol,
+                        reason="pyramid add",
+                    )
+                )
                 logger.info(
                     f"PYRAMID {c.symbol}: SL {h.stop_loss:.2f} >= entry {h.entry_price:.2f}, "
                     f"EMA50 {ema_50_values.get(c.symbol, 0):.2f} > avg_price {h.avg_price or h.entry_price:.2f}"
                 )
             elif c.symbol not in surviving_holdings:
                 if vacancies > 0:
-                    decisions.append(TradingDecision(
-                        action_type='BUY',
-                        symbol=c.symbol,
-                        reason='top N buys',
-                    ))
+                    decisions.append(
+                        TradingDecision(
+                            action_type="BUY",
+                            symbol=c.symbol,
+                            reason="top N buys",
+                        )
+                    )
                     vacancies -= 1
                     logger.info(f"BUY {c.symbol}: vacancy fill (score {c.score:.1f})")
                     continue
@@ -186,14 +199,16 @@ class TradingEngine:
                     continue
                 weakest = min(remaining_holdings, key=lambda h: h.score)
                 if c.score > swap_buffer * float(weakest.score):
-                    decisions.append(TradingDecision(
-                        action_type='SWAP',
-                        symbol=weakest.symbol,
-                        reason=f'swap: score {weakest.score:.1f} → {c.symbol} ({c.score:.1f})',
-                        units=weakest.units,
-                        swap_for=c.symbol,
-                        swap_sell_units=weakest.units,
-                    ))
+                    decisions.append(
+                        TradingDecision(
+                            action_type="SWAP",
+                            symbol=weakest.symbol,
+                            reason=f"swap: score {weakest.score:.1f} → {c.symbol} ({c.score:.1f})",
+                            units=weakest.units,
+                            swap_for=c.symbol,
+                            swap_sell_units=weakest.units,
+                        )
+                    )
                     remaining_holdings.remove(weakest)
                     logger.info(
                         f"SWAP {weakest.symbol} → {c.symbol}: "

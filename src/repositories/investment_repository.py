@@ -4,17 +4,19 @@ Investment Repository
 Data access layer for holdings and portfolio summary.
 Actions moved to repositories/actions_repository.py for better separation.
 """
+
 from typing import Optional
-from db import db
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+
+from config import setup_logger
+from db import db
 from models import (
+    CapitalEventModel,
     InvestmentsHoldingsModel,
     InvestmentsSummaryModel,
-    CapitalEventModel,
 )
-from config import setup_logger
-
 
 logger = setup_logger(name="InvestmentRepository")
 
@@ -39,90 +41,101 @@ class InvestmentRepository:
         Returns:
             list: dates in descending order
         """
-        dates = self.session.query(
-            InvestmentsHoldingsModel.date
-        ).distinct().order_by(
-            InvestmentsHoldingsModel.date.desc()
-        ).all()
+        dates = (
+            self.session.query(InvestmentsHoldingsModel.date)
+            .distinct()
+            .order_by(InvestmentsHoldingsModel.date.desc())
+            .all()
+        )
         return [d[0] for d in dates]
 
     def get_holdings(self, date=None):
         """
         Get all holdings for a given date.
-        
+
         Parameters:
             date: Date to query, defaults to latest
-        
+
         Returns:
             list: InvestmentsHoldingsModel instances
         """
         if not date:
             date = self.session.query(func.max(InvestmentsHoldingsModel.date)).scalar()
-        return self.session.query(InvestmentsHoldingsModel).filter(
-            InvestmentsHoldingsModel.date == date
-        ).order_by(
-            InvestmentsHoldingsModel.score.desc()
-        ).all()
+        return (
+            self.session.query(InvestmentsHoldingsModel)
+            .filter(InvestmentsHoldingsModel.date == date)
+            .order_by(InvestmentsHoldingsModel.score.desc())
+            .all()
+        )
 
     def get_holdings_by_symbol(self, symbol, date=None):
         """
         Get holding for a specific symbol and date.
-        
+
         Parameters:
             symbol (str): Trading symbol
             date: Date to query, defaults to latest
-        
+
         Returns:
             InvestmentsHoldingsModel: Holding instance or None
         """
         if not date:
             date = self.session.query(func.max(InvestmentsHoldingsModel.date)).scalar()
-        return self.session.query(InvestmentsHoldingsModel).filter(
-            InvestmentsHoldingsModel.date == date,
-            InvestmentsHoldingsModel.symbol == symbol
-        ).first()
+        return (
+            self.session.query(InvestmentsHoldingsModel)
+            .filter(
+                InvestmentsHoldingsModel.date == date, InvestmentsHoldingsModel.symbol == symbol
+            )
+            .first()
+        )
 
     def get_summary(self, date=None):
         """
         Get portfolio summary for a given date.
-        
+
         Parameters:
             date: Date to query, defaults to latest
-        
+
         Returns:
             InvestmentsSummaryModel: Summary instance or None
         """
         if not date:
             date = self.session.query(func.max(InvestmentsSummaryModel.date)).scalar()
-        return self.session.query(InvestmentsSummaryModel).filter(
-            InvestmentsSummaryModel.date == date
-        ).first()
+        return (
+            self.session.query(InvestmentsSummaryModel)
+            .filter(InvestmentsSummaryModel.date == date)
+            .first()
+        )
 
     def get_all_summaries(self):
         """
         Get all summary records ordered by date ascending.
-        
+
         Returns:
             list: InvestmentsSummaryModel instances
         """
-        return self.session.query(InvestmentsSummaryModel).order_by(
-            InvestmentsSummaryModel.date.asc()
-        ).all()
+        return (
+            self.session.query(InvestmentsSummaryModel)
+            .order_by(InvestmentsSummaryModel.date.asc())
+            .all()
+        )
 
     def bulk_insert_holdings(self, holdings):
         """
         Bulk insert holdings records.
-        
+
         Parameters:
             holdings (list): List of holding dictionaries
-        
+
         Returns:
             bool: True if successful, None otherwise
         """
         if not holdings:
             return True
         try:
-            self.session.bulk_insert_mappings(InvestmentsHoldingsModel, holdings, return_defaults=True)
+            self.session.bulk_insert_mappings(
+                InvestmentsHoldingsModel, holdings, return_defaults=True
+            )
             self.session.commit()
         except Exception as e:
             logger.error(f"Error bulk_insert_holdings {e}")
@@ -151,7 +164,9 @@ class InvestmentRepository:
             self.session.query(InvestmentsHoldingsModel).filter(
                 InvestmentsHoldingsModel.date == date
             ).delete()
-            self.session.bulk_insert_mappings(InvestmentsHoldingsModel, holdings, return_defaults=True)
+            self.session.bulk_insert_mappings(
+                InvestmentsHoldingsModel, holdings, return_defaults=True
+            )
             self.session.commit()
             return True
         except Exception as e:
@@ -174,7 +189,7 @@ class InvestmentRepository:
         """
         try:
             self.session.query(InvestmentsSummaryModel).filter(
-                InvestmentsSummaryModel.date == summary['date']
+                InvestmentsSummaryModel.date == summary["date"]
             ).delete()
             # remaining_capital is now a regular column — include it in the insert
             self.session.add(InvestmentsSummaryModel(**summary))
@@ -185,17 +200,16 @@ class InvestmentRepository:
             self.session.rollback()
             return None
 
-
     def insert_summary(self, summary):
         """
         Insert summary — delegates to upsert_summary for consistency.
-        
+
         Q-2: This was a duplicate of upsert_summary. Now redirects to avoid
         maintaining two identical code paths.
-        
+
         Parameters:
             summary (dict): Summary data
-        
+
         Returns:
             bool: True if successful, None otherwise
         """
@@ -204,7 +218,7 @@ class InvestmentRepository:
     def delete_holdings(self, date):
         """
         Delete holdings for a specific date.
-        
+
         Parameters:
             date: Date to delete
         """
@@ -220,15 +234,14 @@ class InvestmentRepository:
     def delete_holding(self, symbol, date):
         """
         Delete a single holding for a specific symbol and date.
-        
+
         Parameters:
             symbol (str): Trading symbol
             date (date): Date of the holding
         """
         try:
             self.session.query(InvestmentsHoldingsModel).filter(
-                InvestmentsHoldingsModel.date == date,
-                InvestmentsHoldingsModel.symbol == symbol
+                InvestmentsHoldingsModel.date == date, InvestmentsHoldingsModel.symbol == symbol
             ).delete()
             self.session.commit()
         except Exception as e:
@@ -238,7 +251,7 @@ class InvestmentRepository:
     def delete_summary(self, date):
         """
         Delete summary for a specific date.
-        
+
         Parameters:
             date: Date to delete
         """
@@ -282,9 +295,7 @@ class InvestmentRepository:
         Returns:
             list: CapitalEventModel instances
         """
-        return self.session.query(CapitalEventModel).order_by(
-            CapitalEventModel.date.asc()
-        ).all()
+        return self.session.query(CapitalEventModel).order_by(CapitalEventModel.date.asc()).all()
 
     def get_total_capital(self, target_date=None, include_realized=False):
         """
@@ -297,18 +308,12 @@ class InvestmentRepository:
         Returns:
             float: Total capital infused/withdrawn
         """
-        query = self.session.query(
-            func.sum(CapitalEventModel.amount)
-        )
+        query = self.session.query(func.sum(CapitalEventModel.amount))
         if not include_realized:
-            query = query.filter(
-                CapitalEventModel.event_type != 'realized_gain'
-            )
-            
+            query = query.filter(CapitalEventModel.event_type != "realized_gain")
+
         if target_date:
-            query = query.filter(
-                CapitalEventModel.date <= target_date
-            )
+            query = query.filter(CapitalEventModel.date <= target_date)
         result = query.scalar()
         return float(result) if result else 0.0
 
@@ -327,34 +332,25 @@ class InvestmentRepository:
         """
         total = self.get_total_capital(target_date=target_date, include_realized=True)
         holdings = self.get_holdings()
-        invested = sum(
-            float(h.avg_price or h.entry_price) * h.units
-            for h in (holdings or [])
-        )
+        invested = sum(float(h.avg_price or h.entry_price) * h.units for h in (holdings or []))
         return round(total - invested, 2)
-    
+
     def get_total_capital_by_date(self, date, include_realized=False):
         """
         Sum of all capital event amounts after target_date.
 
-        Parameters: 
-            date: Cut-off date (inclusive). 
+        Parameters:
+            date: Cut-off date (inclusive).
             include_realized: Whether to include 'realized_gain' events.
 
         Returns:
             float: Total capital infused/withdrawn
         """
-        query = self.session.query(
-            func.sum(CapitalEventModel.amount)
-        )
+        query = self.session.query(func.sum(CapitalEventModel.amount))
         if date:
-            query = query.filter(
-                CapitalEventModel.date == date
-            )
+            query = query.filter(CapitalEventModel.date == date)
         if not include_realized:
-            query = query.filter(
-                CapitalEventModel.event_type != 'realized_gain'
-            )
+            query = query.filter(CapitalEventModel.event_type != "realized_gain")
         result = query.scalar()
         return float(result) if result else 0.0
 
@@ -381,7 +377,7 @@ class InvestmentRepository:
     def delete_capital_events(self, date=None, event_type=None):
         """
         Delete capital events by date and/or type.
-        
+
         Parameters:
             date: Optional date to filter by
             event_type: Optional event type to filter by
@@ -406,9 +402,7 @@ class InvestmentRepository:
             self.session.query(CapitalEventModel).delete()
             self.session.commit()
         except Exception as e:
-            logger.error(
-                f"Error deleting all capital events: {e}"
-            )
+            logger.error(f"Error deleting all capital events: {e}")
             self.session.rollback()
 
     def update_holding(self, symbol, date, holding_data):
@@ -424,10 +418,13 @@ class InvestmentRepository:
             bool: True if successful, False otherwise.
         """
         try:
-            holding = self.session.query(InvestmentsHoldingsModel).filter(
-                InvestmentsHoldingsModel.symbol == symbol,
-                InvestmentsHoldingsModel.date == date
-            ).first()
+            holding = (
+                self.session.query(InvestmentsHoldingsModel)
+                .filter(
+                    InvestmentsHoldingsModel.symbol == symbol, InvestmentsHoldingsModel.date == date
+                )
+                .first()
+            )
 
             if holding:
                 for key, value in holding_data.items():

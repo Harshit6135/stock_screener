@@ -7,6 +7,7 @@ class StrategyParameters:
 
     Factor weights must sum to exactly 1.0 — validated at construction.
     """
+
     trend_strength_weight: float = 0.30
     momentum_velocity_weight: float = 0.25
     risk_efficiency_weight: float = 0.20
@@ -44,32 +45,35 @@ class StrategyParameters:
             + self.conviction_weight
             + self.structure_weight
         )
-        assert abs(top_level - 1.0) < 1e-9, (
-            f"Factor weights must sum to 1.0, got {top_level:.4f}. "
-            "Adjust weights so trend + momentum + efficiency + conviction + structure = 1.0"
-        )
+        if abs(top_level - 1.0) >= 1e-9:
+            raise ValueError(
+                f"Factor weights must sum to 1.0, got {top_level:.4f}. "
+                "Adjust weights so trend + momentum + efficiency + conviction + structure = 1.0"
+            )
 
 
 @dataclass
 class GoldilocksConfig:
     """Non-linear trend scoring zones (distance from 200 EMA)"""
-    zone1_end: float = 10          # 0–10% distance
+
+    zone1_end: float = 10  # 0–10% distance
     zone1_score_start: float = 70
     zone1_score_end: float = 85
-    zone2_end: float = 35          # 10–35% (sweet spot)
+    zone2_end: float = 35  # 10–35% (sweet spot)
     zone2_score_start: float = 85
     zone2_score_end: float = 100
-    zone3_end: float = 50          # 35–50% (extended)
+    zone3_end: float = 50  # 35–50% (extended)
     zone3_score_start: float = 100
     zone3_score_end: float = 60
-    zone4_decay: float = 60        # >50% starts at 60, decays to 0
+    zone4_decay: float = 60  # >50% starts at 60, decays to 0
 
 
 @dataclass
 class RSIRegimeConfig:
     """Non-linear RSI scoring zones"""
-    zone1_end: float = 40   # < 40 = 0
-    zone2_end: float = 50   # 40–50 = 0–30
-    zone3_end: float = 70   # 50–70 = 30–100 (sweet spot)
-    zone4_end: float = 85   # 70–85 = 100–90
+
+    zone1_end: float = 40  # < 40 = 0
+    zone2_end: float = 50  # 40–50 = 0–30
+    zone3_end: float = 70  # 50–70 = 30–100 (sweet spot)
+    zone4_end: float = 85  # 70–85 = 100–90
     overbought_floor: float = 60  # > 85 floors at 60

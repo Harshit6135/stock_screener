@@ -4,14 +4,17 @@ Investment Models
 Database models for holdings and portfolio summary.
 Actions moved to models/actions.py for better separation.
 """
-from db import db
+
 from sqlalchemy import Index
+
+from db import db
 
 
 class InvestmentsHoldingsModel(db.Model):
     """Investment holdings tracking current positions with price and stop-loss data"""
-    __tablename__ = 'investment_holdings'
-    __bind_key__ = 'personal'
+
+    __tablename__ = "investment_holdings"
+    __bind_key__ = "personal"
 
     symbol = db.Column(db.String(50), primary_key=True, nullable=False)
     date = db.Column(db.Date, primary_key=True, nullable=False)
@@ -48,8 +51,9 @@ class InvestmentsHoldingsModel(db.Model):
 
 class InvestmentsSummaryModel(db.Model):
     """Investment summary tracking weekly capital, risk, and portfolio metrics"""
-    __tablename__ = 'investment_summary'
-    __bind_key__ = 'personal'
+
+    __tablename__ = "investment_summary"
+    __bind_key__ = "personal"
 
     date = db.Column(db.Date, primary_key=True, nullable=False)
     starting_capital = db.Column(db.Numeric(12, 2), nullable=False)
@@ -60,14 +64,12 @@ class InvestmentsSummaryModel(db.Model):
     portfolio_risk = db.Column(db.Numeric(12, 2), nullable=True)
     gain = db.Column(db.Numeric(12, 2), nullable=True)
     gain_percentage = db.Column(db.Numeric(12, 2), nullable=True)
-    
+
     # Manually maintained — set by the service layer from first-principles
     # (capital_events total minus cost basis of holdings).
     remaining_capital = db.Column(db.Numeric(12, 2), nullable=True)
 
-    __table_args__ = (
-        Index("idx_investment_summary_date", "date"),
-    )
+    __table_args__ = (Index("idx_investment_summary_date", "date"),)
 
     def __repr__(self):
         return f"<InvestmentsSummary {self.date} capital={self.starting_capital}>"
@@ -78,39 +80,31 @@ class InvestmentsSummaryModel(db.Model):
 
 class CapitalEventModel(db.Model):
     """Tracks capital infusions and withdrawals over time."""
-    __tablename__ = 'capital_events'
-    __bind_key__ = 'personal'
+
+    __tablename__ = "capital_events"
+    __bind_key__ = "personal"
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     date = db.Column(db.Date, nullable=False)
     amount = db.Column(db.Numeric(12, 2), nullable=False)
-    event_type = db.Column(
-        db.String(20), nullable=False
-    )  # 'initial' | 'infusion' | 'withdrawal'
+    event_type = db.Column(db.String(20), nullable=False)  # 'initial' | 'infusion' | 'withdrawal'
     note = db.Column(db.String(200), nullable=True)
 
-    __table_args__ = (
-        Index("idx_capital_events_date", "date"),
-    )
+    __table_args__ = (Index("idx_capital_events_date", "date"),)
 
     def __repr__(self):
-        return (
-            f"<CapitalEvent {self.event_type} "
-            f"{self.amount} on {self.date}>"
-        )
+        return f"<CapitalEvent {self.event_type} " f"{self.amount} on {self.date}>"
 
     def to_dict(self):
-        return {
-            c.name: getattr(self, c.name)
-            for c in self.__table__.columns
-        }
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
 class BacktestRunModel(db.Model):
     """Stores metadata for each backtest run. Heavy data (summary, equity curve,
     trades, report) is stored as files on disk; only the folder path is kept here."""
-    __tablename__ = 'backtest_runs'
-    __bind_key__ = 'personal'
+
+    __tablename__ = "backtest_runs"
+    __bind_key__ = "personal"
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     run_label = db.Column(db.String(200), nullable=True)
@@ -130,16 +124,16 @@ class BacktestRunModel(db.Model):
 
     def to_dict(self):
         return {
-            'id': self.id,
-            'run_label': self.run_label,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'config_name': self.config_name,
-            'start_date': str(self.start_date),
-            'end_date': str(self.end_date),
-            'check_daily_sl': self.check_daily_sl,
-            'mid_week_buy': self.mid_week_buy,
-            'total_return': float(self.total_return) if self.total_return is not None else None,
-            'max_drawdown': float(self.max_drawdown) if self.max_drawdown is not None else None,
-            'sharpe_ratio': float(self.sharpe_ratio) if self.sharpe_ratio is not None else None,
-            'data_dir': self.data_dir,
+            "id": self.id,
+            "run_label": self.run_label,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "config_name": self.config_name,
+            "start_date": str(self.start_date),
+            "end_date": str(self.end_date),
+            "check_daily_sl": self.check_daily_sl,
+            "mid_week_buy": self.mid_week_buy,
+            "total_return": float(self.total_return) if self.total_return is not None else None,
+            "max_drawdown": float(self.max_drawdown) if self.max_drawdown is not None else None,
+            "sharpe_ratio": float(self.sharpe_ratio) if self.sharpe_ratio is not None else None,
+            "data_dir": self.data_dir,
         }

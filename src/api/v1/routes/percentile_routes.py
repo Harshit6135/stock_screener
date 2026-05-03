@@ -1,11 +1,16 @@
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
+
 from repositories import PercentileRepository
-from schemas import PercentileSchema, MessageSchema, PercentileAllSchema
+from schemas import MessageSchema, PercentileAllSchema, PercentileSchema
 from services import PercentileService
 
-
-blp = Blueprint("Percentiles", __name__, url_prefix="/api/v1/percentile", description="Operations on Percentile Ranks")
+blp = Blueprint(
+    "Percentiles",
+    __name__,
+    url_prefix="/api/v1/percentile",
+    description="Operations on Percentile Ranks",
+)
 percentile_repository = PercentileRepository()
 
 

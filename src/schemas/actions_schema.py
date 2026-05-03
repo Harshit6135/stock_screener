@@ -4,16 +4,19 @@ Actions Schemas
 API schemas for trading actions endpoints.
 Separated from investment schemas for clarity.
 """
+
 from marshmallow import Schema, fields
 
 
 class ActionDateSchema(Schema):
     """Schema for action date response"""
+
     dates = fields.List(fields.Date(), dump_only=True)
 
 
 class ActionQuerySchema(Schema):
     """Schema for querying actions by date and strategy"""
+
     date = fields.Date(required=False, load_default=None)
     config_name = fields.String(required=False, load_default="momentum_config")
     enable_pyramiding = fields.Boolean(required=False, load_default=False)
@@ -23,6 +26,7 @@ class ActionQuerySchema(Schema):
 
 class ActionSchema(Schema):
     """Schema for action response"""
+
     action_id = fields.String(dump_only=True)
     action_date = fields.Date(dump_only=True)
     type = fields.String(dump_only=True)
@@ -38,18 +42,16 @@ class ActionSchema(Schema):
     hard_sl_price = fields.Decimal(as_string=True, dump_only=True, allow_none=True)
     status = fields.String(dump_only=True)
 
+
 class ActionUpdateSchema(Schema):
     """Schema for updating an action"""
+
     status = fields.String(
-        required=True,
-        metadata={"description": "New status: Approved or Rejected"}
+        required=True, metadata={"description": "New status: Approved or Rejected"}
     )
-    units = fields.Integer(
-        required=False,
-        metadata={"description": "Updated number of units"}
-    )
+    units = fields.Integer(required=False, metadata={"description": "Updated number of units"})
     execution_price = fields.Decimal(
         as_string=True,
         required=False,
-        metadata={"description": "Execution price (required for approval)"}
+        metadata={"description": "Execution price (required for approval)"},
     )

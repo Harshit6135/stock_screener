@@ -4,16 +4,19 @@ Investment Schemas
 API schemas for holdings and summary endpoints.
 Action schemas moved to schemas/actions.py for better separation.
 """
+
 from marshmallow import Schema, fields
 
 
 class HoldingDateSchema(Schema):
     """Schema for holding date response"""
+
     dates = fields.List(fields.Date(), dump_only=True)
 
 
 class HoldingSchema(Schema):
     """Schema for holding response"""
+
     symbol = fields.String(dump_only=True)
     date = fields.Date(dump_only=True)
     entry_date = fields.Date(dump_only=True)
@@ -29,6 +32,7 @@ class HoldingSchema(Schema):
 
 class SummarySchema(Schema):
     """Schema for summary response"""
+
     date = fields.Date(dump_only=True)
     starting_capital = fields.Decimal(as_string=True, dump_only=True)
     sold = fields.Decimal(as_string=True, dump_only=True)
@@ -45,11 +49,14 @@ class SummarySchema(Schema):
     absolute_return_pct = fields.Float(dump_only=True)
     xirr = fields.Float(dump_only=True)
 
+
 class ManualBuySchema(Schema):
     symbol = fields.String(required=True, metadata={"description": "Trading symbol"})
     date = fields.Date(required=True, metadata={"description": "Action date (YYYY-MM-DD)"})
     reason = fields.String(load_default="Manual buy", metadata={"description": "Reason for trade"})
-    config_name = fields.String(load_default="momentum_config", metadata={"description": "Config name for config"})
+    config_name = fields.String(
+        load_default="momentum_config", metadata={"description": "Config name for config"}
+    )
     units = fields.Integer(required=True, metadata={"description": "Number of units to buy"})
     price = fields.Decimal(required=True, metadata={"description": "Price of the stock"})
 
@@ -64,25 +71,19 @@ class ManualSellSchema(Schema):
 
 class CapitalEventSchema(Schema):
     id = fields.Integer(dump_only=True)
-    date = fields.Date(
-        required=True,
-        metadata={"description": "Event date (YYYY-MM-DD)"}
-    )
+    date = fields.Date(required=True, metadata={"description": "Event date (YYYY-MM-DD)"})
     amount = fields.Float(
         required=True,
         metadata={
             "description": "Amount (positive=infusion)",
             "example": 100000,
-        }
+        },
     )
     event_type = fields.String(
         required=True,
         metadata={
             "description": "initial | infusion | withdrawal",
             "example": "infusion",
-        }
+        },
     )
-    note = fields.String(
-        load_default="",
-        metadata={"description": "Optional note"}
-    )
+    note = fields.String(load_default="", metadata={"description": "Optional note"})

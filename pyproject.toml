@@ -10,22 +10,22 @@ readme = "README.md"
 requires-python = ">=3.13"
 
 dependencies = [
-    "kiteconnect~=5.0",
-    "pandas~=2.2",
-    "openpyxl~=3.1",
-    "requests~=2.32",
+    "kiteconnect>=5.0",
+    "pandas>=2.2",
+    "openpyxl>=3.1",
+    "requests>=2.32",
     "pandas_ta>=0.3.14b",
-    "flask~=3.1",
-    "flask-smorest~=0.46",
-    "flask-sqlalchemy~=3.1",
-    "flask-migrate~=4.1",
-    "scipy~=1.14",
-    "yfinance~=0.2",
-    "python-json-logger~=3.2",
-    "pandas-stubs (>=2.3.3,<2.4.0)",
-    "scipy-stubs (>=1.16.3,<1.17.0)",
-    "waitress~=3.0",
-    "paste (>=3.10.1,<4.0.0)",
+    "flask>=3.1",
+    "flask-smorest>=0.46",
+    "flask-sqlalchemy>=3.1",
+    "flask-migrate>=4.1",
+    "scipy>=1.14",
+    "yfinance>=0.2",
+    "python-json-logger>=3.2",
+    "pandas-stubs>=2.3.3",
+    "scipy-stubs>=1.16.3",
+    "waitress>=3.0",
+    "paste>=3.10.1",
 ]
 
 [project.optional-dependencies]
@@ -50,6 +50,7 @@ packages = [{include = "src"}]
 [tool.poetry.group.dev.dependencies]
 bandit = "^1.9.4"
 mypy = "^1.20.2"
+ruff = "^0.15.12"
 
 [tool.black]
 line-length = 100
@@ -72,3 +73,15 @@ skip = [".git", ".venv", "migrations"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
+
+[tool.ruff]
+line-length = 100
+exclude = [
+    ".git",
+    ".venv",
+    "migrations",
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+ignore = ["E402", "F403"]

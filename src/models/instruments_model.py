@@ -1,5 +1,6 @@
 from db import db
 
+
 class InstrumentsModel(db.Model):
     __tablename__ = "instruments"
 

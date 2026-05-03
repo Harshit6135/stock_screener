@@ -1,5 +1,6 @@
+from sqlalchemy import Index, PrimaryKeyConstraint
+
 from db import db
-from sqlalchemy import PrimaryKeyConstraint, Index
 
 
 class MarketDataModel(db.Model):

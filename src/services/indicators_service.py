@@ -1,14 +1,19 @@
-
 import time as _time
+
 import pandas as pd
-import pandas_ta as ta
-pd.set_option('future.no_silent_downcasting', True)
+
+pd.set_option("future.no_silent_downcasting", True)
 
 from datetime import timedelta
 
-from repositories import IndicatorsRepository, MarketDataRepository, InstrumentsRepository
-from config import setup_logger, ema_strategy, momentum_strategy, derived_strategy, additional_parameters
-
+from config import (
+    additional_parameters,
+    derived_strategy,
+    ema_strategy,
+    momentum_strategy,
+    setup_logger,
+)
+from repositories import IndicatorsRepository, InstrumentsRepository, MarketDataRepository
 
 instr_repo = InstrumentsRepository()
 indicators_repo = IndicatorsRepository()
@@ -61,24 +66,30 @@ class IndicatorsService:
     @staticmethod
     def apply_study(df, last_ind_date):
         df.ta.study(ema_strategy)
-        date_truncate = last_ind_date - timedelta(days=additional_parameters['truncate_days'])
+        date_truncate = last_ind_date - timedelta(days=additional_parameters["truncate_days"])
         df = df[df.index >= date_truncate]
         df.ta.study(momentum_strategy)
         df.ta.study(derived_strategy)
         return df
 
     def _calculate_derived_indicators(self, df):
-        df['price_vol_correlation'] = self.calculate_volume_price_correlation(df['close'], df['volume'], additional_parameters['vol_price_lookback'])
-        df['percent_b'] = self.calculate_percent_b(df['close'], df['BBU_20_2.0_2.0'], df['BBL_20_2.0_2.0'])
-        df['ema_50_slope'] = self.calculate_ema_slope(df['EMA_50'], additional_parameters['ema_slope_lookback'])
-        df['distance_from_ema_200'] = self.calculate_distance_from_ema(df['close'], df['EMA_200'])
-        df['distance_from_ema_50'] = self.calculate_distance_from_ema(df['close'], df['EMA_50'])
-        df['risk_adjusted_return'] = df["ROC_20"]/(df['ATRr_14']/df['close'])
-        df['rvol'] = df['volume']/df['VOL_SMA_20']
-        df['atr_spike'] = self.calculate_atr_spike(df['ATRr_14'])
+        df["price_vol_correlation"] = self.calculate_volume_price_correlation(
+            df["close"], df["volume"], additional_parameters["vol_price_lookback"]
+        )
+        df["percent_b"] = self.calculate_percent_b(
+            df["close"], df["BBU_20_2.0_2.0"], df["BBL_20_2.0_2.0"]
+        )
+        df["ema_50_slope"] = self.calculate_ema_slope(
+            df["EMA_50"], additional_parameters["ema_slope_lookback"]
+        )
+        df["distance_from_ema_200"] = self.calculate_distance_from_ema(df["close"], df["EMA_200"])
+        df["distance_from_ema_50"] = self.calculate_distance_from_ema(df["close"], df["EMA_50"])
+        df["risk_adjusted_return"] = df["ROC_20"] / (df["ATRr_14"] / df["close"])
+        df["rvol"] = df["volume"] / df["VOL_SMA_20"]
+        df["atr_spike"] = self.calculate_atr_spike(df["ATRr_14"])
 
-        df['momentum_3m'] = (df['close'].shift(5) / df['close'].shift(65)) - 1
-        df['momentum_6m'] = (df['close'].shift(5) / df['close'].shift(130)) - 1
+        df["momentum_3m"] = (df["close"].shift(5) / df["close"].shift(65)) - 1
+        df["momentum_6m"] = (df["close"].shift(5) / df["close"].shift(130)) - 1
         return df
 
     def calculate_indicators(self):
@@ -91,7 +102,7 @@ class IndicatorsService:
 
         logger.info(f"Calculating Indicators for {total} Instruments...")
         yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
-        
+
         processed = 0
         skipped = 0
         for i, instr in enumerate(instruments):
@@ -118,7 +129,9 @@ class IndicatorsService:
                     logger.info(f"Indicators up to date for {log_symb}.")
                     skipped += 1
                     continue
-                calc_start_date = last_ind_date - timedelta(days=additional_parameters['ema_200_lookback'])
+                calc_start_date = last_ind_date - timedelta(
+                    days=additional_parameters["ema_200_lookback"]
+                )
             else:
                 calc_start_date = pd.to_datetime("2000-01-01")
                 last_ind_date = calc_start_date
@@ -126,23 +139,26 @@ class IndicatorsService:
             query_payload = {
                 "tradingsymbol": tradingsymbol,
                 "start_date": str(calc_start_date.date()),
-                "end_date": str(yesterday.date())
+                "end_date": str(yesterday.date()),
             }
             md_output = marketdata_repo.query(query_payload)
-            md_list = [{column.name:getattr(row, column.name) for column in row.__table__.columns} for row in md_output]
+            md_list = [
+                {column.name: getattr(row, column.name) for column in row.__table__.columns}
+                for row in md_output
+            ]
 
-            if len(md_list)<200:
-                logger.error(f"Less than 200 days data")
+            if len(md_list) < 200:
+                logger.error("Less than 200 days data")
                 skipped += 1
-                continue        
+                continue
 
             df_for_ind = pd.DataFrame(md_list)
-            df_for_ind['date'] = pd.to_datetime(df_for_ind['date'])
-            df_for_ind.set_index('date', inplace=True)
+            df_for_ind["date"] = pd.to_datetime(df_for_ind["date"])
+            df_for_ind.set_index("date", inplace=True)
             df_for_ind.sort_index(inplace=True)
-            
+
             logger.info("Calculating indicators...")
-            df_for_ind['avg_turnover'] = df_for_ind['close'] * df_for_ind['volume']
+            df_for_ind["avg_turnover"] = df_for_ind["close"] * df_for_ind["volume"]
             ind_df = self.apply_study(df_for_ind, last_ind_date)
             try:
                 ind_df = self._calculate_derived_indicators(ind_df)
@@ -151,23 +167,25 @@ class IndicatorsService:
                 skipped += 1
                 continue
             ind_df.columns = ind_df.columns.str.lower().str.replace(".0", "")
-            ind_df = ind_df.drop(columns=['open', 'high', 'low', 'close', 'volume'], errors='ignore')
+            ind_df = ind_df.drop(
+                columns=["open", "high", "low", "close", "volume"], errors="ignore"
+            )
             ind_df.reset_index(inplace=True)
-            ind_df['tradingsymbol'] = tradingsymbol
-            ind_df['exchange'] = exchange
+            ind_df["tradingsymbol"] = tradingsymbol
+            ind_df["exchange"] = exchange
 
             if last_ind_date:
                 next_day = last_ind_date + timedelta(days=1)
-                ind_df_filtered = ind_df[ind_df['date'] >= next_day].copy()
+                ind_df_filtered = ind_df[ind_df["date"] >= next_day].copy()
             else:
                 ind_df_filtered = ind_df.copy()
             if ind_df_filtered.empty:
                 logger.info(f"No new data to calculate indicators for {log_symb}")
                 skipped += 1
                 continue
-            
-            ind_df_filtered['date'] = ind_df_filtered['date'].dt.date   
-            ind_json = ind_df_filtered.to_dict(orient='records')
+
+            ind_df_filtered["date"] = ind_df_filtered["date"].dt.date
+            ind_json = ind_df_filtered.to_dict(orient="records")
             indicators_repo.bulk_insert(ind_json)
             processed += 1
 

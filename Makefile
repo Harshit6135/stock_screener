@@ -78,9 +78,11 @@ test:
 format:
 	poetry run black .
 	poetry run isort .
+	poetry run ruff check --fix .
+	poetry run mypy src
 
 lint:
-	poetry run flake8 .
+	poetry run ruff check .
 
 # ==================== CLEANUP ====================
 

@@ -13,7 +13,10 @@ class Config:
         "tags": [
             # System & Config
             {"name": "Initialization", "description": "Initialize App"},
-            {"name": "App Orchestration", "description": "Application Orchestration & Cleanup Operations"},
+            {
+                "name": "App Orchestration",
+                "description": "Application Orchestration & Cleanup Operations",
+            },
             {"name": "Configuration", "description": "Configuration Management"},
             # Data Pipeline
             {"name": "Instruments", "description": "Operations on instruments"},
@@ -26,25 +29,38 @@ class Config:
             {"name": "Actions", "description": "Trading Actions Operations"},
             {"name": "Investments", "description": "Investment Operations"},
             # Analysis
-            {"name": "Transaction Costs", "description": "Transaction Cost and Sizing Calculations"},
+            {
+                "name": "Transaction Costs",
+                "description": "Transaction Cost and Sizing Calculations",
+            },
             {"name": "Tax Analysis", "description": "Tax Calculation Operations"},
             # Backtest
             {"name": "Backtest", "description": "Backtesting Operations"},
         ],
         "x-tagGroups": [
-            {"name": "System & Config", "tags": ["Initialization", "App Orchestration", "Configuration"]},
-            {"name": "Data Pipeline", "tags": ["Instruments", "Market Data", "Indicators", "Percentiles", "Scores", "Rankings"]},
+            {
+                "name": "System & Config",
+                "tags": ["Initialization", "App Orchestration", "Configuration"],
+            },
+            {
+                "name": "Data Pipeline",
+                "tags": [
+                    "Instruments",
+                    "Market Data",
+                    "Indicators",
+                    "Percentiles",
+                    "Scores",
+                    "Rankings",
+                ],
+            },
             {"name": "Trading", "tags": ["Actions", "Investments"]},
             {"name": "Analysis", "tags": ["Transaction Costs", "Tax Analysis"]},
-            {"name": "Backtest", "tags": ["Backtest"]}
-        ]
+            {"name": "Backtest", "tags": ["Backtest"]},
+        ],
     }
-    SQLALCHEMY_BINDS = {
-        "personal": "sqlite:///personal.db",
-        "backtest": "sqlite:///backtest.db"
-    }
+    SQLALCHEMY_BINDS = {"personal": "sqlite:///personal.db", "backtest": "sqlite:///backtest.db"}
     SQLALCHEMY_ENGINE_OPTIONS = {
-        "pool_pre_ping": True,       # Verify connections are alive before use
-        "pool_recycle": 1800,        # Recycle connections every 30 min
+        "pool_pre_ping": True,  # Verify connections are alive before use
+        "pool_recycle": 1800,  # Recycle connections every 30 min
         "connect_args": {"timeout": 30, "check_same_thread": False},
     }

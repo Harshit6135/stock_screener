@@ -1,8 +1,9 @@
-from db import db
 from datetime import datetime
-from sqlalchemy import and_, or_, func
+
+from sqlalchemy import and_, func
 from sqlalchemy.exc import SQLAlchemyError
 
+from db import db
 from models import IndicatorsModel
 
 
@@ -14,7 +15,7 @@ class IndicatorsRepository:
         try:
             db.session.bulk_insert_mappings(IndicatorsModel, indicator_data, return_defaults=True)
             db.session.commit()
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             db.session.rollback()
             return None
         return indicator_data
@@ -23,7 +24,7 @@ class IndicatorsRepository:
     def query(filter_data):
         query = IndicatorsModel.query
         if not filter_data.get("end_date"):
-            filter_data['end_date'] = datetime.now().date()
+            filter_data["end_date"] = datetime.now().date()
 
         if "tradingsymbol" in filter_data:
             query = query.filter(IndicatorsModel.tradingsymbol == filter_data["tradingsymbol"])
@@ -41,8 +42,7 @@ class IndicatorsRepository:
     def get_latest_date_for_all():
         """Fetch the max date for each instrument"""
         query = db.session.query(
-            IndicatorsModel.tradingsymbol,
-            func.max(IndicatorsModel.date).label("max_date")
+            IndicatorsModel.tradingsymbol, func.max(IndicatorsModel.date).label("max_date")
         ).group_by(IndicatorsModel.tradingsymbol)
 
         return query.all()
@@ -50,9 +50,7 @@ class IndicatorsRepository:
     @staticmethod
     def get_latest_date_by_symbol(tradingsymbol):
         """Fetch the latest market data for a tradingsymbol"""
-        query = IndicatorsModel.query.filter(
-            IndicatorsModel.tradingsymbol == tradingsymbol
-        )
+        query = IndicatorsModel.query.filter(IndicatorsModel.tradingsymbol == tradingsymbol)
 
         return query.order_by(IndicatorsModel.date.desc()).first()
 
@@ -80,19 +78,17 @@ class IndicatorsRepository:
             ).delete()
             db.session.commit()
             return num_rows_deleted
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             db.session.rollback()
             return -1
 
     @staticmethod
     def get_indicator_by_tradingsymbol(indicator, tradingsymbol: str, date=None):
         """Fetch the latest market data for a tradingsymbol, optionally before a specific date"""
-        query = IndicatorsModel.query.filter(
-            IndicatorsModel.tradingsymbol == tradingsymbol
-        )
+        query = IndicatorsModel.query.filter(IndicatorsModel.tradingsymbol == tradingsymbol)
         if date:
             query = query.filter(IndicatorsModel.date <= date)
-            
+
         query = query.with_entities(getattr(IndicatorsModel, indicator))
         result = query.order_by(IndicatorsModel.date.desc()).first()
         if result:
@@ -103,11 +99,9 @@ class IndicatorsRepository:
     def delete_after_date(date):
         """Delete all indicator records after a given date."""
         try:
-            num_deleted = IndicatorsModel.query.filter(
-                IndicatorsModel.date > date
-            ).delete()
+            num_deleted = IndicatorsModel.query.filter(IndicatorsModel.date > date).delete()
             db.session.commit()
             return num_deleted
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             db.session.rollback()
             return -1

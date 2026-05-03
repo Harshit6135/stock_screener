@@ -3,6 +3,7 @@ from marshmallow import Schema, fields
 
 class ScoreSchema(Schema):
     """Schema for daily composite scores"""
+
     tradingsymbol = fields.Str(required=True)
     score_date = fields.Date(required=True)
 

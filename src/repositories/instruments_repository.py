@@ -1,6 +1,6 @@
-from db import db
 from sqlalchemy.exc import SQLAlchemyError
 
+from db import db
 from models import InstrumentsModel
 from models.market_data_model import MarketDataModel
 
@@ -18,7 +18,7 @@ class InstrumentsRepository:
         try:
             db.session.bulk_insert_mappings(InstrumentsModel, instrument_data, return_defaults=True)
             db.session.commit()
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             db.session.rollback()
             return None
         return instrument_data
@@ -29,17 +29,19 @@ class InstrumentsRepository:
             num_rows_deleted = InstrumentsModel.query.delete()
             db.session.commit()
             return num_rows_deleted
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             db.session.rollback()
             return -1
 
     @staticmethod
     def delete_by_token(instrument_token):
         try:
-            num_deleted = InstrumentsModel.query.filter_by(instrument_token=instrument_token).delete()
+            num_deleted = InstrumentsModel.query.filter_by(
+                instrument_token=instrument_token
+            ).delete()
             db.session.commit()
             return num_deleted
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             db.session.rollback()
             return -1
 
@@ -63,7 +65,7 @@ class InstrumentsRepository:
             try:
                 db.session.commit()
                 return instrument
-            except SQLAlchemyError as e:
+            except SQLAlchemyError:
                 db.session.rollback()
                 return "FAILED"
         return None
@@ -83,17 +85,17 @@ class InstrumentsRepository:
               'exchange': str,
           }}
         """
-        instruments = InstrumentsModel.query.filter_by(exchange='NSE').all()
+        instruments = InstrumentsModel.query.filter_by(exchange="NSE").all()
         result = {}
         for inst in instruments:
-            ts = inst.tradingsymbol or ''
-            base = ts[:-3] if ts.endswith('-BE') else ts
+            ts = inst.tradingsymbol or ""
+            base = ts[:-3] if ts.endswith("-BE") else ts
             result[base] = {
-                'instrument_token': inst.instrument_token,
-                'exchange_token': inst.exchange_token,
-                'series': inst.series,
-                'tradingsymbol': inst.tradingsymbol,
-                'exchange': inst.exchange,
+                "instrument_token": inst.instrument_token,
+                "exchange_token": inst.exchange_token,
+                "series": inst.series,
+                "tradingsymbol": inst.tradingsymbol,
+                "exchange": inst.exchange,
             }
         return result
 
@@ -110,13 +112,12 @@ class InstrumentsRepository:
             return 0
         try:
             for change in changes:
-                old_token = change['old_token']
-                new_token = change['new_token']
+                old_token = change["old_token"]
+                new_token = change["new_token"]
 
                 # Update market_data rows
                 MarketDataModel.query.filter_by(instrument_token=old_token).update(
-                    {'instrument_token': new_token},
-                    synchronize_session='fetch'
+                    {"instrument_token": new_token}, synchronize_session="fetch"
                 )
 
             db.session.commit()
@@ -126,7 +127,9 @@ class InstrumentsRepository:
             raise e
 
     @staticmethod
-    def update_instrument_tokens(old_token, new_token, new_exchange_token, new_series, new_tradingsymbol):
+    def update_instrument_tokens(
+        old_token, new_token, new_exchange_token, new_series, new_tradingsymbol
+    ):
         """
         Targeted UPDATE on a single instruments row: update PK (instrument_token),
         exchange_token, series, and tradingsymbol for a symbol whose series changed.
@@ -141,15 +144,15 @@ class InstrumentsRepository:
 
             # Capture existing metadata before deleting
             data = {
-                'instrument_token': new_token,
-                'exchange_token': new_exchange_token,
-                'tradingsymbol': new_tradingsymbol,
-                'name': instrument.name,
-                'exchange': instrument.exchange,
-                'series': new_series,
-                'market_cap': instrument.market_cap,
-                'industry': instrument.industry,
-                'sector': instrument.sector,
+                "instrument_token": new_token,
+                "exchange_token": new_exchange_token,
+                "tradingsymbol": new_tradingsymbol,
+                "name": instrument.name,
+                "exchange": instrument.exchange,
+                "series": new_series,
+                "market_cap": instrument.market_cap,
+                "industry": instrument.industry,
+                "sector": instrument.sector,
             }
 
             db.session.delete(instrument)

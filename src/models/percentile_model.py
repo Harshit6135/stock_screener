@@ -1,9 +1,11 @@
+from sqlalchemy import Index, PrimaryKeyConstraint
+
 from db import db
-from sqlalchemy import PrimaryKeyConstraint, Index
 
 
 class PercentileModel(db.Model):
     """Daily percentile ranks for each stock"""
+
     __tablename__ = "percentile"
 
     tradingsymbol = db.Column(db.String(50), nullable=False)

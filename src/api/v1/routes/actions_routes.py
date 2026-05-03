@@ -3,26 +3,27 @@ Actions Routes
 
 API endpoints for trading actions (BUY/SELL/SWAP).
 """
+
 from datetime import datetime
+
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 
 from config import setup_logger
-from schemas import (
-    MessageSchema, ActionDateSchema, ActionQuerySchema,
-    ActionSchema, ActionUpdateSchema
-)
 from repositories import ActionsRepository
+from schemas import (
+    ActionDateSchema,
+    ActionQuerySchema,
+    ActionSchema,
+    ActionUpdateSchema,
+    MessageSchema,
+)
 from services import ActionsService
-
 
 logger = setup_logger(name="ActionsRoutes")
 actions_repo = ActionsRepository()
 blp = Blueprint(
-    "Actions",
-    __name__,
-    url_prefix="/api/v1/actions",
-    description="Trading Actions Operations"
+    "Actions", __name__, url_prefix="/api/v1/actions", description="Trading Actions Operations"
 )
 
 
@@ -34,25 +35,25 @@ class GenerateActions(MethodView):
     def post(self, args) -> dict:
         """
         Generate trading actions for current week.
-        
+
         Parameters:
             config_name: Query param - Strategy name (default: momentum_config)
-        
+
         Returns:
             dict: Message with generated actions
-        
+
         Raises:
             HTTPException: 400 for validation errors, 500 for failures
         """
         try:
-            config_name = args.get('config_name', 'momentum_config')
+            config_name = args.get("config_name", "momentum_config")
             actions = ActionsService(config_name)
-            action_date = args.get('date')
+            action_date = args.get("date")
             if action_date is None:
                 action_date = datetime.now().date()
-            enable_pyramiding = args.get('enable_pyramiding', False)
-            check_daily_sl = args.get('check_daily_sl', False)
-            mid_week_buy = args.get('mid_week_buy', False)
+            enable_pyramiding = args.get("enable_pyramiding", False)
+            check_daily_sl = args.get("check_daily_sl", False)
+            mid_week_buy = args.get("mid_week_buy", False)
             new_actions = actions.generate_actions(
                 action_date,
                 enable_pyramiding=enable_pyramiding,
@@ -87,14 +88,14 @@ class ActionsList(MethodView):
     def get(self, args):
         """
         Get actions for a specific date.
-        
+
         Parameters:
             date: Query param - Working date (YYYY-MM-DD)
-            
+
         Returns:
             List of actions for the specified date
         """
-        working_date = args.get('date')
+        working_date = args.get("date")
         actions = actions_repo.get_actions(working_date)
         return [a.to_dict() for a in actions]
 
@@ -107,24 +108,24 @@ class ActionDetail(MethodView):
     def put(self, data, action_id):
         """
         Update an action (approve/reject/update units).
-        
+
         Parameters:
             action_id: Path param - Action ID
             data: ActionUpdateSchema with status, units, execution_price
-            
+
         Returns:
             Message confirming update
         """
         action_data = {
-            'action_id': action_id,
-            'status': data['status'],
+            "action_id": action_id,
+            "status": data["status"],
         }
 
-        if 'units' in data:
-            action_data['units'] = data['units']
+        if "units" in data:
+            action_data["units"] = data["units"]
 
-        if 'execution_price' in data:
-            action_data['execution_price'] = data['execution_price']
+        if "execution_price" in data:
+            action_data["execution_price"] = data["execution_price"]
 
         result = actions_repo.update_action(action_data)
 
@@ -141,21 +142,21 @@ class ApproveActions(MethodView):
     def post(self, args):
         """
         Approve all pending actions for a given date.
-        
+
         Sets execution_price to next-day open and calculates sell costs.
-        
+
         Parameters:
             date: Query param - Action date (YYYY-MM-DD)
-            
+
         Returns:
             Message with count of approved actions
         """
         try:
-            working_date = args.get('date')
+            working_date = args.get("date")
             if not working_date:
                 abort(400, message="date query parameter is required")
-            
-            config_name = args.get('config_name', 'momentum_config')
+
+            config_name = args.get("config_name", "momentum_config")
             service = ActionsService(config_name)
             count = service.approve_all_actions(working_date)
             return {"message": f"Approved {count} actions"}
@@ -175,21 +176,21 @@ class ProcessActions(MethodView):
     def post(self, args):
         """
         Process approved actions and update holdings.
-        
+
         Creates/updates holding records from approved buy/sell actions.
-        
+
         Parameters:
             date: Query param - Action date (YYYY-MM-DD)
             config_name: Query param - Strategy name (default: momentum_config)
-            
+
         Returns:
             Message with processing result
         """
         try:
-            working_date = args.get('date')
+            working_date = args.get("date")
             if not working_date:
                 abort(400, message="date query parameter is required")
-            config_name = args.get('config_name', 'momentum_config')
+            config_name = args.get("config_name", "momentum_config")
             service = ActionsService(config_name)
             holdings = service.process_actions(working_date)
             if holdings is None:
@@ -223,11 +224,10 @@ class RejectAllPending(MethodView):
             Message with count of rejected actions
         """
         try:
-            config_name = args.get('config_name', 'momentum_config')
+            config_name = args.get("config_name", "momentum_config")
             service = ActionsService(config_name)
             count = service.reject_pending_actions()
             return {"message": f"Rejected {count} pending action(s)"}
         except Exception as e:
             logger.error(f"Failed to reject pending actions: {e}")
             abort(500, message=f"Reject all failed: {str(e)}")
-

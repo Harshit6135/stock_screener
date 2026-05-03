@@ -1,17 +1,17 @@
-from db import db
 from datetime import datetime
-from sqlalchemy import and_, or_, func
+
+from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 
-from models import MarketDataModel
 from config import setup_logger
-
+from db import db
+from models import MarketDataModel
 
 _md_logger = setup_logger(name="MarketDataRepository")
 
 
 class MarketDataRepository:
-    
+
     @staticmethod
     def bulk_insert(market_data):
         try:
@@ -27,11 +27,13 @@ class MarketDataRepository:
     def query(filter_data):
         query = MarketDataModel.query
         if not filter_data.get("end_date"):
-            filter_data['end_date'] = datetime.now().date()
+            filter_data["end_date"] = datetime.now().date()
 
         instrument_filter = []
         if "instrument_token" in filter_data:
-            instrument_filter.append(MarketDataModel.instrument_token == filter_data["instrument_token"])
+            instrument_filter.append(
+                MarketDataModel.instrument_token == filter_data["instrument_token"]
+            )
         if "tradingsymbol" in filter_data:
             instrument_filter.append(MarketDataModel.tradingsymbol == filter_data["tradingsymbol"])
 
@@ -51,26 +53,25 @@ class MarketDataRepository:
     def get_latest_date_for_all():
         """Fetch the max date for each instrument"""
         query = db.session.query(
-            MarketDataModel.instrument_token,
-            func.max(MarketDataModel.date).label("max_date")
+            MarketDataModel.instrument_token, func.max(MarketDataModel.date).label("max_date")
         ).group_by(MarketDataModel.instrument_token)
         return query.all()
 
     @staticmethod
     def get_latest_date_by_symbol(tradingsymbol):
         """Fetch the latest market data for a tradingsymbol"""
-        query = MarketDataModel.query.filter(
-            MarketDataModel.tradingsymbol == tradingsymbol
-        )
+        query = MarketDataModel.query.filter(MarketDataModel.tradingsymbol == tradingsymbol)
 
         return query.order_by(MarketDataModel.date.desc()).first()
 
     @staticmethod
     def get_earliest_date_by_symbol(tradingsymbol):
         """Fetch the oldest market data row for a tradingsymbol (for refill start date after a corporate action)."""
-        return MarketDataModel.query.filter(
-            MarketDataModel.tradingsymbol == tradingsymbol
-        ).order_by(MarketDataModel.date.asc()).first()
+        return (
+            MarketDataModel.query.filter(MarketDataModel.tradingsymbol == tradingsymbol)
+            .order_by(MarketDataModel.date.asc())
+            .first()
+        )
 
     @staticmethod
     def get_latest_marketdata(tradingsymbol):
@@ -117,20 +118,23 @@ class MarketDataRepository:
         return db.session.query(func.min(MarketDataModel.date)).scalar()
 
     @staticmethod
-    def get_marketdata_first_day(tradingsymbol:str, date):
+    def get_marketdata_first_day(tradingsymbol: str, date):
         """Fetch market data for a tradingsymbol, on a specific date"""
-        return MarketDataModel.query.filter(
-            MarketDataModel.tradingsymbol == tradingsymbol,
-            MarketDataModel.date >= date,
-            MarketDataModel.date <= datetime.now().date()
-        ).order_by(MarketDataModel.date.asc()).first()
+        return (
+            MarketDataModel.query.filter(
+                MarketDataModel.tradingsymbol == tradingsymbol,
+                MarketDataModel.date >= date,
+                MarketDataModel.date <= datetime.now().date(),
+            )
+            .order_by(MarketDataModel.date.asc())
+            .first()
+        )
 
     @staticmethod
-    def get_marketdata_by_trading_symbol(tradingsymbol:str, date):
+    def get_marketdata_by_trading_symbol(tradingsymbol: str, date):
         """Fetch market data for a tradingsymbol, on or before a specific date."""
         query = MarketDataModel.query.filter(
-            MarketDataModel.tradingsymbol == tradingsymbol,
-            MarketDataModel.date <= date
+            MarketDataModel.tradingsymbol == tradingsymbol, MarketDataModel.date <= date
         )
         return query.order_by(MarketDataModel.date.desc()).first()
 
@@ -138,9 +142,7 @@ class MarketDataRepository:
     def delete_after_date(date):
         """Delete all market data records after a given date."""
         try:
-            num_deleted = MarketDataModel.query.filter(
-                MarketDataModel.date > date
-            ).delete()
+            num_deleted = MarketDataModel.query.filter(MarketDataModel.date > date).delete()
             db.session.commit()
             return num_deleted
         except SQLAlchemyError as e:

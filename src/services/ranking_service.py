@@ -6,14 +6,14 @@ sort by score descending, and assign rank (1 = highest).
 """
 
 import pandas as pd
-pd.set_option('future.no_silent_downcasting', True)
+
+pd.set_option("future.no_silent_downcasting", True)
 
 from datetime import date, timedelta
 
 from config import setup_logger
+from repositories import RankingRepository, ScoreRepository
 from utils import get_friday_of_week
-from repositories import ScoreRepository, RankingRepository
-
 
 score_repo = ScoreRepository()
 ranking_repo = RankingRepository()
@@ -22,17 +22,17 @@ logger = setup_logger(name="RankingService")
 
 class RankingService:
     """Service for calculating weekly rankings from daily scores"""
-    
+
     def generate_rankings(self):
         logger.info("Starting incremental ranking generation...")
-        
+
         last_ranking_date = ranking_repo.get_max_ranking_date()
         last_score_date = score_repo.get_max_score_date()
-        
+
         if not last_score_date:
             logger.info("No scores available for ranking")
             return {"message": "No scores available", "weeks": 0}
-        
+
         if last_ranking_date:
             current_friday = get_friday_of_week(last_ranking_date) + timedelta(days=7)
         else:
@@ -43,18 +43,16 @@ class RankingService:
             current_friday = get_friday_of_week(first_date)
             if current_friday < first_date:
                 current_friday += timedelta(days=7)
-        
+
         end_friday = get_friday_of_week(last_score_date)
         weeks_processed = 0
         all_ranking_records = []
         today = date.today()
-        
+
         while current_friday <= end_friday:
 
             friday_as_date = (
-                current_friday.date()
-                if hasattr(current_friday, 'date')
-                else current_friday
+                current_friday.date() if hasattr(current_friday, "date") else current_friday
             )
             if friday_as_date >= today:
                 logger.info(
@@ -65,39 +63,46 @@ class RankingService:
 
             week_start = current_friday - timedelta(days=6)
             scores = score_repo.get_scores_in_date_range(week_start, current_friday)
-            
+
             if scores:
-                df = pd.DataFrame([
-                    {'tradingsymbol': s.tradingsymbol, 'composite_score': s.composite_score}
-                    for s in scores
-                ])
-                
-                weekly_avg = df.groupby('tradingsymbol')['composite_score'].mean().reset_index()
-                
-                weekly_avg = weekly_avg.sort_values('composite_score', ascending=False).reset_index(drop=True)
-                weekly_avg['rank'] = range(1, len(weekly_avg) + 1)
-                weekly_avg['ranking_date'] = current_friday
-                
-                all_ranking_records.extend(weekly_avg.to_dict('records'))
+                df = pd.DataFrame(
+                    [
+                        {"tradingsymbol": s.tradingsymbol, "composite_score": s.composite_score}
+                        for s in scores
+                    ]
+                )
+
+                weekly_avg = df.groupby("tradingsymbol")["composite_score"].mean().reset_index()
+
+                weekly_avg = weekly_avg.sort_values("composite_score", ascending=False).reset_index(
+                    drop=True
+                )
+                weekly_avg["rank"] = range(1, len(weekly_avg) + 1)
+                weekly_avg["ranking_date"] = current_friday
+
+                all_ranking_records.extend(weekly_avg.to_dict("records"))
                 weeks_processed += 1
                 logger.info(f"Processed week ending {current_friday}")
-            
+
             current_friday += timedelta(days=7)
-        
+
         if all_ranking_records:
             ranking_repo.bulk_insert(all_ranking_records)
-        
+
         logger.info(f"Generated rankings for {weeks_processed} weeks")
-        return {"message": f"Generated rankings for {weeks_processed} weeks", "weeks": weeks_processed}
-    
+        return {
+            "message": f"Generated rankings for {weeks_processed} weeks",
+            "weeks": weeks_processed,
+        }
+
     def recalculate_all_rankings(self):
         """
         Recalculate ALL weekly rankings from scratch.
         Use this when composite scores have been recalculated.
         """
         logger.info("Starting FULL ranking recalculation...")
-        
+
         logger.info("Clearing existing ranking table...")
         ranking_repo.delete_all()
-        
+
         return self.generate_rankings()

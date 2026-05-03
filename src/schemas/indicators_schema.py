@@ -1,11 +1,12 @@
 from marshmallow import Schema, fields
 
+
 class IndicatorsSchema(Schema):
     tradingsymbol = fields.Str(required=True)
     date = fields.Date(required=True)
     exchange = fields.Str(required=True)
 
-    ema_50 = fields.Float(allow_none=True) 
+    ema_50 = fields.Float(allow_none=True)
     ema_200 = fields.Float(allow_none=True)
     rsi_14 = fields.Float(allow_none=True)
     roc_10 = fields.Float(allow_none=True)

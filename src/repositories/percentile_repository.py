@@ -1,20 +1,21 @@
-from db import db
 from sqlalchemy.exc import SQLAlchemyError
 
 from config import setup_logger
+from db import db
 from models import PercentileModel
-
 
 logger = setup_logger(name="PercentileRepository")
 
 
 class PercentileRepository:
     """Repository for percentile rank operations (renamed from RankingRepository)"""
-    
+
     @staticmethod
     def bulk_insert(percentile_records):
         try:
-            db.session.bulk_insert_mappings(PercentileModel, percentile_records, return_defaults=True)
+            db.session.bulk_insert_mappings(
+                PercentileModel, percentile_records, return_defaults=True
+            )
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
@@ -25,7 +26,9 @@ class PercentileRepository:
     @staticmethod
     def delete(percentile_date):
         try:
-            db.session.query(PercentileModel).filter(PercentileModel.percentile_date == percentile_date).delete()
+            db.session.query(PercentileModel).filter(
+                PercentileModel.percentile_date == percentile_date
+            ).delete()
             db.session.commit()
         except SQLAlchemyError as e:
             logger.error(f"Error deleting Items to Table {e}")
@@ -35,7 +38,9 @@ class PercentileRepository:
 
     @staticmethod
     def get_max_percentile_date():
-        latest_record = PercentileModel.query.order_by(PercentileModel.percentile_date.desc()).first()
+        latest_record = PercentileModel.query.order_by(
+            PercentileModel.percentile_date.desc()
+        ).first()
         return latest_record.percentile_date if latest_record else None
 
     @staticmethod
@@ -46,9 +51,9 @@ class PercentileRepository:
                 return []
         else:
             latest = date
-        percentiles = PercentileModel.query.filter(
-            PercentileModel.percentile_date == latest
-        ).limit(n).all()
+        percentiles = (
+            PercentileModel.query.filter(PercentileModel.percentile_date == latest).limit(n).all()
+        )
 
         return percentiles
 
@@ -61,15 +66,17 @@ class PercentileRepository:
     @staticmethod
     def get_latest_by_symbol(symbol):
         """Get the latest available percentile record for a symbol"""
-        return PercentileModel.query.filter(
-            PercentileModel.tradingsymbol == symbol
-        ).order_by(PercentileModel.percentile_date.desc()).first()
+        return (
+            PercentileModel.query.filter(PercentileModel.tradingsymbol == symbol)
+            .order_by(PercentileModel.percentile_date.desc())
+            .first()
+        )
 
     @staticmethod
     def get_by_date_and_symbol(percentile_date, symbol):
         return PercentileModel.query.filter(
             PercentileModel.percentile_date == percentile_date,
-            PercentileModel.tradingsymbol == symbol
+            PercentileModel.tradingsymbol == symbol,
         ).all()
 
     @staticmethod
@@ -81,7 +88,7 @@ class PercentileRepository:
             ).delete()
             db.session.commit()
             return num_deleted
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             db.session.rollback()
             return -1
 
@@ -94,7 +101,7 @@ class PercentileRepository:
             ).delete()
             db.session.commit()
             return num_deleted
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             db.session.rollback()
             return -1
 
@@ -105,11 +112,12 @@ class PercentileRepository:
         Returns:
             List[date]: Sorted list of unique percentile dates.
         """
-        result = db.session.query(
-            PercentileModel.percentile_date
-        ).distinct().order_by(
-            PercentileModel.percentile_date
-        ).all()
+        result = (
+            db.session.query(PercentileModel.percentile_date)
+            .distinct()
+            .order_by(PercentileModel.percentile_date)
+            .all()
+        )
         return [r[0] for r in result]
 
     @staticmethod
@@ -125,9 +133,5 @@ class PercentileRepository:
         """
         query = PercentileModel.query
         if after_date is not None:
-            query = query.filter(
-                PercentileModel.percentile_date > after_date
-            )
-        return query.order_by(
-            PercentileModel.percentile_date
-        ).all()
+            query = query.filter(PercentileModel.percentile_date > after_date)
+        return query.order_by(PercentileModel.percentile_date).all()

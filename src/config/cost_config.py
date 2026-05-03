@@ -1,7 +1,7 @@
 class TransactionCostConfig:
     """
     Indian market transaction cost parameters.
-    
+
     Per NSE/BSE regulations:
     - STT: Buy and sell for delivery trades
     - Exchange: Buy and sell
@@ -11,6 +11,7 @@ class TransactionCostConfig:
     - IPF: Buy and sell (Investor Protection Fund)
     - DP Charges: Sell only (Depository Participant charges)
     """
+
     brokerage_percent: float = 0.0
     brokerage_cap: float = 0.0
     stt_buy_percent: float = 0.001  # 0.1% on buy (delivery)
@@ -25,6 +26,7 @@ class TransactionCostConfig:
 
 class ImpactCostConfig:
     """Impact cost tiers based on order size vs ADV"""
+
     tier1_threshold: float = 0.05  # < 5% ADV
     tier1_bps: float = 15
     tier2_threshold: float = 0.10  # < 10% ADV

@@ -1,5 +1,6 @@
 from marshmallow import Schema, fields
 
+
 class InstrumentSchema(Schema):
     instrument_token = fields.Int(required=True)
     exchange_token = fields.Str()
@@ -9,6 +10,7 @@ class InstrumentSchema(Schema):
     market_cap = fields.Float()
     industry = fields.Str()
     sector = fields.Str()
+
 
 class MessageSchema(Schema):
     message = fields.Str()

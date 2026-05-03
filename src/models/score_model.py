@@ -1,9 +1,11 @@
+from sqlalchemy import Index, PrimaryKeyConstraint
+
 from db import db
-from sqlalchemy import PrimaryKeyConstraint, Index
 
 
 class ScoreModel(db.Model):
     """Daily composite scores for each stock"""
+
     __tablename__ = "score"
 
     tradingsymbol = db.Column(db.String(50), nullable=False)
@@ -12,7 +14,6 @@ class ScoreModel(db.Model):
     penalty = db.Column(db.Float, nullable=True)
     penalty_reason = db.Column(db.String(255), nullable=True)
     composite_score = db.Column(db.Float, nullable=False)
-    
 
     __table_args__ = (
         PrimaryKeyConstraint("tradingsymbol", "score_date"),

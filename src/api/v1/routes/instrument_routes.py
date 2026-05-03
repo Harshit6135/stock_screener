@@ -4,8 +4,12 @@ from flask_smorest import Blueprint, abort
 from repositories import InstrumentsRepository
 from schemas import InstrumentSchema, MessageSchema
 
-
-blp = Blueprint("Instruments", __name__, url_prefix="/api/v1/instruments", description="Operations on instruments")
+blp = Blueprint(
+    "Instruments",
+    __name__,
+    url_prefix="/api/v1/instruments",
+    description="Operations on instruments",
+)
 instr_repository = InstrumentsRepository()
 
 
@@ -35,7 +39,7 @@ class InstrumentList(MethodView):
         response = instr_repository.delete_all()
         if response == -1:
             abort(500, message="Failed to delete instruments")
-        return {"message": f"Deleted all instruments."}
+        return {"message": "Deleted all instruments."}
 
 
 @blp.route("/<int:instrument_token>")
@@ -48,7 +52,6 @@ class Instrument(MethodView):
         if instrument:
             return instrument
         abort(404, message="Instrument not found")
-
 
     @blp.doc(tags=["Instruments"])
     @blp.arguments(InstrumentSchema)

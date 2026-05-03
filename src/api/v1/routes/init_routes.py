@@ -1,9 +1,8 @@
 from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 
+from schemas import InitRequestSchema, InitResponseSchema
 from services import InitService
-from schemas import InitResponseSchema, InitRequestSchema
-
 
 blp = Blueprint("Initialization", __name__, url_prefix="/api/v1/init", description="Initialize App")
 
