@@ -61,12 +61,9 @@ class InvestmentsSummaryModel(db.Model):
     gain = db.Column(db.Numeric(12, 2), nullable=True)
     gain_percentage = db.Column(db.Numeric(12, 2), nullable=True)
     
-    # Generated column - automatically calculated by database
-    remaining_capital = db.Column(
-        db.Numeric(12, 2),
-        db.Computed('starting_capital + sold - bought'),
-        nullable=True
-    )
+    # Manually maintained — set by the service layer from first-principles
+    # (capital_events total minus cost basis of holdings).
+    remaining_capital = db.Column(db.Numeric(12, 2), nullable=True)
 
     __table_args__ = (
         Index("idx_investment_summary_date", "date"),

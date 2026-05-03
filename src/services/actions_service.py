@@ -300,11 +300,9 @@ class ActionsService:
         total_capital = self.investment_repo.get_total_capital(
             action_date, include_realized=True
         )
-        summary = self.investment_repo.get_summary()
-        if not summary:
-            remaining_capital = total_capital
-        else:
-            remaining_capital = float(summary.remaining_capital)
+        # Derive remaining cash from first principles (capital_events - cost_of_holdings)
+        # instead of the summary's computed column which drifts over time.
+        remaining_capital = self.investment_repo.get_remaining_capital(target_date=action_date)
 
         #TODO Check for any investment on same or future date
         new_actions = []
@@ -363,100 +361,188 @@ class ActionsService:
                 f"Position sizes will be 0."
             )
 
-        pending_vacancies: list = []  # capital-constrained top-N BUY symbols, in priority order
+        # ── PHASE 1: ALL SELLS (pure sells + SWAP sell legs) ─────────────────
+        # Process every sell before any buy so remaining_capital is maximised
+        # when we start buying.  Swap sell legs are collected here too and their
+        # buy legs are queued for Phase 3.
+        swap_buy_queue = []   # list of (symbol, reason) to buy in Phase 3
+
         for d in decisions:
-            md = self.marketdata_repo.get_marketdata_by_trading_symbol(
-                d.symbol, data_date
+            if d.action_type not in ('SELL', 'SWAP'):
+                continue
+
+            md = self.marketdata_repo.get_marketdata_by_trading_symbol(d.symbol, data_date)
+            if md is None:
+                logger.warning(f"generate_actions: no market data for {d.symbol} on {data_date}, skipping SELL")
+                continue
+
+            action, remaining_capital, realized_gain = self.sell_action(
+                d.symbol, action_date, md.close,
+                d.units if d.action_type == 'SELL' else d.swap_sell_units,
+                d.reason,
+                remaining_capital=remaining_capital,
+                entry_price=holdings_entry_prices.get(d.symbol, 0),
             )
+            new_actions.append(action)
+            sizing_base += realized_gain
 
-            if d.action_type == 'SELL':
-                if md is None:
-                    logger.warning(f"generate_actions: no market data for {d.symbol} on {data_date}, skipping SELL")
+            if d.action_type == 'SWAP':
+                # Queue the buy leg — will be executed in ranking order in Phase 3
+                swap_buy_queue.append((d.swap_for, d.reason))
+
+        logger.info(
+            f"generate_actions Phase 1 complete: remaining_capital=₹{remaining_capital:,.0f} "
+            f"after {len([a for a in new_actions if a['type']=='sell'])} sell(s)"
+        )
+
+        # ── PHASE 2: PYRAMID ADDs ─────────────────────────────────────────────
+        for d in decisions:
+            if d.action_type != 'PYRAMID_ADD':
+                continue
+            md = self.marketdata_repo.get_marketdata_by_trading_symbol(d.symbol, data_date)
+            if md is None:
+                logger.warning(f"generate_actions: no market data for {d.symbol} on {data_date}, skipping PYRAMID_ADD")
+                continue
+            pyramid_cfg = PyramidConfig()
+            existing_holding = self.investment_repo.get_holdings_by_symbol(d.symbol)
+            existing_value = (
+                float(existing_holding.avg_price or existing_holding.entry_price) * existing_holding.units
+                if existing_holding else 0.0
+            )
+            action, remaining_capital = self.buy_action(
+                d.symbol, action_date, md.close,
+                'pyramid_add',
+                total_capital=sizing_base * pyramid_cfg.pyramid_fraction,
+                remaining_capital=remaining_capital,
+                existing_position_value=existing_value,
+            )
+            new_actions.append(action)
+            logger.info(f"PYRAMID_ADD {d.symbol}: adding {pyramid_cfg.pyramid_fraction:.0%} position, existing_value={existing_value:.0f}")
+
+        # ── PHASE 3: ALL BUYS in top-ranking order ────────────────────────────
+        # Build a set of symbols that need to be bought this week:
+        #   • BUY decisions (vacancy fills) from the trading engine
+        #   • Swap buy legs queued in Phase 1
+        # Then walk the top_n list in score order so highest-ranked stocks
+        # are bought first, and each buy sees the full remaining capital
+        # (all sells are already done).  Any remaining open slots after
+        # exhausting planned buy targets get filled from the same list
+        # (natural backfill — no separate 2× fetch needed).
+        buy_decision_symbols = {d.symbol for d in decisions if d.action_type == 'BUY'}
+        # swap_buy_queue may contain symbols not in top_n; collect them separately
+        swap_buy_map = {sym: reason for sym, reason in swap_buy_queue}
+
+        already_bought = set()
+        sold_this_week = {a['symbol'] for a in new_actions if a['type'] == 'sell'}
+
+        # Count open slots after sells
+        held_after = {
+            h.symbol for h in current_holdings
+            if h.symbol not in sold_this_week
+        }
+        open_slots = self.config.max_positions - len(held_after)
+
+        logger.info(
+            f"generate_actions Phase 3: {open_slots} open slot(s), "
+            f"remaining_capital=₹{remaining_capital:,.0f}"
+        )
+
+        pending_vacancies: list = []
+
+        # Walk top_n in ranking order
+        for item in top_n:
+            sym = item.tradingsymbol
+            if sym in already_bought or sym in held_after:
+                continue  # already held or already bought this iteration
+
+            is_buy_decision = sym in buy_decision_symbols
+            is_swap_buy = sym in swap_buy_map
+
+            if not is_buy_decision and not is_swap_buy:
+                continue  # not a planned buy — skip in this pass
+
+            if open_slots <= 0 and not is_swap_buy:
+                # Swap buys don't consume a new slot (they replace a sold position)
+                continue
+
+            md = self.marketdata_repo.get_marketdata_by_trading_symbol(sym, data_date)
+            if md is None:
+                logger.warning(f"generate_actions: no market data for {sym} on {data_date}, skipping BUY")
+                continue
+
+            reason = swap_buy_map.get(sym, 'top N buys')
+            action, _ = self.buy_action(
+                sym, action_date, md.close,
+                reason,
+                total_capital=sizing_base,
+                remaining_capital=remaining_capital,
+            )
+            remaining_capital -= action.get('capital', 0)
+
+            new_actions.append(action)
+            already_bought.add(sym)
+
+            if action.get('units', 0) == 0:
+                pending_vacancies.append(sym)
+                logger.info(f"generate_actions: BUY {sym} is capital-constrained — queued as pending vacancy")
+            else:
+                held_after.add(sym)
+                if is_buy_decision:
+                    open_slots -= 1
+
+        # Handle any swap buy legs whose target was NOT in top_n
+        for sym, reason in swap_buy_queue:
+            if sym in already_bought:
+                continue
+            md = self.marketdata_repo.get_marketdata_by_trading_symbol(sym, data_date)
+            if md is None:
+                logger.warning(f"generate_actions: no market data for swap-buy {sym} on {data_date}, skipping")
+                continue
+            action, _ = self.buy_action(
+                sym, action_date, md.close,
+                reason,
+                total_capital=sizing_base,
+                remaining_capital=remaining_capital,
+            )
+            remaining_capital -= action.get('capital', 0)
+            new_actions.append(action)
+            already_bought.add(sym)
+            if action.get('units', 0) > 0:
+                held_after.add(sym)
+
+        # ── Backfill: fill remaining open slots from the same ranked list ─────
+        if open_slots > 0 and remaining_capital > 0:
+            logger.info(
+                f"generate_actions: {open_slots} open slot(s) remain — "
+                f"backfilling from top-{self.config.max_positions} ranked list"
+            )
+            for item in top_n:
+                if open_slots <= 0 or remaining_capital <= 0:
+                    break
+                sym = item.tradingsymbol
+                if sym in already_bought or sym in held_after:
                     continue
-                action, remaining_capital, realized_gain = self.sell_action(
-                    d.symbol, action_date, md.close,
-                    d.units, d.reason, remaining_capital=remaining_capital,
-                    entry_price=holdings_entry_prices[d.symbol]
-                )
-                new_actions.append(action)
-                sizing_base += realized_gain
-            elif d.action_type == 'BUY':
+
+                md = self.marketdata_repo.get_marketdata_by_trading_symbol(sym, data_date)
                 if md is None:
-                    logger.warning(f"generate_actions: no market data for {d.symbol} on {data_date}, skipping BUY")
                     continue
-                action, remaining_capital = self.buy_action(
-                    d.symbol, action_date, md.close,
-                    d.reason,
+
+                action, _ = self.buy_action(
+                    sym, action_date, md.close,
+                    reason='vacancy backfill',
                     total_capital=sizing_base,
-                    remaining_capital=remaining_capital
-                )
-                new_actions.append(action)
-                if action.get('units', 0) == 0:
-                    pending_vacancies.append(d.symbol)
-                    logger.info(
-                        f"generate_actions: BUY {d.symbol} is capital-constrained — "
-                        f"queued as pending vacancy (priority {len(pending_vacancies)})"
-                    )
-            elif d.action_type == 'PYRAMID_ADD':
-                if md is None:
-                    logger.warning(f"generate_actions: no market data for {d.symbol} on {data_date}, skipping PYRAMID_ADD")
-                    continue
-                pyramid_cfg = PyramidConfig()
-                # Concentration cap: existing position value counts against the 25% cap
-                existing_holding = self.investment_repo.get_holdings_by_symbol(d.symbol)
-                existing_value = (
-                    float(existing_holding.avg_price or existing_holding.entry_price) * existing_holding.units
-                    if existing_holding else 0.0
-                )
-                action, remaining_capital = self.buy_action(
-                    d.symbol, action_date, md.close,
-                    'pyramid_add',
-                    total_capital=sizing_base * pyramid_cfg.pyramid_fraction,
                     remaining_capital=remaining_capital,
-                    existing_position_value=existing_value
                 )
-                new_actions.append(action)
-                logger.info(f"PYRAMID_ADD {d.symbol}: adding {pyramid_cfg.pyramid_fraction:.0%} position, existing_value={existing_value:.0f}")
-            elif d.action_type == 'SWAP':
-                if md is None:
-                    logger.warning(f"generate_actions: no market data for {d.symbol} on {data_date}, skipping SWAP")
-                    continue
-                # Bug 12: pass remaining_capital so freed cash is preserved across the loop
-                action, remaining_capital, realized_gain = self.sell_action(
-                    d.symbol, action_date, md.close,
-                    d.swap_sell_units, d.reason,
-                    remaining_capital=remaining_capital,
-                    entry_price=holdings_entry_prices[d.symbol]
-                )
-                new_actions.append(action)
-                sizing_base += realized_gain
-
-                # If there's a capital-constrained top-N BUY pending, redirect the swap's
-                # buy leg to that higher-priority candidate instead of the original swap target.
-                # The displaced original target cascades into the queue for the next swap.
-                if pending_vacancies:
-                    buy_symbol = pending_vacancies.pop(0)
-                    pending_vacancies.append(d.swap_for)  # cascade: displaced target available for next swap
-                    buy_reason = f'swap-redirected vacancy fill (was: {d.reason})'
+                if action.get('units', 0) > 0:
+                    remaining_capital -= action.get('capital', 0)
+                    new_actions.append(action)
+                    already_bought.add(sym)
+                    held_after.add(sym)
+                    open_slots -= 1
                     logger.info(
-                        f"generate_actions: SWAP buy redirected from {d.swap_for} → {buy_symbol} "
-                        f"(pending top-N vacancy takes priority, {d.swap_for} cascaded to queue)"
+                        f"BACKFILL BUY {sym}: {action['units']} units @ "
+                        f"₹{md.close:.2f} = ₹{action['capital']:,.0f}"
                     )
-                else:
-                    buy_symbol = d.swap_for
-                    buy_reason = d.reason
-
-                md_buy = self.marketdata_repo.get_marketdata_by_trading_symbol(buy_symbol, data_date)
-                if md_buy is None:
-                    logger.warning(f"generate_actions: no market data for buy target {buy_symbol} on {data_date}, skipping BUY leg")
-                    continue
-
-                action, remaining_capital = self.buy_action(
-                    buy_symbol, action_date, md_buy.close, buy_reason,
-                    total_capital=sizing_base, remaining_capital=remaining_capital
-                )
-                new_actions.append(action)
-
 
         new_actions = [a for a in new_actions if a is not None]
         if new_actions:
@@ -470,7 +556,15 @@ class ActionsService:
                     f"Saved {len(pending_buys)} capital-constrained buys as Pending: "
                     f"{[a['symbol'] for a in pending_buys]}"
                 )
+
+        buy_count = len([a for a in new_actions if a['type'] == 'buy' and a.get('units', 0) > 0])
+        sell_count = len([a for a in new_actions if a['type'] == 'sell'])
+        logger.info(
+            f"generate_actions: complete — {buy_count} buys, {sell_count} sells, "
+            f"remaining_capital=₹{remaining_capital:,.0f}"
+        )
         return new_actions
+
 
     def approve_all_actions(self, action_date: date) -> int:
         """
@@ -725,8 +819,20 @@ class ActionsService:
                 held_symbols.discard(symbol)
                 continue
 
-            # Normal buy
-            initial_sl = round(action.execution_price - action.risk, 2)
+            # Normal buy — recalculate initial_sl from ATR + config (first principles)
+            # instead of trusting action.risk which may be 0 for capital-constrained actions
+            atr_val = float(action.atr) if action.atr else 0.0
+            risk_per_unit = round(atr_val * self.config.sl_multiplier, 2)
+            if risk_per_unit <= 0 and atr_val > 0:
+                # Fallback: use ATR directly if multiplier produces 0
+                risk_per_unit = round(atr_val, 2)
+            initial_sl = round(float(action.execution_price) - risk_per_unit, 2)
+            logger.info(
+                f"BUY {symbol}: computed initial_sl={initial_sl:.2f} "
+                f"(exec={action.execution_price} - risk={risk_per_unit:.2f}, "
+                f"atr={atr_val}, sl_mult={self.config.sl_multiplier})"
+            )
+
             rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
             score = round(rank_data.composite_score, 2) if rank_data else 0
             buy_value = float(action.execution_price) * action.units

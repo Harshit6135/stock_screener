@@ -5,7 +5,7 @@ import time
 import pandas as pd
 pd.set_option('future.no_silent_downcasting', True)
 
-from adaptors import YFinanceAdaptor
+from adaptors import YFinanceAdaptor, RateLimitError
 from config import setup_logger, MCAP_THRESHOLD, PRICE_THRESHOLD
 from repositories import MasterRepository, InstrumentsRepository
 
@@ -23,7 +23,7 @@ class InitService:
         self.dump_path = "data/exports/yfinance_dump.csv"
         self.instr_json = "data/exports/instruments.json"
 
-    def initialize_app(self, batch_size=100, sleep_time=4):
+    def initialize_app(self, batch_size=100, sleep_time=4, rate_limit_wait=120):
         logger.info("Starting Day 0 Process...")
 
         # 1. Fetch and Merge CSVs
@@ -37,7 +37,7 @@ class InitService:
         # 2. Fetch yfinance data
         try:
             df['yfinance_tickers'] = df.apply(self.generate_yfinance_tickers, axis=1)
-            df = self.fetch_yfinance_data(df, batch_size, sleep_time)
+            df = self.fetch_yfinance_data(df, batch_size, sleep_time, rate_limit_wait)
 
         except Exception as e:
             logger.error(f"Step 2 (yfinance fetch) failed: {e}")
@@ -188,7 +188,7 @@ class InitService:
         return tickers
 
     @staticmethod
-    def fetch_yfinance_data(df, batch_size=100, sleep_time=4):
+    def fetch_yfinance_data(df, batch_size=100, sleep_time=4, rate_limit_wait=120):
         try:
             desired_columns = [
                 'industry', 'sector', 'marketCap', 'regularMarketPrice',
@@ -200,18 +200,41 @@ class InitService:
 
             total = len(df)
             logger.info(f"Fetching yfinance data for {total} stocks...")
-            
+
             successful_downloads = 0
             failed_downloads = 0
 
             for i, row in enumerate(df.itertuples()):
-                # Avoid sleeping on the very first row
+                # Batch sleep: pause every batch_size requests
                 if i > 0 and i % batch_size == 0:
                     logger.info(f"Sleeping for {sleep_time}s to avoid YFinance rate limits...")
                     time.sleep(sleep_time)
 
                 idx = row.Index
-                yfinance_info, yfinance_ticker_used, yfinance_status = yf.get_stock_info(df.at[idx, 'yfinance_tickers'])
+                tickers = df.at[idx, 'yfinance_tickers']
+
+                # --- 429 retry loop ---
+                # We attempt the fetch once.  If we receive a RateLimitError we
+                # sleep for rate_limit_wait seconds and retry the *same* ticker
+                # exactly once more before giving up.
+                for attempt in range(2):
+                    try:
+                        yfinance_info, yfinance_ticker_used, yfinance_status = yf.get_stock_info(tickers)
+                        break  # success or normal failure — exit retry loop
+                    except RateLimitError as rle:
+                        if attempt == 0:
+                            logger.warning(
+                                f"HTTP 429 detected at stock {i + 1}/{total}. "
+                                f"Sleeping {rate_limit_wait}s before retrying..."
+                            )
+                            time.sleep(rate_limit_wait)
+                        else:
+                            # Still failing after the back-off — treat as failed
+                            logger.error(
+                                f"Retry after 429 back-off still failed for stock {i + 1}/{total}: {rle}"
+                            )
+                            yfinance_info, yfinance_ticker_used, yfinance_status = None, None, 'Failed'
+
                 df.at[idx, 'yfinance_info'] = json.dumps(yfinance_info)
                 df.at[idx, 'yfinance_ticker_used'] = yfinance_ticker_used
                 df.at[idx, 'yfinance_status'] = yfinance_status
@@ -221,7 +244,10 @@ class InitService:
                         df.at[idx, col] = yfinance_info.get(col, None)
                 else:
                     failed_downloads += 1
-                logger.info(f"Status - Successful - {successful_downloads}, Failed - {failed_downloads}, Total - {total}")
+                logger.info(
+                    f"Status - Successful - {successful_downloads}, "
+                    f"Failed - {failed_downloads}, Total - {total}"
+                )
         except Exception as e:
             logger.error(f"Failed to fetch yfinance data: {str(e)}")
             raise

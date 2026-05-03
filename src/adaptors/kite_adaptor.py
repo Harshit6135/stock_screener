@@ -41,6 +41,7 @@ class KiteAdaptor:
         self.live_prices: Dict[int, Dict] = {}  # {token: {last_price, prev_close, change, symbol}}
         self._ticker_lock = threading.Lock()
         self._ticker_running = False
+        self._tick_count = 0  # for periodic logging
         
         self._initialize_kite()
 
@@ -288,20 +289,41 @@ class KiteAdaptor:
                             self.live_prices[t]['change'] = (
                                 ((ltp - prev) / prev * 100) if prev else 0
                             )
+                        else:
+                            self.logger.warning(
+                                f"WS tick for untracked token {t} (ltp={ltp}) — "
+                                f"not in live_prices map"
+                            )
+                    self._tick_count += 1
+                    # Log price summary every 50 tick batches
+                    if self._tick_count % 50 == 0:
+                        summary_parts = []
+                        for tk, d in self.live_prices.items():
+                            sym = d.get('symbol', str(tk))
+                            summary_parts.append(
+                                f"{sym}={d.get('last_price', 0):.2f}"
+                            )
+                        self.logger.info(
+                            f"WS tick batch #{self._tick_count}: "
+                            f"{', '.join(summary_parts)}"
+                        )
 
             def on_connect(ws, response):
-                self.logger.info(f"KiteTicker connected. Subscribing to {len(tokens)} tokens.")
+                self.logger.info(
+                    f"KiteTicker connected. Subscribing to {len(tokens)} tokens: "
+                    f"{', '.join(f'{t}={token_symbol_map.get(t)}' for t in tokens)}"
+                )
                 ws.subscribe(tokens)
                 ws.set_mode(ws.MODE_LTP, tokens)
 
             def on_close(ws, code, reason):
-                self.logger.warning(f"KiteTicker closed: {code} - {reason}")
+                self.logger.warning(f"KiteTicker closed: code={code}, reason={reason}")
 
             def on_error(ws, code, reason):
-                self.logger.error(f"KiteTicker error: {code} - {reason}")
+                self.logger.error(f"KiteTicker error: code={code}, reason={reason}")
 
             def on_reconnect(ws, attempts):
-                self.logger.info(f"KiteTicker reconnecting, attempt {attempts}")
+                self.logger.info(f"KiteTicker reconnecting, attempt #{attempts}")
 
             self.kws.on_ticks = on_ticks
             self.kws.on_connect = on_connect

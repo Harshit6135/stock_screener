@@ -1,134 +1,181 @@
 # Backtesting Engine
 
-> **Last Updated:** 2026-02-16
+> **Last Updated:** 2026-05-03
 
-The **Backtesting Engine** simulates the strategy over historical data to validate performance, drawdowns, and risk metrics. It uses a **separate database** (`backtest.db`) to ensure production data is never touched.
+The **Backtesting Engine** simulates the trading strategy over historical data to validate performance, measure drawdowns, and compute risk metrics — without affecting any production data.
 
 ---
 
-## 🔄 Backtest Architecture
+## 🏗️ Backtest Architecture
+
+The engine uses the **same `ActionsService` and `InvestmentService`** as the live system, but injects a separate SQLite session pointing at an isolated `backtest.db`. This guarantees that backtest results reflect real strategy behavior, not a simplified simulation.
 
 ```mermaid
 flowchart TD
-    Config[Backtest Input<br/>Start/End Date, Capital] --> Runner[BacktestRunner]
-    
+    Config[Backtest Config\nstart/end date, capital, config_name] --> Runner[BacktestingService]
+
     subgraph Engine["Execution Engine"]
-        Runner --> Init[Initialize Backtest DB]
-        Init --> Loop{Weekly Loop}
-        
-        Loop --> Gen[Generate Actions<br/>(Monday)]
-        Gen --> Approve[Approve Actions]
-        Approve --> Process[Update Holdings]
-        
-        Process --> DailyChecks{Daily SL Check}
-        DailyChecks -- "Hard/Close SL Hit" --> Exit[Sell Intraday/Next Open]
-        DailyChecks -- "Vacancy" --> Fill[Fill Buy on Dip]
-        
-        DailyChecks --> Metrics[Track Daily Equity]
-        Metrics --> Loop
+        Runner --> Init[Create isolated backtest.db\nSeed capital events]
+        Init --> WeeklyLoop{Weekly Loop\nevery Monday}
+
+        WeeklyLoop --> Gen[generate_actions\nSELL → PYRAMID → BUY]
+        Gen --> Approve[approve_all_actions\nSet execution price to open]
+        Approve --> Process[process_actions\nUpdate holdings + summary]
+
+        Process --> DailyMode{check_daily_sl\nenabled?}
+
+        DailyMode -- Yes --> DailyLoop[Daily SL Check\nTue–Fri]
+        DailyLoop --> HardSL{Low <= SL × 0.95?}
+        HardSL -- Yes --> ExitIntraday[Sell at Hard SL price]
+        HardSL -- No --> CloseSL{Close < SL?}
+        CloseSL -- Yes Mon-Thu --> QueueSell[Queue sell for next open]
+        CloseSL -- Yes Friday --> Skip[Skip - weekly logic handles]
+        CloseSL -- No --> Hold[Hold position]
+
+        ExitIntraday & QueueSell --> Vacancy{Slot opened?}
+        Vacancy -- Yes & mid_week_buy --> FillBuy[Advance pending buy]
+
+        DailyMode -- No --> WeeklyLoop
+        DailyLoop --> WeeklyLoop
     end
-    
-    Engine --> Output[Results]
-    Output --> Report[CSV/Text Report]
-    Output --> DB[backtest.db]
-    Output --> JSON[Response JSON]
+
+    Engine --> Results[Results]
+    Results --> Report[CSV + Text Report]
+    Results --> DB[backtest.db persisted]
+    Results --> JSON[API Response JSON]
 ```
 
 ---
 
 ## 🕹️ Backtest Modes
 
-### 1. Daily SL Mode (`check_daily_sl=True`) — Recommended
-Simulates realistic monitoring.
-- **Hard SL (Intraday)**: If `Low <= SL * 0.95`, sells immediately at the Hard SL price.
-- **Close SL**: If `Close < SL`, sells at **Next Day Open**.
-- **Mid-Week Buys**: If a slot opens up mid-week (due to a stop-loss), it attempts to fill it with the next top-ranked stock, provided the price hasn't run up >3% (stale guard).
+### Daily SL Mode (`check_daily_sl=True`) — Recommended
 
-### 2. Weekly Only Mode (`check_daily_sl=False`)
-Simulates a passive "coffee can" style.
-- Only checks stops and rankings on **Monday**.
-- No mid-week actions.
-- Faster, but less realistic for volatile momentum strategies.
+Simulates realistic daily monitoring. For each trading day:
+
+1. **Hard SL check**: If today's `Low ≤ current_SL × 0.95`, the position is exited immediately at the hard SL price (intraday execution).
+2. **Close SL check**: If today's `Close < current_SL` (Mon–Thu only), a sell is queued for the next day's open.
+3. **Mid-week buy** (if `mid_week_buy=True`): When a stop-loss creates a vacancy, the engine attempts to advance a pending BUY to fill it — but only if the stock hasn't already run up more than 3% since the signal (stale guard).
+
+Friday close-SL hits are skipped because the weekly action generation on the next Monday will handle them.
+
+### Weekly-Only Mode (`check_daily_sl=False`)
+
+Checks stops and rankings on Monday only. No mid-week actions.
+
+- Faster to run
+- Less realistic for volatile momentum strategies
+- Useful for long-term "coffee can" style testing
 
 ---
 
 ## 🚀 Running a Backtest
 
 ### Via API
-**POST** `/api/v1/backtest/run`
 
-```json
-{
-  "start_date": "2023-01-01",
-  "end_date": "2023-12-31",
-  "initial_capital": 1000000,
-  "config_name": "momentum_config",
-  "check_daily_sl": true,
-  "mid_week_buy": true
-}
+```
+POST /api/v1/backtest/run
 ```
 
+Required: `start_date`, `end_date`
+Optional: `initial_capital`, `config_name`, `check_daily_sl`, `mid_week_buy`
+
 ### Via Dashboard
+
 1. Go to `http://localhost:5000/backtest`
-2. Select dates and config.
-3. Click "Run Backtest".
+2. Select date range and config.
+3. Click **Run Backtest**.
+
+> **Prerequisite:** Market data and rankings must be pre-calculated in the main DB for the full simulation period. Run the data pipeline first.
 
 ---
 
 ## 📊 Result Interpretation
 
-The backtest returns a comprehensive report (`reports/Backtest_Report_YYYYMMDD.txt`) and JSON data.
+Results are returned as JSON and also saved as a text report at `backtest_history/<run_id>/Backtest_Report_YYYYMMDD.txt`.
 
 ### Key Metrics
-- **CAGR**: Compound Annual Growth Rate.
-- **Max Drawdown**: Largest peak-to-trough decline.
-- **Sharpe Ratio**: Risk-adjusted return (Target > 1.0).
-- **Win Rate**: % of profitable trades.
-- **Profit Factor**: Gross Profit / Gross Loss.
-- **Expectancy**: Average return per trade.
+
+| Metric | Description | Target |
+|--------|-------------|--------|
+| **CAGR** | Compound Annual Growth Rate | > Nifty 50 benchmark |
+| **Max Drawdown** | Largest peak-to-trough decline | < 20–25% |
+| **Sharpe Ratio** | Risk-adjusted return (annual) | > 1.0 |
+| **Win Rate** | % of profitable closed trades | > 50% |
+| **Profit Factor** | Gross Profit / Gross Loss | > 1.5 |
+| **Expectancy** | Average ₹ P&L per trade | > 0 |
 
 ### Trade Journal
-Includes every trade with:
-- **Entry/Exit Date**
-- **Entry/Exit Price**
-- **Trigger**: Why it was sold (SL Hit, Ranking Drop, Swap, Target)
-- **P&L**: Net profit after transaction costs.
+
+Each closed trade in the journal includes:
+- Entry / exit date and price
+- Units traded, P&L (after costs), return %
+- Holding period in days
+- Exit trigger reason (e.g., `stoploss`, `swap`, `ranking_drop`)
 
 ### Backtest History
-- Every backtest run is saved to the Main DB (`backtest_runs` table).
-- You can retrieve historical runs, equity curves, and trade journals via `/api/v1/backtest/history`.
+
+Every completed run is saved to the main DB's `backtest_runs` table with summary metadata. Retrieve past runs with:
+- `GET /api/v1/backtest/history` — list all runs
+- `GET /api/v1/backtest/history/{id}` — full results including equity curve and trade log
 
 ---
 
 ## 🛠️ Data Handling
 
-- **Market Data**: Uses the main `market_data` table from the primary DB (read-only).
-- **Rankings**: Uses `percentile` and `ranking` tables from primary DB.
-- **State**: Creates a temporary `backtest.db` for the run, containing `holdings`, `actions`, `capital_events`, and `summary` tables specifically for the simulation.
+```mermaid
+flowchart LR
+    MAIN[(Main DB\nread-only)] --> BT[BacktestingService]
+    BT --> BTDB[(backtest.db\nwrite — isolated)]
+    BTDB --> BTDB
 
-> **Note**: Backtesting requires historical market data and rankings to be pre-calculated in the main DB for the simulation period.
+    MAIN -- market_data\nrankings\nindicators --> BT
+    BT -- holdings\nactions\nsummary\ncapital_events --> BTDB
+```
+
+- **Market data, rankings, indicators**: Read from the main DB (never modified).
+- **Holdings, actions, summary, capital events**: Written to the isolated `backtest.db` for the run.
+- **Results files**: Stored in `backtest_history/<run_id>/` on disk.
 
 ---
 
-## 📝 Flow: Daily SL Logic
+## 📝 Daily SL Logic — Detailed Flow
 
 ```mermaid
 flowchart TD
-    StartDay[Day Start] --> Pending{Pending Sell?}
-    Pending -- Yes --> SellOpen[Execute at Open]
+    StartDay[Day Start] --> Pending{Pending SELL\nfrom previous day?}
+    Pending -- Yes --> SellOpen[Execute at today's Open]
     Pending -- No --> CheckLow
-    
-    CheckLow{Low <= Hard SL?} -- Yes --> SellHard[Execute at Hard SL]
+
+    CheckLow{Low <= Hard SL\ncurrent_SL × 0.95?} -- Yes --> SellHard[Execute at Hard SL price]
     CheckLow -- No --> CheckClose
-    
-    CheckClose{Close < SL?} -- Yes (Mon-Thu) --> QueueSell[Queue for Next Open]
-    CheckClose -- Yes (Friday) --> Skip[Skip (Weekly Logic Handles)]
-    CheckClose -- No --> Hold
-    
+
+    CheckClose{Close < SL?} -- Yes Mon-Thu --> QueueSell[Queue sell at next open]
+    CheckClose -- Yes Friday --> Skip[Skip - Monday handles]
+    CheckClose -- No --> Hold[Hold - no action]
+
     SellOpen --> VacancyCheck
     SellHard --> VacancyCheck
-    
-    VacancyCheck{Vacancy?} -- Yes --> BuyFill[Buy Candidate]
-    BuyFill --> EndDay
+
+    VacancyCheck{Vacancy opened?\nmid_week_buy=True?} -- Yes --> StaleCheck{Price up > 3%\nsince signal?}
+    StaleCheck -- No --> BuyFill[Advance pending BUY to next open]
+    StaleCheck -- Yes --> SkipBuy[Skip stale buy]
+
+    BuyFill --> EndDay[End of Day]
+    SkipBuy --> EndDay
     Hold --> EndDay
+    Skip --> EndDay
 ```
+
+---
+
+## ⚠️ Known Limitations
+
+| Limitation | Details |
+|-----------|---------|
+| **Survivorship bias** | Uses static NSE/BSE CSV snapshots. Delisted stocks are not removed retroactively. |
+| **No corporate action adjustment** | Stock splits and bonuses are not automatically adjusted in historical data. |
+| **Impact cost** | Slippage is modeled as transaction costs only. Large-order impact is not simulated. |
+| **Single-pass** | Not a walk-forward backtest. Results may overfit to the specific historical period. |
+
+These are tracked as future improvements in [pending_items.md](pending_items.md).

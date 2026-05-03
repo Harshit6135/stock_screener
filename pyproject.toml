@@ -47,6 +47,10 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry]
 packages = [{include = "src"}]
 
+[tool.poetry.group.dev.dependencies]
+bandit = "^1.9.4"
+mypy = "^1.20.2"
+
 [tool.black]
 line-length = 100
 target-version = ['py313']

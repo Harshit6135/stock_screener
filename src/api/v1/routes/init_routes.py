@@ -17,9 +17,14 @@ class Init(MethodView):
         """Initialize App"""
         batch_size = kwargs.get("yfinance_batch_size", 100)
         sleep_time = kwargs.get("yfinance_sleep_time", 4)
+        rate_limit_wait = kwargs.get("yfinance_rate_limit_wait", 120)
         try:
             init_service = InitService()
-            response_code, response = init_service.initialize_app(batch_size=batch_size, sleep_time=sleep_time)
+            response_code, response = init_service.initialize_app(
+                batch_size=batch_size,
+                sleep_time=sleep_time,
+                rate_limit_wait=rate_limit_wait,
+            )
             if response_code not in [200, 201]:
                 abort(response_code, message="Initialization failed during Kite sync")
         except Exception as e:

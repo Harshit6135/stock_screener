@@ -226,9 +226,20 @@ class StartTicker(MethodView):
             token_symbol_map = {}
             exchange_symbols = []
             for inst in instruments:
-                token_symbol_map[inst.instrument_token] = inst.tradingsymbol if inst.series == "EQ" else f"{inst.tradingsymbol}-{inst.series}"
                 exchange = inst.exchange or "NSE"
-                exchange_symbols.append(f"{exchange}:{token_symbol_map[inst.instrument_token]}")
+                # BSE instruments: always use plain symbol (no series suffix)
+                # NSE instruments: EQ series = plain symbol, other series = add suffix
+                if exchange == "BSE":
+                    mapped_symbol = inst.tradingsymbol
+                else:
+                    mapped_symbol = inst.tradingsymbol if inst.series == "EQ" else f"{inst.tradingsymbol}-{inst.series}"
+                token_symbol_map[inst.instrument_token] = mapped_symbol
+                exchange_symbols.append(f"{exchange}:{mapped_symbol}")
+                logger.info(
+                    f"Ticker symbol mapping: {inst.tradingsymbol} "
+                    f"(token={inst.instrument_token}, exchange={exchange}, "
+                    f"series={inst.series}) → {mapped_symbol}"
+                )
             
             if not token_symbol_map:
                 return {"message": "Could not resolve instrument tokens for holdings"}

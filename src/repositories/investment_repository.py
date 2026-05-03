@@ -176,10 +176,8 @@ class InvestmentRepository:
             self.session.query(InvestmentsSummaryModel).filter(
                 InvestmentsSummaryModel.date == summary['date']
             ).delete()
-            # remaining_capital is a DB-generated column (starting_capital + sold - bought)
-            # — strip it before insert so SQLAlchemy doesn't try to write it.
-            db_summary = {k: v for k, v in summary.items() if k != 'remaining_capital'}
-            self.session.add(InvestmentsSummaryModel(**db_summary))
+            # remaining_capital is now a regular column — include it in the insert
+            self.session.add(InvestmentsSummaryModel(**summary))
             self.session.commit()
             return True
         except Exception as e:

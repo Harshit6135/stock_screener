@@ -10,6 +10,10 @@ class InitRequestSchema(Schema):
         load_default=4,
         metadata={"description": "Seconds to sleep between YFinance batches"}
     )
+    yfinance_rate_limit_wait = fields.Int(
+        load_default=120,
+        metadata={"description": "Seconds to wait when an HTTP 429 rate-limit error is received before retrying"}
+    )
 
 
 class InitResponseSchema(Schema):

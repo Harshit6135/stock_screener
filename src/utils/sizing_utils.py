@@ -7,21 +7,24 @@ def calculate_position_size(atr: float, current_price: float,
     """
     Calculate position size with multiple constraints.
 
-    Constraints applied (most restrictive wins):
-    1. ATR risk parity: risk_threshold % of portfolio per trade
-    2. Concentration cap: combined position (existing + new) ≤ 25% of total_capital
-    3. Capital available: cannot exceed remaining_capital
-    4. Minimum: skip if below min_position_percent
+    All constraints (concentration cap, minimum position) are evaluated
+    against total_capital.  remaining_capital is only a spending limit —
+    you cannot buy more than you have in cash.
+
+    Order:
+    1. ATR risk parity sizing (based on total_capital)
+    2. Remaining-capital spending limit
+    3. Concentration cap (based on total_capital)
+    4. Minimum position check (based on total_capital, AFTER all caps)
+       → if the final capped position is below the minimum, return 0
 
     Args:
-        atr: Average True Range (must be > 0; returns 0 shares if missing)
+        atr: Average True Range (must be > 0)
         current_price: Current stock price
-        total_capital: Total portfolio value (used for risk % and concentration cap)
-        remaining_capital: Cash available to deploy
-        config: Strategy config object (must be supplied by caller)
-        existing_position_value: Current market value already held in this symbol
-                                 (used to compute headroom under the 25% cap;
-                                  pass 0 for new positions, actual value for pyramids)
+        total_capital: Total portfolio value — used for ALL constraints
+        remaining_capital: Cash available (spending limit only)
+        config: Strategy config object
+        existing_position_value: Market value already held in this symbol
 
     Returns:
         dict with shares, position_value, stop_distance, risk_amount
@@ -32,26 +35,27 @@ def calculate_position_size(atr: float, current_price: float,
             "Pass the active strategy config explicitly."
         )
 
-    # Guard: ATR must be positive — without it we can't size risk-parity
+    ZERO = {"shares": 0, "position_value": 0, "stop_distance": 0, "risk_amount": 0}
+
     if not atr or atr <= 0:
-        return {"shares": 0, "position_value": 0, "stop_distance": 0, "risk_amount": 0}
+        return ZERO
 
     stop_distance = atr * config.sl_multiplier
     if stop_distance <= 0:
-        return {"shares": 0, "position_value": 0, "stop_distance": 0, "risk_amount": 0}
+        return ZERO
 
-    # 1. ATR risk-parity sizing
+    # 1. ATR risk-parity sizing (based on total_capital)
     risk_amount = total_capital * (config.risk_threshold / 100)
     shares = int(risk_amount / stop_distance)
     position_value = shares * current_price
 
-    # 2. Remaining-capital cap
+    # 2. Remaining-capital spending limit (can't buy more than you have)
     if remaining_capital is not None and position_value > remaining_capital:
         position_value = remaining_capital
         shares = int(position_value / current_price)
         position_value = shares * current_price
 
-    # 3. Concentration cap: existing + new ≤ max_concentration_pct of total portfolio
+    # 3. Concentration cap (based on total_capital)
     concentration_limit = getattr(config, 'max_concentration_pct', 0.25)
     max_total_exposure = total_capital * concentration_limit
     headroom = max(0.0, max_total_exposure - existing_position_value)
@@ -60,9 +64,11 @@ def calculate_position_size(atr: float, current_price: float,
         shares = int(position_value / current_price)
         position_value = shares * current_price
 
-    # 4. Minimum position check
-    if position_value < config.min_position_percent * total_capital:
-        return {"shares": 0, "position_value": 0, "stop_distance": 0, "risk_amount": 0}
+    # 4. Minimum position check (based on total_capital, AFTER all caps)
+    #    If the final position is too small relative to the portfolio, reject it.
+    min_position_value = config.min_position_percent * total_capital
+    if shares <= 0 or position_value < min_position_value:
+        return ZERO
 
     return {
         "shares": shares,

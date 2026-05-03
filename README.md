@@ -12,7 +12,7 @@ A multi-factor momentum screening and portfolio management system for Indian sto
 - **RSI Regime Mapping** — Non-linear RSI zones for momentum (sweet spot = 50–70)
 - **Weekly Rankings** — Friday-based weekly score aggregation for consistent comparison
 - **Champion vs Challenger Rotation** — Swap incumbents only when challengers beat by configurable buffer
-- **Dual Stop-Loss System** — ATR trailing + Hard trailing (10% step) + Intraday hard SL (5%)
+- **Dual Stop-Loss System** — ATR trailing stop (trailed up only) + Intraday hard SL (5% below trailing stop)
 - **Multi-Phase Action Generation** — SELL → SWAP → BUY phases for systematic rebalancing
 - **Indian Market Cost Model** — STT, stamp duty, GST, exchange fees, impact cost, DP charges
 - **Tax-Aware Trading** — STCG/LTCG optimization with near-1-year hold bias
@@ -79,7 +79,7 @@ make db-init
 # 5. Run server
 make run
 # Server → http://127.0.0.1:5000
-# Swagger UI → http://127.0.0.1:5000/swagger-ui
+# Swagger UI → http://127.0.0.1:5000/api/v1/swagger-ui
 ```
 
 ---

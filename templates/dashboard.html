@@ -707,6 +707,10 @@
                     <span style="font-size: 0.8rem; color:var(--text-muted);">Sleep (s):</span>
                     <input type="number" id="yf-sleep" value="4"
                         style="width: 60px; background:var(--bg-lighter); color:white; border:1px solid #333; padding:5px; border-radius:4px;">
+                    <span style="font-size: 0.8rem; color:var(--warning);" title="Wait time when a 429 Too Many Requests error occurs">429 Wait (s):</span>
+                    <input type="number" id="yf-429-wait" value="120"
+                        style="width: 70px; background:var(--bg-lighter); color:#f59e0b; border:1px solid #f59e0b55; padding:5px; border-radius:4px;"
+                        title="Seconds to pause and retry when YFinance returns HTTP 429 Too Many Requests">
                 </div>
             </div>
             <div class="step-row">
@@ -1488,7 +1492,8 @@
                 score: document.getElementById('step-score').checked,
                 ranking: document.getElementById('step-rank').checked,
                 yfinance_batch_size: parseInt(document.getElementById('yf-batch').value) || 100,
-                yfinance_sleep_time: parseInt(document.getElementById('yf-sleep').value) || 4
+                yfinance_sleep_time: parseInt(document.getElementById('yf-sleep').value) || 4,
+                yfinance_rate_limit_wait: parseInt(document.getElementById('yf-429-wait').value) || 120
             };
 
             const consoleEl = document.getElementById('pipeline-console');
@@ -2016,9 +2021,16 @@
         }
 
         async function rejectPending() {
-            // Not exposed as bulk endpoint in plan, but can iterate or add backend endpoint. 
-            // Ideally we add a backend endpoint, but for now lets skip implementation or do loop
-            alert("Feature requires backend endpoint '/reject-all'. Use individual reject for now.");
+            if (!confirm('Reject ALL pending actions? This cannot be undone.')) return;
+            try {
+                const res = await fetch('/api/v1/actions/reject-all', { method: 'POST' });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.message || 'Reject failed');
+                alert(data.message);
+                loadActions();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
         }
 
         async function processActions() {
@@ -2707,14 +2719,14 @@
 
                 const totalPnlEl = document.getElementById('live-total-pnl');
                 if (totalPnlEl) {
-                    totalPnlEl.className = `text-right ${totalPnl >= 0 ? 'pos-val' : 'neg-val'}`;
+                    totalPnlEl.className = `text-center ${totalPnl >= 0 ? 'pos-val' : 'neg-val'}`;
                     totalPnlEl.innerHTML = `₹${totalPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 }
 
                 const totalDayEl = document.getElementById('live-total-day-pnl');
                 if (totalDayEl) {
                     totalDayEl.style.color = '';  // clear inline style so class colors apply
-                    totalDayEl.className = `text-right ${totalDayPnl >= 0 ? 'pos-val' : 'neg-val'}`;
+                    totalDayEl.className = `text-center ${totalDayPnl >= 0 ? 'pos-val' : 'neg-val'}`;
                     totalDayEl.innerHTML = `₹${totalDayPnl.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 }
 

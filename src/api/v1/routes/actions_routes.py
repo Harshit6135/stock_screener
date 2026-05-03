@@ -201,3 +201,33 @@ class ProcessActions(MethodView):
         except Exception as e:
             logger.error(f"Failed to process actions: {e}")
             abort(500, message=f"Processing failed: {str(e)}")
+
+
+@blp.route("/reject-all")
+class RejectAllPending(MethodView):
+    @blp.doc(tags=["Actions"])
+    @blp.arguments(ActionQuerySchema, location="query")
+    @blp.response(200, MessageSchema)
+    def post(self, args):
+        """
+        Reject all pending actions.
+
+        Marks every action with status='Pending' as 'Rejected'.
+        Useful for clearing unfilled buys at end of week or resetting
+        after a bad action generation run.
+
+        Parameters:
+            config_name: Query param - Strategy name (default: momentum_config)
+
+        Returns:
+            Message with count of rejected actions
+        """
+        try:
+            config_name = args.get('config_name', 'momentum_config')
+            service = ActionsService(config_name)
+            count = service.reject_pending_actions()
+            return {"message": f"Rejected {count} pending action(s)"}
+        except Exception as e:
+            logger.error(f"Failed to reject pending actions: {e}")
+            abort(500, message=f"Reject all failed: {str(e)}")
+

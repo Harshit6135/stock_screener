@@ -416,27 +416,32 @@ class InvestmentService:
         for col in ['entry_price', 'units', 'current_sl', 'current_price']:
             if col in df.columns:
                 df[col] = df[col].astype(float)
-        
-        new_capital_addition = 0
-        prev_summary = self.inv_repo.get_summary()
-        if not prev_summary:
-            prev_remaining_capital = total_cap
-        else:
-            prev_remaining_capital = prev_summary.remaining_capital
-            # R-5: use capital events added *on* prev_summary.date (not chaining)
-            new_capital_addition = self.inv_repo.get_total_capital_by_date(action_date)
 
         if bought is None:
             bought_mask = df['entry_date'] == df['date']
             bought = float((df.loc[bought_mask, 'entry_price']* df.loc[bought_mask, 'units']).sum())
 
-        # R-5: Use capital events to compute starting_capital rather than
-        # chaining from prev_remaining_capital which can compound errors.
-        starting_capital = float(prev_remaining_capital) + new_capital_addition
+        # Compute remaining_capital from first principles:
+        # total capital (all events incl realized) minus cost basis of current holdings.
+        # This is immune to the starting_capital chain drift.
+        total_capital_all = float(self.inv_repo.get_total_capital(action_date, include_realized=True))
+        if 'avg_price' in df.columns:
+            cost_basis = float((df['avg_price'].fillna(df['entry_price']).astype(float) * df['units']).sum())
+        else:
+            cost_basis = float((df['entry_price'] * df['units']).sum())
+        remaining_capital = round(total_capital_all - cost_basis, 2)
+
+        # starting_capital = previous remaining + any new capital events since last summary
+        prev_summary = self.inv_repo.get_summary()
+        if not prev_summary:
+            starting_capital = total_cap
+        else:
+            prev_remaining = float(prev_summary.remaining_capital or 0)
+            new_capital_addition = self.inv_repo.get_total_capital_by_date(action_date)
+            starting_capital = prev_remaining + new_capital_addition
 
         capital_risk = float((df['units'] * (df['entry_price'] - df['current_sl'])).sum())
         holdings_value = float((df['units'] * df['current_price']).sum())
-        remaining_capital = starting_capital - bought + sold
         portfolio_value = holdings_value + remaining_capital
 
         stop_value = float((df['units'] * df['current_sl']).sum())
@@ -457,7 +462,7 @@ class InvestmentService:
             'portfolio_risk': portfolio_risk,
             'gain': gain,
             'gain_percentage': gain_pct,
-            'remaining_capital': round(remaining_capital, 2),  # in-memory only; stripped before DB insert (generated column)
+            'remaining_capital': remaining_capital,
         }
         return summary
 

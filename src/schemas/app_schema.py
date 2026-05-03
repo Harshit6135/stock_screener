@@ -115,6 +115,13 @@ class PipelineQuerySchema(Schema):
             "example": 4,
         }
     )
+    yfinance_rate_limit_wait = fields.Integer(
+        load_default=120,
+        metadata={
+            "description": "Seconds to wait when an HTTP 429 rate-limit error is received before retrying the failed request",
+            "example": 120,
+        }
+    )
 
 
 class RecalculateQuerySchema(Schema):
