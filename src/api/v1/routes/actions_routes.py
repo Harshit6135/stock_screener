@@ -18,7 +18,10 @@ from schemas import (
     ActionUpdateSchema,
     MessageSchema,
 )
-from services import ActionsService
+from services.action_generator import ActionGenerator
+from services.action_lifecycle import ActionLifecycle
+from services.action_processor import ActionProcessor
+
 
 logger = setup_logger(name="ActionsRoutes")
 actions_repo = ActionsRepository()
@@ -47,14 +50,14 @@ class GenerateActions(MethodView):
         """
         try:
             config_name = args.get("config_name", "momentum_config")
-            actions = ActionsService(config_name)
+            generator = ActionGenerator(config_name)
             action_date = args.get("date")
             if action_date is None:
                 action_date = datetime.now().date()
             enable_pyramiding = args.get("enable_pyramiding", False)
             check_daily_sl = args.get("check_daily_sl", False)
             mid_week_buy = args.get("mid_week_buy", False)
-            new_actions = actions.generate_actions(
+            new_actions = generator.generate_actions(
                 action_date,
                 enable_pyramiding=enable_pyramiding,
                 check_daily_sl=check_daily_sl,
@@ -62,7 +65,6 @@ class GenerateActions(MethodView):
             )
             return {"message": f"Generated {len(new_actions)} actions"}
         except ValueError as e:
-            # Pending actions exist from another date — caller must resolve first
             logger.warning(f"generate_actions blocked: {e}")
             abort(409, message=str(e))
         except Exception as e:
@@ -157,8 +159,8 @@ class ApproveActions(MethodView):
                 abort(400, message="date query parameter is required")
 
             config_name = args.get("config_name", "momentum_config")
-            service = ActionsService(config_name)
-            count = service.approve_all_actions(working_date)
+            lifecycle = ActionLifecycle(config_name)
+            count = lifecycle.approve_all_actions(working_date)
             return {"message": f"Approved {count} actions"}
         except ValueError as e:
             logger.error(f"Validation error: {e}")
@@ -191,8 +193,8 @@ class ProcessActions(MethodView):
             if not working_date:
                 abort(400, message="date query parameter is required")
             config_name = args.get("config_name", "momentum_config")
-            service = ActionsService(config_name)
-            holdings = service.process_actions(working_date)
+            processor = ActionProcessor(config_name)
+            holdings = processor.process_actions(working_date)
             if holdings is None:
                 abort(400, message="Processing failed - check pending actions or date conflicts")
             return {"message": f"Processed actions, {len(holdings)} holdings updated"}
@@ -225,8 +227,8 @@ class RejectAllPending(MethodView):
         """
         try:
             config_name = args.get("config_name", "momentum_config")
-            service = ActionsService(config_name)
-            count = service.reject_pending_actions()
+            lifecycle = ActionLifecycle(config_name)
+            count = lifecycle.reject_pending_actions()
             return {"message": f"Rejected {count} pending action(s)"}
         except Exception as e:
             logger.error(f"Failed to reject pending actions: {e}")

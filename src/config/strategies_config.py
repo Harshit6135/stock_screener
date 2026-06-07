@@ -17,17 +17,17 @@ class StrategyParameters:
     # ATR spike threshold for penalty box (ratio of current ATR / lagged ATR)
     atr_threshold: float = 2.0
     min_price: float = 50.0
-    min_turnover: float = 0.5
+    min_turnover: float = 50
 
     # Sub-factor weights for trend
-    trend_slope_weight: float = 0.6
-    trend_distance_200_weight: float = 0.4
+    trend_slope_weight: float = 0.3
+    trend_distance_200_weight: float = 0.7
 
     # Sub-factor weights for momentum
-    momentum_rsi_weight: float = 0.60
+    momentum_rsi_weight: float = 0.20
     momentum_ppo_weight: float = 0.20
-    momentum_ppoh_weight: float = 0.10
-    pure_momentum_weight: float = 0.10
+    # momentum_ppoh_weight: float = 0.10
+    pure_momentum_weight: float = 0.60
 
     # Sub-factor weights for volume
     rvolume_weight: float = 0.7

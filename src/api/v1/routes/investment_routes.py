@@ -22,7 +22,8 @@ from schemas import (
     MessageSchema,
     SummarySchema,
 )
-from services import ActionsService, InvestmentService
+from services import InvestmentService
+from services.manual_trade_service import ManualTradeService
 
 logger = setup_logger(name="InvestmentRoutes")
 inv_repo = InvestmentRepository()
@@ -75,7 +76,7 @@ class ManualBuy(MethodView):
     def post(self, data):
         """Manually create BUY actions with position sizing"""
         try:
-            message = ActionsService(config_name="momentum_config").create_manual_buy(data)
+            message = ManualTradeService(config_name="momentum_config").create_manual_buy(data)
             return {"message": message}
         except ValueError as e:
             logger.error(f"Validation error: {e}")
@@ -93,7 +94,7 @@ class ManualSell(MethodView):
     def post(self, data):
         """Manually create a SELL action"""
         try:
-            message = ActionsService(config_name="momentum_config").create_manual_sell([data])
+            message = ManualTradeService(config_name="momentum_config").create_manual_sell([data])
             return {"message": message}
         except ValueError as e:
             logger.error(f"Validation error: {e}")

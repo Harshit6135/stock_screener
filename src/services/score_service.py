@@ -10,14 +10,9 @@ import time
 
 import pandas as pd
 
-pd.set_option("future.no_silent_downcasting", True)
-
 from config import StrategyParameters, setup_logger
 from repositories import IndicatorsRepository, PercentileRepository, ScoreRepository
 
-score_repo = ScoreRepository()
-percentile_repo = PercentileRepository()
-indicators_repo = IndicatorsRepository()
 logger = setup_logger(name="ScoreService")
 
 
@@ -26,6 +21,9 @@ class ScoreService:
 
     def __init__(self):
         self.params = StrategyParameters()
+        self.score_repo = ScoreRepository()
+        self.percentile_repo = PercentileRepository()
+        self.indicators_repo = IndicatorsRepository()
 
     def calculate_composite_scores(self, percentile_df: pd.DataFrame) -> pd.DataFrame:
         """Apply weighted formula to calculate composite scores.
@@ -62,7 +60,7 @@ class ScoreService:
             DataFrame with `penalty` (multiplier) and `penalty_reason` columns.
         """
         df["penalty_reason"] = ""
-        df["penalty"] = 1
+        df["penalty"] = 1.0
 
         mask_200 = df["ema_200"] > df["close"]
         df.loc[mask_200, "penalty_reason"] += "below_ema_200; "
@@ -72,15 +70,15 @@ class ScoreService:
         df.loc[mask_50, "penalty_reason"] += "below_ema_50; "
         df.loc[mask_50, "penalty"] *= 0.7
 
-        mask_atr = df["atr_spike"] > self.params.atr_threshold
-        df.loc[mask_atr, "penalty_reason"] += "atr_spike; "
-        df.loc[mask_atr, "penalty"] *= 0.8
+        # mask_atr = df["atr_spike"] > self.params.atr_threshold
+        # df.loc[mask_atr, "penalty_reason"] += "atr_spike; "
+        # df.loc[mask_atr, "penalty"] *= 0.8
 
         mask_price = df["ema_50"] < self.params.min_price
         df.loc[mask_price, "penalty_reason"] += "penny_stock; "
         df.loc[mask_price, "penalty"] = 0.0
 
-        mask_turnover = df["avg_turnover_ema_20"] < self.params.min_turnover
+        mask_turnover = df["avg_turnover_ema_20"] < self.params.min_turnover * 10000000
         df.loc[mask_turnover, "penalty_reason"] += "low_turnover; "
         df.loc[mask_turnover, "penalty"] = 0.0
 
@@ -102,14 +100,14 @@ class ScoreService:
             t_start = time.time()
             logger.info("Starting batch composite score generation...")
 
-            last_score_date = score_repo.get_max_score_date()
+            last_score_date = self.score_repo.get_max_score_date()
             if last_score_date:
                 logger.info(f"Last score date: {last_score_date}")
 
             # Step 1: Fetch percentiles
             t0 = time.time()
             logger.info("[1/6] Fetching percentiles from DB...")
-            percentiles = percentile_repo.get_percentiles_after_date(last_score_date)
+            percentiles = self.percentile_repo.get_percentiles_after_date(last_score_date)
             if not percentiles:
                 logger.info("No new percentiles to process")
                 return {"message": "No new percentiles to process", "records": 0}
@@ -134,7 +132,7 @@ class ScoreService:
             date_min = percentiles_df["percentile_date"].min()
             date_max = percentiles_df["percentile_date"].max()
             logger.info(f"[3/6] Fetching indicators ({date_min} → {date_max})...")
-            indicators = indicators_repo.get_indicators_for_all_stocks(
+            indicators = self.indicators_repo.get_indicators_for_all_stocks(
                 {"start_date": date_min, "end_date": date_max}
             )
 
@@ -214,7 +212,7 @@ class ScoreService:
             t0 = time.time()
             logger.info(f"[6/6] Bulk inserting {len(scores_df)} score records...")
             records = scores_df.to_dict("records")
-            result = score_repo.bulk_insert(records)
+            result = self.score_repo.bulk_insert(records)
             count = len(result) if result else 0
 
             logger.info(
@@ -240,6 +238,6 @@ class ScoreService:
         logger.info("Starting FULL score recalculation " "(weights may have changed)...")
 
         logger.info("Clearing existing score table...")
-        score_repo.delete_all()
+        self.score_repo.delete_all()
 
         return self.generate_composite_scores()

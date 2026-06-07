@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stock Screener v2 — Architecture Flowcharts</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0e1a;--surface:#111827;--card:#1a2234;--border:#2a3450;
+  --text:#e2e8f0;--muted:#94a3b8;--accent:#6366f1;--accent2:#8b5cf6;
+  --green:#10b981;--red:#ef4444;--amber:#f59e0b;--cyan:#06b6d4;
+  --pink:#ec4899;--blue:#3b82f6;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);line-height:1.6}
+.hero{text-align:center;padding:60px 20px 40px;background:linear-gradient(135deg,#0f172a 0%,#1e1b4b 50%,#0f172a 100%);border-bottom:1px solid var(--border)}
+.hero h1{font-size:2.8rem;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent2),var(--cyan));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:8px}
+.hero p{color:var(--muted);font-size:1.1rem;max-width:700px;margin:0 auto}
+nav.toc{position:sticky;top:0;z-index:100;background:rgba(10,14,26,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:12px 20px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+nav.toc a{color:var(--muted);text-decoration:none;font-size:.82rem;padding:6px 14px;border-radius:20px;border:1px solid var(--border);transition:.2s}
+nav.toc a:hover{color:#fff;border-color:var(--accent);background:rgba(99,102,241,.15)}
+.container{max-width:1200px;margin:0 auto;padding:30px 20px}
+section{margin-bottom:50px}
+section h2{font-size:1.7rem;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:10px}
+section h2 .badge{font-size:.7rem;padding:3px 10px;border-radius:12px;font-weight:600}
+section .desc{color:var(--muted);margin-bottom:20px;font-size:.95rem}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;margin-bottom:24px;transition:.3s}
+.card:hover{border-color:var(--accent);box-shadow:0 0 30px rgba(99,102,241,.08)}
+.card h3{font-size:1.15rem;font-weight:600;margin-bottom:4px}
+.card .sub{color:var(--muted);font-size:.85rem;margin-bottom:16px}
+.mermaid{background:rgba(0,0,0,.25);border-radius:10px;padding:20px;overflow-x:auto}
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:16px}
+.detail-box{background:rgba(0,0,0,.2);border:1px solid var(--border);border-radius:10px;padding:16px}
+.detail-box h4{font-size:.9rem;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+.detail-box ul{list-style:none;padding:0}
+.detail-box li{font-size:.82rem;color:var(--muted);padding:3px 0;padding-left:14px;position:relative}
+.detail-box li::before{content:'›';position:absolute;left:0;color:var(--accent)}
+.tag{display:inline-block;font-size:.7rem;padding:2px 8px;border-radius:8px;font-weight:600;margin-right:4px}
+.tag-green{background:rgba(16,185,129,.15);color:var(--green)}
+.tag-blue{background:rgba(59,130,246,.15);color:var(--blue)}
+.tag-amber{background:rgba(245,158,11,.15);color:var(--amber)}
+.tag-red{background:rgba(239,68,68,.15);color:var(--red)}
+.tag-pink{background:rgba(236,72,153,.15);color:var(--pink)}
+.tag-cyan{background:rgba(6,182,212,.15);color:var(--cyan)}
+.tag-purple{background:rgba(139,92,246,.15);color:var(--accent2)}
+.file-ref{font-size:.78rem;color:var(--cyan);font-family:monospace;opacity:.8}
+footer{text-align:center;padding:40px;color:var(--muted);font-size:.8rem;border-top:1px solid var(--border)}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>Stock Screener v2</h1>
+  <p>Complete end-to-end architecture and logic flowcharts for every subsystem in the codebase</p>
+</div>
+
+<nav class="toc" id="toc">
+  <a href="#arch">Architecture</a>
+  <a href="#pipeline">Data Pipeline</a>
+  <a href="#init">Initialization</a>
+  <a href="#marketdata">Market Data</a>
+  <a href="#indicators">Indicators</a>
+  <a href="#factors">Factor Scoring</a>
+  <a href="#percentiles">Percentiles</a>
+  <a href="#scores">Composite Scores</a>
+  <a href="#rankings">Rankings</a>
+  <a href="#trading">Trading Engine</a>
+  <a href="#actions">Action Generation</a>
+  <a href="#lifecycle">Action Lifecycle</a>
+  <a href="#processor">Action Processing</a>
+  <a href="#stoploss">Stop-Loss Logic</a>
+  <a href="#investment">Investment Mgmt</a>
+  <a href="#backtest">Backtesting</a>
+  <a href="#manual">Manual Trades</a>
+  <a href="#api">API Layer</a>
+</nav>
+
+<div class="container">
+
+<!-- ============================================================ -->
+<!-- SECTION 1: HIGH-LEVEL ARCHITECTURE -->
+<!-- ============================================================ -->
+<section id="arch">
+  <h2>🏗️ System Architecture <span class="badge tag-purple">Overview</span></h2>
+  <p class="desc">Flask application with layered architecture: API Routes → Services → Repositories → SQLAlchemy Models. External data from Kite Connect & yFinance.</p>
+  <div class="card">
+    <h3>Layered Architecture</h3>
+    <p class="sub">Request flow from API to database and external services</p>
+    <div class="mermaid">
+graph TB
+    subgraph EXT["External Services"]
+        KITE["Kite Connect API"]
+        YF["yFinance API"]
+        NSE["NSE/BSE CSV Files"]
+    end
+    subgraph API["API Layer (Flask Blueprints)"]
+        INIT_R["init_routes"]
+        APP_R["app_routes"]
+        MD_R["marketdata_routes"]
+        IND_R["indicators_routes"]
+        PCT_R["percentile_routes"]
+        SCR_R["score_routes"]
+        RNK_R["ranking_routes"]
+        ACT_R["actions_routes"]
+        INV_R["investment_routes"]
+        BT_R["backtest_routes"]
+        CFG_R["config_routes"]
+        TAX_R["tax_routes"]
+        CST_R["costs_routes"]
+        IDX_R["index_routes"]
+    end
+    subgraph SVC["Service Layer"]
+        INIT_S["InitService"]
+        MDS["MarketDataService"]
+        INDS["IndicatorsService"]
+        FS["FactorsService"]
+        PS["PercentileService"]
+        SS["ScoreService"]
+        RS["RankingService"]
+        AG["ActionGenerator"]
+        AL["ActionLifecycle"]
+        AP["ActionProcessor"]
+        TE["TradingEngine"]
+        IS["InvestmentService"]
+        BS["BacktestingService"]
+        MTS["ManualTradeService"]
+    end
+    subgraph REPO["Repository Layer"]
+        IR["InstrumentsRepo"]
+        MR["MarketDataRepo"]
+        IDR["IndicatorsRepo"]
+        PR["PercentileRepo"]
+        SR["ScoreRepo"]
+        RR["RankingRepo"]
+        AR["ActionsRepo"]
+        IVR["InvestmentRepo"]
+        CR["ConfigRepo"]
+        MSR["MasterRepo"]
+    end
+    subgraph DB["Database (SQLite)"]
+        MAIN[("sqlite.db")]
+        BT_DB[("backtest.db")]
+    end
+    API --> SVC
+    SVC --> REPO
+    REPO --> DB
+    INIT_S --> KITE
+    INIT_S --> YF
+    INIT_S --> NSE
+    MDS --> KITE
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4>🔵 API Layer</h4>
+      <ul>
+        <li>15 Flask Blueprints via flask-smorest</li>
+        <li>SSE log streaming endpoint</li>
+        <li>Swagger/Redoc auto-documentation</li>
+        <li>Marshmallow schema validation</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>🟢 Service Layer</h4>
+      <ul>
+        <li>14 service classes with business logic</li>
+        <li>TradingEngine shared between live & backtest</li>
+        <li>FactorsService for non-linear scoring</li>
+        <li>Session injection for backtest isolation</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>🟡 Repository Layer</h4>
+      <ul>
+        <li>10 repositories wrapping SQLAlchemy</li>
+        <li>Bulk insert/upsert operations</li>
+        <li>Date-range query patterns</li>
+        <li>Token cascade updates</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 2: DATA PIPELINE -->
+<!-- ============================================================ -->
+<section id="pipeline">
+  <h2>🔄 Data Pipeline <span class="badge tag-green">Core Flow</span></h2>
+  <p class="desc">The sequential 6-step data pipeline that transforms raw market data into actionable trading rankings. Triggered via /api/v1/app/run-pipeline.</p>
+  <div class="card">
+    <h3>Full Pipeline Execution</h3>
+    <p class="sub file-ref">app_routes.py → RunPipeline.post()</p>
+    <div class="mermaid">
+graph LR
+    K["🔐 Kite Auth"] --> S1["1️⃣ Init App"]
+    S1 --> S2["2️⃣ Market Data"]
+    S2 --> S3["3️⃣ Indicators"]
+    S3 --> S4["4️⃣ Percentiles"]
+    S4 --> S5["5️⃣ Scores"]
+    S5 --> S6["6️⃣ Rankings"]
+    S6 --> DONE["✅ Pipeline Complete"]
+    S1 -. "fail" .-> ABORT["⛔ Abort"]
+    S2 -. "fail" .-> ABORT
+    S3 -. "fail" .-> ABORT
+    S4 -. "fail" .-> ABORT
+    S5 -. "fail" .-> ABORT
+
+    style K fill:#4338ca,color:#fff
+    style S1 fill:#065f46,color:#fff
+    style S2 fill:#1e40af,color:#fff
+    style S3 fill:#92400e,color:#fff
+    style S4 fill:#7c2d12,color:#fff
+    style S5 fill:#581c87,color:#fff
+    style S6 fill:#831843,color:#fff
+    style DONE fill:#047857,color:#fff
+    style ABORT fill:#991b1b,color:#fff
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4><span class="tag tag-green">Step 0</span> Kite Auth</h4>
+      <ul>
+        <li>Validates stored access_token.txt</li>
+        <li>Triggers login flow if token expired</li>
+        <li>Blocks all downstream steps on failure</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4><span class="tag tag-blue">Steps 1-3</span> Raw Data</h4>
+      <ul>
+        <li>Init: NSE/BSE CSV merge + yFinance enrich + Kite sync</li>
+        <li>MarketData: Daily OHLCV from Kite for all instruments</li>
+        <li>Indicators: pandas_ta studies (EMA, RSI, BBands, ATR, etc.)</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4><span class="tag tag-purple">Steps 4-6</span> Scoring</h4>
+      <ul>
+        <li>Percentiles: Cross-sectional factor percentile ranks</li>
+        <li>Scores: Weighted composite with penalty box</li>
+        <li>Rankings: Weekly average score → rank 1..N</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 3: INITIALIZATION -->
+<!-- ============================================================ -->
+<section id="init">
+  <h2>🚀 Initialization (Day 0) <span class="badge tag-green">InitService</span></h2>
+  <p class="desc">One-time setup that builds the instrument universe from NSE/BSE listings, enriches with yFinance fundamentals, filters by MCap/Price, and syncs with Kite instrument tokens.</p>
+  <div class="card">
+    <h3>initialize_app() Flow</h3>
+    <p class="sub file-ref">src/services/init_service.py</p>
+    <div class="mermaid">
+graph TD
+    START["initialize_app()"] --> CSV["Step 1: Fetch & Merge CSVs"]
+    CSV --> NSE["Load NSE.csv"]
+    CSV --> BSE["Load BSE.csv"]
+    NSE --> MERGE["Outer merge on ISIN"]
+    BSE --> MERGE
+    MERGE --> FILTER1["Filter: ISIN starts with IN"]
+    FILTER1 --> FILTER2["Remove: Mutual Funds"]
+    FILTER2 --> FILTER3["Remove: ETFs & AMCs"]
+    FILTER3 --> CLEAN["Cleanup columns → 5 cols"]
+
+    CLEAN --> YF["Step 2: Fetch yFinance Data"]
+    YF --> TICK["Generate tickers: .NS, .BO"]
+    TICK --> BATCH["Batch fetch (100/batch, 4s sleep)"]
+    BATCH --> RETRY["429 retry with 120s backoff"]
+    RETRY --> ENRICH["Enrich: mcap, price, sector, industry..."]
+
+    ENRICH --> DUMP["Step 3: Save to CSV dump"]
+    DUMP --> MASTER["Step 4: Push to Master Table"]
+    MASTER --> FILT["Step 5: Filter Stocks"]
+    FILT --> MCAP{"MCap ≥ threshold?"}
+    MCAP -- Yes --> PRICE{"Price ≥ threshold?"}
+    MCAP -- No --> DROP1["Drop stock"]
+    PRICE -- Yes --> KITE["Step 6: Sync with Kite"]
+    PRICE -- No --> DROP2["Drop stock"]
+
+    KITE --> EXACT["Exact NSE match (EQ series)"]
+    EXACT --> BE["BE series fallback (-BE suffix)"]
+    BE --> HYPHEN["Hyphen-split fallback"]
+    HYPHEN --> BSEM["BSE-only stocks"]
+    BSEM --> CASCADE["Cascade token changes"]
+    CASCADE --> DONE["✅ Day 0 Complete"]
+
+    style START fill:#4338ca,color:#fff
+    style DONE fill:#047857,color:#fff
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4>📊 CSV Merge Logic</h4>
+      <ul>
+        <li>NSE: rename cols with NSE_ prefix</li>
+        <li>BSE: parse multi-level header, filter Active only</li>
+        <li>Outer join on ISIN column</li>
+        <li>Remove mutual funds, ETFs, AMCs</li>
+        <li>Output: ISIN, NSE_SYMBOL, BSE_SYMBOL, BSE_CODE, NAME</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>📡 yFinance Enrichment</h4>
+      <ul>
+        <li>Ticker priority: .NS → .BO (alpha) → .BO (code)</li>
+        <li>Batch size: 100 with 4s sleep between batches</li>
+        <li>HTTP 429 handling: 120s backoff + 1 retry</li>
+        <li>10 columns: industry, sector, mcap, price, ATH/ATL, float, insiders, institutions</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>🔗 Kite Sync</h4>
+      <ul>
+        <li>3-tier NSE matching: Exact EQ → -BE suffix → hyphen-split</li>
+        <li>BSE fallback for NSE-missing stocks</li>
+        <li>Token cascade: updates market_data + indicators on token change</li>
+        <li>Series detection: EQ preferred over BE</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 4: MARKET DATA -->
+<!-- ============================================================ -->
+<section id="marketdata">
+  <h2>📈 Market Data Service <span class="badge tag-blue">MarketDataService</span></h2>
+  <p class="desc">Fetches daily OHLCV candles from Kite Connect API for all tracked instruments. Handles incremental updates, corporate action detection (splits/bonuses), and long-term historical backfills.</p>
+  <div class="card">
+    <h3>update_latest_data_for_all() Flow</h3>
+    <p class="sub file-ref">src/services/marketdata_service.py</p>
+    <div class="mermaid">
+graph TD
+    START["update_latest_data_for_all()"] --> INSTR["Fetch all instruments from DB"]
+    INSTR --> LOOP["For each instrument"]
+    LOOP --> LAST["Get latest date from market_data table"]
+    LAST --> HAS{Has existing data?}
+    HAS -- Yes --> SDATE1["start_date = last_date"]
+    HAS -- No, historical --> SDATE2["start_date = 2015-01-01"]
+    HAS -- No, normal --> SDATE3["start_date = yesterday - LOOKBACK"]
+    SDATE1 --> STALE{"start > fetch_end?"}
+    SDATE2 --> FETCH
+    SDATE3 --> FETCH
+    STALE -- Yes --> SKIP["Skip: up to date"]
+    STALE -- No --> FETCH["Fetch from Kite API"]
+
+    FETCH --> CHECK{Historical mode?}
+    CHECK -- Yes --> CHUNK["Chunked fetch (1900-day windows)"]
+    CHECK -- No --> SINGLE["Single API call"]
+
+    CHUNK --> RECORDS
+    SINGLE --> RECORDS["Got records?"]
+    RECORDS -- No, no DB data --> DELETE["Delete instrument (delisted)"]
+    RECORDS -- No, has DB data --> WARN["Log warning"]
+    RECORDS -- Yes --> CORP{"Corporate action check"}
+
+    CORP --> DATE_MATCH{"Dates align?"}
+    DATE_MATCH -- No --> APPEND["Skip corp-action check, append"]
+    DATE_MATCH -- Yes --> CLOSE{"Stored close = Fetched close?"}
+    CLOSE -- Yes --> TRIM["Trim overlap, append new"]
+    CLOSE -- No --> REFILL["🔴 Corporate Action Detected!"]
+
+    REFILL --> DEL_ALL["Delete all market_data for symbol"]
+    DEL_ALL --> DEL_IND["Delete all indicators for symbol"]
+    DEL_IND --> REFETCH["Re-fetch from earliest date"]
+    REFETCH --> INSERT
+
+    TRIM --> INSERT["Bulk insert records"]
+    APPEND --> INSERT
+    INSERT --> RATE["Rate limit: 0.34s per call"]
+    RATE --> LOOP
+
+    style START fill:#1e40af,color:#fff
+    style REFILL fill:#991b1b,color:#fff
+    style DELETE fill:#991b1b,color:#fff
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4>🔍 Corporate Action Detection</h4>
+      <ul>
+        <li>Compares stored close vs fetched close for same date</li>
+        <li>Mismatch indicates stock split or bonus issue</li>
+        <li>Triggers full data refresh from earliest known date</li>
+        <li>Cascading delete: market_data → indicators</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>📦 Historical Chunking</h4>
+      <ul>
+        <li>Kite API limit: 2000 calendar days per call</li>
+        <li>Uses 1900-day chunks (safety margin)</li>
+        <li>Fetches backwards: latest → oldest</li>
+        <li>Deduplicates overlapping boundaries by date</li>
+        <li>Early stop if chunk returns empty (stock didn't exist)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 5: INDICATORS -->
+<!-- ============================================================ -->
+<section id="indicators">
+  <h2>📊 Indicators Service <span class="badge tag-amber">IndicatorsService</span></h2>
+  <p class="desc">Calculates 20+ technical indicators per stock using pandas_ta strategies (EMA, RSI, Bollinger Bands, ATR, PPO, ROC) plus custom derived indicators (volume-price correlation, %B, EMA slope, RVOL, ATR spike, momentum).</p>
+  <div class="card">
+    <h3>calculate_indicators() Flow</h3>
+    <p class="sub file-ref">src/services/indicators_service.py</p>
+    <div class="mermaid">
+graph TD
+    START["calculate_indicators()"] --> INSTR["Fetch all instruments"]
+    INSTR --> LOOP["For each instrument"]
+    LOOP --> MD_DATE["Get latest market_data date"]
+    MD_DATE --> HAS_MD{Has market data?}
+    HAS_MD -- No --> SKIP1["Skip: no data"]
+    HAS_MD -- Yes --> IND_DATE["Get latest indicator date"]
+    IND_DATE --> UPTODATE{"ind_date == md_date?"}
+    UPTODATE -- Yes --> SKIP2["Skip: up to date"]
+    UPTODATE -- No --> CALC_START["Set calc_start_date"]
+    CALC_START --> QUERY["Query market_data range"]
+    QUERY --> ENOUGH{"≥ 200 rows?"}
+    ENOUGH -- No --> SKIP3["Skip: insufficient data"]
+    ENOUGH -- Yes --> DF["Build DataFrame, set date index"]
+
+    DF --> TURN["Calculate avg_turnover = close × volume"]
+    TURN --> EMA_STUDY["Apply EMA Strategy"]
+    EMA_STUDY --> TRUNC["Truncate to lookback window"]
+    TRUNC --> MOM_STUDY["Apply Momentum Strategy"]
+    MOM_STUDY --> DER_STUDY["Apply Derived Strategy"]
+    DER_STUDY --> CUSTOM["Calculate Custom Indicators"]
+
+    CUSTOM --> VPC["Volume-Price Correlation"]
+    CUSTOM --> PB["%B (Bollinger position)"]
+    CUSTOM --> SLOPE["EMA 50 Slope"]
+    CUSTOM --> DIST200["Distance from EMA 200"]
+    CUSTOM --> DIST50["Distance from EMA 50"]
+    CUSTOM --> RAR["Risk-Adjusted Return"]
+    CUSTOM --> RVOL["RVOL (relative volume)"]
+    CUSTOM --> ATRS["ATR Spike"]
+    CUSTOM --> M3["Momentum 3M (skip-week)"]
+    CUSTOM --> M6["Momentum 6M (skip-week)"]
+
+    VPC --> CLEAN["Drop OHLCV columns, filter new dates"]
+    PB --> CLEAN
+    SLOPE --> CLEAN
+    DIST200 --> CLEAN
+    DIST50 --> CLEAN
+    RAR --> CLEAN
+    RVOL --> CLEAN
+    ATRS --> CLEAN
+    M3 --> CLEAN
+    M6 --> CLEAN
+    CLEAN --> INSERT["Bulk insert to indicators table"]
+    INSERT --> LOOP
+
+    style START fill:#92400e,color:#fff
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4>📐 pandas_ta Strategies</h4>
+      <ul>
+        <li><span class="tag tag-blue">EMA</span> EMA 10, 20, 50, 100, 200</li>
+        <li><span class="tag tag-green">Momentum</span> RSI 14, PPO 12/26/9, ROC 20/60/125</li>
+        <li><span class="tag tag-amber">Derived</span> BBands 20/2, ATR 14, VOL SMA 20</li>
+        <li>RSI signal smoothed with 3-period EMA</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>🧮 Custom Derived Indicators</h4>
+      <ul>
+        <li><b>VPC:</b> Pearson corr(Δprice, volume) over 10 days</li>
+        <li><b>%B:</b> (Close - BBL) / (BBU - BBL)</li>
+        <li><b>EMA Slope:</b> (EMA₅₀ - EMA₅₀[−5]) / EMA₅₀[−5]</li>
+        <li><b>RVOL:</b> volume / VOL_SMA_20</li>
+        <li><b>ATR Spike:</b> ATR₁₄ / ATR_MA₂₀</li>
+        <li><b>Momentum 3M/6M:</b> skip last 5 days to avoid mean-reversion</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 6: FACTOR SCORING -->
+<!-- ============================================================ -->
+<section id="factors">
+  <h2>🎯 Factor Scoring System <span class="badge tag-pink">FactorsService</span></h2>
+  <p class="desc">Non-linear multi-factor scoring engine with 5 composite factors. Each factor uses domain-specific transformations (Goldilocks zones, RSI regimes, capped ratios) rather than simple linear scaling.</p>
+  <div class="card">
+    <h3>Factor Calculation Architecture</h3>
+    <p class="sub file-ref">src/services/factors_service.py + src/config/strategies_config.py</p>
+    <div class="mermaid">
+graph TD
+    INPUT["Raw Indicator Data"] --> F1["Factor: Trend (30%)"]
+    INPUT --> F2["Factor: Momentum (25%)"]
+    INPUT --> F3["Factor: Risk Efficiency (20%)"]
+    INPUT --> F4["Factor: Volume (15%)"]
+    INPUT --> F5["Factor: Structure (10%)"]
+
+    F1 --> T1["distance_from_ema_200 → Goldilocks Score"]
+    F1 --> T2["ema_50_slope → clip(-5,5), normalize"]
+    T1 --> TW["0.4 × dist_score + 0.6 × slope_score"]
+
+    F2 --> M1["RSI smooth → RSI Regime Score"]
+    F2 --> M2["PPO → clip(-5,5), normalize"]
+    F2 --> M3["PPO Histogram → clip(-5,5), normalize"]
+    F2 --> M4["(mom_3m + mom_6m)/2 → clip(-50,50), normalize"]
+    M1 --> MW["0.60×RSI + 0.20×PPO + 0.10×PPOH + 0.10×pure_mom"]
+
+    F3 --> R1["risk_adjusted_return → clip(-5,5), normalize"]
+    F3 --> R2["atr_spike > threshold? → 50% penalty"]
+    R1 --> RW["RAR_norm × (1 - penalty × 0.5)"]
+
+    F4 --> V1["RVOL → cap at 3x, normalize to 0-100"]
+    F4 --> V2["vol_price_corr → clip(-1,1), shift to 0-100"]
+    V1 --> VW["0.7 × rvol_norm + 0.3 × corr_norm"]
+
+    F5 --> S1["%B → score_percent_b() non-linear"]
+    F5 --> S2["BBwidth pct_change(5) → clip, normalize"]
+    S1 --> SW["0.5 × b_score + 0.5 × bw_score"]
+
+    TW --> COMPOSITE["Composite Score"]
+    MW --> COMPOSITE
+    RW --> COMPOSITE
+    VW --> COMPOSITE
+    SW --> COMPOSITE
+
+    style INPUT fill:#1e1b4b,color:#fff
+    style COMPOSITE fill:#7c3aed,color:#fff
+    style F1 fill:#065f46,color:#fff
+    style F2 fill:#1e40af,color:#fff
+    style F3 fill:#92400e,color:#fff
+    style F4 fill:#831843,color:#fff
+    style F5 fill:#78350f,color:#fff
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4>🌡️ Goldilocks Zones (Trend Distance)</h4>
+      <ul>
+        <li><span class="tag tag-blue">0–10%</span> Building: score 70→85</li>
+        <li><span class="tag tag-green">10–35%</span> Sweet Spot: score 85→100</li>
+        <li><span class="tag tag-amber">35–50%</span> Extended: score 100→60</li>
+        <li><span class="tag tag-red">>50%</span> Overextended: decays from 60→0</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>📈 RSI Regime Zones</h4>
+      <ul>
+        <li><span class="tag tag-red">&lt;40</span> Oversold: score = 0</li>
+        <li><span class="tag tag-amber">40–50</span> Building: score 0→30</li>
+        <li><span class="tag tag-green">50–70</span> Sweet Spot: score 30→100</li>
+        <li><span class="tag tag-blue">70–85</span> Strong: score 100→90</li>
+        <li><span class="tag tag-pink">>85</span> Overbought: floor at 60</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>⚖️ Factor Weights</h4>
+      <ul>
+        <li>Trend Strength: <b>30%</b></li>
+        <li>Momentum Velocity: <b>25%</b></li>
+        <li>Risk Efficiency: <b>20%</b></li>
+        <li>Conviction (Volume): <b>15%</b></li>
+        <li>Structure (Bollinger): <b>10%</b></li>
+        <li>Sum must equal exactly 1.0 (validated)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 7: PERCENTILES -->
+<!-- ============================================================ -->
+<section id="percentiles">
+  <h2>📉 Percentile Service <span class="badge tag-cyan">PercentileService</span></h2>
+  <p class="desc">Cross-sectional percentile ranking of factor scores across all stocks on a given date. Each factor is converted to a 0-100 percentile rank relative to the entire universe.</p>
+  <div class="card">
+    <h3>generate_percentile() Flow</h3>
+    <p class="sub file-ref">src/services/percentile_service.py</p>
+    <div class="mermaid">
+graph TD
+    START["generate_percentile(date)"] --> DATE{Date provided?}
+    DATE -- No --> MAX["Get max date from market_data"]
+    DATE -- Yes --> USE["Use provided date"]
+    MAX --> RANGE["Set date_range"]
+    USE --> RANGE
+
+    RANGE --> PRICES["Fetch prices for all stocks on date"]
+    RANGE --> INDICATORS["Fetch indicators for all stocks on date"]
+
+    PRICES --> DF_STOCKS["Build stocks DataFrame"]
+    INDICATORS --> DF_METRICS["Build metrics DataFrame"]
+
+    DF_STOCKS --> EMPTY{"Empty?"}
+    EMPTY -- Yes --> NONE["Return None"]
+    EMPTY -- No --> TURNOVER["Calc avg_turnover = close × volume / 1Cr"]
+    TURNOVER --> MERGE["Merge metrics + stocks on tradingsymbol"]
+
+    MERGE --> FACTORS["FactorsService.calculate_all_factors()"]
+    FACTORS --> FT["factor_trend"]
+    FACTORS --> FM["factor_momentum"]
+    FACTORS --> FE["factor_efficiency"]
+    FACTORS --> FV["factor_volume"]
+    FACTORS --> FS["factor_structure"]
+
+    FT --> PCT["percentile_rank() for each factor"]
+    FM --> PCT
+    FE --> PCT
+    FV --> PCT
+    FS --> PCT
+
+    PCT --> TP["trend_percentile (0-100)"]
+    PCT --> MP["momentum_percentile (0-100)"]
+    PCT --> EP["efficiency_percentile (0-100)"]
+    PCT --> VP["volume_percentile (0-100)"]
+    PCT --> SP["structure_percentile (0-100)"]
+
+    TP --> SAVE["Delete old + bulk insert percentiles"]
+    MP --> SAVE
+    EP --> SAVE
+    VP --> SAVE
+    SP --> SAVE
+
+    style START fill:#0e7490,color:#fff
+    style SAVE fill:#047857,color:#fff
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 8: COMPOSITE SCORES -->
+<!-- ============================================================ -->
+<section id="scores">
+  <h2>🏆 Composite Scores <span class="badge tag-purple">ScoreService</span></h2>
+  <p class="desc">Weighted composite score calculation with a penalty box system. Stocks that fail quality checks (below EMA, ATR spikes, penny stocks, low turnover) receive score multiplier penalties or hard exclusions.</p>
+  <div class="card">
+    <h3>generate_composite_scores() Flow</h3>
+    <p class="sub file-ref">src/services/score_service.py</p>
+    <div class="mermaid">
+graph TD
+    START["generate_composite_scores()"] --> LAST["Get last score date"]
+    LAST --> FETCH_P["Fetch percentiles after last_score_date"]
+    FETCH_P --> HAS{Any new percentiles?}
+    HAS -- No --> DONE1["No new percentiles to process"]
+    HAS -- Yes --> BUILD["Build percentiles DataFrame"]
+
+    BUILD --> FETCH_I["Fetch indicators for same date range"]
+    FETCH_I --> CALC["Calculate initial_composite_score"]
+
+    CALC --> FORMULA["0.30×trend + 0.25×momentum + 0.20×efficiency + 0.15×volume + 0.10×structure"]
+
+    FORMULA --> MERGE_I["Merge indicators for penalty check"]
+    MERGE_I --> PEN["Apply Soft Penalties"]
+
+    PEN --> P1{"Price < EMA 200?"}
+    P1 -- Yes --> MUL1["× 0.5 (below_ema_200)"]
+    PEN --> P2{"Price < EMA 50?"}
+    P2 -- Yes --> MUL2["× 0.7 (below_ema_50)"]
+    PEN --> P3{"ATR spike > threshold?"}
+    P3 -- Yes --> MUL3["× 0.8 (atr_spike)"]
+    PEN --> P4{"EMA 50 < min_price?"}
+    P4 -- Yes --> MUL4["× 0.0 EXCLUDED (penny_stock)"]
+    PEN --> P5{"Avg turnover < min?"}
+    P5 -- Yes --> MUL5["× 0.0 EXCLUDED (low_turnover)"]
+
+    MUL1 --> FINAL["composite_score = initial × penalty"]
+    MUL2 --> FINAL
+    MUL3 --> FINAL
+    MUL4 --> FINAL
+    MUL5 --> FINAL
+
+    FINAL --> INSERT["Bulk insert scores"]
+
+    style START fill:#581c87,color:#fff
+    style MUL4 fill:#991b1b,color:#fff
+    style MUL5 fill:#991b1b,color:#fff
+    style FINAL fill:#7c3aed,color:#fff
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4>⚠️ Penalty Box Rules</h4>
+      <ul>
+        <li><span class="tag tag-amber">×0.5</span> Price below 200 EMA</li>
+        <li><span class="tag tag-amber">×0.7</span> Price below 50 EMA</li>
+        <li><span class="tag tag-amber">×0.8</span> ATR spike above 2.0</li>
+        <li><span class="tag tag-red">×0.0</span> EMA 50 below ₹50 (penny stock)</li>
+        <li><span class="tag tag-red">×0.0</span> Avg turnover below ₹0.5Cr</li>
+        <li>Penalties are multiplicative (can stack)</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>🔄 Recalculation</h4>
+      <ul>
+        <li>recalculate_all_scores() clears table and regenerates</li>
+        <li>Used when strategy weights are updated</li>
+        <li>Vectorized pandas operations for speed</li>
+        <li>Batch processes all pending dates in one pass</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 9: RANKINGS -->
+<!-- ============================================================ -->
+<section id="rankings">
+  <h2>🥇 Rankings Service <span class="badge tag-red">RankingService</span></h2>
+  <p class="desc">Weekly ranking system that averages daily composite scores across Mon–Fri, sorts descending, and assigns rank 1 = highest. Rankings determine the top-N candidates for trading decisions.</p>
+  <div class="card">
+    <h3>generate_rankings() Flow</h3>
+    <p class="sub file-ref">src/services/ranking_service.py</p>
+    <div class="mermaid">
+graph TD
+    START["generate_rankings()"] --> LAST_R["Get last ranking date"]
+    LAST_R --> LAST_S["Get last score date"]
+    LAST_S --> HAS{Scores exist?}
+    HAS -- No --> NONE["No scores available"]
+    HAS -- Yes --> CALC_F["Calculate starting Friday"]
+
+    CALC_F --> WEEK_LOOP["For each Friday ≤ end_friday"]
+    WEEK_LOOP --> FUTURE{"Friday ≥ today?"}
+    FUTURE -- Yes --> STOP["Stop: week not complete"]
+    FUTURE -- No --> RANGE["week_start = Friday - 6 days"]
+
+    RANGE --> SCORES["Fetch scores in Mon–Fri range"]
+    SCORES --> HAS_S{Has scores?}
+    HAS_S -- No --> NEXT["Next week"]
+    HAS_S -- Yes --> AVG["Group by symbol, calc mean(composite_score)"]
+
+    AVG --> SORT["Sort descending by avg score"]
+    SORT --> RANK["Assign rank 1, 2, 3...N"]
+    RANK --> RECORD["Add to ranking records"]
+    RECORD --> NEXT_W["current_friday += 7 days"]
+    NEXT_W --> WEEK_LOOP
+
+    RECORD --> BULK["Bulk insert all rankings"]
+
+    style START fill:#831843,color:#fff
+    style RANK fill:#047857,color:#fff
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 10: TRADING ENGINE -->
+<!-- ============================================================ -->
+<section id="trading">
+  <h2>⚙️ Trading Engine <span class="badge tag-green">TradingEngine</span></h2>
+  <p class="desc">Core decision logic shared between live trading and backtesting. Implements the SELL → Unified Candidate Loop (BUY/PYRAMID/SWAP) algorithm using normalized dataclasses.</p>
+  <div class="card">
+    <h3>generate_decisions() Algorithm</h3>
+    <p class="sub file-ref">src/services/trading_service.py</p>
+    <div class="mermaid">
+graph TD
+    START["generate_decisions()"] --> PHASE1["PHASE 1: SELL CHECK"]
+    PHASE1 --> LOOP_H["For each holding"]
+    LOOP_H --> SL{"stop_loss > price?"}
+    SL -- Yes --> SELL_SL["SELL: stoploss hit"]
+    SL -- No --> SCORE{"score < exit_threshold?"}
+    SCORE -- Yes --> SELL_SC["SELL: score degraded"]
+    SCORE -- No --> SURVIVE["Add to surviving_holdings"]
+
+    SELL_SL --> SOLD["Track in sold_symbols"]
+    SELL_SC --> SOLD
+
+    SURVIVE --> MW{Mid-week run?}
+    MW -- Yes --> RETURN_SELLS["Return sell decisions only"]
+
+    MW -- No --> PHASE2["PHASE 2: UNIFIED CANDIDATE LOOP"]
+    PHASE2 --> VACANCY["vacancies = max_positions - surviving"]
+    VACANCY --> LOOP_C["For each candidate (by score desc)"]
+
+    LOOP_C --> HELD{"Already held?"}
+    HELD -- Yes --> PYR_EN{"Pyramiding enabled?"}
+    PYR_EN -- No --> SKIP_C["Skip candidate"]
+    PYR_EN -- Yes --> PYR_CHECK{"SL >= entry_price AND EMA50 >= entry?"}
+    PYR_CHECK -- Yes --> PYRAMID["PYRAMID_ADD"]
+    PYR_CHECK -- No --> SKIP_C
+
+    HELD -- No --> VAC{"Vacancy available?"}
+    VAC -- Yes --> BUY["BUY: vacancy fill"]
+    VAC -- No --> WEAK{"Beats weakest holding?"}
+    WEAK --> SWAP_CHECK{"score > buffer × weakest.score?"}
+    SWAP_CHECK -- Yes --> SWAP["SWAP: replace weakest"]
+    SWAP_CHECK -- No --> SKIP_C
+
+    BUY --> DEC_V["vacancies -= 1"]
+    SWAP --> REM_W["Remove weakest from remaining"]
+
+    style START fill:#065f46,color:#fff
+    style SELL_SL fill:#991b1b,color:#fff
+    style SELL_SC fill:#991b1b,color:#fff
+    style BUY fill:#047857,color:#fff
+    style PYRAMID fill:#4338ca,color:#fff
+    style SWAP fill:#92400e,color:#fff
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4>🔴 Sell Triggers</h4>
+      <ul>
+        <li>Stop-loss breach: current_price < stop_loss</li>
+        <li>Score degradation: score < exit_threshold (default 40)</li>
+        <li>Both checked for every holding each week</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>🟢 Buy Conditions</h4>
+      <ul>
+        <li>Not already held</li>
+        <li>Vacancy available (positions < max_positions)</li>
+        <li>Candidates ordered by score descending</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>🔄 Swap Logic</h4>
+      <ul>
+        <li>No vacancy but candidate beats weakest holding</li>
+        <li>Guard: candidate.score > swap_buffer × weakest.score</li>
+        <li>swap_buffer = 1 + config.buffer_percent (default 25%)</li>
+        <li>Generates paired SELL + BUY actions</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>🔺 Pyramid Add</h4>
+      <ul>
+        <li>Must be enabled via config flag</li>
+        <li>Current SL must be >= entry_price (profitable)</li>
+        <li>EMA 50 must be >= entry_price (trend support)</li>
+        <li>Uses pyramid_fraction of total capital for sizing</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 11: ACTION GENERATION -->
+<!-- ============================================================ -->
+<section id="actions">
+  <h2>🎬 Action Generation <span class="badge tag-blue">ActionGenerator</span></h2>
+  <p class="desc">Converts TradingDecision objects into typed BuyActionResult/SellActionResult with ATR-based position sizing. Executes in 3 phases: Sells → Pyramid Adds → Buys, then persists to actions table.</p>
+  <div class="card">
+    <h3>generate_actions() Orchestration</h3>
+    <p class="sub file-ref">src/services/action_generator.py</p>
+    <div class="mermaid">
+graph TD
+    START["generate_actions(action_date)"] --> GUARD{"Pending actions exist?"}
+    GUARD -- Yes --> ERROR["Raise ValueError"]
+    GUARD -- No --> DSL{"check_daily_sl mode?"}
+    DSL -- Yes --> DAILY["check_daily_stoploss()"]
+
+    DSL -- No --> TOP_N["Get top-N rankings for prev_friday"]
+    TOP_N --> HOLD["Get current holdings"]
+    HOLD --> CAP["Get total_capital & remaining_capital"]
+    CAP --> CTX["Load market context (prices, EMA50)"]
+
+    CTX --> DECISIONS["TradingEngine.generate_decisions()"]
+
+    DECISIONS --> P1["Phase 1: Execute Sells"]
+    P1 --> SELL_LOOP["For each SELL/SWAP decision"]
+    SELL_LOOP --> SELL_ACT["sell_action() → SellActionResult"]
+    SELL_ACT --> UPD_CAP["remaining_capital += sell_proceeds"]
+    UPD_CAP --> SIZING["sizing_base += realized_gain"]
+
+    SIZING --> P2["Phase 2: Execute Pyramid Adds"]
+    P2 --> PYR_LOOP["For each PYRAMID_ADD decision"]
+    PYR_LOOP --> PYR_BUY["buy_action(capital = sizing × pyramid_fraction)"]
+
+    PYR_BUY --> P3["Phase 3: Execute Buys"]
+    P3 --> BUY_LOOP["For each BUY + swap_buy_queue"]
+    BUY_LOOP --> BUY_ACT["buy_action(total_capital=sizing_base)"]
+    BUY_ACT --> BACKFILL{"Open slots remaining?"}
+    BACKFILL -- Yes --> FILL["Backfill from ranked list"]
+    BACKFILL -- No --> PERSIST["De-duplicate & bulk insert actions"]
+
+    FILL --> PERSIST
+
+    style START fill:#1e40af,color:#fff
+    style P1 fill:#991b1b,color:#fff
+    style P2 fill:#4338ca,color:#fff
+    style P3 fill:#047857,color:#fff
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4>📐 ATR-Based Position Sizing</h4>
+      <ul>
+        <li>Fetch ATR(14) for prev_friday</li>
+        <li>stop_distance = ATR × sl_multiplier</li>
+        <li>risk_per_trade = total_capital × risk_percent</li>
+        <li>shares = risk_per_trade / stop_distance</li>
+        <li>Capped by remaining_capital & max_position_pct</li>
+        <li>Hard SL = stop_loss × (1 - hard_sl_percent)</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>🔄 Vacancy Backfill</h4>
+      <ul>
+        <li>After all BUY decisions processed</li>
+        <li>If open_slots > 0 and remaining_capital > 0</li>
+        <li>Fills from top-N ranked list in order</li>
+        <li>Skips already-bought and held symbols</li>
+        <li>Reason tagged as "vacancy backfill"</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 12: ACTION LIFECYCLE -->
+<!-- ============================================================ -->
+<section id="lifecycle">
+  <h2>🔄 Action Lifecycle <span class="badge tag-amber">ActionLifecycle</span></h2>
+  <p class="desc">Manages Pending → Approved | Rejected status transitions. Sells are always approved at Monday's open. Buys are re-sized at actual execution price within the capital budget.</p>
+  <div class="card">
+    <h3>approve_all_actions() Flow</h3>
+    <p class="sub file-ref">src/services/action_lifecycle.py</p>
+    <div class="mermaid">
+graph TD
+    START["approve_all_actions(date)"] --> FETCH["Fetch all actions for date"]
+    FETCH --> CAP["Init: remaining_capital, sizing_base"]
+
+    CAP --> PHASE1["Phase 1: Approve Sells"]
+    PHASE1 --> SELL_LOOP["For each pending SELL"]
+    SELL_LOOP --> HOLD{"Holding exists?"}
+    HOLD -- No --> REJECT["Reject action"]
+    HOLD -- Yes --> EXEC_P["Get execution_price (action or open)"]
+    EXEC_P --> COSTS["Calculate transaction costs"]
+    COSTS --> TAX["Calculate capital gains tax"]
+    TAX --> APP_S["Set status = Approved"]
+    APP_S --> UPD["remaining_capital += proceeds"]
+    UPD --> PNL["sizing_base += PnL"]
+
+    PNL --> PHASE2["Phase 2: Approve Buys"]
+    PHASE2 --> BUY_LOOP["For each pending BUY"]
+    BUY_LOOP --> EXEC_B["Get execution_price (action or open)"]
+    EXEC_B --> RESIZE["Re-calculate position size at exec price"]
+    RESIZE --> UNITS{"units > 0?"}
+    UNITS -- No --> KEEP["Keep as Pending (capital-constrained)"]
+    UNITS -- Yes --> BUY_COST["Calculate buy transaction costs"]
+    BUY_COST --> APP_B["Set status = Approved, update units/capital"]
+    APP_B --> DEC["remaining_capital -= capital_needed"]
+
+    style START fill:#92400e,color:#fff
+    style APP_S fill:#047857,color:#fff
+    style APP_B fill:#047857,color:#fff
+    style REJECT fill:#991b1b,color:#fff
+    style KEEP fill:#78350f,color:#fff
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 13: ACTION PROCESSOR -->
+<!-- ============================================================ -->
+<section id="processor">
+  <h2>⚡ Action Processor <span class="badge tag-pink">ActionProcessor</span></h2>
+  <p class="desc">Converts approved actions into actual portfolio holdings and investment summary. Three-phase pipeline: Sell → Buy → Hold (update unchanged positions).</p>
+  <div class="card">
+    <h3>process_actions() Flow</h3>
+    <p class="sub file-ref">src/services/action_processor.py</p>
+    <div class="mermaid">
+graph TD
+    START["process_actions(date)"] --> FETCH["Fetch holdings + approved actions"]
+    FETCH --> DATE_CHECK{"holdings_date >= action_date?"}
+    DATE_CHECK -- Yes --> ABORT["Abort: stale data"]
+    DATE_CHECK -- No --> CLEAN["Delete existing capital events for date"]
+
+    CLEAN --> SPLIT["Split actions into buy_symbols / sell_symbols"]
+
+    SPLIT --> P1["Phase 1: Process Sells"]
+    P1 --> SELL_LOOP["For each sell action"]
+    SELL_LOOP --> CALC_PNL["PnL = (exec_price - avg_price) × units"]
+    CALC_PNL --> CAP_EVT["Insert capital_event (realized_gain)"]
+    CAP_EVT --> DEL_H["Delete holding"]
+
+    DEL_H --> P2["Phase 2: Process Buys"]
+    P2 --> BUY_LOOP["For each buy action"]
+    BUY_LOOP --> IS_PYR{"reason == pyramid_add?"}
+    IS_PYR -- Yes --> MERGE["Merge: avg_price, total_units, keep old SL"]
+    IS_PYR -- No --> NEW_H["New holding: compute initial_sl from ATR"]
+    MERGE --> HOLDING["HoldingResult"]
+    NEW_H --> HOLDING
+
+    HOLDING --> P3["Phase 3: Update Held Positions"]
+    P3 --> HELD_LOOP["For each unchanged holding"]
+    HELD_LOOP --> UPD_PRICE["Update current_price from market data"]
+    UPD_PRICE --> TRAIL_SL["Calculate trailing stop-loss"]
+    TRAIL_SL --> UPD_SCORE["Update score from latest ranking"]
+
+    UPD_SCORE --> SUMMARY["Build weekly portfolio summary"]
+    SUMMARY --> UPSERT["Atomic upsert: holdings + summary"]
+
+    style START fill:#831843,color:#fff
+    style UPSERT fill:#047857,color:#fff
+    style P1 fill:#991b1b,color:#fff
+    style P2 fill:#065f46,color:#fff
+    style P3 fill:#1e40af,color:#fff
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 14: STOP-LOSS LOGIC -->
+<!-- ============================================================ -->
+<section id="stoploss">
+  <h2>🛡️ Stop-Loss System <span class="badge tag-red">Multi-Layer SL</span></h2>
+  <p class="desc">Three-layer stop-loss protection: weekly SL check (via TradingEngine), close-based daily SL (end-of-day), and hard SL (intraday low breach). Each layer has different trigger conditions and execution timing.</p>
+  <div class="card">
+    <h3>Stop-Loss Decision Tree</h3>
+    <p class="sub file-ref">trading_service.py + action_generator.py + backtesting_service.py</p>
+    <div class="mermaid">
+graph TD
+    subgraph WEEKLY["Layer 1: Weekly SL (Monday)"]
+        W1["Friday close vs current_sl"] --> W2{"close < stop_loss?"}
+        W2 -- Yes --> W3["SELL decision (Monday open)"]
+        W2 -- No --> W4["Hold position"]
+    end
+
+    subgraph CLOSE["Layer 2: Close-Based Daily SL"]
+        C1["Daily close vs current_sl"] --> C2{"close < current_sl?"}
+        C2 -- Yes --> C3["Generate SELL for next open (D+1)"]
+        C2 -- No --> C4["No action"]
+        C3 --> C5["Approved and processed next morning"]
+    end
+
+    subgraph HARD["Layer 3: Hard SL (Intraday)"]
+        H1["Daily low vs hard_sl_price"] --> H2{"low <= hard_sl_price?"}
+        H2 -- Yes --> H3["Immediate SELL at min(low, hard_sl)"]
+        H2 -- No --> H4["No action"]
+        H3 --> H5["Same-day approve + process"]
+    end
+
+    subgraph CALC["SL Calculation"]
+        ATR["ATR(14)"] --> SL_DIST["stop_distance = ATR × sl_multiplier"]
+        SL_DIST --> INIT_SL["initial_sl = entry_price - stop_distance"]
+        INIT_SL --> TRAIL["Trailing: new_sl = max(current_sl, price - stop_distance)"]
+        TRAIL --> HARD_SL["hard_sl_price = current_sl × (1 - hard_sl_percent)"]
+    end
+
+    style W3 fill:#991b1b,color:#fff
+    style C3 fill:#b91c1c,color:#fff
+    style H3 fill:#7f1d1d,color:#fff
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4><span class="tag tag-blue">Layer 1</span> Weekly Stop-Loss</h4>
+      <ul>
+        <li>Checked in TradingEngine.generate_decisions()</li>
+        <li>Uses Friday close price vs trailing SL</li>
+        <li>Sell executed at Monday open</li>
+        <li>Also triggers on score degradation</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4><span class="tag tag-amber">Layer 2</span> Close-Based Daily SL</h4>
+      <ul>
+        <li>check_daily_stoploss() in ActionGenerator</li>
+        <li>Runs Mon-Thu (Friday handled by weekly)</li>
+        <li>Sell dated D+1 (next open execution)</li>
+        <li>Can trigger mid_week_buy to fill vacancies</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4><span class="tag tag-red">Layer 3</span> Hard SL (Intraday)</h4>
+      <ul>
+        <li>Backtesting only (no live intraday data)</li>
+        <li>hard_sl_price = SL × (1 - 3%)</li>
+        <li>Executes at min(daily_low, hard_sl_price)</li>
+        <li>Same-day approve + process cycle</li>
+        <li>Skips symbols with pending close-based sells</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 15: INVESTMENT MANAGEMENT -->
+<!-- ============================================================ -->
+<section id="investment">
+  <h2>💰 Investment Management <span class="badge tag-green">InvestmentService</span></h2>
+  <p class="desc">Handles portfolio summary calculations, trade journal via FIFO matching, capital event tracking (infusions/withdrawals/realized gains), XIRR calculation, and price synchronization.</p>
+  <div class="card">
+    <h3>Portfolio Summary & Capital Flow</h3>
+    <p class="sub file-ref">src/services/investment_service.py</p>
+    <div class="mermaid">
+graph TD
+    subgraph SUMMARY["get_portfolio_summary()"]
+        S1["Fetch summary from DB"] --> S2["Ensure capital events seeded"]
+        S2 --> S3["total_capital = sum(capital_events incl. realized)"]
+        S3 --> S4["entry_value = sum(avg_price × units)"]
+        S4 --> S5["current_value = sum(current_price × units)"]
+        S5 --> S6["remaining_cash = total_capital - entry_value"]
+        S6 --> S7["portfolio_value = current_value + remaining_cash"]
+        S7 --> S8["unrealized = current_value - entry_value"]
+        S8 --> S9["XIRR from capital events + portfolio_value"]
+        S9 --> S10["portfolio_risk = current_value - stoploss_value"]
+    end
+
+    subgraph JOURNAL["get_trade_journal()"]
+        J1["Fetch all approved actions"] --> J2["FIFOTradeTracker.from_actions()"]
+        J2 --> J3["Match each SELL to earliest unmatched BUY"]
+        J3 --> J4["Calculate: PnL, return%, days_held"]
+        J4 --> J5["Sort by exit_date descending"]
+    end
+
+    subgraph CAPITAL["Capital Events"]
+        CE1["initial: seed from config"] --> CE_TABLE["capital_events table"]
+        CE2["infusion: additional capital"] --> CE_TABLE
+        CE3["withdrawal: capital removed"] --> CE_TABLE
+        CE4["realized_gain: from sell PnL"] --> CE_TABLE
+        CE_TABLE --> TOTAL["get_total_capital() = sum(events)"]
+    end
+
+    subgraph HOLDING_UPD["update_holding()"]
+        H1["Get ATR(14) for prev_friday"] --> H2["Get close price for prev_friday"]
+        H2 --> H3["calculate_effective_stop()"]
+        H3 --> H4["new_sl = max(current_sl, price - ATR×mult)"]
+        H4 --> H5["Get latest ranking score"]
+    end
+
+    style S7 fill:#047857,color:#fff
+    style J2 fill:#4338ca,color:#fff
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4>📊 FIFO Trade Matching</h4>
+      <ul>
+        <li>Each SELL matched to earliest unmatched BUY (FIFO)</li>
+        <li>Handles partial fills across multiple buy lots</li>
+        <li>Shared utility between live journal & backtesting</li>
+        <li>Produces MatchedTrade objects with full PnL breakdown</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>📈 XIRR Calculation</h4>
+      <ul>
+        <li>Capital events as negative cashflows (outflows)</li>
+        <li>Current portfolio value as terminal positive cashflow</li>
+        <li>Uses Newton-Raphson method for IRR</li>
+        <li>Returned as annualized percentage</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>🔄 Trailing Stop-Loss</h4>
+      <ul>
+        <li>calculate_effective_stop() shared with backtester</li>
+        <li>new_stop = current_price - (ATR × sl_multiplier)</li>
+        <li>Only ratchets up: max(previous_stop, new_stop)</li>
+        <li>Mid-week: carries forward existing SL unchanged</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 16: BACKTESTING -->
+<!-- ============================================================ -->
+<section id="backtest">
+  <h2>🧪 Backtesting Engine <span class="badge tag-cyan">WeeklyBacktester</span></h2>
+  <p class="desc">Full backtesting engine that reuses the live trading pipeline (ActionGenerator → ActionLifecycle → ActionProcessor) with DB session injection for isolation. Writes to backtest.db, includes daily SL, risk monitoring, and report generation.</p>
+  <div class="card">
+    <h3>WeeklyBacktester.run() Flow</h3>
+    <p class="sub file-ref">src/services/backtesting_service.py</p>
+    <div class="mermaid">
+graph TD
+    START["run()"] --> INIT["Init backtest DB, seed capital"]
+    INIT --> WEEKS["Get week_starts (Mondays)"]
+
+    WEEKS --> LOOP["For each Monday"]
+    LOOP --> REJECT["Reject previous week's pending actions"]
+    REJECT --> GEN["ActionGenerator.generate_actions()"]
+    GEN --> HAS{Actions generated?}
+
+    HAS -- Yes --> APPROVE["ActionLifecycle.approve_all_actions()"]
+    APPROVE --> PROCESS["ActionProcessor.process_actions()"]
+
+    HAS -- No --> DSL_CHECK
+
+    PROCESS --> DSL_CHECK{"Daily SL enabled?"}
+    DSL_CHECK -- Yes --> DSL["_process_daily_stoploss(mon, fri)"]
+
+    DSL --> DSL_LOOP["For each business day"]
+    DSL_LOOP --> HARD["Phase 1: Hard SL (intraday low)"]
+    HARD --> HARD_SELL["Same-day sell at min(low, hard_sl)"]
+    HARD_SELL --> HARD_AP["Approve + Process immediately"]
+    HARD_AP --> CLOSE_SL["Phase 2: Close-based SL"]
+    CLOSE_SL --> CLOSE_SELL["Generate sell for next open (D+1)"]
+
+    DSL_CHECK -- No --> RISK
+    CLOSE_SELL --> RISK["Update risk monitor"]
+    HARD_AP --> RISK
+
+    RISK --> SNAP["Snapshot holdings & rankings"]
+    SNAP --> RESULT["Record BacktestResult"]
+    RESULT --> LOOP
+
+    RESULT --> CLOSE_POS["Force-close all open positions"]
+    CLOSE_POS --> TRADES["Build trades from DB (FIFO)"]
+    TRADES --> REPORT["BacktestReportBuilder.build()"]
+    REPORT --> SAVE["Save to backtest_history"]
+
+    style START fill:#0e7490,color:#fff
+    style REPORT fill:#047857,color:#fff
+    style HARD fill:#991b1b,color:#fff
+    style CLOSE_SL fill:#b91c1c,color:#fff
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4>🔗 Code Reuse</h4>
+      <ul>
+        <li>Same ActionGenerator/Lifecycle/Processor as live</li>
+        <li>DB session injection isolates backtest writes</li>
+        <li>backtest.db created fresh each run</li>
+        <li>Config loaded from ConfigRepository by name</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>📊 Risk Monitoring</h4>
+      <ul>
+        <li>BacktestRiskMonitor tracks portfolio curve</li>
+        <li>Max drawdown calculated from peak values</li>
+        <li>CAGR, Sharpe, Sortino, Calmar ratios</li>
+        <li>Win rate, avg win/loss, profit factor</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>📄 Report Builder</h4>
+      <ul>
+        <li>BacktestReportBuilder generates text report</li>
+        <li>YoY returns breakdown</li>
+        <li>Transaction costs and STCG/LTCG tax calculation</li>
+        <li>Net post-tax return computation</li>
+        <li>Open positions snapshot at backtest end</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>⚙️ Backtest Config</h4>
+      <ul>
+        <li>start_date / end_date range</li>
+        <li>config_name for strategy parameters</li>
+        <li>check_daily_sl: enable/disable daily SL</li>
+        <li>mid_week_buy: fill vacancies mid-week</li>
+        <li>enable_pyramiding: allow pyramid adds</li>
+        <li>Saved to history with run_label</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 17: MANUAL TRADES -->
+<!-- ============================================================ -->
+<section id="manual">
+  <h2>✋ Manual Trades <span class="badge tag-amber">ManualTradeService</span></h2>
+  <p class="desc">Operator-initiated trades outside the normal weekly cycle. Delegates action building to ActionGenerator for consistent sizing logic. Actions are inserted with status=Pending.</p>
+  <div class="card">
+    <h3>Manual Trade Flow</h3>
+    <p class="sub file-ref">src/services/manual_trade_service.py</p>
+    <div class="mermaid">
+graph TD
+    subgraph BUY_FLOW["create_manual_buy()"]
+        B1["Input: symbol, date, units, price, reason"] --> B2["Check remaining_capital"]
+        B2 --> B3{"Sufficient capital?"}
+        B3 -- No --> B4["Add to over_capital list"]
+        B3 -- Yes --> B5["ActionGenerator.buy_action()"]
+        B5 --> B6["Set execution_price"]
+        B6 --> B7["bulk_insert_actions()"]
+    end
+
+    subgraph SELL_FLOW["create_manual_sell()"]
+        S1["Input: symbol, date, units, price, reason"] --> S2{"Symbol in holdings?"}
+        S2 -- No --> S3["Add to not_in_holding list"]
+        S2 -- Yes --> S4["Get prev business day market data"]
+        S4 --> S5["ActionGenerator.sell_action()"]
+        S5 --> S6["Set execution_price"]
+        S6 --> S7["bulk_insert_actions()"]
+    end
+
+    style B5 fill:#047857,color:#fff
+    style S5 fill:#991b1b,color:#fff
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SECTION 18: API LAYER -->
+<!-- ============================================================ -->
+<section id="api">
+  <h2>🌐 API Layer <span class="badge tag-blue">Flask Blueprints</span></h2>
+  <p class="desc">15 Flask-Smorest blueprints organized by domain. All routes are RESTful with Marshmallow schema validation, auto-generated Swagger/Redoc documentation, and SSE log streaming.</p>
+  <div class="card">
+    <h3>API Route Map</h3>
+    <p class="sub file-ref">src/api/v1/routes/*.py</p>
+    <div class="mermaid">
+graph LR
+    subgraph SYSTEM["System & Config"]
+        INIT["/api/v1/init"] --> INIT_S["InitService"]
+        APP["/api/v1/app"] --> PIPE["run-pipeline, recalculate, cleanup, logs/stream"]
+        CONFIG["/api/v1/config"] --> CFG_S["ConfigRepository"]
+    end
+
+    subgraph DATA["Data Pipeline"]
+        INSTR["/api/v1/instruments"] --> INSTR_S["InstrumentsRepository"]
+        MD["/api/v1/marketdata"] --> MD_S["MarketDataService"]
+        IND["/api/v1/indicators"] --> IND_S["IndicatorsService"]
+        PCT["/api/v1/percentile"] --> PCT_S["PercentileService"]
+        SCORE["/api/v1/score"] --> SCORE_S["ScoreService"]
+        RANK["/api/v1/ranking"] --> RANK_S["RankingService"]
+    end
+
+    subgraph TRADING["Trading"]
+        ACT["/api/v1/actions"] --> ACT_S["ActionGenerator + Lifecycle + Processor"]
+        INV["/api/v1/investment"] --> INV_S["InvestmentService"]
+    end
+
+    subgraph ANALYSIS["Analysis"]
+        COST["/api/v1/costs"] --> COST_S["TransactionCostConfig"]
+        TAX_R["/api/v1/tax"] --> TAX_S["TaxConfig"]
+    end
+
+    subgraph SPECIAL["Special"]
+        BT["/api/v1/backtest"] --> BT_S["BacktestingService"]
+        IDX["/api/v1/index"] --> IDX_S["KiteTicker WebSocket"]
+    end
+
+    style SYSTEM fill:#1e1b4b,color:#fff
+    style DATA fill:#065f46,color:#fff
+    style TRADING fill:#92400e,color:#fff
+    style ANALYSIS fill:#581c87,color:#fff
+    style SPECIAL fill:#831843,color:#fff
+    </div>
+  </div>
+  <div class="detail-grid">
+    <div class="detail-box">
+      <h4>🔧 System Endpoints</h4>
+      <ul>
+        <li><span class="tag tag-green">POST</span> /app/run-pipeline — Full 6-step pipeline</li>
+        <li><span class="tag tag-green">POST</span> /app/recalculate — Recalc from date</li>
+        <li><span class="tag tag-red">DELETE</span> /app/cleanup — Delete data after date</li>
+        <li><span class="tag tag-blue">GET</span> /app/logs/stream — SSE log stream</li>
+        <li><span class="tag tag-green">POST</span> /init — Day 0 initialization</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>📈 Data Endpoints</h4>
+      <ul>
+        <li><span class="tag tag-green">POST</span> /marketdata/update — Fetch latest OHLCV</li>
+        <li><span class="tag tag-green">POST</span> /indicators/calculate — Compute technicals</li>
+        <li><span class="tag tag-green">POST</span> /percentile/generate — Cross-sectional ranks</li>
+        <li><span class="tag tag-green">POST</span> /score/generate — Composite scores</li>
+        <li><span class="tag tag-green">POST</span> /ranking/generate — Weekly rankings</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>💹 Trading Endpoints</h4>
+      <ul>
+        <li><span class="tag tag-green">POST</span> /actions/generate — Generate actions</li>
+        <li><span class="tag tag-green">POST</span> /actions/approve — Approve pending</li>
+        <li><span class="tag tag-green">POST</span> /actions/process — Execute approved</li>
+        <li><span class="tag tag-blue">GET</span> /investment/summary — Portfolio overview</li>
+        <li><span class="tag tag-blue">GET</span> /investment/journal — FIFO trade journal</li>
+        <li><span class="tag tag-green">POST</span> /investment/manual-buy — Manual buy</li>
+        <li><span class="tag tag-green">POST</span> /investment/manual-sell — Manual sell</li>
+      </ul>
+    </div>
+    <div class="detail-box">
+      <h4>🧪 Backtest & Analysis</h4>
+      <ul>
+        <li><span class="tag tag-green">POST</span> /backtest/run — Execute backtest</li>
+        <li><span class="tag tag-blue">GET</span> /backtest/history — Past run results</li>
+        <li><span class="tag tag-blue">GET</span> /costs/calculate — Transaction costs</li>
+        <li><span class="tag tag-blue">GET</span> /tax/calculate — Capital gains tax</li>
+        <li><span class="tag tag-blue">GET</span> /index/live — Market index ticker</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</div>
+<footer>Stock Screener v2 — Architecture Documentation — Auto-generated from codebase analysis</footer>
+
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'dark',
+  themeVariables: {
+    primaryColor: '#6366f1',
+    primaryTextColor: '#e2e8f0',
+    primaryBorderColor: '#4338ca',
+    lineColor: '#6366f1',
+    secondaryColor: '#1e1b4b',
+    tertiaryColor: '#111827',
+    fontFamily: 'Inter',
+    fontSize: '13px'
+  },
+  flowchart: { curve: 'basis', padding: 16 }
+});
+</script>
+</body>
+</html>

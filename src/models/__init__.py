@@ -1,3 +1,4 @@
+from .action_models import BuyActionResult, HoldingResult, SellActionResult, _to_mapping
 from .actions_model import ActionsModel
 from .backtesting_model import BacktestResult
 from .config_model import ConfigModel
@@ -16,6 +17,10 @@ from .ranking_model import RankingModel
 from .score_model import ScoreModel
 
 __all__ = [
+    "BuyActionResult",
+    "SellActionResult",
+    "HoldingResult",
+    "_to_mapping",
     "MarketDataModel",
     "InstrumentsModel",
     "MasterModel",

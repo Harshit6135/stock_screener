@@ -4,7 +4,7 @@ Trading Service
 Core trading decision logic shared between live and backtesting.
 Implements the SELL → Unified Candidate Loop (BUY/PYRAMID/SWAP) algorithm.
 
-Both ActionsService and WeeklyBacktester convert their data to
+Both ActionGenerator/ActionProcessor and WeeklyBacktester convert their data to
 normalized dataclasses, call generate_decisions(), then execute
 the returned decisions in their own way.
 """
@@ -28,6 +28,7 @@ class HoldingSnapshot:
         stop_loss: Current effective stop-loss price
         score: Current composite score for the position
         entry_price: Entry price (for pyramid risk check)
+        avg_price: Weighted average cost (for pyramid / unrealized P&L)
     """
 
     symbol: str
@@ -36,6 +37,37 @@ class HoldingSnapshot:
     score: float
     entry_price: float = 0.0
     avg_price: float = 0.0
+
+    @classmethod
+    def from_holding(cls, h) -> "HoldingSnapshot":
+        """
+        Build a HoldingSnapshot from an InvestmentsHoldingsModel ORM row.
+
+        Centralises the field-mapping so all callers (ActionGenerator,
+        TradingEngine) share one canonical constructor instead of repeating
+        the same attribute access pattern in multiple places.
+        """
+        return cls(
+            symbol=h.symbol,
+            units=h.units,
+            stop_loss=float(h.current_sl),
+            score=float(h.score or 0),
+            entry_price=float(h.entry_price),
+            avg_price=float(h.avg_price or h.entry_price),
+        )
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "HoldingSnapshot":
+        """Build a HoldingSnapshot from a plain dictionary (backtester paths)."""
+        return cls(
+            symbol=d["symbol"],
+            units=d["units"],
+            stop_loss=float(d.get("current_sl", d.get("stop_loss", 0))),
+            score=float(d.get("score", 0)),
+            entry_price=float(d.get("entry_price", 0)),
+            avg_price=float(d.get("avg_price", d.get("entry_price", 0))),
+        )
+
 
 
 @dataclass
@@ -79,7 +111,7 @@ class TradingEngine:
     Core trading decision engine.
 
     Implements SELL → Unified Candidate Loop (BUY/PYRAMID/SWAP) logic
-    shared between live ActionsService and backtesting WeeklyBacktester.
+    shared between live ActionGenerator and backtesting WeeklyBacktester.
     """
 
     @staticmethod
@@ -151,9 +183,11 @@ class TradingEngine:
                 sold_symbols.add(h.symbol)
                 logger.info(f"SELL {h.symbol}: score {h.score:.1f} < threshold {exit_threshold}")
             else:
-                if h.symbol not in candidate_symbols:
-                    remaining_holdings.append(h)
                 surviving_holdings[h.symbol] = h
+                # All surviving holdings are eligible swap targets.
+                # The swap guard (c.score > swap_buffer * weakest.score) prevents
+                # strong holdings from being displaced unnecessarily.
+                remaining_holdings.append(h)
 
         if mid_week_run:
             return decisions

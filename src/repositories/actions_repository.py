@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from config import setup_logger
 from db import db
 from models import ActionsModel
+from models.action_models import _to_mapping
 
 logger = setup_logger(name="ActionsRepository")
 
@@ -85,7 +86,8 @@ class ActionsRepository:
         Bulk insert action records.
 
         Parameters:
-            actions (list): List of action dictionaries
+            actions: List of BuyActionResult / SellActionResult dataclasses
+                     or legacy plain dicts.
 
         Returns:
             bool: True if successful, None otherwise
@@ -93,7 +95,8 @@ class ActionsRepository:
         if not actions:
             return True
         try:
-            self.session.bulk_insert_mappings(ActionsModel, actions, return_defaults=True)
+            mappings = [_to_mapping(a) for a in actions]
+            self.session.bulk_insert_mappings(ActionsModel, mappings, return_defaults=True)
             self.session.commit()
         except Exception as e:
             logger.error(f"Error bulk_insert_actions {e}")
@@ -227,22 +230,22 @@ class ActionsRepository:
             query = query.order_by(ActionsModel.action_date.desc())
         return query.all()
 
-    def insert_action(self, action_dict):
+    def insert_action(self, action):
         """
         Insert a single action without deleting existing actions for that date.
         Used for mid-week SL sells and pending buy fills.
 
         Parameters:
-            action_dict (dict): Action data dictionary
+            action: BuyActionResult / SellActionResult dataclass or plain dict.
 
         Returns:
             ActionsModel: Inserted action or None on error
         """
         try:
-            action = ActionsModel(**action_dict)
-            self.session.add(action)
+            action_obj = ActionsModel(**_to_mapping(action))
+            self.session.add(action_obj)
             self.session.commit()
-            return action
+            return action_obj
         except Exception as e:
             logger.error(f"Error insert_action: {e}")
             self.session.rollback()

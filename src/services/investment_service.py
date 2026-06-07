@@ -8,8 +8,6 @@ previously scattered across route handlers.
 
 import pandas as pd
 
-pd.set_option("future.no_silent_downcasting", True)
-
 from datetime import date, datetime
 from typing import Dict, List, Optional
 
@@ -24,7 +22,7 @@ from repositories import (
     MarketDataRepository,
     RankingRepository,
 )
-from utils import calculate_effective_stop, calculate_xirr, get_prev_friday
+from utils import FIFOTradeTracker, calculate_effective_stop, calculate_xirr, get_prev_friday
 
 logger = setup_logger(name="InvestmentService")
 
@@ -69,19 +67,7 @@ class InvestmentService:
         )
         logger.info(f"Auto-seeded capital event: {initial} " f"on {seed_date}")
 
-    def _remaining_cash(self) -> float:
-        """
-        Compute remaining cash = total_capital - bought + sold.
 
-        Uses SQL aggregates instead of loading all actions into memory.
-
-        Returns:
-            float: Cash remaining in the portfolio
-        """
-        total_capital = self.inv_repo.get_total_capital()
-        total_bought = self.actions_repo.get_total_value_by_type("buy")
-        total_sold = self.actions_repo.get_total_value_by_type("sell")
-        return total_capital - total_bought + total_sold
 
     def _calculate_xirr(self, portfolio_value, as_of_date=None) -> Optional[float]:
         """
@@ -137,7 +123,7 @@ class InvestmentService:
         portfolio_risk = current_value - stoploss_value
         capital_risk = entry_value - stoploss_value
 
-        # current_invested = float(sum(a.execution_price or a.prev_close * a.units for a in holdings if a.type == 'buy'))
+
 
         remaining_cash = total_capital - entry_value
         portfolio_value = current_value + remaining_cash
@@ -178,92 +164,33 @@ class InvestmentService:
         """
         Build trade journal from matched buy/sell pairs using FIFO.
 
-        Matches each sell action to the earliest unmatched buy for the
-        same symbol, then calculates P&L, return %, and holding period.
+        Uses shared FIFOTradeTracker for consistent matching with backtesting.
+        Matches each sell to earliest unmatched buy, calculates P&L, return %, holding period.
 
         Returns:
             List of trade dicts sorted by exit_date descending
-
-        Raises:
-            Exception: If unable to build trade journal
         """
         all_actions = self.actions_repo.get_all_approved_actions()
+        matched_trades, _ = FIFOTradeTracker.from_actions(
+            all_actions, use_fallback_price=True
+        )
 
-        # Group by symbol
-        buys = {}  # symbol -> list of buy actions (FIFO)
-        sells = []
+        trades = [
+            {
+                "entry_date": str(mt.entry_date),
+                "exit_date": str(mt.exit_date),
+                "symbol": mt.symbol,
+                "units": mt.units,
+                "entry_price": mt.entry_price,
+                "exit_price": mt.exit_price,
+                "pnl": mt.pnl,
+                "return_pct": mt.return_pct,
+                "days_held": mt.days_held,
+                "reason": mt.reason,
+            }
+            for mt in matched_trades
+        ]
 
-        for a in sorted(all_actions, key=lambda x: x.action_date):
-            if a.type == "buy":
-                if a.symbol not in buys:
-                    buys[a.symbol] = []
-                buys[a.symbol].append(a)
-            elif a.type == "sell":
-                sells.append(a)
-
-        trades = []
-        for sell in sells:
-            symbol = sell.symbol
-            sell_units = sell.units
-            sell_price = float(sell.execution_price or sell.prev_close)
-            total_sell_value = sell_units * sell_price
-
-            total_buy_cost = 0.0
-            buy_date = None
-
-            matched_units = 0
-            while matched_units < sell_units:
-                if symbol in buys and buys[symbol]:
-                    buy = buys[symbol][0]
-                    buy_price = float(buy.execution_price or buy.prev_close)
-
-                    # B-7: Use shadow tracking to avoid mutating ORM object
-                    remaining_buy_units = getattr(buy, "_remaining", buy.units)
-                    available = remaining_buy_units
-                    needed = sell_units - matched_units
-                    take = min(available, needed)
-
-                    total_buy_cost += take * buy_price
-                    matched_units += take
-
-                    if not buy_date:
-                        buy_date = buy.action_date
-
-                    if take >= available:
-                        buys[symbol].pop(0)
-                    else:
-                        buy._remaining = available - take
-                else:
-                    remaining = sell_units - matched_units
-                    matched_units += remaining
-                    if not buy_date:
-                        buy_date = sell.action_date  # Fallback
-
-            pnl = total_sell_value - total_buy_cost
-            entry_price = total_buy_cost / sell_units if sell_units else 0
-
-            return_pct = 0.0
-            if total_buy_cost > 0:
-                return_pct = (pnl / total_buy_cost) * 100
-
-            days_held = (sell.action_date - buy_date).days if buy_date else 0
-
-            trades.append(
-                {
-                    "entry_date": str(buy_date) if buy_date else str(sell.action_date),
-                    "exit_date": str(sell.action_date),
-                    "symbol": symbol,
-                    "units": sell.units,
-                    "entry_price": round(entry_price, 2),
-                    "exit_price": round(sell_price, 2),
-                    "pnl": round(pnl, 2),
-                    "return_pct": round(return_pct, 2),
-                    "days_held": days_held,
-                    "reason": sell.reason or "",
-                }
-            )
-
-        # Sort by exit date descending
         trades.sort(key=lambda x: x["exit_date"], reverse=True)
         return trades
 
@@ -405,10 +332,14 @@ class InvestmentService:
         Returns:
             Dict: Summary with capital, risk, and P&L metrics
         """
+        # Single call for all capital arithmetic (P8: eliminates duplicate call)
+        total_cap_with_realized = float(
+            self.inv_repo.get_total_capital(action_date, include_realized=True)
+        )
         if override_starting_capital is not None:
             total_cap = float(override_starting_capital)
         else:
-            total_cap = float(self.inv_repo.get_total_capital(action_date, include_realized=True))
+            total_cap = float(self.inv_repo.get_total_capital(action_date, include_realized=False))
 
         if week_holdings:
             df = pd.DataFrame(week_holdings)
@@ -434,19 +365,16 @@ class InvestmentService:
                 (df.loc[bought_mask, "entry_price"] * df.loc[bought_mask, "units"]).sum()
             )
 
-        # Compute remaining_capital from first principles:
-        # total capital (all events incl realized) minus cost basis of current holdings.
-        # This is immune to the starting_capital chain drift.
-        total_capital_all = float(
-            self.inv_repo.get_total_capital(action_date, include_realized=True)
-        )
+
+        # remaining_capital = total_cap_with_realized - cost_basis (first principles, single source of truth)
         if "avg_price" in df.columns:
             cost_basis = float(
                 (df["avg_price"].fillna(df["entry_price"]).astype(float) * df["units"]).sum()
             )
         else:
             cost_basis = float((df["entry_price"] * df["units"]).sum())
-        remaining_capital = round(total_capital_all - cost_basis, 2)
+        remaining_capital = round(total_cap_with_realized - cost_basis, 2)
+
 
         # starting_capital = previous remaining + any new capital events since last summary
         prev_summary = self.inv_repo.get_summary()
@@ -465,7 +393,7 @@ class InvestmentService:
         portfolio_risk = round(holdings_value - stop_value, 2)
 
         gain = round(portfolio_value - total_cap, 2)
-        gain_pct = round((gain) / total_cap * 100, 2) if total_cap else 0.0
+        gain_pct = round(gain / total_cap * 100, 2) if total_cap else 0.0
 
         summary = {
             "date": week_holdings[0]["date"] if week_holdings else action_date,
@@ -490,7 +418,7 @@ class InvestmentService:
         """
         holdings = self.inv_repo.get_holdings()
         if not holdings:
-            return []
+            return "No holdings to sync"
 
         for h in holdings:
             md = self.marketdata_repo.get_latest_marketdata(h.symbol)

@@ -200,20 +200,7 @@ class InvestmentRepository:
             self.session.rollback()
             return None
 
-    def insert_summary(self, summary):
-        """
-        Insert summary — delegates to upsert_summary for consistency.
 
-        Q-2: This was a duplicate of upsert_summary. Now redirects to avoid
-        maintaining two identical code paths.
-
-        Parameters:
-            summary (dict): Summary data
-
-        Returns:
-            bool: True if successful, None otherwise
-        """
-        return self.upsert_summary(summary)
 
     def delete_holdings(self, date):
         """

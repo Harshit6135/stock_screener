@@ -641,12 +641,20 @@
                     `;
                 }
 
+                const entryPrice = parseFloat(a.execution_price || a.prev_close || 0);
+                const sl = parseFloat(a.stop_loss || 0);
+                const riskPerUnit = (entryPrice > 0 && sl > 0) ? (entryPrice - sl) : null;
+                const riskTd = riskPerUnit !== null
+                    ? `<td data-sort="${riskPerUnit}" style="color:var(--warning); font-weight:600;">&#8377;${riskPerUnit.toFixed(2)}</td>`
+                    : `<td data-sort="0" style="color:var(--text-muted);">-</td>`;
+
                 tbody.innerHTML += `<tr>
                     <td data-sort="${a.action_date}">${a.action_date}</td>
                     <td data-sort="${a.type}"><span class="badge ${badgeClass}">${a.type.toUpperCase()}</span></td>
                     <td><b>${a.symbol}</b></td>
                     ${unitsTd}
                     ${priceTd}
+                    ${riskTd}
                     <td data-sort="${a.stop_loss || 0}">${a.stop_loss ? '&#8377;' + parseFloat(a.stop_loss).toFixed(2) : '-'}</td>
                     <td data-sort="${a.hard_sl_price || 0}" style="color:var(--danger); font-weight:600;">${a.hard_sl_price ? '&#8377;' + parseFloat(a.hard_sl_price).toFixed(2) : '-'}</td>
                     <td data-sort="${a.status}">${a.status}</td>

@@ -22,10 +22,6 @@ class MarketDataService:
 
     def _get_fetch_end_date(self):
         now_ist = pd.Timestamp.now(tz="Asia/Kolkata")
-        # if now_ist.hour >= 18:
-        #     return pd.Timestamp(now_ist.date())
-        # else:
-        #     return pd.Timestamp(now_ist.date()) - pd.Timedelta(days=1)
         return pd.Timestamp(now_ist.date()) - pd.Timedelta(days=1)
 
     def get_latest_data_by_token(self, token, start_date, end_date=None):
