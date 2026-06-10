@@ -20,8 +20,8 @@ class StrategyParameters:
     min_turnover: float = 50
 
     # Sub-factor weights for trend
-    trend_slope_weight: float = 0.3
-    trend_distance_200_weight: float = 0.7
+    trend_slope_weight: float = 0.6
+    trend_distance_200_weight: float = 0.4
 
     # Sub-factor weights for momentum
     momentum_rsi_weight: float = 0.20
