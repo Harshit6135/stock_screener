@@ -10,15 +10,21 @@ from .app_config import (
 from .cost_config import ImpactCostConfig, TransactionCostConfig
 from .flask_config import Config
 from .indicators_config import (
+    ALL_INDICATOR_NAMES,
+    INDICATOR_REGISTRY,
+    STUDY_MAP,
+    DerivedIndicator,
+    PandasTaIndicator,
     additional_parameters,
     derived_strategy,
     ema_strategy,
     momentum_strategy,
+    strategy2_adx_study,
 )
 from .kite_config import KITE_CONFIG
 from .logger_config import setup_logger, sse_log_queue
 from .pyramid_config import PyramidConfig
-from .strategies_config import GoldilocksConfig, RSIRegimeConfig, StrategyParameters
+from .strategies_config import GoldilocksConfig, RSIRegimeConfig, StrategyParameters, Strategy2Parameters
 from .tax_config import TaxConfig
 
 __all__ = [
@@ -36,7 +42,13 @@ __all__ = [
     "ema_strategy",
     "momentum_strategy",
     "derived_strategy",
+    "strategy2_adx_study",
     "additional_parameters",
+    "INDICATOR_REGISTRY",
+    "STUDY_MAP",
+    "ALL_INDICATOR_NAMES",
+    "PandasTaIndicator",
+    "DerivedIndicator",
     # Kite Config
     "KITE_CONFIG",
     # Logger Config
@@ -44,6 +56,7 @@ __all__ = [
     "sse_log_queue",
     # Strategies Config
     "StrategyParameters",
+    "Strategy2Parameters",
     "GoldilocksConfig",
     "RSIRegimeConfig",
     # Tax Config

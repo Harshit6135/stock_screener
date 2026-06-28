@@ -3,6 +3,7 @@ from .actions_schema import ActionDateSchema, ActionQuerySchema, ActionSchema, A
 from .app_schema import CleanupQuerySchema, PipelineQuerySchema, RecalculateQuerySchema
 from .backtest_schema import BacktestInputSchema
 from .config_schema import ConfigSchema
+from .indicator_patch_schema import IndicatorPatchSchema
 from .indicators_schema import IndicatorSearchSchema, IndicatorsSchema
 from .init_app_schema import InitRequestSchema, InitResponseSchema
 from .instruments_schema import InstrumentSchema, MessageSchema
@@ -41,6 +42,7 @@ __all__ = [
     "PipelineQuerySchema",
     "RecalculateQuerySchema",
     "BacktestInputSchema",
+    "IndicatorPatchSchema",
     "ActionDateSchema",
     "ActionQuerySchema",
     "ActionSchema",

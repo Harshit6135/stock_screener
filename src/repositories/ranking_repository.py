@@ -40,10 +40,12 @@ class RankingRepository:
         return True
 
     @staticmethod
-    def delete_all():
-        """Delete all records from ranking table (for recalculation)"""
+    def delete_all(strategy_id: str = "strategy1"):
+        """Delete all records for a strategy (for recalculation)"""
         try:
-            db.session.query(RankingModel).delete()
+            db.session.query(RankingModel).filter(
+                RankingModel.strategy_id == strategy_id
+            ).delete()
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
@@ -63,22 +65,35 @@ class RankingRepository:
             return -1
 
     @staticmethod
-    def get_max_ranking_date():
-        """Get the latest ranking_date from ranking table"""
-        latest_record = RankingModel.query.order_by(RankingModel.ranking_date.desc()).first()
+    def get_max_ranking_date(strategy_id: str = "strategy1"):
+        """Get the latest ranking_date for a strategy"""
+        latest_record = (
+            RankingModel.query
+            .filter(RankingModel.strategy_id == strategy_id)
+            .order_by(RankingModel.ranking_date.desc())
+            .first()
+        )
         return latest_record.ranking_date if latest_record else None
 
     @staticmethod
-    def get_top_n_by_date(n, date=None):
-        """Get top N stocks by rank for a given date (rank 1 = highest)"""
+    def get_top_n_by_date(n, date=None, strategy_id: str = "strategy1"):
+        """Get top N stocks by rank for a given date and strategy (rank 1 = highest)"""
         if date is None:
-            latest = db.session.query(db.func.max(RankingModel.ranking_date)).scalar()
+            latest = (
+                db.session.query(db.func.max(RankingModel.ranking_date))
+                .filter(RankingModel.strategy_id == strategy_id)
+                .scalar()
+            )
             if not latest:
                 return []
         else:
             latest = date
         rankings = (
-            RankingModel.query.filter(RankingModel.ranking_date == latest)
+            RankingModel.query
+            .filter(
+                RankingModel.ranking_date == latest,
+                RankingModel.strategy_id == strategy_id,
+            )
             .order_by(RankingModel.rank.asc())
             .limit(n)
             .all()
@@ -86,10 +101,14 @@ class RankingRepository:
         return rankings
 
     @staticmethod
-    def get_rankings_by_date(ranking_date):
-        """Get rankings for a specific date, ordered by rank"""
+    def get_rankings_by_date(ranking_date, strategy_id: str = "strategy1"):
+        """Get rankings for a specific date and strategy, ordered by rank"""
         return (
-            RankingModel.query.filter(RankingModel.ranking_date == ranking_date)
+            RankingModel.query
+            .filter(
+                RankingModel.ranking_date == ranking_date,
+                RankingModel.strategy_id == strategy_id,
+            )
             .order_by(RankingModel.rank.asc())
             .all()
         )
@@ -142,10 +161,11 @@ class RankingRepository:
         return RankingModel.query.order_by(RankingModel.ranking_date).all()
 
     @staticmethod
-    def get_distinct_ranking_dates():
-        """Get all distinct ranking dates"""
+    def get_distinct_ranking_dates(strategy_id: str = "strategy1"):
+        """Get all distinct ranking dates for a strategy"""
         result = (
             db.session.query(RankingModel.ranking_date)
+            .filter(RankingModel.strategy_id == strategy_id)
             .distinct()
             .order_by(RankingModel.ranking_date)
             .all()

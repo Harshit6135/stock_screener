@@ -5,7 +5,7 @@ from flask.views import MethodView
 from flask_smorest import Blueprint, abort
 
 from repositories import IndicatorsRepository
-from schemas import IndicatorSearchSchema, IndicatorsSchema, MaxDateSchema
+from schemas import IndicatorPatchSchema, IndicatorSearchSchema, IndicatorsSchema, MaxDateSchema
 from services import IndicatorsService
 
 blp = Blueprint(
@@ -90,6 +90,36 @@ class IndicatorsUpdateAll(MethodView):
         indicators_service = IndicatorsService()
         indicators_service.calculate_indicators()
         return {"message": "Calculation of Indicators completed."}
+
+
+@blp.route("/patch")
+class IndicatorsPatch(MethodView):
+    @blp.doc(tags=["Indicators"])
+    @blp.arguments(IndicatorPatchSchema, location="json", required=False)
+    def post(self, patch_data):
+        """Compute and upsert specific indicator columns for all symbols.
+
+        Backfills from the earliest available market data date.
+        Only the specified columns are written — all other columns remain untouched.
+
+        Use this when:
+        - Adding a new indicator to existing historical rows
+        - Recalculating a specific Strategy 2 indicator after config changes
+
+        Body (optional JSON):
+            {"indicators": ["adx_14", "mansfield_rs", "sortino_ratio"]}
+
+        If body is omitted or `indicators` is null, ALL registered indicators are patched.
+        """
+        indicator_names = (patch_data or {}).get("indicators")
+        service = IndicatorsService()
+        try:
+            result = service.patch_indicators(indicator_names=indicator_names)
+            return result
+        except ValueError as e:
+            abort(400, message=str(e))
+        except Exception as e:
+            abort(500, message=f"Patch failed: {str(e)}")
 
 
 @blp.route("/<string:indicator_name>")

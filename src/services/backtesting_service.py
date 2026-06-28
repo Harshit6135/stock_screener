@@ -63,6 +63,7 @@ class WeeklyBacktester:
         check_daily_sl: bool = True,
         mid_week_buy: bool = True,
         enable_pyramiding: bool = False,
+        strategy_id: str = "strategy1",
     ):
         self.start_date = start_date
         self.end_date = end_date
@@ -70,6 +71,7 @@ class WeeklyBacktester:
         self.check_daily_sl = check_daily_sl
         self.mid_week_buy = mid_week_buy
         self.enable_pyramiding = enable_pyramiding
+        self.strategy_id = strategy_id
 
         # Load config from repository
         config_repo = ConfigRepository()
@@ -85,7 +87,10 @@ class WeeklyBacktester:
         DatabaseManager.clear_backtest_db(app)
         self.backtest_session = DatabaseManager.get_backtest_session()
         self.generator = ActionGenerator(
-            config_name=self.config_name, session=self.backtest_session, config_info=self.config
+            config_name=self.config_name,
+            session=self.backtest_session,
+            config_info=self.config,
+            strategy_id=self.strategy_id,
         )
         self.lifecycle = ActionLifecycle(
             config_name=self.config_name, session=self.backtest_session, config_info=self.config
@@ -549,6 +554,7 @@ class BacktestingService:
         mid_week_buy: bool = True,
         run_label: str = None,
         enable_pyramiding: bool = False,
+        strategy_id: str = "strategy1",
     ):
         """
         Convenience function to run a backtest.
@@ -561,12 +567,14 @@ class BacktestingService:
             mid_week_buy: Enable mid-week vacancy fills
             run_label: Optional label/name for this run
             enable_pyramiding: Enable pyramid adds for winning positions
+            strategy_id: Which strategy's rankings to use (strategy1 | strategy2)
 
         Returns:
             Tuple of (results, summary, risk_monitor_data, report_path)
         """
         backtester = WeeklyBacktester(
-            start_date, end_date, config_name, check_daily_sl, mid_week_buy, enable_pyramiding
+            start_date, end_date, config_name, check_daily_sl, mid_week_buy,
+            enable_pyramiding, strategy_id=strategy_id,
         )
         results = backtester.run()
         summary = backtester.get_summary()

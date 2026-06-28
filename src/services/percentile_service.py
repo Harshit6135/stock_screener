@@ -4,10 +4,11 @@ pd.set_option("future.no_silent_downcasting", True)
 
 from datetime import date, datetime
 
+from config import Strategy2Parameters, StrategyParameters
 from config import StrategyParameters as StrategyParams
 from config import setup_logger
 from repositories import IndicatorsRepository, MarketDataRepository, PercentileRepository
-from services.factors_service import FactorsService
+from services.factors_service import FactorsService, FactorsServiceV2
 from utils import percentile_rank
 
 percentile_repo = PercentileRepository()
@@ -18,13 +19,21 @@ logger = setup_logger(name="Orchestrator")
 
 class PercentileService:
     """
-    Multi-Factor Momentum Scorecard for Indian Markets
-    Based on quantitative equity ranking framework
+    Multi-Factor Momentum Scorecard for Indian Markets.
+
+    Supports Strategy 1 (default) and Strategy 2 via strategy_id parameter.
+    All repo calls are tagged with the strategy_id so rows coexist in the
+    same table without collision.
     """
 
-    def __init__(self):
-        self.strategy_params = StrategyParams()
-        self.factors_service = FactorsService()
+    def __init__(self, strategy_id: str = "strategy1"):
+        self.strategy_id = strategy_id
+        if strategy_id == "strategy2":
+            self.strategy_params = Strategy2Parameters()
+            self.factors_service = FactorsServiceV2()
+        else:
+            self.strategy_params = StrategyParams()
+            self.factors_service = FactorsService()
 
     def _calculate_percentiles(self, metrics_df) -> pd.DataFrame:
         """Calculate factor scores via FactorsService, then percentiles"""
@@ -44,17 +53,10 @@ class PercentileService:
         return metrics_df
 
     def _validate_count(self, indicators_count: int, date, last_percentile_date) -> None:
-        """Compare indicator row count vs last percentile date's count.
-
-        Args:
-            indicators_count: Number of indicator rows for the new date.
-            date: The date being processed.
-
-        Raises:
-            ValueError: If the count difference exceeds 5%.
-        """
-
-        last_percentile_rows = percentile_repo.get_percentiles_by_date(last_percentile_date)
+        """Compare indicator row count vs last percentile date's count."""
+        last_percentile_rows = percentile_repo.get_percentiles_by_date(
+            last_percentile_date, strategy_id=self.strategy_id
+        )
         last_count = len(last_percentile_rows)
         if last_count == 0:
             return
@@ -76,13 +78,12 @@ class PercentileService:
     def generate_percentile(self, date=None):
         """
         Orchestrates the percentile calculation process:
-        1. Fetch instruments
-        2. Fetch latest price and indicator data for each instrument
-        3. Construct DataFrames
-        4. Calculate percentiles
-        5. Save to percentile table with date
+        1. Fetch latest price and indicator data
+        2. Construct DataFrames
+        3. Calculate percentiles using the selected strategy's factor service
+        4. Save to percentile table tagged with strategy_id
         """
-        logger.info("Starting Percentile Calculation...")
+        logger.info(f"Starting Percentile Calculation [{self.strategy_id}]...")
         if not date:
             max_date = marketdata_repo.get_max_date_from_table()
             date_range = {"start_date": max_date, "end_date": max_date}
@@ -94,7 +95,6 @@ class PercentileService:
             indicators_repo.get_indicators_for_all_stocks(date_range)
         )
 
-        # 3. Create DataFrames
         stocks_df = pd.DataFrame(price_data_list)
         metrics_df = pd.DataFrame(indicators_data_list)
         metrics_df = metrics_df.fillna(0).infer_objects(copy=False)
@@ -106,36 +106,31 @@ class PercentileService:
         stocks_df["avg_turnover"] = stocks_df["close"] * stocks_df["volume"] / 10000000
         metrics_df = pd.merge(metrics_df, stocks_df, on="tradingsymbol", how="inner")
 
-        # Add percentile date
         percentile_date = date
         metrics_df["percentile_date"] = percentile_date
+        metrics_df["strategy_id"] = self.strategy_id
         metrics_df = self._calculate_percentiles(metrics_df)
 
         req_cols = [
             "tradingsymbol",
             "percentile_date",
+            "strategy_id",
             "close",
-            # trend Percentile
             "factor_trend",
             "trend_percentile",
-            # momentum percentile
             "factor_momentum",
             "momentum_percentile",
-            # efficiency percentile
             "factor_efficiency",
             "efficiency_percentile",
-            # volume rank
             "factor_volume",
             "volume_percentile",
-            # structure rank
             "factor_structure",
             "structure_percentile",
         ]
-        percentile_df = metrics_df[req_cols]
+        percentile_df = metrics_df[[c for c in req_cols if c in metrics_df.columns]]
 
-        # 5. Save to database
         logger.info("Saving percentiles to database...")
-        response = percentile_repo.delete(percentile_date)
+        response = percentile_repo.delete(percentile_date, strategy_id=self.strategy_id)
         if response:
             percentile_repo.bulk_insert(percentile_df.to_dict("records"))
         else:
@@ -143,17 +138,19 @@ class PercentileService:
                 "Failed to delete existing percentiles for today, cannot save new percentiles"
             )
             return None
-        logger.info(f"Saved {len(percentile_df)} percentiles to database for {percentile_date}")
+        logger.info(
+            f"Saved {len(percentile_df)} percentiles for {percentile_date} [{self.strategy_id}]"
+        )
         return True
 
     def backfill_percentiles(self):
         """
-        Generates percentiles for all dates since the last updated date in the percentile table.
+        Generates percentiles for all dates since the last updated date.
         If no percentiles exist, starts from the earliest available market data date.
-
-        Runs count validation once at the start before iterating.
         """
-        last_percentile_date = percentile_repo.get_max_percentile_date()
+        last_percentile_date = percentile_repo.get_max_percentile_date(
+            strategy_id=self.strategy_id
+        )
 
         if last_percentile_date:
             start_date = last_percentile_date
@@ -163,7 +160,6 @@ class PercentileService:
         if isinstance(start_date, (datetime, date)):
             start_date = pd.Timestamp(start_date)
 
-        # One-time count validation at start of run
         max_date = marketdata_repo.get_max_date_from_table()
 
         if isinstance(max_date, (datetime, date)):

@@ -23,11 +23,14 @@ logger = setup_logger(name="RankingService")
 class RankingService:
     """Service for calculating weekly rankings from daily scores"""
 
-    def generate_rankings(self):
-        logger.info("Starting incremental ranking generation...")
+    def __init__(self, strategy_id: str = "strategy1"):
+        self.strategy_id = strategy_id
 
-        last_ranking_date = ranking_repo.get_max_ranking_date()
-        last_score_date = score_repo.get_max_score_date()
+    def generate_rankings(self):
+        logger.info(f"Starting incremental ranking generation [{self.strategy_id}]...")
+
+        last_ranking_date = ranking_repo.get_max_ranking_date(strategy_id=self.strategy_id)
+        last_score_date = score_repo.get_max_score_date(strategy_id=self.strategy_id)
 
         if not last_score_date:
             logger.info("No scores available for ranking")
@@ -36,7 +39,7 @@ class RankingService:
         if last_ranking_date:
             current_friday = get_friday_of_week(last_ranking_date) + timedelta(days=7)
         else:
-            distinct_dates = score_repo.get_all_distinct_dates()
+            distinct_dates = score_repo.get_all_distinct_dates(strategy_id=self.strategy_id)
             if not distinct_dates:
                 return {"message": "No score dates available", "weeks": 0}
             first_date = distinct_dates[0]
@@ -62,7 +65,9 @@ class RankingService:
                 break
 
             week_start = current_friday - timedelta(days=6)
-            scores = score_repo.get_scores_in_date_range(week_start, current_friday)
+            scores = score_repo.get_scores_in_date_range(
+                week_start, current_friday, strategy_id=self.strategy_id
+            )
 
             if scores:
                 df = pd.DataFrame(
@@ -82,11 +87,14 @@ class RankingService:
 
                 all_ranking_records.extend(weekly_avg.to_dict("records"))
                 weeks_processed += 1
-                logger.info(f"Processed week ending {current_friday}")
+                logger.info(f"Processed week ending {current_friday} [{self.strategy_id}]")
 
             current_friday += timedelta(days=7)
 
         if all_ranking_records:
+            # Tag each record with strategy_id before insert
+            for rec in all_ranking_records:
+                rec["strategy_id"] = self.strategy_id
             ranking_repo.bulk_insert(all_ranking_records)
 
         logger.info(f"Generated rankings for {weeks_processed} weeks")
@@ -97,12 +105,12 @@ class RankingService:
 
     def recalculate_all_rankings(self):
         """
-        Recalculate ALL weekly rankings from scratch.
+        Recalculate ALL weekly rankings for this strategy from scratch.
         Use this when composite scores have been recalculated.
         """
-        logger.info("Starting FULL ranking recalculation...")
+        logger.info(f"Starting FULL ranking recalculation [{self.strategy_id}]...")
 
-        logger.info("Clearing existing ranking table...")
-        ranking_repo.delete_all()
+        logger.info(f"Clearing existing ranking table for [{self.strategy_id}]...")
+        ranking_repo.delete_all(strategy_id=self.strategy_id)
 
         return self.generate_rankings()

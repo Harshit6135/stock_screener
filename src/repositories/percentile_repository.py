@@ -24,10 +24,11 @@ class PercentileRepository:
         return percentile_records
 
     @staticmethod
-    def delete(percentile_date):
+    def delete(percentile_date, strategy_id: str = "strategy1"):
         try:
             db.session.query(PercentileModel).filter(
-                PercentileModel.percentile_date == percentile_date
+                PercentileModel.percentile_date == percentile_date,
+                PercentileModel.strategy_id == strategy_id,
             ).delete()
             db.session.commit()
         except SQLAlchemyError as e:
@@ -37,30 +38,41 @@ class PercentileRepository:
         return True
 
     @staticmethod
-    def get_max_percentile_date():
-        latest_record = PercentileModel.query.order_by(
-            PercentileModel.percentile_date.desc()
-        ).first()
+    def get_max_percentile_date(strategy_id: str = "strategy1"):
+        latest_record = (
+            PercentileModel.query
+            .filter(PercentileModel.strategy_id == strategy_id)
+            .order_by(PercentileModel.percentile_date.desc())
+            .first()
+        )
         return latest_record.percentile_date if latest_record else None
 
     @staticmethod
-    def get_top_n_by_date(n, date=None):
+    def get_top_n_by_date(n, date=None, strategy_id: str = "strategy1"):
         if date is None:
-            latest = db.session.query(db.func.max(PercentileModel.percentile_date)).scalar()
+            latest = db.session.query(db.func.max(PercentileModel.percentile_date)).filter(
+                PercentileModel.strategy_id == strategy_id
+            ).scalar()
             if not latest:
                 return []
         else:
             latest = date
         percentiles = (
-            PercentileModel.query.filter(PercentileModel.percentile_date == latest).limit(n).all()
+            PercentileModel.query
+            .filter(
+                PercentileModel.percentile_date == latest,
+                PercentileModel.strategy_id == strategy_id,
+            )
+            .limit(n)
+            .all()
         )
-
         return percentiles
 
     @staticmethod
-    def get_percentiles_by_date(percentile_date):
+    def get_percentiles_by_date(percentile_date, strategy_id: str = "strategy1"):
         return PercentileModel.query.filter(
-            PercentileModel.percentile_date == percentile_date
+            PercentileModel.percentile_date == percentile_date,
+            PercentileModel.strategy_id == strategy_id,
         ).all()
 
     @staticmethod
@@ -106,14 +118,11 @@ class PercentileRepository:
             return -1
 
     @staticmethod
-    def get_all_distinct_dates():
-        """Get all distinct percentile dates, ordered ascending.
-
-        Returns:
-            List[date]: Sorted list of unique percentile dates.
-        """
+    def get_all_distinct_dates(strategy_id: str = "strategy1"):
+        """Get all distinct percentile dates, ordered ascending."""
         result = (
             db.session.query(PercentileModel.percentile_date)
+            .filter(PercentileModel.strategy_id == strategy_id)
             .distinct()
             .order_by(PercentileModel.percentile_date)
             .all()
@@ -121,17 +130,20 @@ class PercentileRepository:
         return [r[0] for r in result]
 
     @staticmethod
-    def get_percentiles_after_date(after_date=None):
+    def get_percentiles_after_date(after_date=None, strategy_id: str = "strategy1"):
         """Fetch all percentile records after a given date.
 
         Parameters:
             after_date: Date to start from (exclusive).
                 If None, returns all records.
+            strategy_id: Filter to this strategy's rows only.
 
         Returns:
             List of PercentileModel records.
         """
-        query = PercentileModel.query
+        query = PercentileModel.query.filter(
+            PercentileModel.strategy_id == strategy_id
+        )
         if after_date is not None:
             query = query.filter(PercentileModel.percentile_date > after_date)
         return query.order_by(PercentileModel.percentile_date).all()

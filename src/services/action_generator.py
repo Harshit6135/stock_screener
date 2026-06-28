@@ -44,9 +44,11 @@ class ActionGenerator:
         config_name: str = None,
         session: Optional[Session] = None,
         config_info=None,
+        strategy_id: str = "strategy1",
     ):
         config_repo = ConfigRepository()
         self.config = config_info or config_repo.get_config(config_name)
+        self.strategy_id = strategy_id
         self.ranking_repo = RankingRepository()
         self.indicators_repo = IndicatorsRepository()
         self.marketdata_repo = MarketDataRepository()
@@ -601,7 +603,9 @@ class ActionGenerator:
             return self.check_daily_stoploss(action_date, mid_week_buy=mid_week_buy)
 
         data_date = get_prev_friday(action_date)
-        top_n = self.ranking_repo.get_top_n_by_date(self.config.max_positions, data_date)
+        top_n = self.ranking_repo.get_top_n_by_date(
+            self.config.max_positions, data_date, strategy_id=self.strategy_id
+        )
         candidates = [
             CandidateInfo(symbol=item.tradingsymbol, score=item.composite_score) for item in top_n
         ]

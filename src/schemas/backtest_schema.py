@@ -1,4 +1,4 @@
-from marshmallow import Schema, fields
+from marshmallow import Schema, fields, validate
 
 
 class BacktestInputSchema(Schema):
@@ -32,5 +32,16 @@ class BacktestInputSchema(Schema):
         load_default=False,
         metadata={
             "description": ("Enable pyramiding (adding to winning " "positions still in top N)")
+        },
+    )
+    strategy_id = fields.String(
+        load_default="strategy1",
+        validate=validate.OneOf(["strategy1", "strategy2"]),
+        metadata={
+            "description": (
+                "Which strategy's rankings to use for this backtest. "
+                "strategy1 = original momentum strategy (default). "
+                "strategy2 = institutional multi-factor framework."
+            )
         },
     )

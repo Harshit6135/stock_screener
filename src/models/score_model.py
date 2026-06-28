@@ -4,21 +4,23 @@ from db import db
 
 
 class ScoreModel(db.Model):
-    """Daily composite scores for each stock"""
+    """Daily composite scores for each stock, tagged by strategy."""
 
     __tablename__ = "score"
 
     tradingsymbol = db.Column(db.String(50), nullable=False)
     score_date = db.Column(db.Date, nullable=False)
+    strategy_id = db.Column(db.String(20), nullable=False, default="strategy1")
     initial_composite_score = db.Column(db.Float, nullable=False)
     penalty = db.Column(db.Float, nullable=True)
     penalty_reason = db.Column(db.String(255), nullable=True)
     composite_score = db.Column(db.Float, nullable=False)
 
     __table_args__ = (
-        PrimaryKeyConstraint("tradingsymbol", "score_date"),
+        PrimaryKeyConstraint("tradingsymbol", "score_date", "strategy_id"),
         Index("idx_score_date", "score_date"),
+        Index("idx_score_strategy", "strategy_id", "score_date"),
     )
 
     def __repr__(self):
-        return f"<Score {self.tradingsymbol} score={self.composite_score} @ {self.score_date}>"
+        return f"<Score {self.tradingsymbol} [{self.strategy_id}] score={self.composite_score} @ {self.score_date}>"

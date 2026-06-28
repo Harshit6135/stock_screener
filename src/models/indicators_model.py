@@ -47,6 +47,16 @@ class IndicatorsModel(db.Model):
     momentum_6m = db.Column(db.Float, nullable=True)
     avg_turnover_ema_20 = db.Column(db.Float, nullable=True)
 
+    # ── Strategy 2 indicators (nullable; populated via /indicators/patch) ──
+    adx_14 = db.Column(db.Float, nullable=True)             # ADX regime multiplier
+    mansfield_rs = db.Column(db.Float, nullable=True)       # Mansfield RS vs Nifty 500
+    nse_norm_momentum = db.Column(db.Float, nullable=True)  # Vol-adj 6M+12M momentum ratio
+    sortino_ratio = db.Column(db.Float, nullable=True)      # Sortino Ratio (rf=6%, annualised)
+    scaled_turnover = db.Column(db.Float, nullable=True)    # Illiquidity proxy (lower = better)
+    log_price_vol_corr = db.Column(db.Float, nullable=True) # 20-day log-return price-vol corr
+    momentum_12m = db.Column(db.Float, nullable=True)       # 12M skip-5 return
+    quality_z_score = db.Column(db.Float, nullable=True)    # Fundamental quality composite
+
     __table_args__ = (
         # composite primary key
         PrimaryKeyConstraint("tradingsymbol", "date"),
