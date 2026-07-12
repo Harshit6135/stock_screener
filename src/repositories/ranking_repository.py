@@ -136,13 +136,14 @@ class RankingRepository:
         )
 
     @staticmethod
-    def get_rankings_by_date_and_symbol(ranking_date, symbol):
-        """Get ranking for a specific date and symbol"""
+    def get_rankings_by_date_and_symbol(ranking_date, symbol, strategy_id: str = "strategy1"):
+        """Get ranking for a specific date, symbol, and strategy"""
         return (
             RankingModel.query.filter(
-                RankingModel.ranking_date == ranking_date, RankingModel.tradingsymbol == symbol
+                RankingModel.ranking_date == ranking_date,
+                RankingModel.tradingsymbol == symbol,
+                RankingModel.strategy_id == strategy_id,
             )
-            .order_by(RankingModel.composite_score.desc())
             .first()
         )
 

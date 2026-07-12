@@ -30,10 +30,11 @@ logger = setup_logger(name="InvestmentService")
 class InvestmentService:
     """Service layer for investment operations."""
 
-    def __init__(self, session: Optional[Session] = None):
+    def __init__(self, session: Optional[Session] = None, strategy_id: str = "strategy1"):
         self.inv_repo = InvestmentRepository(session)
         self.actions_repo = ActionsRepository(session)
         self.config_repo = ConfigRepository()
+        self.strategy_id = strategy_id
 
         self.indicators_repo = IndicatorsRepository()
         self.marketdata_repo = MarketDataRepository()
@@ -291,7 +292,9 @@ class InvestmentService:
                     float(holding.current_sl) if holding.current_sl else float(holding.entry_sl)
                 ),
             )
-            rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
+            rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(
+                data_date, symbol, strategy_id=self.strategy_id
+            )
             score = round(rank_data.composite_score, 2) if rank_data else 0
         else:
             stoploss = holding.current_sl

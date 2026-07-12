@@ -19,6 +19,7 @@ class ActionQuerySchema(Schema):
 
     date = fields.Date(required=False, load_default=None)
     config_name = fields.String(required=False, load_default="momentum_config")
+    strategy_id = fields.String(required=False, load_default="strategy1")
     enable_pyramiding = fields.Boolean(required=False, load_default=False)
     check_daily_sl = fields.Boolean(required=False, load_default=False)
     mid_week_buy = fields.Boolean(required=False, load_default=False)

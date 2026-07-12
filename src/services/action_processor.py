@@ -37,12 +37,14 @@ class ActionProcessor:
         config_name: str = None,
         session: Optional[Session] = None,
         config_info=None,
+        strategy_id: str = "strategy1",
     ):
         config_repo = ConfigRepository()
         self.config = config_info or config_repo.get_config(config_name)
+        self.strategy_id = strategy_id
         self.actions_repo = ActionsRepository(session)
         self.investment_repo = InvestmentRepository(session)
-        self.investment_service = InvestmentService(session)
+        self.investment_service = InvestmentService(session, strategy_id=strategy_id)
         self.ranking_repo = RankingRepository()
 
     # ------------------------------------------------------------------ #
@@ -132,7 +134,9 @@ class ActionProcessor:
                 total_units = old.units + action.units
                 avg_price = round((old_value + new_value) / total_units, 2)
 
-                rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
+                rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(
+                    data_date, symbol, strategy_id=self.strategy_id
+                )
                 score = round(rank_data.composite_score, 2) if rank_data else 0
 
                 old_sl = float(old.current_sl)
@@ -171,7 +175,9 @@ class ActionProcessor:
                 f"atr={atr_val}, sl_mult={self.config.sl_multiplier})"
             )
 
-            rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(data_date, symbol)
+            rank_data = self.ranking_repo.get_rankings_by_date_and_symbol(
+                data_date, symbol, strategy_id=self.strategy_id
+            )
             score = round(rank_data.composite_score, 2) if rank_data else 0
             buy_value = float(action.execution_price) * action.units
             bought_value += buy_value
