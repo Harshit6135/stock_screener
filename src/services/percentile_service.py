@@ -37,7 +37,7 @@ BUG notes
   DB queries.
 """
 
-
+import pandas as pd
 pd.set_option("future.no_silent_downcasting", True)
 
 from datetime import date, datetime
