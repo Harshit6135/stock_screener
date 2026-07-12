@@ -1,10 +1,18 @@
-import numpy as np
+"""
+Ranking Utilities
+
+Non-linear scoring functions used by FactorsService / PercentileService to
+transform raw indicator values into normalised [0, 100] factor scores.
+
+All scoring functions are pure (no side effects) and operate element-wise
+on pandas Series via .apply() or directly on scalar float values.
+"""
+
 import pandas as pd
-from scipy import stats
 
 from config import GoldilocksConfig, RSIRegimeConfig
 
-# Module-level singletons — these are immutable configs, no need to re-create per call
+# Module-level singletons — immutable configs, no need to re-create per call
 _RSI_CONFIG = RSIRegimeConfig()
 _GOLDILOCKS_CONFIG = GoldilocksConfig()
 
@@ -19,15 +27,6 @@ def percentile_rank(series: pd.Series) -> pd.Series:
     return series.rank(pct=True) * 100
 
 
-def z_score_normalize(series: pd.Series, cap_at: float = 3.0) -> pd.Series:
-    """
-    Z-Score normalization with winsorization
-    Maps to 0-100 scale: Score = 50 + (Z * 16.66)
-    """
-    z_scores = stats.zscore(series, nan_policy="omit")
-    z_scores = np.clip(z_scores, -cap_at, cap_at)
-    normalized = 50 + (z_scores * 16.66)
-    return pd.Series(np.clip(normalized, 0, 100), index=series.index)
 
 
 def rsi_regime_score(rsi: float) -> float:

@@ -1,11 +1,42 @@
 """
 Action Lifecycle
+================
 
-Manages the status transitions of pending actions: Pending → Approved | Rejected.
+Manages the status transitions of pending actions: Pending -> Approved | Rejected.
 
-Responsibility boundary: reads actions + holdings + market data,
-writes ONLY to the actions table (status updates).
-No holdings mutations happen here.
+Responsibility boundary
+-----------------------
+Reads:  actions (Pending), holdings (entry price/date), market_data (Monday open)
+Writes: actions table only (status, execution_price, units, capital, risk)
+
+No holdings mutations happen here -- that is ActionProcessor's job.
+
+Two-phase approval
+------------------
+Phase 1 -- Sells (always approved)
+    Every pending SELL is approved at the Monday market open price.
+    Sell proceeds are added back to ``remaining_capital`` and the PnL
+    delta is added to ``sizing_base`` so subsequent buys are sized on
+    the post-sell portfolio value.
+
+Phase 2 -- Buys (capital-gated)
+    Each pending BUY is re-sized at the actual Monday open price using
+    ``calculate_position_size()``. If the position value would exceed
+    ``remaining_capital`` the buy stays Pending (not rejected -- it may
+    be retried later or expire at week-end via ``reject_pending_actions``).
+
+Capital arithmetic
+------------------
+``remaining_capital`` starts from ``InvestmentRepository.get_summary()``
+and is updated inline as sells are approved (proceeds added) and buys are
+approved (cost deducted). This makes approval order deterministic:
+sells always run before buys.
+
+Injection pattern
+-----------------
+Accepts an optional ``session`` and ``config_info`` so the backtesting
+engine can inject an isolated DB session and a pre-loaded config object
+without hitting the production database.
 """
 
 from datetime import date
@@ -16,8 +47,6 @@ from sqlalchemy.orm import Session
 from config import PyramidConfig, setup_logger
 from repositories import ActionsRepository, ConfigRepository, InvestmentRepository, MarketDataRepository
 from utils.sizing_utils import calculate_position_size
-from utils.tax_utils import calculate_capital_gains_tax
-from utils.transaction_costs_utils import calculate_transaction_costs
 
 logger = setup_logger(name="ActionLifecycle")
 
@@ -102,21 +131,11 @@ class ActionLifecycle:
                 )
                 continue
 
-            costs = calculate_transaction_costs(float(item.units * execution_price), "sell")
-            tax = calculate_capital_gains_tax(
-                float(entry_data.entry_price),
-                float(execution_price),
-                entry_data.entry_date,
-                action_date,
-                item.units,
-            )
             self.actions_repo.update_action(
                 {
                     "action_id": item.action_id,
                     "status": "Approved",
                     "execution_price": execution_price,
-                    "sell_cost": costs.get("total", 0),
-                    "tax": tax["tax"],
                 }
             )
 
@@ -181,14 +200,11 @@ class ActionLifecycle:
                 )
                 continue
 
-            costs = calculate_transaction_costs(capital_needed, "buy")
             self.actions_repo.update_action(
                 {
                     "action_id": item.action_id,
                     "status": "Approved",
                     "execution_price": execution_price,
-                    "buy_cost": costs.get("total", 0),
-                    "tax": 0,
                     "units": units,
                     "capital": capital_needed,
                     "risk": risk_per_unit,

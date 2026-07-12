@@ -5,7 +5,6 @@ pd.set_option("future.no_silent_downcasting", True)
 from datetime import date, datetime
 
 from config import Strategy2Parameters, StrategyParameters
-from config import StrategyParameters as StrategyParams
 from config import setup_logger
 from repositories import IndicatorsRepository, MarketDataRepository, PercentileRepository
 from services.factors_service import FactorsService, FactorsServiceV2
@@ -32,7 +31,7 @@ class PercentileService:
             self.strategy_params = Strategy2Parameters()
             self.factors_service = FactorsServiceV2()
         else:
-            self.strategy_params = StrategyParams()
+            self.strategy_params = StrategyParameters()
             self.factors_service = FactorsService()
 
     def _calculate_percentiles(self, metrics_df) -> pd.DataFrame:

@@ -31,9 +31,7 @@ flowchart TD
         BP9[Ranking Blueprint]
         BP10[Actions Blueprint]
         BP11[Investment Blueprint]
-        BP12[Costs Blueprint]
-        BP13[Tax Blueprint]
-        BP14[Backtest Blueprint]
+        BP12[Backtest Blueprint]
     end
 
     subgraph Services["Service Layer (Business Logic)"]
@@ -82,8 +80,8 @@ flowchart TD
 | **Repositories** | `src/repositories/` | Data access: SQLAlchemy queries, bulk inserts, filtering. No business logic. |
 | **Models** | `src/models/` | SQLAlchemy ORM table definitions. |
 | **Schemas** | `src/schemas/` | Marshmallow schemas for request/response validation and serialization. |
-| **Utils** | `src/utils/` | Pure functions: position sizing, stop-loss calculation, transaction costs, tax, metrics. |
-| **Config** | `src/config/` | Configuration dataclasses: strategy weights, costs, tax rates, sizing constraints. |
+| **Utils** | `src/utils/` | Pure functions: position sizing, stop-loss calculation, FIFO matching, performance metrics. |
+| **Config** | `src/config/` | Configuration dataclasses: strategy factor weights, sizing constraints, Goldilocks/RSI zones. |
 
 ---
 
@@ -231,13 +229,8 @@ erDiagram
         float capital
         float risk
         float atr
-        float stop_loss
-        float hard_sl_price
         string reason
         string status
-        float sell_cost
-        float buy_cost
-        float tax
     }
 
     HOLDINGS {
@@ -330,16 +323,10 @@ All configuration lives in `src/config/strategies_config.py` as Python dataclass
 | Class | Purpose | Key Parameters |
 |-------|---------|---------------|
 | `StrategyParameters` | Factor weights for composite score | `trend_strength_weight=0.30`, `momentum_velocity_weight=0.25`, `conviction_weight=0.15` |
+| `Strategy2Parameters` | Alternative factor weights (strategy variant) | Same shape as above with different weights |
 | `GoldilocksConfig` | Non-linear trend scoring zones | 4 distance-from-EMA zones |
 | `RSIRegimeConfig` | Non-linear RSI scoring zones | 5 RSI regime zones |
 | `PyramidConfig` | Pyramid add parameters | `pyramid_fraction` — fraction of capital for add-on |
-
-Additional configuration classes in other files:
-
-| Class | File | Purpose |
-|-------|------|---------|
-| `TransactionCostConfig` | `cost_config.py` | Indian market fee structure |
-| `TaxConfig` | `tax_config.py` | STCG/LTCG rates and exemptions |
 
 ### Runtime Configuration API
 
@@ -374,8 +361,6 @@ flowchart TD
     end
 
     subgraph AnalysisOps["Analysis"]
-        COST["/api/v1/costs"]
-        TAX["/api/v1/tax"]
         BT["/api/v1/backtest"]
     end
 ```

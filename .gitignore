@@ -52,3 +52,5 @@ htmlcov/
 
 # Cache
 .cache/
+
+DONOTUSE*/

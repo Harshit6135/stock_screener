@@ -1,9 +1,40 @@
 """
 Investment Service
+==================
 
-Handles portfolio summary calculations, trade journal generation,
-and manual trade creation. Centralizes business logic that was
-previously scattered across route handlers.
+Portfolio accounting, reporting, and price-sync layer.
+
+Responsibilities
+----------------
+- **Portfolio summary** -- compute weekly/current portfolio value, unrealized PnL,
+  XIRR, and risk metrics from first principles.
+- **Trade journal** -- FIFO-match all approved BUY/SELL actions to produce
+  completed trade records (entry/exit price, PnL, holding period).
+- **Holdings refresh** -- update current price and recalculate ATR trailing
+  stop per holding, individually or in bulk.
+- **Capital events** -- record infusions and withdrawals so that total_capital
+  and remaining_capital are always derived from actual cash movements.
+
+Capital arithmetic (first principles)
+--------------------------------------
+All capital figures are computed from scratch each cycle::
+
+    total_capital     = SUM(capital_events.amount)
+    cost_basis        = SUM(avg_price * units)   # open positions
+    remaining_capital = total_capital - cost_basis
+
+This prevents drift: remaining_capital is never carried forward from a
+stale summary column.
+
+Depends on
+----------
+- InvestmentRepository  -- holdings, summary, capital events
+- ActionsRepository     -- approved actions for trade journal
+- MarketDataRepository  -- current/historical OHLCV
+- IndicatorsRepository  -- ATR values for stop-loss refresh
+- RankingRepository     -- composite scores for holdings display
+- ConfigRepository      -- sl_multiplier for trailing stop calculation
+- FIFOTradeTracker      -- shared FIFO matching (also used by backtesting)
 """
 
 import pandas as pd
@@ -28,7 +59,23 @@ logger = setup_logger(name="InvestmentService")
 
 
 class InvestmentService:
-    """Service layer for investment operations."""
+    """
+    Portfolio accounting, reporting, and price-sync service.
+
+    Accepts an optional SQLAlchemy ``session`` for backtest DB injection.
+    When ``session`` is None the default Flask-SQLAlchemy session is used
+    (production path).
+
+    Parameters
+    ----------
+    session : Session, optional
+        Injected SQLAlchemy session. Pass the backtest DB session when
+        running simulations so reads/writes go to the isolated backtest
+        database rather than production personal.db.
+    strategy_id : str
+        Strategy identifier used when querying rankings.
+        Defaults to ``"strategy1"``.
+    """
 
     def __init__(self, session: Optional[Session] = None, strategy_id: str = "strategy1"):
         self.inv_repo = InvestmentRepository(session)
@@ -99,7 +146,33 @@ class InvestmentService:
             return None
 
     def get_portfolio_summary(self, working_date: Optional[date] = None) -> Optional[Dict]:
+        """
+        Build a rich portfolio summary for the given date (defaults to latest).
 
+        Pulls the raw summary row from the DB then enriches it with metrics
+        computed from first principles so the API caller gets a single
+        self-consistent snapshot.
+
+        Returns
+        -------
+        dict or None
+            None if no summary exists yet (portfolio never initialized).
+
+            Otherwise a dict with:
+
+            ================== ========================================================
+            portfolio_value    holdings market value + remaining cash
+            gain               portfolio_value - total invested capital
+            gain_percentage    gain / total_invested_capital * 100
+            invested_value     SUM(avg_price * units) for open positions
+            unrealized_gain    current_value - cost_basis
+            realized_gain      total_capital - total_invested_capital
+            remaining_capital  cash available for new buys
+            xirr               IRR using all capital infusion events as cashflows
+            portfolio_risk     SUM(units * (current_price - current_sl))
+            capital_risk       SUM(units * (entry_price - current_sl))
+            ================== ========================================================
+        """
         summary_FROM_DB = self.inv_repo.get_summary(working_date)
         if not summary_FROM_DB:
             return None
@@ -119,7 +192,7 @@ class InvestmentService:
         )
         current_value = float(
             sum(h.current_price * h.units for h in holdings)
-        )  # TODO Handle split/bonus
+        )
         stoploss_value = float(sum(h.current_sl * h.units for h in holdings))
         portfolio_risk = current_value - stoploss_value
         capital_risk = entry_value - stoploss_value

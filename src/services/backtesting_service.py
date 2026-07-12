@@ -15,7 +15,7 @@ from typing import List
 import pandas as pd
 from flask import current_app
 
-from config import TaxConfig, setup_logger
+from config import setup_logger
 from models import BacktestResult
 from repositories import (
     ActionsRepository,
@@ -33,9 +33,6 @@ from utils import (
     DatabaseManager,
     FIFOTradeTracker,
     calculate_all_metrics,
-    calculate_capital_gains_tax,
-    calculate_transaction_costs,
-    compute_trade_costs_and_taxes,
     get_business_days,
     get_friday_of_week,
     get_prev_friday,
@@ -254,7 +251,6 @@ class WeeklyBacktester:
                     logger.info(f"No actions for {week_date}")
                 else:
                     # 2. Capital-aware approval (sells always, buys if budget allows)
-                    # monday_sold_symbols = set()
                     approved_count = self.lifecycle.approve_all_actions(week_date)
                     logger.info(f"Approved {approved_count} actions for {week_date}")
 
@@ -362,39 +358,20 @@ class WeeklyBacktester:
             logger.error(traceback.format_exc())
             return []
 
-    def _compute_costs_and_taxes(self, sell_trades):
-        """
-        Compute transaction costs and capital gains tax from completed sell trades.
-
-        Delegates to the shared ``compute_trade_costs_and_taxes`` utility in
-        tax_utils so that the backtest and any future live summary use identical
-        FY-netting logic.  Kept as a method for backward-compatible call sites
-        inside this class (get_summary, _generate_report).
-        """
-        return compute_trade_costs_and_taxes(sell_trades)
-
     def get_summary(self) -> dict:
-        """Get comprehensive backtest summary including costs and tax"""
+        """Get comprehensive backtest summary"""
         summary = self.risk_monitor.get_summary()
-
-        sell_trades = [t for t in self.risk_monitor.trades if t.get("type") == "SELL"]
-        cost_tax = self._compute_costs_and_taxes(sell_trades)
 
         final_value = summary.get("final_value", 0)
         initial_capital = summary.get("initial_capital", self.config.initial_capital)
         total_return_abs = final_value - initial_capital
 
-        # NOTE: total_return_abs is GROSS return (before costs and tax).
-        #       net_post_tax_return below is the NET figure.
-        net_post_tax_return = (
-            total_return_abs - cost_tax["total_transaction_costs"] - cost_tax["total_tax"]
-        )
-
-        summary.update(cost_tax)
         summary.update(
             {
-                "net_post_tax_return": round(net_post_tax_return, 2),
-                "net_post_tax_return_pct": round((net_post_tax_return / initial_capital) * 100, 2),
+                "net_return": round(total_return_abs, 2),
+                "net_return_pct": round((total_return_abs / initial_capital) * 100, 2)
+                if initial_capital
+                else 0,
             }
         )
 
@@ -654,10 +631,6 @@ class BacktestRiskMonitor:
             self.peak_value = current_value
         current_drawdown = (self.peak_value - current_value) / self.peak_value * 100
         self.max_drawdown = max(self.max_drawdown, current_drawdown)
-
-    def record_trade(self, trade: dict) -> None:
-        """Record a trade for later analysis"""
-        self.trades.append(trade)
 
     def get_total_return(self) -> float:
         """Calculate total return percentage"""

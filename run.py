@@ -9,7 +9,6 @@ from src.api.v1.routes import (
     app_bp,
     backtest_bp,
     config_bp,
-    costs_bp,
     index_bp,
     indicators_bp,
     init_bp,
@@ -19,7 +18,6 @@ from src.api.v1.routes import (
     percentile_bp,
     ranking_bp,
     score_bp,
-    tax_bp,
 )
 from src.config import Config
 
@@ -55,9 +53,6 @@ api.register_blueprint(ranking_bp)
 # Trading
 api.register_blueprint(actions_bp)
 api.register_blueprint(investment_bp)
-# Analysis
-api.register_blueprint(costs_bp)
-api.register_blueprint(tax_bp)
 # Backtest
 api.register_blueprint(backtest_bp)
 # Market Indices (live ticker)

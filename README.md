@@ -12,12 +12,10 @@ A multi-factor momentum screening and portfolio management system for Indian sto
 - **RSI Regime Mapping** — Non-linear RSI zones for momentum (sweet spot = 50–70)
 - **Weekly Rankings** — Friday-based weekly score aggregation for consistent comparison
 - **Champion vs Challenger Rotation** — Swap incumbents only when challengers beat by configurable buffer
-- **Dual Stop-Loss System** — ATR trailing stop (trailed up only) + Intraday hard SL (5% below trailing stop)
-- **Multi-Phase Action Generation** — SELL → SWAP → BUY phases for systematic rebalancing
-- **Indian Market Cost Model** — STT, stamp duty, GST, exchange fees, impact cost, DP charges
-- **Tax-Aware Trading** — STCG/LTCG optimization with near-1-year hold bias
-- **Portfolio Risk Controls** — Drawdown circuits, sector concentration limits, VIX scaling
-- **Backtesting Engine** — Weekly/daily SL simulation with trade-level analytics
+- **ATR Trailing Stop-Loss** — Stop trails up only (never down), re-calculated weekly from ATR × multiplier
+- **Multi-Phase Action Generation** — SELL → PYRAMID → BUY phases for systematic rebalancing
+- **Portfolio Risk Controls** — Drawdown circuits, concentration limits, capital-aware sizing
+- **Backtesting Engine** — Weekly simulation reusing live trading logic for full parity
 - **REST API** — Flask-Smorest with auto-generated Swagger/OpenAPI docs
 
 ---
@@ -40,21 +38,17 @@ flowchart LR
     end
 
     subgraph Trading["Trading Engine"]
-        RNK --> ACT[Actions<br/>SELL → SWAP → BUY]
+        RNK --> ACT[Actions<br/>SELL → PYRAMID → BUY]
         ACT --> PORT[Portfolio<br/>Holdings & Summary]
     end
 
     subgraph Analysis["Analysis"]
-        COST[Transaction Costs]
-        TAX[Tax Calculator]
         BT[Backtesting]
     end
 
     CSV --> MD
     KITE --> MD
     PORT --> BT
-    ACT --> COST
-    ACT --> TAX
 ```
 
 ---
@@ -88,11 +82,12 @@ make run
 
 | Document | Description |
 |----------|-------------|
+| [**Developer Guide**](docs/DEVELOPER_GUIDE.md) | **Start here** — full codebase walkthrough for new developers |
 | [Setup Guide](docs/SETUP.md) | Installation, configuration, troubleshooting |
 | [Architecture](docs/ARCHITECTURE.md) | System design, data flow, database schema |
 | [Day 0 Setup](docs/DAY0.md) | Initial stock universe loading from NSE/BSE |
 | [Strategy Guide](docs/STRATEGY.md) | Indicators, scoring, trading logic, risk controls |
-| [API Reference](docs/API.md) | All REST API endpoints (70+ routes) |
+| [API Reference](docs/API.md) | All REST API endpoints |
 | [Backtesting](docs/BACKTESTING.md) | Backtest engine, modes, report interpretation |
 | [TODO](docs/TODO.md) | Future work and enhancements |
 
@@ -129,12 +124,13 @@ stocks_screener_v2/
 ├── data/                          # CSV files (NSE/BSE instrument lists)
 ├── src/
 │   ├── config/                    # Configuration classes
-│   │   ├── strategies_config.py   # Factor weights, costs, tax, sizing params
+│   │   ├── strategies_config.py   # Factor weights, sizing params, Goldilocks/RSI configs
 │   │   ├── indicators_config.py   # pandas_ta study definitions
 │   │   ├── flask_config.py        # Flask/SQLAlchemy settings
 │   │   ├── kite_config.py         # Kite Connect configuration
+│   │   ├── pyramid_config.py      # Pyramid add parameters
 │   │   └── logger_config.py       # JSON logging setup
-│   ├── api/v1/routes/             # REST API endpoints (14 blueprints)
+│   ├── api/v1/routes/             # REST API endpoints (12 blueprints)
 │   ├── models/                    # SQLAlchemy models (10 tables)
 │   ├── repositories/              # Data access layer (DB queries)
 │   ├── schemas/                   # Marshmallow request/response schemas
@@ -146,11 +142,13 @@ stocks_screener_v2/
 │   │   ├── factors_service.py     # Goldilocks/RSI factor scoring
 │   │   ├── score_service.py       # Composite score generation
 │   │   ├── ranking_service.py     # Weekly ranking aggregation
-│   │   ├── actions_service.py     # SELL/SWAP/BUY action generation
-│   │   ├── trading_service.py     # Trade execution logic
+│   │   ├── action_generator.py    # SELL/PYRAMID/BUY action generation
+│   │   ├── action_lifecycle.py    # Pending → Approved/Rejected transitions
+│   │   ├── action_processor.py    # Holdings update after approval
+│   │   ├── trading_service.py     # Weekly trading orchestration
 │   │   ├── investment_service.py  # Portfolio management
 │   │   └── backtesting_service.py # Backtest Engine
-│   ├── utils/                     # Helpers (sizing, stoploss, costs, tax)
+│   ├── utils/                     # Helpers (sizing, stoploss, ranking, metrics)
 │   └── adaptors/                  # External API adaptors (Kite)
 ├── templates/                     # HTML (dashboard, backtest, actions)
 ├── docs/                          # Documentation

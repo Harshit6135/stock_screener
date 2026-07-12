@@ -13,7 +13,7 @@ from typing import List, Optional
 import pandas as pd
 
 from config import setup_logger
-from utils import calculate_all_metrics, compute_trade_costs_and_taxes
+from utils import calculate_all_metrics
 
 logger = setup_logger(name="BacktestReportBuilder")
 
@@ -138,10 +138,6 @@ class BacktestReportBuilder:
             self.portfolio_values[-1] if self.portfolio_values else self.config.initial_capital
         )
         total_return_abs = final_value - self.config.initial_capital
-        cost_tax = compute_trade_costs_and_taxes(sell_trades)
-        total_costs = cost_tax["total_transaction_costs"]
-        total_tax = cost_tax["total_tax"]
-        net_post_tax_return = total_return_abs - total_costs - total_tax
 
         sep = "=" * 70
         lines = []
@@ -228,43 +224,7 @@ class BacktestReportBuilder:
                 f'  Worst Trade       : {worst["symbol"]} {worst["pnl"]:>+,.2f}',
             ]
 
-        # Section 4: Transaction Costs
-        lines += [
-            "",
-            "[ TRANSACTION COSTS ]",
-            f'  Total Buy Value   : {cost_tax["total_buy_value"]:>15,.2f}',
-            f'  Total Sell Value  : {cost_tax["total_sell_value"]:>15,.2f}',
-            f'  Total Turnover    : {(cost_tax["total_buy_value"] + cost_tax["total_sell_value"]):>15,.2f}',
-            "  ---",
-            f'  Buy Side Costs    : {cost_tax["total_buy_cost"]:>15,.2f}',
-            f'  Sell Side Costs   : {cost_tax["total_sell_cost"]:>15,.2f}',
-            f"  Total Costs       : {total_costs:>15,.2f}",
-            "  ---",
-            f'  Brokerage         : {cost_tax["total_brokerage"]:>15,.2f}',
-            f'  STT               : {cost_tax["total_stt"]:>15,.2f}',
-            f'  GST               : {cost_tax["total_gst"]:>15,.2f}',
-            f'  Stamp Duty        : {cost_tax["total_stamp"]:>15,.2f}',
-            f"  Cost as % Return  : {(total_costs / max(abs(total_return_abs), 1) * 100):>10.2f}%",
-        ]
-
-        # Section 5: Capital Gains Tax
-        lines += [
-            "",
-            "[ CAPITAL GAINS TAX ]",
-            f'  STCG Trades       : {cost_tax["stcg_count"]}',
-            f'  STCG Gains        : {cost_tax["stcg_gains"]:>15,.2f}',
-            f'  STCG Tax (20%)    : {cost_tax["stcg_tax"]:>15,.2f}',
-            "  ---",
-            f'  LTCG Trades       : {cost_tax["ltcg_count"]}',
-            f'  LTCG Gains        : {cost_tax["ltcg_gains"]:>15,.2f}',
-            f'  LTCG Tax (12.5%)  : {cost_tax["ltcg_tax"]:>15,.2f}',
-            "  ---",
-            f"  Total Tax         : {total_tax:>15,.2f}",
-            f"  Total Costs+Tax   : {(total_costs + total_tax):>15,.2f}",
-            f"  Net Post-Tax Ret  : {net_post_tax_return:>+15,.2f}",
-        ]
-
-        # Section 5.5: Open Positions at Backtest End
+        # Section 4: Open Positions at Backtest End
         if self.open_positions_snapshot:
             lines += [
                 "",

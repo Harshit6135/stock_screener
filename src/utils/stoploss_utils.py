@@ -1,35 +1,11 @@
 """
 Stop-loss calculation utilities.
 
-All configuration values come from ConfigModel - no hardcoding.
+Provides ATR-based trailing stop calculation shared between
+InvestmentService (live trading) and ActionProcessor (backtesting).
 """
 
 from typing import Optional
-
-
-def calculate_initial_stop_loss(
-    buy_price: float, atr: Optional[float], stop_multiplier: float, config=None
-) -> float:
-    """
-    Calculate initial ATR-based stop-loss at entry.
-
-    Returns 0 if ATR is missing or zero — callers must treat this as
-    "cannot size this trade" and skip the buy entirely.
-
-    Parameters:
-        buy_price (float): Entry price
-        atr (float | None): Average True Range (14-period)
-        stop_multiplier (float): ATR multiplier from config
-        config: Unused; kept for backward-compatible signature
-
-    Returns:
-        float: Initial stop-loss price, or 0 if ATR unavailable
-    """
-    if atr is None or atr <= 0:
-        return 0  # caller should skip this buy
-
-    stop_loss = buy_price - (stop_multiplier * atr)
-    return max(stop_loss, 0)
 
 
 def calculate_atr_trailing_stop(

@@ -1,3 +1,20 @@
+"""
+Date Utilities
+
+Holiday-aware calendar helpers for the NSE/BSE trading calendar.
+
+All functions understand NSE/BSE holidays (loaded once at import from
+``nse_bse_holidays_kite_2015_onwards.csv``) and treat Saturdays/Sundays
+as non-trading days.
+
+Key functions:
+    get_prev_friday          — resolve any date to its data-Friday
+    get_business_days        — list of trading days in [start, end]
+    get_next_business_day    — skip weekends + holidays forward
+    get_previous_business_day— skip weekends + holidays backward
+    get_week_starts          — first trading day of each Mon-Fri week
+"""
+
 import csv
 import os
 from datetime import date, timedelta
@@ -23,12 +40,6 @@ def _load_holidays() -> Set[date]:
 
 
 NSE_HOLIDAYS = _load_holidays()
-
-
-def reload_holidays():
-    """O-9: Reload NSE_HOLIDAYS from CSV without restarting the app."""
-    global NSE_HOLIDAYS
-    NSE_HOLIDAYS = _load_holidays()
 
 
 def is_holiday(d: date) -> bool:
@@ -112,21 +123,6 @@ def get_previous_business_day(d: date) -> date:
         prev_day -= timedelta(days=1)
     return prev_day
 
-
-def get_week_fridays(start_date: date, end_date: date) -> list[date]:
-    """
-    Get all Fridays (weekday 4) between start and end dates inclusive.
-    """
-    fridays = []
-    current = start_date
-    # Align to first Friday if not already
-    while current.weekday() != 4:
-        current += timedelta(days=1)
-
-    while current <= end_date:
-        fridays.append(current)
-        current += timedelta(days=7)
-    return fridays
 
 
 def get_week_starts(start_date: date, end_date: date) -> List[date]:
