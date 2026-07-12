@@ -83,7 +83,7 @@ def get_prev_friday(d: date) -> date:
     if weekday == 4:  # Friday
         return d
     elif weekday < 4:  # Mon-Thu: go back to last Friday
-        days_back = weekday + 3  # Mon=3, Tue=4, Wed=5, Thu=6
+        days_back = weekday + 3  # Mon(0)→3, Tue(1)→4, Wed(2)→5, Thu(3)→6
         return d - timedelta(days=days_back)
     else:  # Sat=5, Sun=6: go back to Friday
         days_back = weekday - 4  # Sat=1, Sun=2

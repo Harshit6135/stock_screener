@@ -53,7 +53,12 @@ class BenchmarkAdaptor:
                 )
                 return pd.Series(dtype=float)
 
-            series = df["Close"].squeeze()
+            # BUG-20 fix: yfinance >=0.2 may return a DataFrame for df["Close"]
+            # when the result has metadata columns.  Normalise to a Series first.
+            close_data = df["Close"]
+            if isinstance(close_data, pd.DataFrame):
+                close_data = close_data.iloc[:, 0]
+            series = close_data.squeeze()
             series.index = pd.to_datetime(series.index)
             cls._cache[key] = series
             logger.info(

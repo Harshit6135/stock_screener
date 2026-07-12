@@ -8,6 +8,9 @@ Used by both backtesting (trade reconstruction) and live (trade journal).
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Dict, List, Tuple
+import logging
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -96,6 +99,12 @@ class FIFOTradeTracker:
             entry_price = total_cost / total_matched
             entry_date = matched_legs[0].date
         else:
+            # BUG-15 fix: no matching buy lots found — log a warning so the
+            # orphaned sell is visible; fall back to break-even pricing.
+            _logger.warning(
+                f"FIFO: no matching buy lots for sell {symbol} on {sell_date} "
+                f"({sell_units} units) — treating as break-even (entry_price = sell_price)"
+            )
             entry_price = sell_price
             entry_date = sell_date
 

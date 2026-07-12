@@ -57,7 +57,9 @@ def setup_logger(name="StockScreener", log_dir="logs"):
 
     # Avoid duplicate handlers if setup is called multiple times
     if logger.hasHandlers():
-        logger.handlers.clear()
+        # Already configured — return as-is to avoid clearing any external handlers
+        # that may have been attached by calling code or test fixtures.
+        return logger
 
     # Prevent logs from bubbling up to the root logger (which causes duplicates)
     logger.propagate = False

@@ -1,3 +1,32 @@
+"""
+Position Sizing Utilities
+=========================
+
+Provides ATR-based, risk-parity position sizing with multiple safety constraints.
+
+Algorithm overview
+------------------
+Given a target stock's ATR (Average True Range) and the portfolio config, the
+sizing function computes how many shares to buy such that if the stock drops
+to its stop-loss level (``current_price - ATR * sl_multiplier``), the loss
+equals exactly ``total_capital * risk_threshold``.
+
+This is the standard "risk-per-trade" sizing approach used in systematic
+trend-following systems.
+
+Four constraints applied in order
+----------------------------------
+1. **ATR risk-parity sizing** — ``units = (capital * risk%) / stop_distance``
+2. **Remaining-capital spending limit** — cannot spend more cash than available
+3. **Concentration cap** — no single position exceeds ``max_concentration_pct``
+   of total capital (including any existing pyramid position in the same stock)
+4. **Minimum position check** — if the final position is smaller than
+   ``min_position_percent * total_capital``, return 0 units (reject the trade)
+
+The function returns 0 units (not an error) when any hard constraint cannot
+be satisfied, allowing callers to handle capital-constrained states gracefully.
+"""
+
 def calculate_position_size(
     atr: float,
     current_price: float,

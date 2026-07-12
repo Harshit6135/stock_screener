@@ -250,9 +250,9 @@ class ActionProcessor:
         actions_list = self.actions_repo.get_actions(action_date)
         holdings_date = holdings[0].date if holdings else date(2000, 1, 1)
 
-        if holdings_date >= action_date:
+        if holdings_date > action_date:
             logger.warning(
-                f"Holdings {holdings_date} have data beyond the actions {action_date}"
+                f"Holdings date {holdings_date} is ahead of action date {action_date} — aborting"
             )
             return None
 

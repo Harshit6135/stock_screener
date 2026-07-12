@@ -45,9 +45,9 @@ class StrategyParameters:
             + self.conviction_weight
             + self.structure_weight
         )
-        if abs(top_level - 1.0) >= 1e-9:
+        if round(top_level, 10) != 1.0:
             raise ValueError(
-                f"Factor weights must sum to 1.0, got {top_level:.4f}. "
+                f"Factor weights must sum to exactly 1.0, got {top_level:.10f}. "
                 "Adjust weights so trend + momentum + efficiency + conviction + structure = 1.0"
             )
 
@@ -153,8 +153,8 @@ class Strategy2Parameters:
             + self.conviction_weight
             + self.structure_weight
         )
-        if abs(top_level - 1.0) >= 1e-9:
+        if round(top_level, 10) != 1.0:
             raise ValueError(
-                f"Strategy2 factor weights must sum to 1.0, got {top_level:.4f}. "
+                f"Strategy2 factor weights must sum to exactly 1.0, got {top_level:.10f}. "
                 "Adjust trend + momentum + efficiency + conviction + structure."
             )

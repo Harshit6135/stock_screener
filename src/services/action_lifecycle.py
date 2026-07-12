@@ -141,7 +141,11 @@ class ActionLifecycle:
 
             sell_proceeds = float(item.units * execution_price)
             remaining_capital += sell_proceeds
-            pnl = sell_proceeds - float(entry_data.entry_price * entry_data.units)
+            # BUG-14 fix: use avg_price as cost basis for pyramided positions
+            avg_p = float(
+                getattr(entry_data, "avg_price", None) or entry_data.entry_price
+            )
+            pnl = sell_proceeds - avg_p * float(entry_data.units)
             sizing_base += pnl
             approved_count += 1
 

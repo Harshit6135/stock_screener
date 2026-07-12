@@ -216,7 +216,7 @@ class TradingEngine:
                     f"PYRAMID {c.symbol}: SL {h.stop_loss:.2f} >= entry {h.entry_price:.2f}, "
                     f"EMA50 {ema_50_values.get(c.symbol, 0):.2f} > avg_price {h.avg_price or h.entry_price:.2f}"
                 )
-            elif c.symbol not in surviving_holdings:
+            else:
                 if vacancies > 0:
                     decisions.append(
                         TradingDecision(

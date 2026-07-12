@@ -55,7 +55,7 @@ class MarketDataService:
             instr_token = instr.instrument_token
             exchange = instr.exchange
             log_symb = f"{tradingsymbol} ({instr_token})"
-            logger.info(f"Processing {i+1}/{len(instruments)} {log_symb})...")
+            logger.info(f"Processing {i+1}/{len(instruments)} {log_symb}...")
 
             last_date = None
             last_data_date = marketdata_repository.get_latest_date_by_symbol(tradingsymbol)
@@ -73,14 +73,14 @@ class MarketDataService:
                 logger.info(f"No data to fetch for {log_symb} as last data date is {last_date}")
                 continue
             else:
-                logger.info(f"Fetching from Kite for {log_symb}) starting {start_date.date()}...")
+                logger.info(f"Fetching from Kite for {log_symb} starting {start_date.date()}...")
 
             if not historical:
                 start_time = time()
                 records, _ = self.get_latest_data_by_token(instr_token, start_date, fetch_end_date)
             else:
                 logger.info(
-                    f"Fetching Historical data from Kite for {log_symb}) starting {start_date.date()}..."
+                    f"Fetching Historical data from Kite for {log_symb} starting {start_date.date()}..."
                 )
                 start_time = time()
                 records, _ = self.get_historical_data(instr_token, start_date)
@@ -159,6 +159,11 @@ class MarketDataService:
                     else:
                         records = records[1:]
 
+            # BUG-16 fix: reset start_time just before the bulk insert so the
+            # rate-limiter (sleep below) measures time from the most recent API
+            # call, not from the original fetch start (which may be many seconds
+            # old after a corporate-action full-refetch above).
+            start_time = time()
             records_df = pd.DataFrame(records)
             records_df.reset_index(inplace=True)
             records_df["instrument_token"] = instr_token
@@ -183,6 +188,9 @@ class MarketDataService:
         # We start from NOW and go backwards
         current_end = self._get_fetch_end_date()
         chunk_days = 1900
+        # BUG-09 fix: initialise start_time before the loop so it is always
+        # bound even if the loop body executes zero iterations.
+        start_time = time()
 
         try:
             while current_end > target_start_date:

@@ -1,14 +1,47 @@
 """
-Indicators Service — incremental indicator calculation.
+Indicators Service
+==================
 
-Default run (calculate_indicators):
-    Computes all indicators for all symbols, incremental by last date.
-    Behaviour is identical to the pre-registry version.
+Incrementally calculates technical indicators for all active instruments
+and upserts them into the ``indicators`` table.
 
-Patch run (patch_indicators):
-    Computes only the specified indicator columns, upserts them for all
-    historical dates starting from the earliest date in market_data.
-    Use this when adding new indicators to existing historical rows.
+Two operating modes
+-------------------
+Default run -- ``calculate_indicators()``
+    Processes every instrument in the ``instruments`` table.
+    For each symbol the run is incremental: it loads market data only from
+    the last recorded indicator date onwards so each call is O(new bars),
+    not O(all bars).
+
+Patch run -- ``patch_indicators()``
+    Recalculates only the columns listed in ``patch_cols`` for all
+    historical dates, starting from the earliest row in ``market_data``.
+    Use this when adding a **new** indicator to avoid full recalculation
+    of all existing indicators.
+
+Indicator pipeline per symbol
+------------------------------
+1. ``apply_study(df, last_ind_date)``
+   Runs the EMA pandas_ta study first (long lookback, needs full history).
+   Then truncates to avoid recalculating unchanged rows.
+   Then runs momentum + derived pandas_ta studies on the truncated window.
+
+2. ``_calculate_derived_indicators(df)``
+   Adds custom-calculated columns that cannot be expressed as pandas_ta
+   studies: price/volume correlation, %B position, EMA slopes, ATR spike,
+   distance-from-EMA, risk-adjusted return, RVOL, momentum_3m/6m.
+
+3. Build output rows aligned to ``ALL_INDICATOR_NAMES``.
+   Unrecognised columns are dropped so the schema stays consistent.
+
+Configuration
+-------------
+All study definitions live in ``config/indicators_config.py``:
+- ``ema_strategy``      — long EMA calculations (requires full history)
+- ``momentum_strategy`` — RSI, PPO, ATR, ROC, Bollinger (shorter lookback)
+- ``derived_strategy``  — additional derived indicators via pandas_ta
+- ``INDICATOR_REGISTRY`` — column-name to data-type mapping for output
+- ``additional_parameters`` — tuning knobs (lookback windows, thresholds)
 """
 
 import time as _time
@@ -43,41 +76,152 @@ logger = setup_logger(name="Orchestrator")
 
 
 class IndicatorsService:
+    """
+    Technical indicator calculation service.
+
+    Uses module-level repository singletons (``instr_repo``,
+    ``indicators_repo``, ``marketdata_repo``) so that all calculations
+    within one run share the same DB session.
+
+    All indicator computation is delegated to static helper methods and
+    ``pandas_ta`` studies.  The main public methods are:
+
+    - ``calculate_indicators()`` — full incremental run for all symbols
+    - ``patch_indicators(patch_cols)`` — backfill specific columns only
+    """
 
     # =========================================================================
     # Static helper calculations (unchanged from original)
     # =========================================================================
 
     @staticmethod
-    def calculate_volume_price_correlation(df_close, df_volume, lookback: int = 10) -> pd.Series:
-        """Pearson correlation between price changes and volume"""
+    def calculate_volume_price_correlation(
+        df_close: pd.Series, df_volume: pd.Series, lookback: int = 10
+    ) -> pd.Series:
+        """
+        Rolling Pearson correlation between price returns and volume.
+
+        A high positive value means price increases are accompanied by rising
+        volume (trend confirmation). A negative value indicates divergence.
+
+        Parameters
+        ----------
+        df_close : pd.Series
+            Closing prices indexed by date.
+        df_volume : pd.Series
+            Daily volume indexed by date.
+        lookback : int
+            Rolling window length in bars (default 10).
+
+        Returns
+        -------
+        pd.Series
+            Rolling correlation values in [-1, 1].
+        """
         price_change = df_close.pct_change()
         return price_change.rolling(lookback).corr(df_volume)
 
     @staticmethod
-    def calculate_percent_b(df_close, df_upper, df_lower) -> pd.Series:
-        """%B: Position within Bollinger Bands"""
+    def calculate_percent_b(
+        df_close: pd.Series, df_upper: pd.Series, df_lower: pd.Series
+    ) -> pd.Series:
+        """
+        Compute Bollinger Band %B: position of price within the band.
+
+        Formula: %B = (Close - Lower) / (Upper - Lower)
+
+        - 0.0 = at lower band (oversold territory)
+        - 0.5 = at midline (20-day SMA)
+        - 1.0 = at upper band (overbought territory)
+        - > 1.0 or < 0.0 = price is outside the bands
+
+        Returns
+        -------
+        pd.Series
+            %B values; NaN where Upper == Lower (degenerate case).
+        """
         return (df_close - df_lower) / (df_upper - df_lower)
 
     @staticmethod
     def calculate_ema_slope(ema: pd.Series, lookback: int = 5) -> pd.Series:
-        """Annualized slope of EMA"""
+        """
+        Fractional rate-of-change of EMA over ``lookback`` bars.
+
+        Formula: slope = (EMA_t - EMA_{t-lookback}) / EMA_{t-lookback}
+
+        A positive slope confirms the trend direction; magnitude reflects
+        trend momentum.  Not annualised — raw fractional change.
+
+        Parameters
+        ----------
+        ema : pd.Series
+            EMA values (e.g. EMA_50).
+        lookback : int
+            Number of bars to look back (default 5 ≈ one trading week).
+        """
         slope = (ema - ema.shift(lookback)) / ema.shift(lookback)
         return slope
 
     @staticmethod
-    def calculate_distance_from_ema(df_close, ema: pd.Series) -> pd.Series:
-        """Percentage distance from EMA: (Price - EMA) / EMA"""
+    def calculate_distance_from_ema(df_close: pd.Series, ema: pd.Series) -> pd.Series:
+        """
+        Fractional distance of closing price above (or below) EMA.
+
+        Formula: (Close - EMA) / EMA
+
+        Positive = price is above EMA (bullish).
+        Negative = price is below EMA (bearish).
+
+        Used for Goldilocks scoring: rewards stocks that are 10-35% above
+        EMA200 (in the "sweet spot"), penalises over-extended moves.
+        """
         return (df_close - ema) / ema
 
     @staticmethod
     def calculate_atr_spike(atr: pd.Series, lookback: int = 20) -> pd.Series:
-        """ATR relative to recent average"""
+        """
+        ATR spike ratio: current ATR relative to its recent rolling average.
+
+        Formula: atr_spike = ATR / rolling_mean(ATR, lookback)
+
+        - 1.0 = normal volatility
+        - > 1.5 = significantly elevated volatility (soft penalty applied)
+        - < 1.0 = contraction (low volatility, possible breakout setup)
+
+        Parameters
+        ----------
+        lookback : int
+            Rolling window for baseline ATR (default 20 bars ≈ one month).
+        """
         atr_avg = atr.rolling(window=lookback).mean()
         return atr / atr_avg
 
     @staticmethod
-    def apply_study(df, last_ind_date):
+    def apply_study(df: pd.DataFrame, last_ind_date) -> pd.DataFrame:
+        """
+        Run all pandas_ta studies on a symbol's OHLCV DataFrame.
+
+        Strategy
+        --------
+        1. Run ``ema_strategy`` over the full DataFrame (EMA 50/200 need
+           200+ bars of history to avoid NaN at the start).
+        2. Truncate the DataFrame to ``last_ind_date - truncate_days`` so
+           that the heavier ``momentum_strategy`` only runs on recent bars.
+        3. Run ``momentum_strategy`` (RSI, PPO, ATR, ROC, Bollinger).
+        4. Run ``derived_strategy`` (any additional pandas_ta columns).
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            OHLCV DataFrame indexed by date.
+        last_ind_date : pd.Timestamp
+            Last indicator date for this symbol; used for truncation.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with all indicator columns appended.
+        """
         df.ta.study(ema_strategy)
         date_truncate = last_ind_date - timedelta(days=additional_parameters["truncate_days"])
         df = df[df.index >= date_truncate]
@@ -85,7 +229,44 @@ class IndicatorsService:
         df.ta.study(derived_strategy)
         return df
 
-    def _calculate_derived_indicators(self, df):
+    def _calculate_derived_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compute custom indicator columns not available as pandas_ta studies.
+
+        Columns added
+        -------------
+        price_vol_correlation : float
+            Rolling Pearson correlation of price returns vs volume (10 bars).
+        percent_b : float
+            Bollinger Band %B position (0 = lower band, 1 = upper band).
+        ema_50_slope : float
+            Rate-of-change of EMA 50 over 5 bars (trend momentum proxy).
+        distance_from_ema_200 : float
+            (Close - EMA200) / EMA200 — used for Goldilocks scoring.
+        distance_from_ema_50 : float
+            (Close - EMA50) / EMA50 — supplementary trend position.
+        risk_adjusted_return : float
+            ROC_20 / (ATRr_14 / Close) — return per unit of normalised risk.
+        rvol : float
+            Volume / 20-day volume SMA — relative volume.
+        atr_spike : float
+            ATR / rolling mean ATR (see ``calculate_atr_spike``).
+        momentum_3m : float
+            (Close[t-5] / Close[t-65]) - 1  (≈ 3-month momentum, skip-1-week).
+        momentum_6m : float
+            (Close[t-5] / Close[t-130]) - 1 (≈ 6-month momentum, skip-1-week).
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            DataFrame after ``apply_study()`` has been run; must contain
+            EMA columns, Bollinger Band columns, ATRr_14, VOL_SMA_20.
+
+        Returns
+        -------
+        pd.DataFrame
+            Same DataFrame with the derived columns appended in-place.
+        """
         df["price_vol_correlation"] = self.calculate_volume_price_correlation(
             df["close"], df["volume"], additional_parameters["vol_price_lookback"]
         )
@@ -134,7 +315,7 @@ class IndicatorsService:
             log_symb = f"{tradingsymbol} ({instr_token})"
             if (i + 1) % 50 == 0 or i == 0:
                 logger.info(f"Progress: {i+1}/{total} ({processed} processed, {skipped} skipped)")
-            logger.info(f"Processing {i+1}/{total} {log_symb})...")
+            logger.info(f"Processing {i+1}/{total} {log_symb}...")
 
             last_data_date = marketdata_repo.get_latest_date_by_symbol(tradingsymbol)
             if last_data_date:
@@ -188,7 +369,7 @@ class IndicatorsService:
                 logger.error(f"Error calculating derived indicators for {log_symb}: {str(e)}")
                 skipped += 1
                 continue
-            ind_df.columns = ind_df.columns.str.lower().str.replace(".0", "")
+            ind_df.columns = ind_df.columns.str.lower().str.replace(".0", "", regex=False)
             ind_df = ind_df.drop(
                 columns=["open", "high", "low", "close", "volume"], errors="ignore"
             )
@@ -322,11 +503,7 @@ class IndicatorsService:
                     logger.warning(f"Study '{study_name}' not in STUDY_MAP, skipping")
                     continue
                 try:
-                    # EMA study needs full history warmup, momentum can be truncated
-                    if study_name == "ema_strategy":
-                        df.ta.study(study_obj)
-                    else:
-                        df.ta.study(study_obj)
+                    df.ta.study(study_obj)
                     for ind_name, defn in pairs:
                         raw_col = defn.output_col
                         # Normalise column name to lowercase (matching existing convention)

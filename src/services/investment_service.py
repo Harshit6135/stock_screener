@@ -116,7 +116,6 @@ class InvestmentService:
         logger.info(f"Auto-seeded capital event: {initial} " f"on {seed_date}")
 
 
-
     def _calculate_xirr(self, portfolio_value, as_of_date=None) -> Optional[float]:
         """
         Calculate XIRR from capital events (infusions as
@@ -182,7 +181,7 @@ class InvestmentService:
 
         self.ensure_capital_events_seeded()
         total_capital = self.inv_repo.get_total_capital(summary_date, include_realized=True)
-        total_invested_captial = self.inv_repo.get_total_capital(
+        total_invested_capital = self.inv_repo.get_total_capital(
             summary_date, include_realized=False
         )
 
@@ -202,13 +201,13 @@ class InvestmentService:
         remaining_cash = total_capital - entry_value
         portfolio_value = current_value + remaining_cash
 
-        total_gain = portfolio_value - total_invested_captial
+        total_gain = portfolio_value - total_invested_capital
         unrealized_gain = current_value - entry_value
 
-        realized_gain = total_capital - total_invested_captial
+        realized_gain = total_capital - total_invested_capital
 
         absolute_return_pct = (
-            (total_gain / total_invested_captial) * 100 if total_invested_captial else 0
+            (total_gain / total_invested_capital) * 100 if total_invested_capital else 0
         )
 
         summary["portfolio_value"] = round(portfolio_value, 2)

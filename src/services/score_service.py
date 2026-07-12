@@ -108,8 +108,9 @@ class ScoreService:
         adx = df.get("adx_14", pd.Series(25.0, index=df.index)).fillna(25.0)
 
         multiplier = pd.Series(p.adx_neutral_multiplier, index=df.index)
-        multiplier[adx < p.adx_weak_threshold] = p.adx_weak_multiplier
-        multiplier[adx > p.adx_strong_threshold] = p.adx_strong_multiplier
+        # BUG-05 fix: .mask() is pandas 2.x safe; avoids deprecated boolean-index assignment
+        multiplier = multiplier.mask(adx < p.adx_weak_threshold, p.adx_weak_multiplier)
+        multiplier = multiplier.mask(adx > p.adx_strong_threshold, p.adx_strong_multiplier)
 
         # Recalculate: apply multiplier only to T+M contribution, keep R+V+S unchanged
         trend_mom = (

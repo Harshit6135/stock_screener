@@ -173,7 +173,11 @@ class WeeklyBacktester:
                     continue
                 daily_low = md.low
                 current_sl = float(h.current_sl)
-                hard_sl_price = round(current_sl * (1 - hard_sl_pct), 2)
+                # BUG-06 fix: hard SL floor is derived from the *entry* SL
+                # (fixed at buy time), not from the trailing current_sl which
+                # moves up with price.  Using current_sl made the floor a
+                # moving target, inconsistent with action_generator behaviour.
+                hard_sl_price = round(float(h.entry_sl) * (1 - hard_sl_pct), 2)
 
                 if daily_low <= hard_sl_price:
                     # Bug 3: execute at min(daily_low, hard_sl_price) — if price

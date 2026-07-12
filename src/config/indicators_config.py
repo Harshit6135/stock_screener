@@ -284,11 +284,11 @@ INDICATOR_REGISTRY: dict = {
         deps=["atrr_14"],
     ),
     "momentum_3m": DerivedIndicator(
-        fn=lambda df: (df["close"].shift(5) / df["close"].shift(65)) - 1,
+        fn=lambda df: (df["close"].shift(5) / df["close"].shift(63)) - 1,
         deps=["close"],
     ),
     "momentum_6m": DerivedIndicator(
-        fn=lambda df: (df["close"].shift(5) / df["close"].shift(130)) - 1,
+        fn=lambda df: (df["close"].shift(5) / df["close"].shift(126)) - 1,  # 126 ≈ 6 months
         deps=["close"],
     ),
 
