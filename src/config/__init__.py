@@ -12,6 +12,7 @@ from .indicators_config import (
     ALL_INDICATOR_NAMES,
     INDICATOR_REGISTRY,
     STUDY_MAP,
+    STRATEGY2_INDICATOR_NAMES,
     DerivedIndicator,
     PandasTaIndicator,
     additional_parameters,
@@ -45,6 +46,7 @@ __all__ = [
     "INDICATOR_REGISTRY",
     "STUDY_MAP",
     "ALL_INDICATOR_NAMES",
+    "STRATEGY2_INDICATOR_NAMES",
     "PandasTaIndicator",
     "DerivedIndicator",
     # Kite Config

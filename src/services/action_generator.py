@@ -44,7 +44,7 @@ class ActionGenerator:
         config_name: str = None,
         session: Optional[Session] = None,
         config_info=None,
-        strategy_id: str = "strategy1",
+        strategy_id: str = "strategy2",
     ):
         config_repo = ConfigRepository()
         self.config = config_info or config_repo.get_config(config_name)

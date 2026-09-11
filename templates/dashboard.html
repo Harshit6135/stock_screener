@@ -206,6 +206,7 @@
             <h3>Data Pipeline Orchestration</h3>
 
 
+
             <div class="step-row">
                 <span>0. Kite Authentication</span>
                 <span class="step-always-label">always runs</span>
@@ -241,6 +242,7 @@
                 <span>3. Calculate Indicators</span>
                 <label class="switch"><input type="checkbox" id="step-ind" checked><span class="slider"></span></label>
             </div>
+
             <div class="step-row">
                 <span>4. Calculate Percentiles</span>
                 <label class="switch"><input type="checkbox" id="step-pct" checked><span class="slider"></span></label>
@@ -609,15 +611,22 @@
                     <input type="date" id="bt-end">
                 </div>
                 <div>
-                    <label class="form-label">Strategy</label>
+                    <label class="form-label">Config</label>
                     <select id="bt-config">
-                        <option value="momentum_config">Momentum Strategy</option>
+                        <option value="momentum_config">Momentum Config</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="form-label">Strategy Version</label>
+                    <select id="bt-strategy">
+                        <option value="strategy2" selected>Strategy 2 — Institutional Multi-Factor (default)</option>
+                        <option value="strategy1">Strategy 1 — Original Momentum</option>
                     </select>
                 </div>
                 <div class="bt-flags">
                     <label class="check-label"><input type="checkbox" id="bt-daily-sl" checked>
-                        Daily SL Check</label>
-                    <label class="check-label"><input type="checkbox" id="bt-mid-week" checked>
+                        Mid-Week Stop Loss</label>
+                    <label class="check-label"><input type="checkbox" id="bt-mid-week">
                         Mid-Week Buy</label>
                     <label class="check-label"><input type="checkbox" id="bt-pyramid">
                         Pyramiding</label>

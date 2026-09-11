@@ -50,7 +50,7 @@ class GenerateActions(MethodView):
         """
         try:
             config_name = args.get("config_name", "momentum_config")
-            strategy_id = args.get("strategy_id", "strategy1")
+            strategy_id = args.get("strategy_id", "strategy2")
             generator = ActionGenerator(config_name, strategy_id=strategy_id)
             action_date = args.get("date")
             if action_date is None:
@@ -194,7 +194,7 @@ class ProcessActions(MethodView):
             if not working_date:
                 abort(400, message="date query parameter is required")
             config_name = args.get("config_name", "momentum_config")
-            strategy_id = args.get("strategy_id", "strategy1")
+            strategy_id = args.get("strategy_id", "strategy2")
             processor = ActionProcessor(config_name, strategy_id=strategy_id)
             holdings = processor.process_actions(working_date)
             if holdings is None:

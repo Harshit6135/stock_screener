@@ -158,7 +158,15 @@ class PercentileService:
         # per-column correct defaults (e.g. fillna(1) for atr_spike).  A
         # blanket fillna(0) biases factor scores for indicators that are
         # legitimately NaN due to insufficient history.
+        # infer_objects promotes object-dtype columns where possible, but
+        # SQLAlchemy returns Python None (not np.nan) for NULL DB values.
+        # pd.to_numeric(errors='coerce') converts None → NaN so that all
+        # subsequent fillna() calls in factors_service work correctly.
         metrics_df = metrics_df.infer_objects(copy=False)
+        non_numeric_cols = {"tradingsymbol", "date", "exchange"}
+        for col in metrics_df.columns:
+            if col not in non_numeric_cols:
+                metrics_df[col] = pd.to_numeric(metrics_df[col], errors="coerce")
 
         if len(stocks_df) == 0 or len(metrics_df) == 0:
             logger.info("No data found for date: {}".format(target_date))

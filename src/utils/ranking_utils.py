@@ -78,6 +78,8 @@ def rsi_regime_score(rsi: float) -> float:
         Regime score in [0, 100].
     """
     cfg = _RSI_CONFIG
+    if pd.isna(rsi) or rsi is None:
+        return 0
     if rsi < cfg.zone1_end:
         return 0
     elif rsi <= cfg.zone2_end:
@@ -126,6 +128,8 @@ def goldilocks_score(distance: float) -> float:
         Goldilocks score in [0, 100].
     """
     cfg = _GOLDILOCKS_CONFIG
+    if pd.isna(distance) or distance is None:
+        return 0
     if distance < 0:
         return 0
     elif distance <= cfg.zone1_end:

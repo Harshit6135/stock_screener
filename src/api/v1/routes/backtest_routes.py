@@ -40,7 +40,7 @@ class RunBacktest(MethodView):
             mid_week_buy = data.get("mid_week_buy", True)
             run_label = data.get("run_label")
             enable_pyramiding = data.get("enable_pyramiding", False)
-            strategy_id = data.get("strategy_id", "strategy1")
+            strategy_id = data.get("strategy_id", "strategy2")
 
             results, summary, risk_data, report_path = BacktestingService().run_backtest(
                 start_date,

@@ -131,8 +131,28 @@ def _compute_mansfield_rs(df: pd.DataFrame, benchmark: pd.Series) -> pd.Series:
     RS  = (close / benchmark) - 1
     MRS = RS / RS.rolling(200).mean() - 1
     Values > 0: outperforming benchmark.
+
+    Returns a NaN series if benchmark is empty (e.g. fetch failed).
     """
-    bench = benchmark.reindex(df.index, method="ffill")
+    # Guard: empty benchmark → return NaN so caller can skip gracefully
+    if benchmark is None or benchmark.empty:
+        return pd.Series(np.nan, index=df.index)
+
+    # Normalise benchmark index to tz-naive midnight (BenchmarkAdaptor strips
+    # tz at source but guard here too for safety).
+    bench = benchmark.copy()
+    if getattr(bench.index, "tz", None) is not None:
+        bench.index = bench.index.tz_localize(None)
+    bench.index = pd.to_datetime(bench.index).normalize()
+
+    # Normalise stock index to tz-naive midnight for alignment
+    stock_index = pd.to_datetime(df.index).normalize()
+    if getattr(stock_index, "tz", None) is not None:
+        stock_index = stock_index.tz_localize(None)
+
+    bench = bench.reindex(stock_index, method="ffill")
+    bench.index = df.index  # restore original stock index
+
     rp = (df["close"] / bench) - 1
     sma = rp.rolling(additional_parameters["mansfield_rs_sma"]).mean()
     return (rp / sma.replace(0, np.nan)) - 1
@@ -160,7 +180,11 @@ def _compute_sortino_ratio(df: pd.DataFrame) -> pd.Series:
     """
     rf_daily = 0.06 / 252
     daily_ret = df["close"].pct_change()
-    downside = daily_ret.where(daily_ret < rf_daily, other=np.nan)
+    
+    # Clip positive excess returns to 0 to compute downside deviation
+    excess_ret = daily_ret - rf_daily
+    downside = excess_ret.clip(upper=0)
+    
     dd_std = downside.rolling(252).std() * np.sqrt(252)
     ann_ret = daily_ret.rolling(252).mean() * 252
     return (ann_ret - 0.06) / dd_std.replace(0, np.nan)
@@ -338,3 +362,17 @@ STUDY_MAP: dict = {
 
 # Ordered list of all patchable indicator names (for /indicators/patch default)
 ALL_INDICATOR_NAMES: list = list(INDICATOR_REGISTRY.keys())
+
+# Strategy 2 specific indicator columns that must be backfilled via
+# patch_indicators() — these are never computed by calculate_indicators()
+# because that method skips symbols whose last indicator date is current.
+STRATEGY2_INDICATOR_NAMES: list = [
+    "mansfield_rs",
+    "nse_norm_momentum",
+    "sortino_ratio",
+    "scaled_turnover",
+    "log_price_vol_corr",
+    "momentum_12m",
+    "quality_z_score",
+    "adx_14",
+]

@@ -5,7 +5,7 @@ from flask.views import MethodView
 from flask_smorest import Blueprint
 
 from adaptors import KiteAdaptor
-from config import KITE_CONFIG, setup_logger, sse_log_queue
+from config import KITE_CONFIG, STRATEGY2_INDICATOR_NAMES, setup_logger, sse_log_queue
 from repositories import (
     IndicatorsRepository,
     MarketDataRepository,
@@ -191,11 +191,18 @@ class RunPipeline(MethodView):
                 try:
                     indicators_service = IndicatorsService()
                     indicators_service.calculate_indicators()
+                    
+                    # Backfill Strategy 2 indicators to ensure all indicators are fully populated
+                    logger.info(f"Patching Strategy 2 indicators: {STRATEGY2_INDICATOR_NAMES}")
+                    indicators_service.patch_indicators(indicator_names=STRATEGY2_INDICATOR_NAMES)
+                    
                     results["indicators"] = "completed"
                 except Exception as e:
                     traceback.print_exc()
                     results["indicators"] = f"failed: {str(e)}"
                     failed = True
+
+        strategies = ["strategy1", "strategy2"]
 
         # Step 4: Calculate Percentiles
         if args.get("percentile", True):
@@ -203,8 +210,9 @@ class RunPipeline(MethodView):
                 results["percentile"] = "skipped (previous step failed)"
             else:
                 try:
-                    percentile_service = PercentileService()
-                    percentile_service.backfill_percentiles()
+                    for s_id in strategies:
+                        percentile_service = PercentileService(strategy_id=s_id)
+                        percentile_service.backfill_percentiles()
                     results["percentile"] = "completed"
                 except Exception as e:
                     traceback.print_exc()
@@ -217,8 +225,9 @@ class RunPipeline(MethodView):
                 results["score"] = "skipped (previous step failed)"
             else:
                 try:
-                    score_service = ScoreService()
-                    score_service.generate_composite_scores()
+                    for s_id in strategies:
+                        score_service = ScoreService(strategy_id=s_id)
+                        score_service.generate_composite_scores()
                     results["score"] = "completed"
                 except Exception as e:
                     traceback.print_exc()
@@ -231,8 +240,9 @@ class RunPipeline(MethodView):
                 results["ranking"] = "skipped (previous step failed)"
             else:
                 try:
-                    ranking_service = RankingService()
-                    ranking_service.generate_rankings()
+                    for s_id in strategies:
+                        ranking_service = RankingService(strategy_id=s_id)
+                        ranking_service.generate_rankings()
                     results["ranking"] = "completed"
                 except Exception as e:
                     traceback.print_exc()
@@ -267,6 +277,8 @@ class RecalculateFromDate(MethodView):
         start_date = args["start_date"]
         results = {}
         failed = False
+        
+        strategies = ["strategy1", "strategy2"]
 
         # Percentile: delete + regenerate
         if args.get("percentile", True):
@@ -278,8 +290,9 @@ class RecalculateFromDate(MethodView):
                     deleted = percentile_repo.delete_after_date(start_date)
                     results["percentile_deleted"] = deleted
 
-                    percentile_service = PercentileService()
-                    percentile_service.backfill_percentiles()
+                    for s_id in strategies:
+                        percentile_service = PercentileService(strategy_id=s_id)
+                        percentile_service.backfill_percentiles()
                     results["percentile"] = "recalculated"
                 except Exception as e:
                     results["percentile"] = f"failed: {str(e)}"
@@ -295,8 +308,9 @@ class RecalculateFromDate(MethodView):
                     deleted = score_repo.delete_after_date(start_date)
                     results["score_deleted"] = deleted
 
-                    score_service = ScoreService()
-                    score_service.generate_composite_scores()
+                    for s_id in strategies:
+                        score_service = ScoreService(strategy_id=s_id)
+                        score_service.generate_composite_scores()
                     results["score"] = "recalculated"
                 except Exception as e:
                     results["score"] = f"failed: {str(e)}"
@@ -312,8 +326,9 @@ class RecalculateFromDate(MethodView):
                     deleted = ranking_repo.delete_after_date(start_date)
                     results["ranking_deleted"] = deleted
 
-                    ranking_service = RankingService()
-                    ranking_service.generate_rankings()
+                    for s_id in strategies:
+                        ranking_service = RankingService(strategy_id=s_id)
+                        ranking_service.generate_rankings()
                     results["ranking"] = "recalculated"
                 except Exception as e:
                     results["ranking"] = f"failed: {str(e)}"

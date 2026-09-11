@@ -60,7 +60,7 @@ class WeeklyBacktester:
         check_daily_sl: bool = True,
         mid_week_buy: bool = True,
         enable_pyramiding: bool = False,
-        strategy_id: str = "strategy1",
+        strategy_id: str = "strategy2",
     ):
         self.start_date = start_date
         self.end_date = end_date
@@ -535,7 +535,7 @@ class BacktestingService:
         mid_week_buy: bool = True,
         run_label: str = None,
         enable_pyramiding: bool = False,
-        strategy_id: str = "strategy1",
+        strategy_id: str = "strategy2",
     ):
         """
         Convenience function to run a backtest.

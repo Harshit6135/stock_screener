@@ -68,8 +68,9 @@ def dashboard():
 
 @app.route("/backtest")
 def backtest():
-    """Render the backtest page"""
-    return render_template("backtest.html")
+    """Redirect to dashboard (backtest UI lives in the main dashboard's Backtest tab)"""
+    from flask import redirect, url_for
+    return redirect(url_for('dashboard') + '#backtest')
 
 
 @app.route("/actions")

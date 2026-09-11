@@ -35,7 +35,7 @@ class BacktestInputSchema(Schema):
         },
     )
     strategy_id = fields.String(
-        load_default="strategy1",
+        load_default="strategy2",
         validate=validate.OneOf(["strategy1", "strategy2"]),
         metadata={
             "description": (

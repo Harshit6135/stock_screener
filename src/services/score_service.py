@@ -253,6 +253,21 @@ class ScoreService:
             scores_df.rename(columns={"percentile_date": "score_date"}, inplace=True)
             scores_df["strategy_id"] = self.strategy_id
 
+            # Drop rows where composite score couldn't be calculated (e.g. early
+            # history dates with insufficient indicator lookback). Inserting NaN
+            # violates the NOT NULL constraint on initial_composite_score / composite_score.
+            before = len(scores_df)
+            scores_df = scores_df.dropna(subset=["initial_composite_score", "composite_score"])
+            dropped = before - len(scores_df)
+            if dropped:
+                logger.info(f"[6/6] Dropped {dropped} rows with NaN composite score (insufficient history)")
+
+            # penalty_reason NaN (float) → None so SQLite stores NULL, not the string 'nan'
+            if "penalty_reason" in scores_df.columns:
+                scores_df["penalty_reason"] = scores_df["penalty_reason"].where(
+                    scores_df["penalty_reason"].notna(), other=None
+                )
+
             # Step 6: Bulk insert
             t0 = time.time()
             logger.info(f"[6/6] Bulk inserting {len(scores_df)} score records...")

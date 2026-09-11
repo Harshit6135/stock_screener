@@ -204,6 +204,19 @@
 
             // Auto-load portfolio on start
             switchTab('portfolio');
+
+            // Show/hide Strategy 2 patch step based on pipeline strategy selector
+            function updatePipelineStrategyUI() {
+                const stratEl = document.getElementById('pipeline-strategy');
+                const patchRow = document.getElementById('step-patch-s2-row');
+                if (!stratEl || !patchRow) return;
+                patchRow.style.display = stratEl.value === 'strategy2' ? '' : 'none';
+            }
+            const pipelineStrategyEl = document.getElementById('pipeline-strategy');
+            if (pipelineStrategyEl) {
+                pipelineStrategyEl.addEventListener('change', updatePipelineStrategyUI);
+                updatePipelineStrategyUI(); // run once on load
+            }
         });
 
         // --- PIPELINE ---
@@ -994,6 +1007,7 @@
                 start_date: document.getElementById('bt-start').value,
                 end_date: document.getElementById('bt-end').value,
                 config_name: document.getElementById('bt-config').value,
+                strategy_id: document.getElementById('bt-strategy').value,
                 check_daily_sl: document.getElementById('bt-daily-sl').checked,
                 mid_week_buy: document.getElementById('bt-mid-week').checked,
                 enable_pyramiding: document.getElementById('bt-pyramid').checked

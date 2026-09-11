@@ -59,12 +59,14 @@ from config import (
     ALL_INDICATOR_NAMES,
     INDICATOR_REGISTRY,
     STUDY_MAP,
+    STRATEGY2_INDICATOR_NAMES,
     DerivedIndicator,
     PandasTaIndicator,
     additional_parameters,
     derived_strategy,
     ema_strategy,
     momentum_strategy,
+    strategy2_adx_study,
     setup_logger,
 )
 from repositories import IndicatorsRepository, InstrumentsRepository, MarketDataRepository
@@ -227,6 +229,7 @@ class IndicatorsService:
         df = df[df.index >= date_truncate]
         df.ta.study(momentum_strategy)
         df.ta.study(derived_strategy)
+        df.ta.study(strategy2_adx_study)
         return df
 
     def _calculate_derived_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -293,11 +296,14 @@ class IndicatorsService:
     def calculate_indicators(self):
         """Full incremental indicator run for all symbols.
 
-        Identical behaviour to the pre-registry version — processes all
-        indicators, incremental by last indicator date per symbol.
+        Processes all indicators incrementally by last indicator date per
+        symbol. Additionally, if Strategy 2 columns (mansfield_rs, etc.) are
+        missing for any symbol, runs patch_indicators() for those columns
+        before the main loop — ensuring S2 data is always populated.
         """
         t_total = _time.time()
         logger.info("Starting to update Indicators (API Mode)...")
+
 
         logger.info("Fetching Instruments from DB...")
         instruments = instr_repo.get_all_instruments()
@@ -305,6 +311,19 @@ class IndicatorsService:
 
         logger.info(f"Calculating Indicators for {total} Instruments...")
         yesterday = pd.Timestamp.now().normalize() - pd.Timedelta(days=1)
+
+        # ── Setup for Strategy 2 inline calculations ─────────────────────────────
+        logger.info("Fetching Nifty 500 benchmark data for Strategy 2 indicators...")
+        min_date = marketdata_repo.get_min_date_from_table()
+        benchmark = BenchmarkAdaptor.get_nifty500_close(
+            str(min_date), str(yesterday.date())
+        )
+        s2_derived_defs = {
+            name: INDICATOR_REGISTRY[name]
+            for name in STRATEGY2_INDICATOR_NAMES
+            if hasattr(INDICATOR_REGISTRY.get(name), "fn")
+        }
+        # ─────────────────────────────────────────────────────────────────────
 
         processed = 0
         skipped = 0
@@ -370,6 +389,20 @@ class IndicatorsService:
                 skipped += 1
                 continue
             ind_df.columns = ind_df.columns.str.lower().str.replace(".0", "", regex=False)
+            
+            # --- Inline Strategy 2 Calculations ---
+            try:
+                for ind_name, defn in s2_derived_defs.items():
+                    if defn.needs_benchmark:
+                        ind_df[ind_name] = defn.fn(ind_df, benchmark=benchmark)
+                    else:
+                        ind_df[ind_name] = defn.fn(ind_df)
+            except Exception as e:
+                logger.error(f"Error calculating S2 indicators for {log_symb}: {str(e)}")
+                skipped += 1
+                continue
+            # ----------------------------------------
+
             ind_df = ind_df.drop(
                 columns=["open", "high", "low", "close", "volume"], errors="ignore"
             )
@@ -397,7 +430,6 @@ class IndicatorsService:
             f"Indicators updated: {processed} processed, {skipped} skipped, "
             f"{total} total in {elapsed:.1f}s"
         )
-
     # =========================================================================
     # Patch run — targeted column backfill
     # =========================================================================
@@ -406,11 +438,11 @@ class IndicatorsService:
         self,
         indicator_names: Optional[List[str]] = None,
     ) -> dict:
-        """Compute and upsert specific indicator columns for all symbols.
+        """Compute and upsert specific indicator columns for symbols that need it.
 
-        Backfills from the earliest available date in market_data for each
-        symbol. Only the requested columns are written — all other columns
-        in existing rows are left untouched.
+        Incremental: queries the DB first to find which symbols have NULL values
+        in the requested columns, then only processes those symbols. Symbols
+        that already have all columns populated are skipped instantly.
 
         Args:
             indicator_names: List of registry keys to compute.
@@ -442,6 +474,16 @@ class IndicatorsService:
         for name, defn in ta_defs.items():
             study_groups.setdefault(defn.study_name, []).append((name, defn))
 
+        # ── Incremental: find only symbols that have NULLs in requested cols ──
+        logger.info(
+            f"Checking which symbols need patching for: {indicator_names}"
+        )
+        symbols_needing_patch = indicators_repo.get_symbols_with_null_columns(indicator_names)
+        logger.info(
+            f"{len(symbols_needing_patch)} symbol(s) have missing data — "
+            f"remaining symbols are already fully populated and will be skipped."
+        )
+
         # Load benchmark once if any derived indicator needs it
         benchmark = pd.Series(dtype=float)
         needs_bench = any(v.needs_benchmark for v in derived_defs.values())
@@ -455,19 +497,24 @@ class IndicatorsService:
 
         instruments = instr_repo.get_all_instruments()
         total = len(instruments)
-        processed = skipped = 0
+        processed = skipped = already_done = 0
         t_total = _time.time()
 
         logger.info(
-            f"Patching {len(indicator_names)} indicator(s) for {total} symbols: "
-            f"{indicator_names}"
+            f"Patching {len(indicator_names)} indicator(s) — "
+            f"{len(symbols_needing_patch)}/{total} symbols need work."
         )
 
         for i, instr in enumerate(instruments):
             tradingsymbol = instr.tradingsymbol
             exchange = instr.exchange
             if (i + 1) % 50 == 0 or i == 0:
-                logger.info(f"Patch progress: {i+1}/{total}")
+                logger.info(f"Patch progress: {i+1}/{total} ({processed} patched, {already_done} already done, {skipped} skipped)")
+
+            # ── Skip if this symbol has no NULLs in requested columns ──
+            if tradingsymbol not in symbols_needing_patch:
+                already_done += 1
+                continue
 
             # Fetch full OHLCV history (from earliest available)
             md_output = marketdata_repo.query({
@@ -562,7 +609,8 @@ class IndicatorsService:
         elapsed = _time.time() - t_total
         msg = (
             f"Patched {len(indicator_names)} column(s) — "
-            f"{processed} symbols processed, {skipped} skipped in {elapsed:.1f}s"
+            f"{processed} symbols patched, {already_done} already complete, "
+            f"{skipped} skipped/errored in {elapsed:.1f}s"
         )
         logger.info(msg)
-        return {"message": msg, "processed": processed, "skipped": skipped}
+        return {"message": msg, "processed": processed, "skipped": skipped, "already_done": already_done}

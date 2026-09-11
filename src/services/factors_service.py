@@ -86,7 +86,7 @@ class FactorsService:
         """
         b_score = percent_b.apply(score_percent_b)
 
-        bw_change = bandwidth.pct_change(5).fillna(0)
+        bw_change = bandwidth.fillna(0).pct_change(5).fillna(0)
         bw_score = bw_change.clip(-0.5, 0.5) / 0.5 * 50 + 50
 
         structure = (
@@ -100,26 +100,37 @@ class FactorsService:
         Expects columns: close, ema_50, ema_200, rsi_signal_ema_3, ppo_12_26_9,
                         roc_60, roc_125, roc_20, atrr_14, atr_spike, rvol,
                         price_vol_correlation, percent_b, bbb_20_2_2
+
+        All columns are fillna-guarded here to prevent TypeError when the DB
+        returns Python None for stocks with insufficient history.
         """
 
         df["factor_trend"] = self.calculate_trend_factor(
-            df["distance_from_ema_200"], df["ema_50_slope"]
+            df["distance_from_ema_200"].fillna(0),
+            df["ema_50_slope"].fillna(0),
         )
 
         df["factor_momentum"] = self.calculate_momentum_factor(
-            df["rsi_signal_ema_3"],
-            df["ppo_12_26_9"],
-            df["momentum_3m"],
-            df["momentum_6m"],
+            df["rsi_signal_ema_3"].fillna(50),
+            df["ppo_12_26_9"].fillna(0),
+            df["momentum_3m"].fillna(0),
+            df["momentum_6m"].fillna(0),
         )
 
         df["factor_efficiency"] = self.calculate_risk_efficiency_factor(
-            df["risk_adjusted_return"], df["atr_spike"]
+            df["risk_adjusted_return"].fillna(0),
+            df["atr_spike"].fillna(1),
         )
 
-        df["factor_volume"] = self.calculate_volume_factor(df["rvol"], df["price_vol_correlation"])
+        df["factor_volume"] = self.calculate_volume_factor(
+            df["rvol"].fillna(1),
+            df["price_vol_correlation"].fillna(0),
+        )
 
-        df["factor_structure"] = self.calculate_structure_factor(df["percent_b"], df["bbb_20_2_2"])
+        df["factor_structure"] = self.calculate_structure_factor(
+            df["percent_b"].fillna(0.5),
+            df["bbb_20_2_2"].fillna(0),
+        )
 
         return df
 
@@ -158,7 +169,7 @@ class FactorsServiceV2:
         cap = self.weights.trend_200_zscore_cap
         mu = distance_from_ema_200.mean()
         sigma = distance_from_ema_200.std()
-        if sigma > 0:
+        if pd.notna(sigma) and sigma > 0:
             dist_z = ((distance_from_ema_200 - mu) / sigma).clip(-cap, cap)
         else:
             dist_z = pd.Series(0.0, index=distance_from_ema_200.index)
@@ -183,7 +194,7 @@ class FactorsServiceV2:
         # NSE Normalised Momentum: cross-sectional Z-score, clip ±3
         mu = nse_norm_momentum.mean()
         sigma = nse_norm_momentum.std()
-        if sigma > 0:
+        if pd.notna(sigma) and sigma > 0:
             mom_z = ((nse_norm_momentum - mu) / sigma).clip(-3, 3)
         else:
             mom_z = pd.Series(0.0, index=nse_norm_momentum.index)
@@ -253,8 +264,12 @@ class FactorsServiceV2:
         # Quality Z-score: clip [-3, 3] → [0, 100]
         q_norm = quality_z_score.clip(-3, 3) / 3 * 50 + 50
 
-        # BB bandwidth change (5-day)
-        bw_change = bandwidth.pct_change(5).fillna(0)
+        # BB bandwidth change (5-day).
+        # Safe manual pct_change: avoids ZeroDivisionError when lagged
+        # bandwidth is 0 (e.g. newly-listed or flat-price stocks).
+        bw_safe = bandwidth.fillna(0)
+        bw_lagged = bw_safe.shift(5)
+        bw_change = bw_safe.sub(bw_lagged).div(bw_lagged.replace(0, float("nan"))).fillna(0)
         bw_score = bw_change.clip(-0.5, 0.5) / 0.5 * 50 + 50
 
         # RSI as entry-timing filter: already [0, 100]

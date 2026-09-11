@@ -51,6 +51,9 @@ class CleanupQuerySchema(Schema):
 class PipelineQuerySchema(Schema):
     """Schema for pipeline run toggles — choose which steps to execute."""
 
+    class Meta:
+        unknown = "exclude"
+
     init = fields.Boolean(
         load_default=True,
         metadata={
@@ -127,6 +130,9 @@ class PipelineQuerySchema(Schema):
 
 class RecalculateQuerySchema(Schema):
     """Schema for recalculate-from-date with per-table toggles."""
+
+    class Meta:
+        unknown = "exclude"
 
     start_date = fields.Date(
         required=True,
