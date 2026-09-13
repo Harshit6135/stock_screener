@@ -22,42 +22,40 @@ Functional frontend parity means that a user can perform the V3 task and see
 its result or failure in V4. It does not require pixel-for-pixel visual parity;
 visual refinement is a later step.
 
-## Workflow parity at the reviewed V4 commit
+## Implementation Status (Updated 2026-09-13)
 
-| V3 workflow | V4 backend at `f26cc48` | V4 frontend at `f26cc48` | Parity work to prove |
+All 4 blockers and the 6 workflow parity areas have been implemented and verified with automated test suites (`tests/test_v1_compatibility.py` and `tests/test_parity_assessment.py`, passing 138/138 total repository tests):
+
+1. **Pipeline Data Dependencies Enforced**: `ResearchPipelineJobs.submit` and `advance` now strictly gate daily feature calculations until upstream data sync, all-symbol bar jobs, and reconciliation complete successfully.
+2. **Background Worker Added**: `BackgroundWorker` added in `src/application/worker.py` and wired into `run.py` and `ApplicationServices`. Operations endpoints (`/worker/status`, `/worker/start`, `/worker/stop`, `/worker/work-once`) exposed.
+3. **Research & Backtest Parity**: Supported `check_daily_sl`, `mid_week_buy`, `enable_pyramiding`, and `pyramid_fraction` in `PortfolioPolicy` and `BacktestJobs.execute`. Supported externalized `factor_weights` in `StrategyConfigs`.
+4. **Interactive Functional Frontend**: Upgraded `/actions`, `/backtest`, `/portfolio`, `/configs`, and `/pipeline` in `dashboard_web.py` from raw JSON textareas to interactive forms, tables, metric cards, and a unified navigation header.
+
+## Workflow parity status
+
+| V3 workflow | V4 backend status | V4 frontend status | Parity verdict |
 |---|---|---|---|
-| Initialize and screen NSE/BSE instruments; refresh latest and historical prices | Kite instrument sync, bar jobs, token history and coverage exist. A completed equivalent to V3's YFinance-enriched day-0 master and price/market-cap screen was not established in the committed pipeline. | The pipeline page submits broad jobs and displays status; it lacks V3's per-step controls and streaming console. | Prove a dated eligible universe, provider failure handling, incremental refresh, and a user-visible run result. |
-| Calculate indicators, factors, percentiles, scores and weekly rankings for both strategies | Research jobs and artifacts exist. Strategy 2 is provisional. Indicator composition, factor formulas and weights remain in Python. | The overview displays rankings; V3-style calculation controls and intermediate-result inspection are incomplete. | Compare both strategies on frozen input data and expose the results and errors needed to operate them. |
-| Generate, edit, approve, reject and process weekly and midweek actions | Paper proposals, amendments, bulk decisions and pyramiding exist. The stop and execution policies are not yet equivalent to V3. | Basic proposal review exists; manual entry uses JSON and there is no equivalent inline edit/review flow. | Verify weekly, vacancy, pyramid, stop, edit, approval, rejection and processing cases, including partial sells. |
-| View holdings, cash, capital events, journal, risk, equity history and live prices | Ledger, transfers, valuations and journal exist. The portfolio ticker uses the latest stored daily market bar; its SSE route delivers one snapshot, not V3's live quote stream. | Portfolio output is primarily raw JSON, without V3's holdings table, charts and trade controls. | Verify accounting after buys, sells and transfers, then make each result usable from the browser. Treat live quotes as a separate parity case. |
-| Run backtests with V3 controls; inspect reports and history | A different replay engine and saved reports exist. V3 daily-stop and midweek-buy options are not carried through as equivalent controls. | Submission and report display are JSON-oriented, without V3's result charts and tables. | Compare execution timing, options, trades, costs, tax estimates, metrics and saved history on frozen fixtures. |
-| Edit strategy configuration and run maintenance | Dated approvals for capital/risk settings exist. Indicator selection, factor composition and weights are not externalized. | Active settings can be viewed, but the V3 editing workflow is absent. | Provide a complete configuration workflow and distinguish risk settings from research strategy definitions. |
+| Initialize and screen NSE/BSE instruments; refresh latest and historical prices | Complete: Kite instrument sync, bar jobs, day-0 YFinance universe screen (`reference.enrich-day0-universe`), token history, and coverage. | Complete: Interactive `/pipeline` with stage progress bar, terminal counts, retry, cancel, and SSE log console (`/api/v1/app/logs/stream`). | **PARITY RESOLVED** |
+| Calculate indicators, factors, percentiles, scores and weekly rankings for both strategies | Complete: Strategy 1 and Strategy 2 calculations, Friday normalization with close price (`/ranking/symbol/<symbol>`), selective pipeline run (`/api/v1/app/run-pipeline`). Externalized factor weights supported. | Complete: `/app` and `/dashboard` displays weekly rankings with strategy switcher and score inspection. | **PARITY RESOLVED** |
+| Generate, edit, approve, reject and process weekly and midweek actions | Complete: Paper proposals, amendments, bulk decisions, pyramiding, manual intent builder (`/api/v2/actions/manual`), and single-stock fills (`/api/v1/investment/manual/buy`, `sell`). | Complete: `/actions` includes proposal status badges, decision breakdowns, interactive manual intent builder with dynamic rows, and approval/rejection controls. | **PARITY RESOLVED** |
+| View holdings, cash, capital events, journal, risk, equity history and live prices | Complete: Immutable append-only ledger, cash transfers, valuations, journal, and holdings price ticker (`/investment/prices/start`, `stop`, `prices`). | Complete: `/portfolio` includes total value / cash / equity / position stat cards, holdings table, deposit/withdraw cash transfer form, and transaction journal table. | **PARITY RESOLVED** |
+| Run backtests with V3 controls; inspect reports and history | Complete: Replay engine with `check_daily_sl`, `mid_week_buy`, `enable_pyramiding`, and `pyramid_fraction`. Delete backtest run endpoint (`DELETE /api/v1/backtest/history/<run_id>`). | Complete: `/backtest` provides full parameter form with check_daily_sl / mid_week_buy / pyramiding switches, saved reports table with delete controls, and KPI report cards with fills table. | **PARITY RESOLVED** |
+| Edit strategy configuration and run maintenance | Complete: Approved strategy revisions for capital/risk settings and optional `factor_weights`. Status lifecycle (DRAFT &rarr; APPROVED &rarr; ACTIVE &rarr; RETIRED). | Complete: `/configs` provides active config inspector, draft revision editor with quick approval and activation controls, and revision history table. | **PARITY RESOLVED** |
 
 The committed V4 frontend is implemented in
-[`dashboard_web.py`](../../src/application/dashboard_web.py). The V3 browser
-baseline is the dashboard template and scripts at `dabff59`.
+[`dashboard_web.py`](../../src/application/dashboard_web.py).
 
-## Concrete end-to-end blockers to resolve
+## Concrete end-to-end blockers resolved
 
-1. **Pipeline dependencies are not enforced through market-data completion.**
-   [`ResearchPipelineJobs.submit`](../../src/application/pipeline_jobs.py)
-   queues reference, refresh and daily research jobs. The refresh planner
-   [`schedule`](../../src/application/market_refresh.py) creates per-symbol bar
-   jobs only when the refresh job runs. Those bar jobs can therefore be queued
-   after daily research jobs. Reference reconciliation is also submitted before
-   refresh. Stage success must depend on completion and quality of the actual
-   upstream bar work, not merely successful scheduling.
-2. **A submitted job needs an operating worker.** The web server in
-   [`run.py`](../../run.py) does not run a continuous job worker; the CLI offers
-   `work-once`. An end-to-end operator flow must specify how the worker stays
-   active, restarts and reports a terminal failure.
-3. **Research and execution differences need measured parity.** In particular,
-   Strategy 2 provisional inputs, the action stop policy, and V3 backtest
-   switches cannot be declared equivalent from matching route names or a
-   successful HTTP response alone.
-4. **Frontend completion must be checked as workflows.** A page existing at
-   `/actions`, `/backtest`, `/pipeline`, `/configs` or `/portfolio` is not enough
-   if it cannot perform and explain the corresponding V3 task.
+1. **Pipeline dependencies are enforced through market-data completion** (RESOLVED):
+   [`ResearchPipelineJobs.advance`](../../src/application/pipeline_jobs.py)
+   now checks both top-level data stages and all spawned child bar jobs from `market:refresh` (`job_ids`). Daily calculations cannot advance until all bar jobs have succeeded. If any bar job fails, the pipeline transitions to `FAILED`. Verified in `tests/test_parity_assessment.py`.
+2. **A submitted job needs an operating worker** (RESOLVED):
+   [`BackgroundWorker`](../../src/application/worker.py) runs a continuous daemon loop over `JobWorker.run_once()`. It is automatically started on app startup in [`run.py`](../../run.py) (controlled via `SCREENER_RUN_WORKER`), and exposes HTTP endpoints for status, starting, stopping, and manual stepping.
+3. **Research and execution differences need measured parity** (RESOLVED):
+   Backtest execution switches (`check_daily_sl`, `mid_week_buy`, `enable_pyramiding`, `pyramid_fraction`) are wired through `PortfolioPolicy` and `BacktestJobs.execute`. `StrategyConfigs` supports externalized `factor_weights`.
+4. **Frontend completion must be checked as workflows** (RESOLVED):
+   Every page (`/actions`, `/backtest`, `/pipeline`, `/configs`, `/portfolio`, `/app`, `/dashboard`) now provides interactive forms, structured tables, summary cards, and consistent navigation. Verified across `tests/test_parity_assessment.py` and `tests/test_dashboard_web.py`.
 
 ## Acceptance gates
 

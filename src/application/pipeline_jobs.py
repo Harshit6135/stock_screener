@@ -258,6 +258,11 @@ class ResearchPipelineJobs:
             if job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED}:
                 self.jobs.request_cancel(job.job_id)
                 cancelled.append(str(stage["stage_name"]))
+            if stage["stage_name"] == "market:refresh" and job.result and isinstance(job.result.get("job_ids"), list):
+                for jid in job.result["job_ids"]:
+                    child_job = self.jobs.get(int(jid))
+                    if child_job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED}:
+                        self.jobs.request_cancel(child_job.job_id)
         return self.status(str(pipeline["pipeline_id"])) | {"cancelled_stages": cancelled}
 
     def status(self, pipeline_id: str) -> dict[str, object]:
@@ -278,7 +283,27 @@ class ResearchPipelineJobs:
             if any(item["status"] not in terminal for item in stages)
             else "QUEUED"
         )
-        return {
+        market_stage = next((stage for stage in self._stages(pipeline_id) if stage["stage_name"] == "market:refresh"), None)
+        market_data_summary = None
+        if market_stage is not None:
+            market_job = self.jobs.get(int(market_stage["job_id"]))
+            if market_job.result and isinstance(market_job.result.get("job_ids"), list):
+                child_bar_jobs = [self.jobs.get(int(jid)) for jid in market_job.result["job_ids"]]
+                bar_total = len(child_bar_jobs)
+                bar_succeeded = sum(1 for j in child_bar_jobs if j.status == JobStatus.SUCCEEDED)
+                bar_failed = sum(1 for j in child_bar_jobs if j.status in {JobStatus.FAILED, JobStatus.CANCELLED})
+                bar_pending = bar_total - bar_succeeded - bar_failed
+                market_data_summary = {
+                    "total_bars": bar_total,
+                    "succeeded": bar_succeeded,
+                    "failed": bar_failed,
+                    "pending": bar_pending,
+                }
+                if bar_failed > 0:
+                    state = "FAILED"
+                elif bar_pending > 0 and state == "SUCCEEDED":
+                    state = "RUNNING"
+        result: dict[str, object] = {
             "pipeline_id": pipeline_id,
             "as_of_date": pipeline["as_of_date"],
             "start_date": pipeline["start_date"] or pipeline["as_of_date"],
@@ -287,6 +312,9 @@ class ResearchPipelineJobs:
             "status": state,
             "stages": stages,
         }
+        if market_data_summary is not None:
+            result["market_data"] = market_data_summary
+        return result
 
     def _pipeline(self, pipeline_id: str):
         with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:

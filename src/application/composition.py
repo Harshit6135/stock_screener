@@ -22,7 +22,7 @@ from src.application.pipeline_jobs import ResearchPipelineJobs
 from src.application.publication import ArtifactPublisher
 from src.application.research_jobs import ResearchJobs
 from src.application.strategy_configs import StrategyConfigs
-from src.application.worker import JobWorker
+from src.application.worker import BackgroundWorker, JobWorker
 from src.execution_gateway import BrokerOrderService, KiteExecutionGateway, Ledger
 from src.platform_kernel import ArtifactStore
 
@@ -50,6 +50,7 @@ class ApplicationServices:
     intraday_stream: IntradayStreamLease
     broker_orders: BrokerOrderService
     market_jobs: KiteMarketJobs
+    background_worker: BackgroundWorker | None = None
 
     @classmethod
 
@@ -160,5 +161,6 @@ class ApplicationServices:
             intraday_stream,
             broker_orders,
             market_jobs,
+            background_worker=BackgroundWorker(worker),
         )
 

@@ -115,6 +115,10 @@ class BacktestJobs:
             "max_debt_equity",
             "market_cap_sizing",
             "regime_schedule",
+            "check_daily_sl",
+            "mid_week_buy",
+            "enable_pyramiding",
+            "pyramid_fraction",
         }:
             raise DomainValidationError("backtest command has missing or unsupported fields")
         strategy_id = payload["strategy_id"]
@@ -132,6 +136,21 @@ class BacktestJobs:
             raise DomainValidationError("backtest dates must be ISO dates") from exc
         if start > end or (end - start).days > 3650 or end >= datetime.now(UTC).date():
             raise DomainValidationError("backtest requires completed dates within 10 years")
+        check_daily_sl = payload.get("check_daily_sl", True)
+        if not isinstance(check_daily_sl, bool):
+            raise DomainValidationError("check_daily_sl must be boolean")
+        mid_week_buy = payload.get("mid_week_buy", True)
+        if not isinstance(mid_week_buy, bool):
+            raise DomainValidationError("mid_week_buy must be boolean")
+        enable_pyramiding = payload.get("enable_pyramiding", False)
+        if not isinstance(enable_pyramiding, bool):
+            raise DomainValidationError("enable_pyramiding must be boolean")
+        if "pyramid_fraction" in payload:
+            pyramid_fraction = _decimal(payload["pyramid_fraction"], "pyramid_fraction")
+        else:
+            pyramid_fraction = Decimal("0.5") if enable_pyramiding else Decimal(0)
+        if not Decimal(0) <= pyramid_fraction <= Decimal(1):
+            raise DomainValidationError("pyramid_fraction must be in [0, 1]")
         regime_schedule = payload.get("regime_schedule", [])
         if not isinstance(regime_schedule, list):
             raise DomainValidationError("regime_schedule must be a list")
@@ -272,9 +291,12 @@ class BacktestJobs:
                 Decimal(str(settings["max_concentration_pct"])) if settings else Decimal(1),
             ),
             swap_buffer=Decimal(str(settings["buffer_percent"])) if settings else Decimal("0.25"),
+            pyramid_fraction=pyramid_fraction,
             max_volume_participation=volume_participation,
             rebalance_frequency=rebalance_frequency,
             swap_cost_bps=fee_bps + tax_bps,
+            check_daily_sl=check_daily_sl,
+            mid_week_buy=mid_week_buy,
         )
         fill_model = FillModelRevision(
             uuid5(NAMESPACE_URL, f"execution/fill_models:next-open:{slippage_bps}:{fee_bps}:{tax_bps}"),
@@ -370,6 +392,10 @@ class BacktestJobs:
             "fundamentals_artifact_id": fundamentals_artifact_id,
             "min_eps": str(min_eps) if min_eps is not None else None,
             "max_debt_equity": str(max_debt_equity) if max_debt_equity is not None else None,
+            "check_daily_sl": check_daily_sl,
+            "mid_week_buy": mid_week_buy,
+            "enable_pyramiding": enable_pyramiding,
+            "pyramid_fraction": str(pyramid_fraction),
         }
         strategy_revision = STRATEGY1_REVISION if strategy_id == "strategy1" else STRATEGY2_REVISION
         strategy_revision_id = self._revision(
@@ -472,7 +498,13 @@ class BacktestJobs:
             raise DomainValidationError("stress scenarios must contain 1..10 objects")
         names: set[str] = set()
         results: list[dict[str, object]] = []
-        allowed_overrides = {"starting_cash", "max_positions", "slippage_bps", "fee_bps", "tax_bps", "data_basis", "universe_snapshot_id", "cash_flows", "max_volume_participation", "rebalance_frequency", "market_cap_artifact_id", "min_market_cap", "fundamentals_artifact_id", "min_eps", "max_debt_equity", "market_cap_sizing", "regime_schedule"}
+        allowed_overrides = {
+            "starting_cash", "max_positions", "slippage_bps", "fee_bps", "tax_bps", "data_basis",
+            "universe_snapshot_id", "cash_flows", "max_volume_participation", "rebalance_frequency",
+            "market_cap_artifact_id", "min_market_cap", "fundamentals_artifact_id", "min_eps",
+            "max_debt_equity", "market_cap_sizing", "regime_schedule", "check_daily_sl",
+            "mid_week_buy", "enable_pyramiding", "pyramid_fraction",
+        }
         for scenario in scenarios:
             if set(scenario) - ({"name"} | allowed_overrides) or not isinstance(scenario.get("name"), str) or not str(scenario["name"]).strip() or scenario["name"] in names:
                 raise DomainValidationError("stress scenario names or fields are invalid")

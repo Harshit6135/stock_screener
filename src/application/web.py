@@ -12,6 +12,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, jsonify, request
 
 from src.application.jobs import Job, JobStore
+from src.application.worker import BackgroundWorker, JobWorker
 from src.platform_kernel import DomainValidationError
 
 
@@ -42,6 +43,8 @@ def require_operator_token() -> tuple[dict[str, str], int] | None:
 def create_operations_blueprint(
     job_database: str | Path | JobStore,
     allowed_job_kinds: Collection[str] | None = None,
+    worker: JobWorker | None = None,
+    background_worker: BackgroundWorker | None = None,
 ) -> Blueprint:
     """Create the v2 operations API over a local durable :class:`JobStore`."""
     jobs = job_database if isinstance(job_database, JobStore) else JobStore(job_database)
@@ -107,5 +110,45 @@ def create_operations_blueprint(
         except DomainValidationError as error:
             status = 404 if str(error) == "job does not exist" else 409
             return jsonify({"error": str(error)}), status
+
+    @blueprint.get("/worker/status")
+    def worker_status():
+        if background_worker is not None:
+            return jsonify(background_worker.status()), 200
+        return jsonify({"worker_id": worker.worker_id if worker else None, "running": False}), 200
+
+    @blueprint.post("/worker/start")
+    def start_worker():
+        authorization_error = require_operator_token()
+        if authorization_error:
+            body, status = authorization_error
+            return jsonify(body), status
+        if background_worker is None:
+            return jsonify({"error": "background worker is not configured"}), 503
+        background_worker.start()
+        return jsonify(background_worker.status()), 200
+
+    @blueprint.post("/worker/stop")
+    def stop_worker():
+        authorization_error = require_operator_token()
+        if authorization_error:
+            body, status = authorization_error
+            return jsonify(body), status
+        if background_worker is None:
+            return jsonify({"error": "background worker is not configured"}), 503
+        background_worker.stop()
+        return jsonify(background_worker.status()), 200
+
+    @blueprint.post("/worker/work-once")
+    def work_once():
+        authorization_error = require_operator_token()
+        if authorization_error:
+            body, status = authorization_error
+            return jsonify(body), status
+        target_worker = worker or (background_worker.worker if background_worker else None)
+        if target_worker is None:
+            return jsonify({"error": "worker is not configured"}), 503
+        job = target_worker.run_once()
+        return jsonify({"executed": job is not None, "job": _job_response(job) if job else None}), 200
 
     return blueprint

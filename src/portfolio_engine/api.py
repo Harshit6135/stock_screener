@@ -92,6 +92,8 @@ class PortfolioPolicy:
     ltcg_hold_days: int | None = None
     rebalance_frequency: str = "DAILY"
     swap_cost_bps: Decimal = Decimal(0)
+    check_daily_sl: bool = True
+    mid_week_buy: bool = True
 
     def __post_init__(self) -> None:
         if self.max_positions < 1:
@@ -121,6 +123,8 @@ class PortfolioPolicy:
         object.__setattr__(self, "initial_stop_fraction", initial_stop_fraction)
         object.__setattr__(self, "max_volume_participation", participation)
         object.__setattr__(self, "swap_cost_bps", _amount(self.swap_cost_bps, "swap_cost_bps"))
+        object.__setattr__(self, "check_daily_sl", bool(self.check_daily_sl))
+        object.__setattr__(self, "mid_week_buy", bool(self.mid_week_buy))
 
 
 @dataclass(frozen=True)
@@ -165,24 +169,30 @@ class Decision:
     fee: Money = field(default_factory=lambda: Money(Decimal(0)))
 
 
-def _sell_decision(holding: Holding, bar: MarketBar, policy: PortfolioPolicy) -> Decision | None:
-    if bar.open <= holding.current_stop.amount:
-        return Decision(
-            DecisionType.HARD_STOP_GAP_OPEN,
-            holding.instrument_id,
-            holding.units,
-            Money(bar.open),
-            "open breached stop",
-        )
-    if bar.low <= holding.current_stop.amount:
-        return Decision(
-            DecisionType.HARD_STOP_INTRADAY,
-            holding.instrument_id,
-            holding.units,
-            holding.current_stop,
-            "intraday low breached stop",
-        )
-    if holding.score < policy.exit_score:
+def _sell_decision(
+    holding: Holding,
+    bar: MarketBar,
+    policy: PortfolioPolicy,
+    is_rebalance_day: bool = True,
+) -> Decision | None:
+    if policy.check_daily_sl or is_rebalance_day:
+        if bar.open <= holding.current_stop.amount:
+            return Decision(
+                DecisionType.HARD_STOP_GAP_OPEN,
+                holding.instrument_id,
+                holding.units,
+                Money(bar.open),
+                "open breached stop",
+            )
+        if bar.low <= holding.current_stop.amount:
+            return Decision(
+                DecisionType.HARD_STOP_INTRADAY,
+                holding.instrument_id,
+                holding.units,
+                holding.current_stop,
+                "intraday low breached stop",
+            )
+    if is_rebalance_day and holding.score < policy.exit_score:
         return Decision(
             DecisionType.SCORE_EXIT,
             holding.instrument_id,
@@ -240,6 +250,7 @@ def evaluate(
     candidates: Sequence[Candidate],
     bars: Mapping[str, MarketBar],
     execution: ExecutionAssumptions | None = None,
+    is_rebalance_day: bool = True,
 ) -> tuple[tuple[Decision, ...], PortfolioState]:
     """Return deterministic sell, pyramid, vacancy-buy, and swap decisions.
 
@@ -260,7 +271,7 @@ def evaluate(
         bar = bars.get(holding.instrument_id)
         if bar is None:
             raise DomainValidationError(f"missing required market bar for {holding.instrument_id}")
-        sell = _sell_decision(holding, bar, policy)
+        sell = _sell_decision(holding, bar, policy, is_rebalance_day=is_rebalance_day)
         if sell is None:
             retained.append(holding)
             continue
@@ -272,6 +283,9 @@ def evaluate(
             intraday_event = True
         else:
             released_cash += proceeds
+
+    if not is_rebalance_day and not policy.mid_week_buy:
+        candidates = ()
 
     candidate_by_id = {candidate.instrument_id: candidate for candidate in candidates}
     held = {holding.instrument_id for holding in retained}

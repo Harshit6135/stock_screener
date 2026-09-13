@@ -65,8 +65,18 @@ def create_app(config_class=RuntimeConfig):
     app.extensions["screener_services"] = services
     app.register_blueprint(create_dashboard_blueprint())
     app.register_blueprint(
-        create_operations_blueprint(services.jobs, services.worker.handlers.keys())
+        create_operations_blueprint(
+            services.jobs,
+            services.worker.handlers.keys(),
+            worker=services.worker,
+            background_worker=services.background_worker,
+        )
     )
+    if (
+        os.environ.get("SCREENER_RUN_WORKER", "true").lower() in {"1", "true", "yes"}
+        and services.background_worker is not None
+    ):
+        services.background_worker.start()
     app.register_blueprint(create_reference_blueprint(services.artifacts, services.market, services.publisher))
     app.register_blueprint(create_market_blueprint(services.market, services.catalog, services.index_poller, services.market_refresh, services.corporate_actions, services.intraday_alerts, services.intraday_stream))
     app.register_blueprint(create_research_blueprint(services.artifacts, services.research, services.jobs))

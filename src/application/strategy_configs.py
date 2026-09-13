@@ -85,7 +85,7 @@ class StrategyConfigs:
 
     @staticmethod
     def _settings(value: object) -> dict[str, object]:
-        if not isinstance(value, dict) or set(value) != _FIELDS:
+        if not isinstance(value, dict) or not _FIELDS.issubset(value) or set(value) - _FIELDS - {"factor_weights"}:
             raise DomainValidationError(
                 "strategy settings must contain the complete supported schema"
             )
@@ -109,6 +109,26 @@ class StrategyConfigs:
         ):
             raise DomainValidationError("max_positions must be an integer from 1 to 50")
         parsed["max_positions"] = positions
+        if "factor_weights" in value:
+            weights = value["factor_weights"]
+            if not isinstance(weights, dict) or not weights:
+                raise DomainValidationError("factor_weights must be a non-empty object")
+            parsed_weights: dict[str, str] = {}
+            for k, v in weights.items():
+                if not isinstance(k, str) or not k.strip():
+                    raise DomainValidationError("factor_weights names must be strings")
+                if isinstance(v, bool) or not isinstance(v, (str, int, float, Decimal)):
+                    raise DomainValidationError(f"factor weight for {k} must be numeric")
+                try:
+                    dec = Decimal(str(v))
+                except (InvalidOperation, ValueError) as exc:
+                    raise DomainValidationError(f"factor weight for {k} must be numeric") from exc
+                if not dec.is_finite() or dec < 0:
+                    raise DomainValidationError(f"factor weight for {k} must be non-negative")
+                parsed_weights[k] = str(dec)
+            if sum(Decimal(w) for w in parsed_weights.values()) <= 0:
+                raise DomainValidationError("factor_weights sum must be positive")
+            parsed["factor_weights"] = parsed_weights
         positive = {"initial_capital", "risk_threshold", "sl_multiplier", "atr_fallback_percent"}
         fractions = {
             "min_position_percent",

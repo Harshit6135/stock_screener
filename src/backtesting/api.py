@@ -378,12 +378,14 @@ def run(
         )
         if rebalance:
             rebalance_months.add((step.as_of_date.year, step.as_of_date.month))
+        candidates = step.candidates if (rebalance or policy.mid_week_buy) and step.regime == "RISK_ON" else ()
         decisions, state = evaluate(
             state,
             policy,
-            step.candidates if rebalance and step.regime == "RISK_ON" else (),
+            candidates,
             step.bars,
             fill_model.execution_assumptions(),
+            is_rebalance_day=rebalance,
         )
         all_decisions.extend(decisions)
         for decision in decisions:
