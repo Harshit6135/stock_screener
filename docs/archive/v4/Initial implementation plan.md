@@ -2,7 +2,14 @@
 
 > **Status:** backend implementation in progress; legacy HTTP/UI bindings retired
 >
-> **Authority:** `MODULAR_MONOREPO_DESIGN.md` is the target architecture. This
+> **2026-09-12 migration status:** the current v4 tree is in fact a breaking
+> backend rewrite, but a production cutover has **not** been approved. The
+> additive compatibility and old-route parity instructions below remain unmet
+> target criteria, not claims of current capability. Existing deployments must
+> retain their legacy baseline and data backups; migration posture and data
+> reconciliation require an explicit operator decision.
+>
+> **Authority:** [Modular monorepo design](Modular%20monorepo%20design.md) is the target architecture. This
 > plan implements it as a modular monolith; it does not split the application
 > into networked services. `ARCHITECTURE_SIMPLIFICATION_PROPOSAL.md` remains a
 > useful source of migration ideas, but its earlier three-package layout is

@@ -16,7 +16,9 @@ def sqlite_backup(source: str | Path, destination: str | Path) -> Path:
     if destination.exists():
         raise DomainValidationError("SQLite backup destination already exists")
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with closing(sqlite3.connect(f"file:{source.resolve().as_posix()}?mode=ro", uri=True)) as source_connection:
+    with closing(
+        sqlite3.connect(f"file:{source.resolve().as_posix()}?mode=ro", uri=True)
+    ) as source_connection:
         if source_connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise DomainValidationError("SQLite source database failed integrity check")
         with closing(sqlite3.connect(destination)) as destination_connection:

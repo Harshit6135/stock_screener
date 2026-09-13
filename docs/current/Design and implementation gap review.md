@@ -1,13 +1,64 @@
 # Design-to-Implementation Gap Review
 
 **Reviewed:** 2026-09-11  
-**Authority:** `MODULAR_MONOREPO_DESIGN.md`  
+**Remediation validated:** 2026-09-12
+**Authority:** [Modular monorepo design](Modular%20monorepo%20design.md)  
 **Scope:** the current uncommitted working tree, `run.py`, backend packages,
 tests, packaging, CI, and operator documentation. This is a code/test review;
 it is not a live-provider, broker, load, disaster-recovery, or production-data
 migration drill.
 
-## Executive verdict
+## Remediation update (current)
+
+The focused P0 correctness and durability repros in this review have been
+fixed. The backend now has checksum-verified artifact recovery, owned job
+leases, cooperative cancellation, payload-bound idempotency, deterministic
+SQLite closure, tie-safe ranking, side-aware execution costs, and prior-signal
+execution at the next supplied market step. Live execution remains disabled.
+
+The current tree passes its declared Python 3.13 gates: **42 tests**, **87%**
+statement coverage (threshold 85%), Ruff format/lint, mypy across 40 source
+files, Bandit, compileall, dependency validation, lock validation, and package
+build. CI is configured for the same gates on Ubuntu and Windows using the
+Poetry lock; hosted CI itself was not observed in this local review.
+
+| Finding | Current status | Implemented evidence / remaining boundary |
+|---|---|---|
+| R-01 timing and fill model | Repro fixed; broader timing gate open | Score exits and swaps execute at the supplied next-step open; intraday proceeds cannot finance earlier-open decisions; slippage and fees affect fills and metrics. Explicit signal timestamps, holidays, and missing-next-bar fixtures remain. |
+| R-02 jobs | Repro fixed; long jobs gated | Random claim tokens, owners, heartbeat API, lease recovery, bounded attempts/backoff, cancellation resolution, a composed worker, and a closed HTTP kind registry are implemented. Handlers do not yet receive a cancellation/heartbeat context for long-running work. |
+| R-03 ledger | Substantially closed | Canonical command hashes, currency/fee/time/correlation fields, optimistic versions, paper-ledger writes, and proposed/approved/submitted/fill events are implemented. Broker reconciliation, manual cash/capital events, and correction workflows remain future release gates. |
+| R-04 artifact recovery | Closed | Reads verify schema, identity, and checksum; corrupt artifacts are quarantined; staged/files-published/cataloged/failed states and invalidation/tombstone catalog support exist. |
+| R-05 SQLite lifecycle | Closed | One connection context owns commit/rollback and close; the Windows rename regression proves handles are released. |
+| R-06 ranking | Closed | Average percentiles for ties, dense ranks, factor direction, immutable inputs, and explicit percentile → score → ranking snapshots are implemented. |
+| R-07 ingestion/security | Partially closed | Raw responses, retrieval/provider metadata, counts, and recursive secret redaction are implemented. Provider-specific throttling and exchange-calendar scheduling remain. |
+| R-08 backtests | Substantially closed | Initial equity, costs, enriched fills, validated manifests, catalog publication, and output lineage are implemented. Large-result decomposition is deferred until measured. |
+| R-09 migration posture | Open; operator decision required | README identifies the current backend-only v4 tree as incompatible with old routes/data. The user has not approved a breaking migration. Legacy parity, migration fixtures, a tagged read-only baseline, and rollback/reconciliation are absent. Do not cut over an existing deployment. |
+| R-10 point-in-time data | Partially closed | Validated market snapshots, token-aware aliases and as-of resolution, calendars, corporate actions, and fundamentals are publishable. Adjusted-bar and benchmark policies remain strategy-specific work. |
+| R-11 immutability/validation | Closed | Nested mappings are recursively frozen and semantic/finite/unique invariants are enforced. |
+| R-12 operations | Partially closed | Read-only readiness cannot create a database and checks required migration namespaces; backup/restore reject overwrites and perform integrity checks. Full artifact-root health and a production restore drill remain. |
+| R-13 reproducibility | Local gates closed; hosted CI pending | Compatible dependency ranges and a regenerated Poetry 2.4.3 lock are configured with Python 3.13 CI on Ubuntu/Windows; local gates and wheel/sdist build pass. |
+| R-14 safe optimizations | Applied selectively | Shared SQLite handling, indexes, canonicalization helpers, and formatting were applied; unmeasured infrastructure changes remain deferred. |
+
+Dependencies and workflow actions were rechecked against their authoritative
+project pages during remediation: [Poetry releases](https://github.com/python-poetry/poetry/releases),
+[Flask](https://pypi.org/project/Flask/), [Waitress](https://pypi.org/project/waitress/),
+[yfinance](https://pypi.org/project/yfinance/),
+[actions/checkout](https://github.com/actions/checkout), and
+[actions/setup-python](https://github.com/actions/setup-python).
+
+The detailed findings below are retained as the reproducible **pre-fix audit**.
+Where they conflict with the remediation table above, the table and current
+tests describe the implemented state.
+
+**Release decision:** still **not release-ready** as a parity stock screener,
+fully reconcilable paper ledger, or live trading system. In particular the
+former multi-factor strategy pipeline and dashboard are not restored; the
+end-to-end registered worker vertical slice, legacy-data migration, broker
+reconciliation, point-in-time adjustment/benchmark rules, and hosted CI/restore
+drills remain acceptance work. These are not silently waived by passing local
+unit tests.
+
+## Original executive verdict (pre-fix)
 
 The replacement code is a useful architectural skeleton, but it is **not
 release-ready as a stock screener, authoritative paper ledger, or backtesting
@@ -278,10 +329,10 @@ exposes only health and generic job endpoints. No registered handler performs
 ingestion, screening/ranking, backtesting, portfolio actions, or paper
 execution. Static/template files remain, but are not served by the new shell.
 
-This conflicts with the design's additive-phase rule and with
-`IMPLEMENTATION_PLAN.md`, which says to preserve the current UI/REST surface
-until parity and to retire legacy code incrementally. `CURRENT_STATE.md` and
-several other documents still describe the deleted architecture.
+This conflicts with the design's additive-phase rule and with the historical
+implementation plan, which says to preserve the current UI/REST surface until
+parity and to retire legacy code incrementally. The v3 material is now kept in
+the documentation archive rather than presented as current architecture.
 
 **Impact:** the product's primary user-visible capability is absent and there
 is no executable old-vs-new parity oracle or reversible cutover path.

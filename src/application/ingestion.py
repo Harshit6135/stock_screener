@@ -1,8 +1,8 @@
 """Provider ingestion composition: raw evidence first, then normalized output."""
 
+from collections.abc import Iterable
 from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import Iterable
 
 from src.application.publication import ArtifactPublisher
 from src.application.security import sanitize_sensitive
@@ -31,6 +31,7 @@ def ingest_market_bars(
     # Publish through the recoverable application publisher rather than calling
     # domain helpers directly, preserving catalog/file reconciliation.
     from uuid import uuid4
+
     raw_id = uuid4()
     retrieved = retrieved_at or datetime.now(UTC)
     if retrieved.tzinfo is None or retrieved.utcoffset() is None:

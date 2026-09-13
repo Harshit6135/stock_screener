@@ -3,4 +3,3 @@
 
 class DomainValidationError(ValueError):
     """Raised when a framework-independent domain invariant is violated."""
-

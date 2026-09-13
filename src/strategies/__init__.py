@@ -1,5 +1,23 @@
 """Immutable policy, strategy, and ranking snapshot contracts."""
 
-from .api import PortfolioPolicyRevision, RankingMember, RankingSnapshot, StrategyRevision, rank_feature_values
+from .api import (
+    PercentileSnapshot,
+    PortfolioPolicyRevision,
+    RankingMember,
+    RankingSnapshot,
+    ScoreSnapshot,
+    StrategyRevision,
+    build_research_snapshots,
+    rank_feature_values,
+)
 
-__all__ = ["PortfolioPolicyRevision", "RankingMember", "RankingSnapshot", "StrategyRevision", "rank_feature_values"]
+__all__ = [
+    "PercentileSnapshot",
+    "PortfolioPolicyRevision",
+    "RankingMember",
+    "RankingSnapshot",
+    "ScoreSnapshot",
+    "StrategyRevision",
+    "build_research_snapshots",
+    "rank_feature_values",
+]

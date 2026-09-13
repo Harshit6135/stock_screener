@@ -7,7 +7,6 @@ from src.application.jobs import Job, JobStore
 from src.application.security import sanitize_error
 from src.platform_kernel import DomainValidationError
 
-
 JobHandler = Callable[[dict[str, Any]], dict[str, Any]]
 
 
@@ -32,5 +31,5 @@ class JobWorker:
         try:
             result = handler(dict(job.payload or {}))
             return self.jobs.complete(job.job_id, result, job.claim_token)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - handler boundary converts failures to durable state
             return self.jobs.fail(job.job_id, sanitize_error(exc), job.claim_token)

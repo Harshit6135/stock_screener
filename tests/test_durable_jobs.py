@@ -4,10 +4,29 @@ from src.platform_kernel import DomainValidationError
 
 def test_worker_claims_completes_and_detects_idempotency_payload_conflict(tmp_path):
     jobs = JobStore(tmp_path / "system.db")
-    job = jobs.submit("feature-1", "echo", {"value": 1})
+    jobs.submit("feature-1", "echo", {"value": 1})
     with __import__("pytest").raises(DomainValidationError, match="different command"):
         jobs.submit("feature-1", "echo", {"value": 2})
-    result = JobWorker(jobs, "worker-a", {"echo": lambda payload: {"echo": payload["value"]}}).run_once()
+    result = JobWorker(
+        jobs, "worker-a", {"echo": lambda payload: {"echo": payload["value"]}}
+    ).run_once()
     assert result.status == JobStatus.SUCCEEDED
     assert result.result == {"echo": 1}
     assert result.attempts == 1
+
+
+def test_worker_records_unsupported_and_sanitized_handler_failures(tmp_path):
+    jobs = JobStore(tmp_path / "system.db")
+    jobs.submit("unsupported", "missing", max_attempts=1)
+    result = JobWorker(jobs, "worker-a", {}).run_once()
+    assert result.status == JobStatus.FAILED
+    assert "unsupported job kind" in result.last_error
+
+    jobs.submit("failure", "explode", max_attempts=1)
+
+    def explode(payload):
+        raise RuntimeError("password=secret")
+
+    result = JobWorker(jobs, "worker-a", {"explode": explode}).run_once()
+    assert result.status == JobStatus.FAILED
+    assert result.last_error == "RuntimeError"

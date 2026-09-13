@@ -3,29 +3,32 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-_SENSITIVE_PARTS = (
-    "api_key",
-    "apikey",
-    "authorization",
-    "cookie",
-    "credential",
-    "password",
-    "secret",
-    "session",
-    "token",
+_SENSITIVE_KEYS = frozenset(
+    {
+        "api_key",
+        "apikey",
+        "authorization",
+        "cookie",
+        "credential",
+        "password",
+        "secret",
+        "token",
+    }
 )
+_SENSITIVE_SUFFIXES = ("_cookie", "_credential", "_password", "_secret", "_token")
 _REDACTED = "[REDACTED]"
+
+
+def _is_sensitive_key(key: object) -> bool:
+    normalized = str(key).lower().replace("-", "_")
+    return normalized in _SENSITIVE_KEYS or normalized.endswith(_SENSITIVE_SUFFIXES)
 
 
 def sanitize_sensitive(value: Any) -> Any:
     """Recursively redact values whose keys look credential-bearing."""
     if isinstance(value, Mapping):
         return {
-            str(key): (
-                _REDACTED
-                if any(part in str(key).lower() for part in _SENSITIVE_PARTS)
-                else sanitize_sensitive(item)
-            )
+            str(key): (_REDACTED if _is_sensitive_key(key) else sanitize_sensitive(item))
             for key, item in value.items()
         }
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):

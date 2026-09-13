@@ -46,7 +46,7 @@ def freeze_value(value: Any) -> Any:
     return value
 
 
-def _finite_decimal(value: Decimal | int | float | str, field_name: str) -> Decimal:
+def _finite_decimal(value: Decimal | float | str, field_name: str) -> Decimal:
     try:
         result = Decimal(str(value))
     except (InvalidOperation, ValueError) as exc:

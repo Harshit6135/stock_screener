@@ -51,7 +51,9 @@ class ArtifactStore:
 
     @staticmethod
     def _encode(payload: dict[str, Any]) -> bytes:
-        return json.dumps(payload, default=str, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return json.dumps(payload, default=str, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
 
     def publish_json(
         self,
@@ -83,7 +85,9 @@ class ArtifactStore:
             payload_path = staging / "payload.json"
             manifest_path = staging / "manifest.json"
             payload_path.write_bytes(payload_bytes)
-            manifest_path.write_text(json.dumps(asdict(manifest), default=str, sort_keys=True), encoding="utf-8")
+            manifest_path.write_text(
+                json.dumps(asdict(manifest), default=str, sort_keys=True), encoding="utf-8"
+            )
             # Windows requires a writable handle for fsync.
             with payload_path.open("r+b") as handle:
                 os.fsync(handle.fileno())
@@ -106,7 +110,10 @@ class ArtifactStore:
             payload = json.loads((directory / "payload.json").read_text(encoding="utf-8"))
             if not isinstance(manifest_data, dict) or not isinstance(payload, dict):
                 raise DomainValidationError("artifact files must contain JSON objects")
-            if manifest_data.get("artifact_id") != artifact_id or manifest_data.get("category") != category:
+            if (
+                manifest_data.get("artifact_id") != artifact_id
+                or manifest_data.get("category") != category
+            ):
                 raise DomainValidationError("artifact manifest identity does not match its path")
             required = {
                 "schema_version",
@@ -163,7 +170,9 @@ class ArtifactStore:
         )
         quarantine_root = self.root / ".quarantine"
         quarantine_root.mkdir(exist_ok=True)
-        destination = quarantine_root / f"{artifact_id}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}"
+        destination = (
+            quarantine_root / f"{artifact_id}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}"
+        )
         os.replace(source, destination)
         return destination.name
 

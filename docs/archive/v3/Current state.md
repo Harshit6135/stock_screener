@@ -1,5 +1,11 @@
 # Comprehensive Codebase Analysis & Architecture Documentation
 
+> Historical analysis of the pre-v3 application. The Flask-Smorest routes,
+> SQLAlchemy binds, dashboard, and legacy strategy services described below
+> are no longer present in the current backend-only working tree. For actual
+> deployment and remaining gaps, use [README](../README.md) and the
+> [remediation review](DESIGN_IMPLEMENTATION_GAP_REVIEW.md).
+
 ## Executive Summary
 
 The **Stock Screener v3.0.0** codebase is an enterprise-grade, multi-factor momentum screening, portfolio management, and backtesting system designed specifically for Indian Equities (NSE & BSE).

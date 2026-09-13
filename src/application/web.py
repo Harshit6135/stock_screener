@@ -26,11 +26,13 @@ def _job_response(job: Job) -> dict[str, object]:
     }
 
 
-def _require_operator_token() -> tuple[dict[str, str], int] | None:
+def require_operator_token() -> tuple[dict[str, str], int] | None:
     """Require an explicit local operator secret for every state change."""
     configured = current_app.config.get("OPERATOR_TOKEN")
     if not configured:
-        return {"error": "mutating operations are disabled until SCREENER_OPERATOR_TOKEN is configured"}, 503
+        return {
+            "error": "mutating operations are disabled until SCREENER_OPERATOR_TOKEN is configured"
+        }, 503
     supplied = request.headers.get("X-Operator-Token", "")
     if not secrets.compare_digest(supplied, configured):
         return {"error": "operator token is required"}, 401
@@ -47,7 +49,7 @@ def create_operations_blueprint(
 
     @blueprint.post("/jobs")
     def submit_job():
-        authorization_error = _require_operator_token()
+        authorization_error = require_operator_token()
         if authorization_error:
             body, status = authorization_error
             return jsonify(body), status
@@ -56,7 +58,11 @@ def create_operations_blueprint(
             return jsonify({"error": "fingerprint must be a non-empty string"}), 400
         try:
             kind = payload.get("kind", "generic")
-            if not isinstance(kind, str) or allowed_job_kinds is not None and kind not in allowed_job_kinds:
+            if (
+                not isinstance(kind, str)
+                or allowed_job_kinds is not None
+                and kind not in allowed_job_kinds
+            ):
                 raise DomainValidationError("unsupported job kind")
             if not isinstance(payload.get("payload", {}), dict):
                 raise DomainValidationError("job payload must be an object")
@@ -84,15 +90,15 @@ def create_operations_blueprint(
             if cursor < 0:
                 raise ValueError
             jobs.get(job_id)
-        except ValueError:
-            return jsonify({"error": "after must be a non-negative integer"}), 400
         except DomainValidationError:
             return jsonify({"error": "job not found"}), 404
+        except ValueError:
+            return jsonify({"error": "after must be a non-negative integer"}), 400
         return jsonify({"events": jobs.events_after(job_id, cursor)})
 
     @blueprint.post("/jobs/<int:job_id>/cancel")
     def cancel_job(job_id: int):
-        authorization_error = _require_operator_token()
+        authorization_error = require_operator_token()
         if authorization_error:
             body, status = authorization_error
             return jsonify(body), status

@@ -3,10 +3,10 @@
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from decimal import Decimal
-from typing import Mapping
 from uuid import UUID, uuid4
 
 from src.platform_kernel import ArtifactManifest, ArtifactStore, DomainValidationError, freeze_value
@@ -62,7 +62,12 @@ class IndicatorConfiguration:
     parameters: Mapping[str, object]
 
     @classmethod
-    def create(cls, revision: IndicatorRevision, output_alias: str, parameters: Mapping[str, object] | None = None):
+    def create(
+        cls,
+        revision: IndicatorRevision,
+        output_alias: str,
+        parameters: Mapping[str, object] | None = None,
+    ):
         if not output_alias:
             raise DomainValidationError("indicator output alias must be non-empty")
         configured = dict(parameters if parameters is not None else revision.parameters)
@@ -95,10 +100,27 @@ class FeatureSnapshot:
     def publish(self, store: ArtifactStore) -> ArtifactManifest:
         if not self.values:
             raise DomainValidationError("feature snapshot must contain values")
-        return store.publish_json("features", str(self.snapshot_id), {"snapshot_id": str(self.snapshot_id), "as_of_date": self.as_of_date, "configuration_id": str(self.configuration_id), "market_snapshot_id": str(self.market_snapshot_id), "values": [asdict(value) for value in self.values]}, upstream_ids=(str(self.configuration_id), str(self.market_snapshot_id)))
+        return store.publish_json(
+            "features",
+            str(self.snapshot_id),
+            {
+                "snapshot_id": str(self.snapshot_id),
+                "as_of_date": self.as_of_date,
+                "configuration_id": str(self.configuration_id),
+                "market_snapshot_id": str(self.market_snapshot_id),
+                "values": [asdict(value) for value in self.values],
+            },
+            upstream_ids=(str(self.configuration_id), str(self.market_snapshot_id)),
+        )
 
 
-def compute_feature(configuration: IndicatorConfiguration, revision: IndicatorRevision, market_snapshot_id: UUID, as_of_date: date, closes: Mapping[str, tuple[Decimal, ...]]) -> FeatureSnapshot:
+def compute_feature(
+    configuration: IndicatorConfiguration,
+    revision: IndicatorRevision,
+    market_snapshot_id: UUID,
+    as_of_date: date,
+    closes: Mapping[str, tuple[Decimal, ...]],
+) -> FeatureSnapshot:
     """Compute only reviewed built-ins; no user-supplied expression is evaluated."""
     if configuration.revision_id != revision.revision_id:
         raise DomainValidationError("indicator configuration does not match its revision")
@@ -112,10 +134,16 @@ def compute_feature(configuration: IndicatorConfiguration, revision: IndicatorRe
             continue
         if any(not item.is_finite() or item <= 0 for item in values):
             raise DomainValidationError("feature inputs must be positive finite prices")
-        value = values[-1] if revision.indicator_id == "close" else (values[-1] / values[-2]) - Decimal("1")
+        value = (
+            values[-1]
+            if revision.indicator_id == "close"
+            else (values[-1] / values[-2]) - Decimal(1)
+        )
         if not value.is_finite():
             raise DomainValidationError("feature computation produced a non-finite value")
         output.append(FeatureValue(instrument_id, value))
     if not output:
         raise DomainValidationError("insufficient warmup data for feature snapshot")
-    return FeatureSnapshot(uuid4(), as_of_date, configuration.configuration_id, tuple(output), market_snapshot_id)
+    return FeatureSnapshot(
+        uuid4(), as_of_date, configuration.configuration_id, tuple(output), market_snapshot_id
+    )

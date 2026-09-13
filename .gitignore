@@ -34,6 +34,7 @@ logs/*
 # Secrets (NEVER commit these)
 local_secrets.py
 access_token.txt
+portfolio_access_token.txt
 .env
 .env.local
 

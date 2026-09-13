@@ -1,13 +1,18 @@
 """Normalized bars published separately from provider-specific raw input."""
 
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import date
 from decimal import Decimal
 from enum import Enum
-from typing import Iterable, Mapping
 from uuid import UUID, uuid4
 
-from src.platform_kernel import ArtifactManifest, ArtifactStore, DomainValidationError, QualityStatus
+from src.platform_kernel import (
+    ArtifactManifest,
+    ArtifactStore,
+    DomainValidationError,
+    QualityStatus,
+)
 
 
 class AdjustmentBasis(str, Enum):
@@ -25,9 +30,11 @@ class NormalizedBar:
     low: Decimal
     close: Decimal
     volume: int
+    traded_value: Decimal | None = None
 
     def __post_init__(self) -> None:
         prices = [Decimal(str(value)) for value in (self.open, self.high, self.low, self.close)]
+        traded_value = Decimal(str(self.traded_value)) if self.traded_value is not None else None
         if (
             not self.instrument_id
             or any(not value.is_finite() for value in prices)
@@ -35,12 +42,17 @@ class NormalizedBar:
             or isinstance(self.volume, bool)
             or not isinstance(self.volume, int)
             or self.volume < 0
+            or traded_value is not None
+            and (not traded_value.is_finite() or traded_value < 0)
         ):
-            raise DomainValidationError("bar prices must be positive and volume non-negative")
+            raise DomainValidationError(
+                "bar prices must be positive and volume/traded value non-negative"
+            )
         if prices[2] > min(prices[0], prices[3]) or prices[1] < max(prices[0], prices[3]):
             raise DomainValidationError("normalized bar OHLC values are inconsistent")
         for name, value in zip(("open", "high", "low", "close"), prices):
             object.__setattr__(self, name, value)
+        object.__setattr__(self, "traded_value", traded_value)
 
 
 @dataclass(frozen=True)
@@ -58,7 +70,9 @@ class MarketDataSnapshot:
         if len(keys) != len(set(keys)):
             raise DomainValidationError("market snapshot contains duplicate instrument dates")
         if keys != sorted(keys):
-            raise DomainValidationError("market snapshot bars must be ordered by instrument and date")
+            raise DomainValidationError(
+                "market snapshot bars must be ordered by instrument and date"
+            )
 
 
 def publish_raw_snapshot(
@@ -93,7 +107,9 @@ def publish_snapshot(
     adjustment_basis: AdjustmentBasis = AdjustmentBasis.UNADJUSTED,
 ) -> ArtifactManifest:
     ordered_bars = tuple(sorted(bars, key=lambda bar: (bar.instrument_id, bar.as_of_date)))
-    snapshot = MarketDataSnapshot(uuid4(), provider, ordered_bars, raw_snapshot_id, adjustment_basis)
+    snapshot = MarketDataSnapshot(
+        uuid4(), provider, ordered_bars, raw_snapshot_id, adjustment_basis
+    )
     payload = {
         "snapshot_id": str(snapshot.snapshot_id),
         "provider": provider,
