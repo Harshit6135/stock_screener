@@ -1,12 +1,5 @@
-import os
-import sys
+"""Stock screener modular-monolith packages.
 
-# Add the src directory to sys.path if it's not already there
-current_dir = os.path.dirname(os.path.abspath(__file__))
-if current_dir not in sys.path:
-    sys.path.append(current_dir)
-
-# Centralized pandas option — avoids repeating in every service module
-import pandas as pd
-
-pd.set_option("future.no_silent_downcasting", True)
+No import-path mutation or data-library configuration belongs here. Framework
+and legacy adapters are composed explicitly at the application edge.
+"""
