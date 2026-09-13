@@ -50,10 +50,15 @@ V3 origin.
 | Survivorship-bias-free historical universe | V3 pending | Dated immutable liquidity-universe snapshots are accepted by backtests and included in manifest lineage. Evidence: `liquidity.py`, `backtest_jobs.py`. |
 | Backtest stress testing, sanity flags and P&L attribution | V3 pending | Durable stress operations, immutable diagnostic flags, and factor/sector/capitalization attribution reports are implemented. Evidence: `backtest_jobs.py`, `backtesting/api.py`. |
 | Deterministic anomaly detection | V3 pending | Protected immutable return-anomaly reports with bounded lookback/z-score parameters and readback are implemented. Evidence: `research_jobs.py`, `research_web.py`, `tests/test_research_anomalies.py`. |
-| Legacy portfolio import audit evidence | V3 implemented | Snapshot import remains conservative, while dated aggregate capital events, source-only realized-gain totals, and normalized legacy action history are preserved in immutable import artifacts. Evidence: `legacy_portfolio.py`, `tests/test_legacy_portfolio_import.py`. |
-| Execution-policy parity evidence | V3 implemented; exact parity was a v4 review gap | Versioned paper execution policy, protected immutable v3 comparison, and same-date exit-proceeds regression evidence are implemented. Evidence: `action_jobs.py`, `actions_web.py`, `portfolio_engine/api.py`, `tests/test_action_lifecycle.py`, `tests/test_review_regressions.py`. |
+| Legacy v3 multi-tab dashboard workflow and compatibility API | V3 implemented | Multi-tab dashboard rendered at `/dashboard`, backing endpoints for investment holdings, summary, trade journal, actions, backtests, and configurations wired. Evidence: `templates/dashboard.html`, `compatibility_web.py`, `run.py`, `tests/test_v1_compatibility.py`. |
+| Interactive OpenAPI 3.0 specification & Swagger UI | V3 implemented | OpenAPI 3.0 specification served at `/api/v1/openapi.json` and interactive Swagger UI mounted at `/api/v1/swagger-ui`. Evidence: `compatibility_web.py`, `tests/test_v1_compatibility.py`. |
+| Real-time SSE pipeline log streaming | V3 implemented | Server-sent events log streaming with broadcast queues and keepalive PINGs implemented at `/api/v1/app/logs/stream`. Evidence: `compatibility_web.py`, `tests/test_v1_compatibility.py`. |
+| Day-0 YFinance universe enrichment & screening | V3 implemented | Master universe build and screening (mcap ≥ ₹500 Cr, price ≥ ₹75) via optional `yfinance` adapter and job `reference.enrich-day0-universe`. Evidence: `market_jobs.py`, `yfinance_provider.py`, `tests/test_v1_compatibility.py`. |
+| Friday normalization and price-enriched ranking lookup | V3 implemented | Single-symbol lookup with automatic preceding Friday normalization and latest close price implemented at `/api/v1/ranking/symbol/<symbol>`. Evidence: `compatibility_web.py`, `tests/test_v1_compatibility.py`. |
+| Direct market-data and indicator bulk maintenance API | V3 implemented | Bulk bar/indicator insert, cutoff deletion, symbol bar retrieval, and latest market date lookup implemented. Evidence: `compatibility_web.py`, `market_repository.py`, `tests/test_v1_compatibility.py`. |
 
 ## Part 2 — Still pending in V4
+
 
 ### 2A. Completed in V4
 

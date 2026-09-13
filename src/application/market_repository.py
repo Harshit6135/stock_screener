@@ -109,7 +109,13 @@ class MarketRepository:
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             return [dict(row) for row in connection.execute(sql, parameters)]
 
+    def tracked_instruments(self) -> list[dict[str, object]]:
+        with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
+            rows = connection.execute("SELECT * FROM reference_instruments ORDER BY exchange, symbol").fetchall()
+        return [dict(row) for row in rows]
+
     def instrument(self, symbol: str, exchange: str = "NSE") -> dict[str, object]:
+
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
                 "SELECT * FROM reference_instruments WHERE symbol = ? AND exchange = ?",
@@ -139,6 +145,15 @@ class MarketRepository:
                     (instrument_id, cutoff.isoformat()),
                 )
         return int(cursor.rowcount)
+
+    def latest_market_date(self) -> date | None:
+        """Return the latest as_of_date recorded across all market bars."""
+        with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
+            row = connection.execute("SELECT MAX(as_of_date) AS max_date FROM market_bars").fetchone()
+        if row is not None and row["max_date"]:
+            return date.fromisoformat(row["max_date"])
+        return None
+
 
     def token_assignments(
         self, provider_token: str, *, exchange: str | None = None, as_of: date | None = None
@@ -232,17 +247,25 @@ class MarketRepository:
         return len(values)
 
     def bars(
-        self, instrument_id: str, start_date: date, end_date: date, *, limit: int = 400
+        self,
+        instrument_id: str,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        *,
+        limit: int = 400,
     ) -> list[dict[str, object]]:
-        if start_date > end_date or not 1 <= limit <= 1000:
+        actual_start = start_date or date(2000, 1, 1)
+        actual_end = end_date or date(2099, 12, 31)
+        if actual_start > actual_end or not 1 <= limit <= 1000:
             raise DomainValidationError("market bar range is invalid")
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
                 """SELECT * FROM market_bars WHERE instrument_id = ?
                    AND as_of_date BETWEEN ? AND ? ORDER BY as_of_date LIMIT ?""",
-                (instrument_id, start_date.isoformat(), end_date.isoformat(), limit),
+                (instrument_id, actual_start.isoformat(), actual_end.isoformat(), limit),
             ).fetchall()
         return [dict(row) for row in rows]
+
 
     def coverage(
         self,

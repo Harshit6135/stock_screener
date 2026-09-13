@@ -106,28 +106,29 @@ class ResearchPipelineJobs:
                 ("reference:sync", self.jobs.submit(
                     f"research-pipeline:{fingerprint}:reference-sync", "reference.sync-kite-instruments", {},
                 )),
-                ("reference:reconcile", self.jobs.submit(
-                    f"research-pipeline:{fingerprint}:reference-reconcile", "reference.reconcile-market",
-                    {"as_of_date": end_date.isoformat()},
-                )),
                 ("market:refresh", self.jobs.submit(
                     f"research-pipeline:{fingerprint}:market-refresh", "market.schedule-all-symbol-refresh",
                     {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
                 )),
+                ("reference:reconcile", self.jobs.submit(
+                    f"research-pipeline:{fingerprint}:reference-reconcile", "reference.reconcile-market",
+                    {"as_of_date": end_date.isoformat()},
+                )),
             ])
-        dates = trading_dates or tuple(
-            start_date + timedelta(days=offset)
-            for offset in range((end_date - start_date).days + 1)
-            if (start_date + timedelta(days=offset)).weekday() < 5
-        )
-        for strategy_id in strategies:
-            for session in dates:
-                kind = f"research.calculate-{strategy_id}-day"
-                name = f"daily:{strategy_id}" if start_date == end_date else f"daily:{strategy_id}:{session.isoformat()}"
-                child_jobs.append((name, self.jobs.submit(
-                    f"research-pipeline:{fingerprint}:{kind}:{session.isoformat()}", kind,
-                    {"as_of_date": session.isoformat()},
-                )))
+        else:
+            dates = trading_dates or tuple(
+                start_date + timedelta(days=offset)
+                for offset in range((end_date - start_date).days + 1)
+                if (start_date + timedelta(days=offset)).weekday() < 5
+            )
+            for strategy_id in strategies:
+                for session in dates:
+                    kind = f"research.calculate-{strategy_id}-day"
+                    name = f"daily:{strategy_id}" if start_date == end_date else f"daily:{strategy_id}:{session.isoformat()}"
+                    child_jobs.append((name, self.jobs.submit(
+                        f"research-pipeline:{fingerprint}:{kind}:{session.isoformat()}", kind,
+                        {"as_of_date": session.isoformat()},
+                    )))
         coordinator = self.jobs.submit(
             f"research-pipeline:{fingerprint}:advance",
             "research.pipeline-advance",
@@ -168,18 +169,57 @@ class ResearchPipelineJobs:
             raise DomainValidationError("research pipeline has a failed data stage")
         if not all(status == JobStatus.SUCCEEDED for status in data_statuses):
             raise DomainValidationError("research pipeline data stages are incomplete")
+
+        # Check any spawned child bar jobs from market:refresh
+        market_stage = next((stage for stage in data_stages if stage["stage_name"] == "market:refresh"), None)
+        if market_stage is not None:
+            market_job = self.jobs.get(int(market_stage["job_id"]))
+            if market_job.result and isinstance(market_job.result.get("job_ids"), list):
+                child_bar_jobs = [self.jobs.get(int(jid)) for jid in market_job.result["job_ids"]]
+                if any(job.status in {JobStatus.FAILED, JobStatus.CANCELLED} for job in child_bar_jobs):
+                    raise DomainValidationError("research pipeline has a failed data stage")
+                if not all(job.status == JobStatus.SUCCEEDED for job in child_bar_jobs):
+                    raise DomainValidationError("research pipeline data stages are incomplete")
+
         daily = [stage for stage in stages if stage["stage_name"].startswith("daily:")]
+        start_date = date.fromisoformat(str(pipeline["start_date"] or pipeline["as_of_date"]))
+        end_date = date.fromisoformat(str(pipeline["end_date"] or pipeline["as_of_date"]))
+        strategies = tuple(json.loads(str(pipeline["strategies_json"])))
+
+        # If data stages completed and daily stages haven't been queued yet, queue daily stages now
+        if not daily:
+            trading_dates = tuple(
+                start_date + timedelta(days=offset)
+                for offset in range((end_date - start_date).days + 1)
+                if (start_date + timedelta(days=offset)).weekday() < 5
+            )
+            daily_jobs = []
+            for strategy_id in strategies:
+                for session in trading_dates:
+                    kind = f"research.calculate-{strategy_id}-day"
+                    name = f"daily:{strategy_id}" if start_date == end_date else f"daily:{strategy_id}:{session.isoformat()}"
+                    job = self.jobs.submit(
+                        f"research-pipeline:{pipeline['fingerprint']}:{kind}:{session.isoformat()}", kind,
+                        {"as_of_date": session.isoformat()},
+                    )
+                    daily_jobs.append((name, job.job_id))
+            with sqlite_connection(self.database) as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                connection.executemany(
+                    "INSERT OR IGNORE INTO research_pipeline_stages(pipeline_id, stage_name, job_id) VALUES (?, ?, ?)",
+                    [(pipeline_id, name, job_id) for name, job_id in daily_jobs],
+                )
+            return self.status(pipeline_id)
+
         statuses = [self.jobs.get(int(stage["job_id"])).status for stage in daily]
         if any(status in {JobStatus.FAILED, JobStatus.CANCELLED} for status in statuses):
             raise DomainValidationError("research pipeline has a failed daily stage")
         if not all(status == JobStatus.SUCCEEDED for status in statuses):
             raise DomainValidationError("research pipeline daily stages are incomplete")
-        start_date = date.fromisoformat(str(pipeline["start_date"] or pipeline["as_of_date"]))
-        end_date = date.fromisoformat(str(pipeline["end_date"] or pipeline["as_of_date"]))
+
         fridays = tuple(start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1) if (start_date + timedelta(days=offset)).weekday() == 4)
         if not fridays:
             return self.status(pipeline_id)
-        strategies = tuple(json.loads(str(pipeline["strategies_json"])))
         weekly_jobs = []
         for strategy_id in strategies:
             for friday in fridays:

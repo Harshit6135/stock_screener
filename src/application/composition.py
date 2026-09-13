@@ -49,8 +49,10 @@ class ApplicationServices:
     intraday_alerts: IntradayStopAlerts
     intraday_stream: IntradayStreamLease
     broker_orders: BrokerOrderService
+    market_jobs: KiteMarketJobs
 
     @classmethod
+
     def create(
         cls,
         data_directory: str | Path,
@@ -133,6 +135,7 @@ class ApplicationServices:
                 "backtest.attribute": backtests.attribute,
                 "actions.generate-paper-proposal": actions.generate,
                 "research.pipeline-advance": pipelines.advance,
+                "reference.enrich-day0-universe": market_jobs.enrich_and_sync_universe,
             },
         )
         return cls(
@@ -156,4 +159,6 @@ class ApplicationServices:
             intraday_alerts,
             intraday_stream,
             broker_orders,
+            market_jobs,
         )
+

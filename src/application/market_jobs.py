@@ -552,3 +552,36 @@ class KiteMarketJobs:
             "first_date": bars[0].as_of_date.isoformat(),
             "last_date": bars[-1].as_of_date.isoformat(),
         }
+
+    def enrich_and_sync_universe(self, payload: dict[str, Any] | None = None) -> dict[str, object]:
+        """Day-0 master universe build: sync instruments, optionally enrich via YFinance and filter."""
+        payload = payload or {}
+        min_mcap = float(payload.get("min_market_cap_cr", 500)) * 10_000_000
+        min_price = float(payload.get("min_price", 75))
+        enrich_yfinance = bool(payload.get("enrich_yfinance", False))
+
+        # First sync base NSE instruments
+        sync_result = self.sync_instruments({})
+        tracked = self.repository.tracked_instruments()
+        
+        enriched_count = 0
+        eligible_count = 0
+        if enrich_yfinance:
+            from src.application.yfinance_provider import fetch_symbol_enrichment
+            for item in tracked[:payload.get("limit", len(tracked))]:
+                try:
+                    info = fetch_symbol_enrichment(item.symbol, item.exchange)
+                    enriched_count += 1
+                    if info["market_cap"] >= min_mcap and info["current_price"] >= min_price:
+                        eligible_count += 1
+                except Exception:
+                    continue
+
+        return {
+            "base_sync": sync_result,
+            "total_tracked": len(tracked),
+            "enriched_count": enriched_count,
+            "eligible_count": eligible_count,
+            "enrichment_applied": enrich_yfinance,
+        }
+

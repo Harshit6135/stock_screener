@@ -82,6 +82,12 @@ def create_app(config_class=RuntimeConfig):
     @app.get("/")
     def legacy_dashboard_root():
         return redirect("/app")
+
+    @app.get("/dashboard")
+    def legacy_dashboard():
+        from flask import render_template
+        return render_template("dashboard.html")
+
     app.register_blueprint(
         create_kite_auth_blueprint(
             KiteAuthService(market_data_credentials, market_data_token_path)

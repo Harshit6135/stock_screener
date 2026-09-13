@@ -31,3 +31,27 @@ def download_daily_bars(symbol: str, start: date, end: date) -> list[dict[str, A
             "volume": int(row["Volume"]), "snapshot_id": f"yfinance:{symbol}:{index.date().isoformat()}",
         })
     return rows
+
+
+def fetch_symbol_enrichment(symbol: str, exchange: str = "NSE") -> dict[str, Any]:
+    """Fetch metadata and quote info from yfinance for a single stock."""
+    try:
+        import yfinance as yf  # type: ignore[import-not-found]
+    except ImportError as exc:
+        raise DomainValidationError("yfinance is not installed") from exc
+    ticker_str = f"{symbol}.NS" if exchange.upper() == "NSE" else f"{symbol}.BO"
+    ticker = yf.Ticker(ticker_str)
+    info = getattr(ticker, "info", None) or {}
+    price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose") or 0.0
+    market_cap = info.get("marketCap") or 0.0
+    return {
+        "symbol": symbol,
+        "exchange": exchange,
+        "company_name": info.get("shortName") or info.get("longName") or symbol,
+        "sector": info.get("sector", "Unknown"),
+        "industry": info.get("industry", "Unknown"),
+        "market_cap": float(market_cap),
+        "current_price": float(price),
+        "eligible": float(market_cap) >= 5_000_000_000 and float(price) >= 75.0,
+    }
+
