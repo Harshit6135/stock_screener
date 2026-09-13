@@ -19,13 +19,34 @@ def _legacy(path, symbol="ABC"):
         """CREATE TABLE investment_holdings (
             symbol TEXT, date TEXT, entry_date TEXT, entry_price NUMERIC,
             avg_price NUMERIC, units INTEGER);
-           CREATE TABLE investment_summary (date TEXT, remaining_capital NUMERIC);"""
+           CREATE TABLE investment_summary (date TEXT, remaining_capital NUMERIC);
+           CREATE TABLE capital_events (
+             id INTEGER PRIMARY KEY, date TEXT, amount NUMERIC,
+             event_type TEXT, note TEXT);
+           CREATE TABLE actions (
+             action_id TEXT PRIMARY KEY, action_date TEXT, type TEXT,
+             reason TEXT, symbol TEXT, risk NUMERIC, atr NUMERIC,
+             units INTEGER, prev_close NUMERIC, execution_price NUMERIC,
+             capital NUMERIC, status TEXT, buy_cost NUMERIC,
+             sell_cost NUMERIC, tax NUMERIC);"""
     )
     connection.execute(
         "INSERT INTO investment_holdings VALUES (?, '2026-09-07', '2026-09-01', 100, 110, 2)",
         (symbol,),
     )
     connection.execute("INSERT INTO investment_summary VALUES ('2026-09-07', 500)")
+    connection.execute(
+        "INSERT INTO capital_events VALUES (1, '2025-12-10', 1000, 'initial', 'seed')"
+    )
+    connection.execute(
+        "INSERT INTO capital_events VALUES (2, '2026-01-02', -5, 'realized_gain', 'sale')"
+    )
+    connection.execute(
+        """INSERT INTO actions VALUES
+           ('action-1', '2026-01-02', 'sell', 'review', ?, 1, 1, 1,
+            110, 108, 108, 'Approved', 0, 0, 1)""",
+        (symbol,),
+    )
     connection.commit()
     connection.close()
 
@@ -43,6 +64,10 @@ def test_preview_and_import_preserve_cash_and_cost_basis(tmp_path):
     preview = importer.preview({"legacy_path": str(legacy)})
     assert preview["unresolved_symbols"] == []
     assert preview["opening_cash_required"] == "720"
+    assert preview["source_realised_gain_total"] == "-5"
+    assert len(preview["source_capital_events"]) == 2
+    assert preview["source_approved_action_count"] == 1
+    assert preview["source_actions"][0]["execution_price"] == "108"
     app = Flask(__name__)
     app.config["OPERATOR_TOKEN"] = "test-secret"
     app.register_blueprint(create_legacy_portfolio_blueprint(importer))
@@ -62,6 +87,10 @@ def test_preview_and_import_preserve_cash_and_cost_basis(tmp_path):
     projection = ledger.projection("legacy-paper")
     assert str(projection.cash.amount) == "500"
     assert projection.open_lots[0].unit_cost.amount == 110
+    _, imported_artifact = publisher.store.read_json(
+        "imports/legacy_portfolio", imported.json["artifact_id"]
+    )
+    assert imported_artifact["source_realised_gain_total"] == "-5"
     assert (
         client.post(
             "/api/v2/portfolio/import-v3",

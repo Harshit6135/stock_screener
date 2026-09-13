@@ -6,6 +6,7 @@ from waitress import serve  # type: ignore[import-untyped]
 
 from src.application.actions_web import create_actions_blueprint
 from src.application.backtest_web import create_backtest_blueprint
+from src.application.broker_web import create_broker_blueprint
 from src.application.composition import ApplicationServices
 from src.application.configs_web import create_configs_blueprint
 from src.application.dashboard_web import create_dashboard_blueprint
@@ -53,6 +54,9 @@ def create_app(config_class=RuntimeConfig):
         data_directory,
         market_data_kite_credentials=market_data_credentials,
         market_data_kite_token_path=market_data_token_path,
+        portfolio_kite_credentials=portfolio_credentials,
+        portfolio_kite_token_path=portfolio_token_path,
+        portfolio_live_execution=bool(app.config.get("PORTFOLIO_KITE_LIVE_EXECUTION", False)),
         nse_csv_path=Path.cwd() / "data" / "imports" / "NSE.csv",
         bse_csv_path=Path.cwd() / "data" / "imports" / "BSE.csv",
         legacy_market_path=Path.cwd() / "instance" / "market_data.db",
@@ -62,12 +66,13 @@ def create_app(config_class=RuntimeConfig):
     app.register_blueprint(
         create_operations_blueprint(services.jobs, services.worker.handlers.keys())
     )
-    app.register_blueprint(create_reference_blueprint(services.artifacts, services.market))
-    app.register_blueprint(create_market_blueprint(services.market, services.catalog))
-    app.register_blueprint(create_research_blueprint(services.artifacts, services.research))
+    app.register_blueprint(create_reference_blueprint(services.artifacts, services.market, services.publisher))
+    app.register_blueprint(create_market_blueprint(services.market, services.catalog, services.index_poller, services.market_refresh, services.corporate_actions, services.intraday_alerts, services.intraday_stream))
+    app.register_blueprint(create_research_blueprint(services.artifacts, services.research, services.jobs))
     app.register_blueprint(create_pipeline_blueprint(services.pipelines))
     app.register_blueprint(create_configs_blueprint(services.configs))
     app.register_blueprint(create_portfolio_blueprint(services.ledger, services.market))
+    app.register_blueprint(create_broker_blueprint(services.broker_orders))
     app.register_blueprint(create_legacy_portfolio_blueprint(services.legacy_portfolio))
     app.register_blueprint(create_backtest_blueprint(services.backtests, services.artifacts))
     app.register_blueprint(create_actions_blueprint(services.actions))

@@ -30,4 +30,25 @@ def create_pipeline_blueprint(pipelines: ResearchPipelineJobs) -> Blueprint:
         except DomainValidationError:
             return jsonify({"error": "research pipeline not found"}), 404
 
+    @blueprint.post("/research/<pipeline_id>/stages/<path:stage_name>/retry")
+    def retry_stage(pipeline_id: str, stage_name: str):
+        error = require_operator_token()
+        if error:
+            return jsonify(error[0]), error[1]
+        try:
+            return jsonify(pipelines.retry_stage(pipeline_id, stage_name)), 202
+        except DomainValidationError as exc:
+            status = 404 if "not found" in str(exc) else 409
+            return jsonify({"error": str(exc)}), status
+
+    @blueprint.post("/research/<pipeline_id>/cancel")
+    def cancel(pipeline_id: str):
+        error = require_operator_token()
+        if error:
+            return jsonify(error[0]), error[1]
+        try:
+            return jsonify(pipelines.cancel(pipeline_id)), 202
+        except DomainValidationError:
+            return jsonify({"error": "research pipeline not found"}), 404
+
     return blueprint

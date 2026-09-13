@@ -1,9 +1,10 @@
-from datetime import date
+from datetime import date, datetime
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from flask import Flask
 
-from src.application.market_repository import MarketRepository, TrackedInstrument
+from src.application.market_repository import MarketRepository, NormalizedBar, TrackedInstrument
 from src.application.portfolio_web import create_portfolio_blueprint
 from src.execution_gateway import Ledger
 
@@ -12,8 +13,9 @@ def test_operator_protected_manual_fill_lifecycle(tmp_path):
     database = tmp_path / "system.db"
     ledger = Ledger(database)
     market = MarketRepository(database)
+    instrument_id = str(uuid4())
     market.upsert_instruments(
-        [TrackedInstrument(str(uuid4()), "INE000000001", "ABC", "NSE", "42", date(2026, 9, 1))]
+        [TrackedInstrument(instrument_id, "INE000000001", "ABC", "NSE", "42", date(2026, 9, 1))]
     )
     app = Flask(__name__)
     app.config["OPERATOR_TOKEN"] = "local-test-secret"
@@ -56,9 +58,62 @@ def test_operator_protected_manual_fill_lifecycle(tmp_path):
     account = client.get("/api/v2/portfolio/accounts/paper", headers=headers)
     assert account.json["cash"] == "800"
     assert account.json["open_lots"][0]["symbol"] == "ABC"
+    transfer = client.post(
+        "/api/v2/portfolio/accounts/paper/cash-transfers",
+        json={
+            "idempotency_key": "withdraw-1",
+            "expected_version": 1,
+            "direction": "WITHDRAW",
+            "amount": "100",
+        },
+        headers=headers,
+    )
+    assert transfer.status_code == 201
+    assert transfer.json["version"] == 2
+    assert client.get("/api/v2/portfolio/accounts/paper", headers=headers).json["cash"] == "700"
+    valuation = client.get(
+        "/api/v2/portfolio/accounts/paper/valuation?as_of_date=2026-09-03&persist=1", headers=headers
+    )
+    assert valuation.status_code == 200
+    assert valuation.json["stale_prices"] == 1
+    market.upsert_bars(
+        instrument_id,
+        [NormalizedBar(instrument_id, datetime.now(ZoneInfo("Asia/Kolkata")).date(), 105, 110, 100, 108, 1000)],
+        "ticker-snapshot",
+    )
+    assert client.get("/api/v2/portfolio/accounts/paper/ticker").status_code == 401
+    ticker = client.get("/api/v2/portfolio/accounts/paper/ticker", headers=headers)
+    assert ticker.status_code == 200
+    assert ticker.json["basis"] == "latest_available_market_bar"
+    assert ticker.json["holdings"][0]["fresh"] is True
+    assert ticker.json["holdings"][0]["price"] == "108"
+    stream = client.get(
+        "/api/v2/portfolio/accounts/paper/ticker/stream", headers=headers
+    )
+    assert stream.status_code == 200
+    assert stream.mimetype == "text/event-stream"
+    assert b"event: portfolio-ticker" in stream.data
+    snapshots = client.get("/api/v2/portfolio/accounts/paper/valuation/snapshots", headers=headers)
+    assert snapshots.status_code == 200
+    assert snapshots.json["snapshots"][0]["as_of_date"] == "2026-09-03"
+    summary = client.get(
+        "/api/v2/portfolio/accounts/paper/summary?as_of_date=2026-09-04", headers=headers
+    )
+    assert summary.status_code == 200
+    assert summary.json["summary_basis"] == "checksum_verified_valuation_snapshot"
+    history = client.get(
+        "/api/v2/portfolio/accounts/paper/valuation/history", headers=headers
+    )
+    assert history.status_code == 200
+    assert history.json["history"][0]["snapshot_id"] == snapshots.json["snapshots"][0]["snapshot_id"]
+    journal = client.get(
+        "/api/v2/portfolio/accounts/paper/journal?long_term_days=1", headers=headers
+    )
+    assert journal.status_code == 200
+    assert journal.json["long_term_days"] == 1
     invalid = {
         "idempotency_key": "oversell",
-        "expected_version": 1,
+        "expected_version": 2,
         "fills": [
             {
                 "symbol": "ABC",
@@ -76,4 +131,4 @@ def test_operator_protected_manual_fill_lifecycle(tmp_path):
         == 400
     )
     events = client.get("/api/v2/portfolio/accounts/paper/events", headers=headers)
-    assert len(events.json["events"]) == 1
+    assert len(events.json["events"]) == 2

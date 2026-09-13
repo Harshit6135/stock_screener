@@ -65,3 +65,49 @@ def test_reference_api_reads_checksum_verified_liquidity_universe(tmp_path):
     assert response.status_code == 200
     assert response.json["artifact"]["quality"] == "COMPLETE"
     assert response.json["universe"]["members"][0]["eligible"] is True
+
+
+def test_reference_api_publishes_protected_macro_snapshot(tmp_path):
+    from flask import Flask
+
+    from src.application.catalog import ArtifactCatalog
+    from src.application.publication import ArtifactPublisher
+    from src.application.reference_web import create_reference_blueprint
+    from src.platform_kernel import ArtifactStore
+
+    database = tmp_path / "system.db"
+    publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
+    app = Flask(__name__)
+    app.config["OPERATOR_TOKEN"] = "secret"
+    app.register_blueprint(create_reference_blueprint(ArtifactStore(tmp_path / "artifacts"), publisher=publisher))
+    client = app.test_client()
+    body = {"as_of_date": "2026-09-10", "values": {"vix": "18.5"}}
+    assert client.post("/api/v2/reference/macro-indicators", json=body).status_code == 401
+    response = client.post("/api/v2/reference/macro-indicators", json=body, headers={"X-Operator-Token": "secret"})
+    assert response.status_code == 201
+    artifact_id = response.json["artifact_id"]
+    _, stored = publisher.store.read_json("reference/macro-indicators", artifact_id)
+    assert stored["values"]["vix"] == "18.5"
+    cap = client.post(
+        "/api/v2/reference/market-capitalization",
+        json={"as_of_date": "2026-09-10", "values": {"instrument-a": "5000000000"}},
+        headers={"X-Operator-Token": "secret"},
+    )
+    fundamentals = client.post(
+        "/api/v2/reference/fundamentals",
+        json={"as_of_date": "2026-09-10", "values": {"instrument-a": {"eps": "12.5", "debt_equity": "0.4"}}},
+        headers={"X-Operator-Token": "secret"},
+    )
+    assert cap.status_code == fundamentals.status_code == 201
+    free_float = client.post(
+        "/api/v2/reference/market-capitalization",
+        json={"as_of_date": "2026-09-10", "values": {"instrument-b": {"market_cap": "1000", "free_float": "0.25"}}},
+        headers={"X-Operator-Token": "secret"},
+    )
+    assert free_float.status_code == 201
+    assert publisher.store.read_json("reference/market-capitalization", free_float.json["artifact_id"])[1]["values"]["instrument-b"]["free_float"] == "0.25"
+    assert publisher.store.read_json("reference/fundamentals", fundamentals.json["artifact_id"])[1]["values"]["instrument-a"]["eps"] == "12.5"
+    readback = client.get(f"/api/v2/reference/fundamentals/{fundamentals.json['artifact_id']}")
+    assert readback.status_code == 200
+    assert readback.json["artifact"]["category"] == "reference/fundamentals"
+    assert client.get("/api/v2/reference/fundamentals/missing").status_code == 404

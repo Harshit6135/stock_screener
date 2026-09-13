@@ -38,6 +38,7 @@ class MarketBar:
     high: Decimal
     low: Decimal
     close: Decimal
+    volume: int | None = None
 
     def __post_init__(self) -> None:
         for field_name in ("open", "high", "low", "close"):
@@ -46,6 +47,8 @@ class MarketBar:
             raise DomainValidationError("market prices must be positive")
         if self.low > min(self.open, self.close) or self.high < max(self.open, self.close):
             raise DomainValidationError("market bar OHLC values are inconsistent")
+        if self.volume is not None and (isinstance(self.volume, bool) or not isinstance(self.volume, int) or self.volume < 0):
+            raise DomainValidationError("market bar volume is invalid")
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,7 @@ class Holding:
     average_price: Money
     current_stop: Money
     score: Decimal
+    opened_on: date | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "score", _amount(self.score, "score"))
@@ -66,9 +70,14 @@ class Holding:
 class Candidate:
     instrument_id: str
     score: Decimal
+    size_multiplier: Decimal = Decimal(1)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "score", _amount(self.score, "score"))
+        multiplier = _amount(self.size_multiplier, "size_multiplier")
+        if multiplier <= 0:
+            raise DomainValidationError("size_multiplier must be positive")
+        object.__setattr__(self, "size_multiplier", multiplier)
 
 
 @dataclass(frozen=True)
@@ -79,6 +88,10 @@ class PortfolioPolicy:
     swap_buffer: Decimal = Decimal("0.25")
     pyramid_fraction: Decimal = Decimal(0)
     initial_stop_fraction: Decimal = Decimal("0.10")
+    max_volume_participation: Decimal | None = None
+    ltcg_hold_days: int | None = None
+    rebalance_frequency: str = "DAILY"
+    swap_cost_bps: Decimal = Decimal(0)
 
     def __post_init__(self) -> None:
         if self.max_positions < 1:
@@ -91,15 +104,23 @@ class PortfolioPolicy:
         swap_buffer = _amount(self.swap_buffer, "swap_buffer")
         pyramid_fraction = _amount(self.pyramid_fraction, "pyramid_fraction")
         initial_stop_fraction = _amount(self.initial_stop_fraction, "initial_stop_fraction")
+        participation = None if self.max_volume_participation is None else _amount(self.max_volume_participation, "max_volume_participation")
         if (
             swap_buffer < 0
             or not Decimal(0) <= pyramid_fraction <= Decimal(1)
             or not Decimal(0) < initial_stop_fraction < Decimal(1)
+            or participation is not None and not Decimal(0) < participation <= Decimal(1)
+            or self.ltcg_hold_days is not None and (isinstance(self.ltcg_hold_days, bool) or not isinstance(self.ltcg_hold_days, int) or self.ltcg_hold_days < 1)
+            or self.rebalance_frequency not in {"DAILY", "BIWEEKLY", "MONTHLY"}
+            or _amount(self.swap_cost_bps, "swap_cost_bps") < 0
+            or _amount(self.swap_cost_bps, "swap_cost_bps") >= 10_000
         ):
             raise DomainValidationError("swap and pyramid policy values are invalid")
         object.__setattr__(self, "swap_buffer", swap_buffer)
         object.__setattr__(self, "pyramid_fraction", pyramid_fraction)
         object.__setattr__(self, "initial_stop_fraction", initial_stop_fraction)
+        object.__setattr__(self, "max_volume_participation", participation)
+        object.__setattr__(self, "swap_cost_bps", _amount(self.swap_cost_bps, "swap_cost_bps"))
 
 
 @dataclass(frozen=True)
@@ -108,14 +129,17 @@ class ExecutionAssumptions:
 
     slippage_bps: Decimal = Decimal(0)
     fee_bps: Decimal = Decimal(0)
+    tax_bps: Decimal = Decimal(0)
 
     def __post_init__(self) -> None:
         slippage = _amount(self.slippage_bps, "slippage_bps")
         fee = _amount(self.fee_bps, "fee_bps")
-        if slippage < 0 or fee < 0 or slippage >= 10_000 or fee >= 10_000:
+        tax = _amount(self.tax_bps, "tax_bps")
+        if slippage < 0 or fee < 0 or tax < 0 or slippage >= 10_000 or fee >= 10_000 or tax >= 10_000:
             raise DomainValidationError("execution costs must be in [0, 10000) bps")
         object.__setattr__(self, "slippage_bps", slippage)
         object.__setattr__(self, "fee_bps", fee)
+        object.__setattr__(self, "tax_bps", tax)
 
 
 @dataclass(frozen=True)
@@ -183,7 +207,9 @@ def _with_costs(
         decision.execution_price.currency,
     )
     fee = Money(
-        price.amount * decision.units.units * assumptions.fee_bps / Decimal(10000),
+        price.amount * decision.units.units * (
+            assumptions.fee_bps + (assumptions.tax_bps if not is_buy else Decimal(0))
+        ) / Decimal(10000),
         price.currency,
     )
     return Decision(
@@ -200,6 +226,12 @@ def _execution_price(decision: Decision) -> Money:
     if decision.execution_price is None:
         raise DomainValidationError("priced decision requires an execution price")
     return decision.execution_price
+
+
+def _volume_cap(bar: MarketBar, policy: PortfolioPolicy) -> int | None:
+    if policy.max_volume_participation is None or bar.volume is None:
+        return None
+    return int((Decimal(bar.volume) * policy.max_volume_participation).to_integral_value(rounding=ROUND_DOWN))
 
 
 def evaluate(
@@ -219,6 +251,7 @@ def evaluate(
     decisions: list[Decision] = []
     retained: list[Holding] = []
     cash = state.cash.amount
+    released_cash = Decimal(0)
     deferred_cash = Decimal(0)
     intraday_event = False
     assumptions = execution or ExecutionAssumptions()
@@ -238,7 +271,7 @@ def evaluate(
             deferred_cash += proceeds
             intraday_event = True
         else:
-            cash += proceeds
+            released_cash += proceeds
 
     candidate_by_id = {candidate.instrument_id: candidate for candidate in candidates}
     held = {holding.instrument_id for holding in retained}
@@ -256,8 +289,11 @@ def evaluate(
             ):
                 rewritten.append(holding)
                 continue
-            allocation = cash * policy.max_position_fraction * policy.pyramid_fraction
+            allocation = cash * policy.max_position_fraction * policy.pyramid_fraction * candidate.size_multiplier
             units = int((allocation / bar.open).to_integral_value(rounding=ROUND_DOWN))
+            cap = _volume_cap(bar, policy)
+            if cap is not None:
+                units = min(units, cap)
             if units < 1:
                 rewritten.append(holding)
                 continue
@@ -307,7 +343,9 @@ def evaluate(
         retained = rewritten
 
     if intraday_event:
-        return tuple(decisions), PortfolioState(Money(cash + deferred_cash), tuple(retained))
+        return tuple(decisions), PortfolioState(
+            Money(cash + released_cash + deferred_cash), tuple(retained)
+        )
 
     for candidate in sorted(candidates, key=lambda item: (-item.score, item.instrument_id)):
         if candidate.instrument_id in held:
@@ -319,7 +357,14 @@ def evaluate(
             )
         if len(retained) >= policy.max_positions:
             weakest = min(retained, key=lambda holding: (holding.score, holding.instrument_id))
-            if candidate.score <= weakest.score * (Decimal(1) + policy.swap_buffer):
+            effective_swap_buffer = policy.swap_buffer + policy.swap_cost_bps / Decimal(10_000)
+            if candidate.score <= weakest.score * (Decimal(1) + effective_swap_buffer):
+                continue
+            if (
+                policy.ltcg_hold_days is not None
+                and weakest.opened_on is not None
+                and (bar.as_of_date - weakest.opened_on).days < policy.ltcg_hold_days
+            ):
                 continue
             weakest_bar = bars.get(weakest.instrument_id)
             if weakest_bar is None:
@@ -335,13 +380,16 @@ def evaluate(
                 assumptions,
             )
             decisions.append(sell)
-            cash += _execution_price(sell).amount * weakest.units.units - sell.fee.amount
+            released_cash += _execution_price(sell).amount * weakest.units.units - sell.fee.amount
             retained.remove(weakest)
             held.remove(weakest.instrument_id)
             # Candidate and weakest scores are prior-close inputs; both legs
             # execute at this step's open under sell-first sequencing.
-        allocation = min(cash * policy.max_position_fraction, cash)
+        allocation = min(cash * policy.max_position_fraction * candidate.size_multiplier, cash)
         units = int((allocation / bar.open).to_integral_value(rounding=ROUND_DOWN))
+        cap = _volume_cap(bar, policy)
+        if cap is not None:
+            units = min(units, cap)
         if units < 1:
             continue
         quantity = Quantity(units)
@@ -387,4 +435,4 @@ def evaluate(
 
     if not decisions:
         decisions.append(Decision(DecisionType.NO_ACTION, None, None, None, "portfolio unchanged"))
-    return tuple(decisions), PortfolioState(Money(cash), tuple(retained))
+    return tuple(decisions), PortfolioState(Money(cash + released_cash), tuple(retained))

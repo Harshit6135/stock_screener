@@ -5,6 +5,8 @@ from uuid import uuid4
 from flask import Flask
 
 from src.application.catalog import ArtifactCatalog
+from src.application.jobs import JobStore
+from src.application.market_refresh import MarketRefreshPlanner
 from src.application.market_repository import MarketRepository, TrackedInstrument
 from src.application.market_web import create_market_blueprint
 from src.application.publication import ArtifactPublisher
@@ -69,3 +71,29 @@ def test_coverage_api_paginates_and_reports_latest_cataloged_source(tmp_path):
     )
     assert client.get("/api/v2/market/coverage?exchange=INVALID").status_code == 400
     assert client.get("/api/v2/market/coverage?limit=501").status_code == 400
+
+
+def test_reconciliation_reports_symbol_level_exclusions_and_unmatched_sources(tmp_path):
+    database = tmp_path / "system.db"
+    market = MarketRepository(database)
+    publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
+    market.upsert_instruments(
+        [
+            TrackedInstrument("index", "INDEX:NIFTY", "NIFTY 500", "NSE", "", date(2026, 1, 1)),
+            TrackedInstrument("missing-token", "IN0000000001", "MISSING", "NSE", "", date(2026, 1, 1)),
+            TrackedInstrument("live", "IN0000000002", "LIVE", "NSE", "42", date(2026, 1, 1)),
+        ]
+    )
+    planner = MarketRefreshPlanner(database, market, JobStore(database), publisher)
+    report = planner.reconcile(
+        {
+            "as_of_date": "2026-01-05",
+            "source_instruments": [{"isin": "IN0000000002", "symbol": "LIVE"}, {"isin": "IN0000000003", "symbol": "UNKNOWN"}],
+        }
+    )
+    assert report["unmatched_source_symbols"] == ["UNKNOWN"]
+    assert {(row["symbol"], row["reason"]) for row in report["excluded_identities"]} == {
+        ("NIFTY 500", "index_identity"),
+        ("MISSING", "missing_provider_token"),
+    }
+    assert publisher.store.read_json("reference/reconciliations", report["artifact_id"])[1]["unmatched_source_symbols"] == ["UNKNOWN"]

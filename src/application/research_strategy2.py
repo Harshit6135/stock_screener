@@ -143,6 +143,7 @@ def strategy2_indicators(
         "atr_spike": _finite(atr_spike.iloc[i], 1),
         "rvol": _finite(rvol.iloc[i], 1),
         "relative_volume_proxy": _finite(relative_volume_proxy.iloc[i], 0.5),
+        "scaled_turnover": _finite(relative_volume_proxy.iloc[i], 0.5),
         "log_price_vol_corr": _finite(log_price_volume_corr.iloc[i]),
         "bandwidth_change_5d": _finite(bandwidth_change.iloc[i]),
         "rsi_14": _finite(rsi.iloc[i], 50),

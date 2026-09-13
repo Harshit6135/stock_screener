@@ -227,6 +227,15 @@ class ArtifactCatalog:
         with self._connect() as connection:
             return self._invalidation_plan(connection, artifact_id)
 
+    def record_invalidation(self, source_artifact_id: str, affected_artifact_id: str, reason: str) -> None:
+        if not reason:
+            raise DomainValidationError("invalidation reason is required")
+        with self._connect() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO catalog_invalidations(source_artifact_id, affected_artifact_id, reason) VALUES (?, ?, ?)",
+                (source_artifact_id, affected_artifact_id, reason),
+            )
+
     @staticmethod
     def _invalidation_plan(connection: sqlite3.Connection, artifact_id: str) -> tuple[str, ...]:
         rows = connection.execute(

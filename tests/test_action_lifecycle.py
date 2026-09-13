@@ -192,3 +192,58 @@ def test_action_generation_uses_active_configuration(tmp_path):
     )
     _, report = services.artifacts.read_json("runs/backtests", result["artifact_id"])
     assert report["manifest"]["parameters"]["config_revision_id"] == config["revision_id"]
+
+
+def test_action_generation_applies_point_in_time_fundamental_filter(tmp_path):
+    services, _ = _services(tmp_path)
+    services.ledger.open_account("paper", Money(1000))
+    fundamentals = services.publisher.publish_json(
+        "reference/fundamentals", "fundamentals-action-1",
+        {"as_of_date": "2026-09-01", "values": {"missing-is-not-used": {"eps": "1", "debt_equity": "2"}}},
+    )
+    proposal = services.actions.generate({**_payload(), "fundamentals_artifact_id": fundamentals.artifact_id, "min_eps": "5"})
+    assert proposal["decisions"][0]["type"] == "NO_ACTION"
+
+
+def test_action_policy_records_explicit_pyramid_switch_and_execution_rules(tmp_path):
+    services, _ = _services(tmp_path)
+    services.ledger.open_account("paper", Money(1000))
+    proposal = services.actions.generate({**_payload(), "pyramid_enabled": True})
+    _, artifact = services.artifacts.read_json("actions/proposals", proposal["artifact_id"])
+    policy = artifact["policy"]
+    assert policy["execution_policy_version"] == "v4-paper-execution-1"
+    assert policy["pyramid_enabled"] is True
+    assert policy["pyramid_fraction"] == "0.5"
+    assert policy["sell_before_buy"] is True
+    assert policy["entry_timing"] == "next_tradable_open"
+    assert policy["cash_resize"] == "actual_open_with_available_cash"
+    assert policy["zero_unit_buy"] == "remain_pending"
+
+
+def test_execution_policy_parity_is_protected_immutable_and_readable(tmp_path):
+    services, _ = _services(tmp_path)
+    baseline = {
+        "signal_timing": "close",
+        "execution_timing": "next_tradable_open",
+        "sell_before_buy": True,
+        "cash_resize": "actual_open_with_available_cash",
+        "zero_unit_buy": "remain_pending",
+        "vacancy_advance": "opt_in",
+        "stale_buy_threshold": "0.05",
+        "pyramid_enabled": "explicit_operator_switch",
+        "pyramid_fraction": "0.5",
+    }
+    app = Flask(__name__)
+    app.config["OPERATOR_TOKEN"] = "test-secret"
+    app.register_blueprint(create_actions_blueprint(services.actions))
+    client = app.test_client()
+    endpoint = "/api/v2/actions/execution-policy-parity"
+    assert client.post(endpoint, json={"v3_policy": baseline}).status_code == 401
+    headers = {"X-Operator-Token": "test-secret"}
+    response = client.post(endpoint, json={"v3_policy": baseline}, headers=headers)
+    assert response.status_code == 201
+    artifact_id = response.json["parity_artifact_id"]
+    assert response.json["parity"] is True
+    readback = client.get(f"{endpoint}/{artifact_id}", headers=headers)
+    assert readback.status_code == 200
+    assert readback.json["data"]["execution_policy_version"] == "v4-paper-execution-1"

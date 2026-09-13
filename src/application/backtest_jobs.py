@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
+from src.application.corporate_actions import CorporateActions
 from src.application.market_repository import MarketRepository
 from src.application.publication import ArtifactPublisher
 from src.application.research_jobs import ResearchJobs
@@ -42,12 +44,14 @@ class BacktestJobs:
         research: ResearchJobs,
         publisher: ArtifactPublisher,
         configs: StrategyConfigs | None = None,
+        corporate_actions: CorporateActions | None = None,
     ) -> None:
         self.database = Path(database)
         self.market = market
         self.research = research
         self.publisher = publisher
         self.configs = configs
+        self.corporate_actions = corporate_actions
         migrate_sqlite(
             self.database,
             "backtest",
@@ -96,18 +100,144 @@ class BacktestJobs:
             "end_date",
             "starting_cash",
             "max_positions",
+            "slippage_bps",
+            "fee_bps",
+            "tax_bps",
+            "data_basis",
+            "universe_snapshot_id",
+            "cash_flows",
+            "max_volume_participation",
+            "rebalance_frequency",
+            "market_cap_artifact_id",
+            "min_market_cap",
+            "fundamentals_artifact_id",
+            "min_eps",
+            "max_debt_equity",
+            "market_cap_sizing",
+            "regime_schedule",
         }:
             raise DomainValidationError("backtest command has missing or unsupported fields")
         strategy_id = payload["strategy_id"]
         if strategy_id not in {"strategy1", "strategy2"}:
             raise DomainValidationError("backtest strategy_id is invalid")
+        data_basis = payload.get("data_basis", "UNADJUSTED")
+        if data_basis not in {"UNADJUSTED", "CORPORATE_ACTION_ADJUSTED"}:
+            raise DomainValidationError("backtest data_basis is invalid")
+        if data_basis == "CORPORATE_ACTION_ADJUSTED" and self.corporate_actions is None:
+            raise DomainValidationError("corporate-action adjustment service is unavailable")
         try:
             start = date.fromisoformat(payload["start_date"])
             end = date.fromisoformat(payload["end_date"])
         except (TypeError, ValueError) as exc:
             raise DomainValidationError("backtest dates must be ISO dates") from exc
-        if start > end or (end - start).days > 365 or end >= datetime.now(UTC).date():
-            raise DomainValidationError("backtest requires completed dates within 365 days")
+        if start > end or (end - start).days > 3650 or end >= datetime.now(UTC).date():
+            raise DomainValidationError("backtest requires completed dates within 10 years")
+        regime_schedule = payload.get("regime_schedule", [])
+        if not isinstance(regime_schedule, list):
+            raise DomainValidationError("regime_schedule must be a list")
+        regime_by_date: dict[date, str] = {}
+        for item in regime_schedule:
+            if not isinstance(item, dict) or set(item) != {"date", "regime"} or item["regime"] not in {"RISK_ON", "RISK_OFF"}:
+                raise DomainValidationError("regime schedule entries are invalid")
+            try:
+                regime_date = date.fromisoformat(str(item["date"]))
+            except ValueError as exc:
+                raise DomainValidationError("regime schedule date must be ISO date") from exc
+            if not start <= regime_date <= end or regime_date in regime_by_date:
+                raise DomainValidationError("regime schedule dates must be unique and in range")
+            regime_by_date[regime_date] = str(item["regime"])
+        universe_snapshot_id = payload.get("universe_snapshot_id")
+        raw_cash_flows = payload.get("cash_flows", [])
+        volume_participation = _decimal(payload.get("max_volume_participation", "1"), "max_volume_participation")
+        rebalance_frequency = payload.get("rebalance_frequency", "DAILY")
+        if rebalance_frequency not in {"DAILY", "BIWEEKLY", "MONTHLY"}:
+            raise DomainValidationError("rebalance_frequency is invalid")
+        market_cap_artifact_id = payload.get("market_cap_artifact_id")
+        market_cap_sizing = payload.get("market_cap_sizing", "NONE")
+        fundamentals_artifact_id = payload.get("fundamentals_artifact_id")
+        min_market_cap = _decimal(payload.get("min_market_cap", "0"), "min_market_cap")
+        min_eps = None if "min_eps" not in payload else _decimal(payload["min_eps"], "min_eps")
+        max_debt_equity = None if "max_debt_equity" not in payload else _decimal(payload["max_debt_equity"], "max_debt_equity")
+        if market_cap_sizing not in {"NONE", "LINEAR", "SQRT", "FREE_FLOAT"}:
+            raise DomainValidationError("market_cap_sizing is invalid")
+        if (market_cap_artifact_id is not None and (not isinstance(market_cap_artifact_id, str) or not market_cap_artifact_id.strip())) or (fundamentals_artifact_id is not None and (not isinstance(fundamentals_artifact_id, str) or not fundamentals_artifact_id.strip() )):
+            raise DomainValidationError("reference snapshot identifiers are invalid")
+        if min_market_cap < 0 or (min_market_cap > 0 and market_cap_artifact_id is None) or (min_eps is not None and fundamentals_artifact_id is None) or (max_debt_equity is not None and fundamentals_artifact_id is None):
+            raise DomainValidationError("reference filters require their snapshot")
+        if market_cap_sizing != "NONE" and market_cap_artifact_id is None:
+            raise DomainValidationError("market-cap sizing requires its snapshot")
+        cap_values: dict[str, Decimal] = {}
+        fundamental_values: dict[str, dict[str, Decimal]] = {}
+        for category, artifact_id, target in (("reference/market-capitalization", market_cap_artifact_id, cap_values), ("reference/fundamentals", fundamentals_artifact_id, fundamental_values)):
+            if artifact_id is None:
+                continue
+            try:
+                _, snapshot = self.publisher.store.read_json(category, artifact_id)
+                snapshot_date = date.fromisoformat(str(snapshot["as_of_date"]))
+                values = snapshot["values"]
+                if snapshot_date > start or not isinstance(values, dict):
+                    raise ValueError("snapshot date or values")
+                if category.endswith("capitalization") and market_cap_sizing == "FREE_FLOAT" and any(not isinstance(value, dict) or set(value) != {"market_cap", "free_float"} for value in values.values()):
+                    raise ValueError("free-float values")
+                for instrument_id, value in values.items():
+                    if category.endswith("capitalization"):
+                        if isinstance(value, dict) and set(value) == {"market_cap", "free_float"}:
+                            target[str(instrument_id)] = _decimal(value["market_cap"], "market cap") * (_decimal(value["free_float"], "free float") if market_cap_sizing == "FREE_FLOAT" else Decimal(1))
+                        else:
+                            target[str(instrument_id)] = _decimal(value, "market cap")
+                    elif isinstance(value, dict):
+                        target[str(instrument_id)] = {field: _decimal(raw, field) for field, raw in value.items()}
+                    else:
+                        raise ValueError("fundamental row")
+                if not target:
+                    raise ValueError("empty snapshot")
+            except (DomainValidationError, KeyError, TypeError, ValueError) as exc:
+                raise DomainValidationError("reference snapshot was not found or is malformed") from exc
+        cap_median = sorted(cap_values.values())[len(cap_values) // 2] if cap_values else Decimal(1)
+        def size_multiplier(instrument_id: str) -> Decimal:
+            if market_cap_sizing == "NONE" or instrument_id not in cap_values:
+                return Decimal(1)
+            ratio = cap_values[instrument_id] / cap_median
+            if market_cap_sizing == "SQRT":
+                ratio = ratio.sqrt()
+            return min(Decimal(2), max(Decimal("0.5"), ratio))
+        if not 0 < volume_participation <= 1:
+            raise DomainValidationError("max_volume_participation must be in (0, 1]")
+        if not isinstance(raw_cash_flows, list):
+            raise DomainValidationError("cash_flows must be a list")
+        cash_flows: list[tuple[date, Decimal]] = []
+        for item in raw_cash_flows:
+            if not isinstance(item, dict) or set(item) != {"date", "amount"}:
+                raise DomainValidationError("cash flow entries require date and amount")
+            try:
+                flow_date = date.fromisoformat(str(item["date"]))
+            except ValueError as exc:
+                raise DomainValidationError("cash flow date must be ISO date") from exc
+            cash_flows.append((flow_date, _decimal(item["amount"], "cash flow amount")))
+        universe_members: set[str] | None = None
+        if universe_snapshot_id is not None:
+            if not isinstance(universe_snapshot_id, str) or not universe_snapshot_id.strip():
+                raise DomainValidationError("universe_snapshot_id is invalid")
+            try:
+                universe_manifest, universe_payload = self.publisher.store.read_json(
+                    "reference/liquidity_universes", universe_snapshot_id
+                )
+            except DomainValidationError as exc:
+                raise DomainValidationError("universe snapshot was not found or is invalid") from exc
+            try:
+                universe_date = date.fromisoformat(str(universe_payload["as_of_date"]))
+                members = universe_payload["members"]
+            except (KeyError, TypeError, ValueError) as exc:
+                raise DomainValidationError("universe snapshot is malformed") from exc
+            if universe_date > start or not isinstance(members, list):
+                raise DomainValidationError("universe snapshot must predate the backtest")
+            universe_members = {
+                str(item["instrument_id"])
+                for item in members
+                if isinstance(item, dict) and item.get("eligible") is True and item.get("instrument_id")
+            }
+            if not universe_members:
+                raise DomainValidationError("universe snapshot has no eligible members")
         active_config = (
             self.configs.active(strategy_id, start) if self.configs is not None else None
         )
@@ -129,6 +259,11 @@ class BacktestJobs:
             or not 1 <= max_positions <= 50
         ):
             raise DomainValidationError("backtest cash or max_positions is invalid")
+        slippage_bps = _decimal(payload.get("slippage_bps", "0"), "slippage_bps")
+        fee_bps = _decimal(payload.get("fee_bps", "0"), "fee_bps")
+        tax_bps = _decimal(payload.get("tax_bps", "0"), "tax_bps")
+        if slippage_bps < 0 or fee_bps < 0 or tax_bps < 0 or slippage_bps >= 10000 or fee_bps >= 10000 or tax_bps >= 10000:
+            raise DomainValidationError("backtest execution costs are invalid")
         policy = PortfolioPolicy(
             max_positions,
             Decimal(str(settings["exit_threshold"])) if settings else Decimal(40),
@@ -137,9 +272,13 @@ class BacktestJobs:
                 Decimal(str(settings["max_concentration_pct"])) if settings else Decimal(1),
             ),
             swap_buffer=Decimal(str(settings["buffer_percent"])) if settings else Decimal("0.25"),
+            max_volume_participation=volume_participation,
+            rebalance_frequency=rebalance_frequency,
+            swap_cost_bps=fee_bps + tax_bps,
         )
         fill_model = FillModelRevision(
-            uuid5(NAMESPACE_URL, "execution/fill_models:next-open-zero-costs-v1"), "1.0.0"
+            uuid5(NAMESPACE_URL, f"execution/fill_models:next-open:{slippage_bps}:{fee_bps}:{tax_bps}"),
+            "1.0.0", slippage_bps=slippage_bps, fee_bps=fee_bps, tax_bps=tax_bps,
         )
         weeks = self.research.ranking_weeks(strategy_id)
         histories = self.market.histories(start, end)
@@ -147,9 +286,30 @@ class BacktestJobs:
         upstream_ids: set[str] = set()
         if active_config is not None:
             upstream_ids.add(str(active_config["artifact_id"]))
+        if market_cap_artifact_id is not None:
+            upstream_ids.add(str(market_cap_artifact_id))
+        if fundamentals_artifact_id is not None:
+            upstream_ids.add(str(fundamentals_artifact_id))
+        if universe_snapshot_id is not None:
+            upstream_ids.add(str(universe_manifest.artifact_id))
         for instrument_id, (bars, identity) in histories.items():
+            if universe_members is not None and instrument_id not in universe_members:
+                continue
+            if market_cap_artifact_id is not None and (
+                instrument_id not in cap_values or min_market_cap > 0 and cap_values[instrument_id] < min_market_cap
+            ):
+                continue
+            if market_cap_sizing != "NONE" and instrument_id not in cap_values:
+                continue
+            if fundamentals_artifact_id is not None:
+                fundamental = fundamental_values.get(instrument_id)
+                if fundamental is None or min_eps is not None and ("eps" not in fundamental or fundamental["eps"] < min_eps) or max_debt_equity is not None and ("debt_equity" not in fundamental or fundamental["debt_equity"] > max_debt_equity):
+                    continue
             if str(identity["isin"]).startswith("INDEX:"):
                 continue
+            if data_basis == "CORPORATE_ACTION_ADJUSTED":
+                adjusted = self.corporate_actions.adjusted_bars(instrument_id, start, end)["bars"]
+                bars = [{**raw, **value} for raw, value in zip(bars, adjusted, strict=True)]
             for bar in bars:
                 day = date.fromisoformat(str(bar["as_of_date"]))
                 by_date.setdefault(day, {})[instrument_id] = MarketBar(
@@ -159,6 +319,7 @@ class BacktestJobs:
                     _decimal(bar["high"], "high"),
                     _decimal(bar["low"], "low"),
                     _decimal(bar["close"], "close"),
+                    int(str(bar["volume"])),
                 )
                 upstream_ids.add(str(bar["snapshot_id"]))
         if not by_date:
@@ -183,20 +344,32 @@ class BacktestJobs:
                     "backtest is missing a required top-ranked candidate bar"
                 )
             candidates = tuple(
-                Candidate(str(item["instrument_id"]), _decimal(item["score"], "score"))
+                Candidate(str(item["instrument_id"]), _decimal(item["score"], "score"), size_multiplier(str(item["instrument_id"])))
                 for item in ranking
                 if _decimal(item["score"], "score") > 0
                 and str(item["instrument_id"]) in by_date[day]
             )
             if not candidates:
                 raise DomainValidationError("backtest has no tradable ranked candidates")
-            steps.append(BacktestStep(day, candidates, by_date[day]))
+            steps.append(BacktestStep(day, candidates, by_date[day], regime_by_date.get(day, "RISK_ON")))
         policy_payload = {
             "max_positions": max_positions,
             "exit_score": str(policy.exit_score),
             "max_position_fraction": str(policy.max_position_fraction),
             "swap_buffer": str(policy.swap_buffer),
             "config_revision_id": active_config["revision_id"] if active_config else None,
+            "slippage_bps": str(slippage_bps),
+            "fee_bps": str(fee_bps),
+            "tax_bps": str(tax_bps),
+            "rebalance_frequency": rebalance_frequency,
+            "market_cap_artifact_id": market_cap_artifact_id,
+            "market_cap_sizing": market_cap_sizing,
+            "regime_schedule": json.dumps([{"date": day.isoformat(), "regime": regime} for day, regime in sorted(regime_by_date.items())], sort_keys=True),
+            "swap_cost_bps": str(fee_bps + tax_bps),
+            "min_market_cap": str(min_market_cap),
+            "fundamentals_artifact_id": fundamentals_artifact_id,
+            "min_eps": str(min_eps) if min_eps is not None else None,
+            "max_debt_equity": str(max_debt_equity) if max_debt_equity is not None else None,
         }
         strategy_revision = STRATEGY1_REVISION if strategy_id == "strategy1" else STRATEGY2_REVISION
         strategy_revision_id = self._revision(
@@ -215,8 +388,9 @@ class BacktestJobs:
         )
         fill_revision_id = self._revision(
             "execution/fill_models",
-            "next-open-zero-costs-v1",
-            {"signal_timing": "close", "execution_timing": "next_tradable_open"},
+            f"next-open:{slippage_bps}:{fee_bps}:{tax_bps}",
+            {"signal_timing": "close", "execution_timing": "next_tradable_open",
+             "slippage_bps": str(slippage_bps), "fee_bps": str(fee_bps), "tax_bps": str(tax_bps)},
         )
         manifest = BacktestRunManifest(
             uuid4(),
@@ -232,7 +406,10 @@ class BacktestJobs:
                 "strategy_formula_revision": strategy_revision,
                 "starting_cash": str(starting_cash),
                 **{key: str(value) for key, value in policy_payload.items()},
-                "data_basis": "UNADJUSTED",
+                "data_basis": data_basis,
+                "universe_snapshot_id": universe_snapshot_id,
+                "cash_flows": json.dumps([{"date": day.isoformat(), "amount": str(amount)} for day, amount in cash_flows], sort_keys=True),
+                "max_volume_participation": str(volume_participation),
             },
             self._code_revision(),
         )
@@ -245,6 +422,7 @@ class BacktestJobs:
             tuple(steps),
             manifest,
             fill_model,
+            tuple(cash_flows),
         )
         artifact = self.publisher.publish_json(
             "runs/backtests",
@@ -252,7 +430,7 @@ class BacktestJobs:
             {
                 **result.to_payload(),
                 "limitations": [
-                    "unadjusted bars; corporate-action reconciliation pending",
+                    f"market bars use {data_basis} basis",
                     "strategy outputs provisional; not live-trading evidence",
                 ],
             },
@@ -285,6 +463,172 @@ class BacktestJobs:
             "metrics": {key: str(value) for key, value in result.metrics.items()},
         }
 
+    def stress(self, payload: dict[str, Any]) -> dict[str, object]:
+        """Run a bounded immutable scenario matrix for migration validation."""
+        if not isinstance(payload, dict) or set(payload) != {"base", "scenarios"} or not isinstance(payload["base"], dict) or not isinstance(payload["scenarios"], list):
+            raise DomainValidationError("stress command requires base and scenarios")
+        scenarios = payload["scenarios"]
+        if not 1 <= len(scenarios) <= 10 or any(not isinstance(item, dict) for item in scenarios):
+            raise DomainValidationError("stress scenarios must contain 1..10 objects")
+        names: set[str] = set()
+        results: list[dict[str, object]] = []
+        allowed_overrides = {"starting_cash", "max_positions", "slippage_bps", "fee_bps", "tax_bps", "data_basis", "universe_snapshot_id", "cash_flows", "max_volume_participation", "rebalance_frequency", "market_cap_artifact_id", "min_market_cap", "fundamentals_artifact_id", "min_eps", "max_debt_equity", "market_cap_sizing", "regime_schedule"}
+        for scenario in scenarios:
+            if set(scenario) - ({"name"} | allowed_overrides) or not isinstance(scenario.get("name"), str) or not str(scenario["name"]).strip() or scenario["name"] in names:
+                raise DomainValidationError("stress scenario names or fields are invalid")
+            names.add(str(scenario["name"]))
+            command = dict(payload["base"])
+            command.update({key: value for key, value in scenario.items() if key != "name"})
+            results.append({"name": scenario["name"], "result": self.execute(command)})
+        return {"scenario_count": len(results), "scenarios": results, "read_only_comparison": True}
+
+    def walk_forward(self, payload: dict[str, Any]) -> dict[str, object]:
+        """Run bounded rolling train/test windows as one immutable comparison."""
+        if (
+            not isinstance(payload, dict)
+            or set(payload) != {"base", "windows"}
+            or not isinstance(payload["base"], dict)
+            or not isinstance(payload["windows"], list)
+            or not 1 <= len(payload["windows"]) <= 20
+        ):
+            raise DomainValidationError("walk-forward requires base and 1..20 windows")
+        base = payload["base"]
+        if "strategy_id" not in base:
+            raise DomainValidationError("walk-forward base requires strategy_id")
+        windows: list[dict[str, object]] = []
+        seen_names: set[str] = set()
+        for item in payload["windows"]:
+            if not isinstance(item, dict) or set(item) != {"name", "train_start", "train_end", "test_start", "test_end"}:
+                raise DomainValidationError("walk-forward windows require name and train/test dates")
+            name = item["name"]
+            if not isinstance(name, str) or not name.strip() or name in seen_names:
+                raise DomainValidationError("walk-forward window names must be unique")
+            try:
+                train_start = date.fromisoformat(str(item["train_start"]))
+                train_end = date.fromisoformat(str(item["train_end"]))
+                test_start = date.fromisoformat(str(item["test_start"]))
+                test_end = date.fromisoformat(str(item["test_end"]))
+            except ValueError as exc:
+                raise DomainValidationError("walk-forward dates must be ISO dates") from exc
+            if not train_start <= train_end < test_start <= test_end:
+                raise DomainValidationError("walk-forward windows must be chronological")
+            if (test_end - train_start).days > 3650 or test_end >= datetime.now(UTC).date():
+                raise DomainValidationError("walk-forward windows must be completed and within 10 years")
+            seen_names.add(name)
+            windows.append({"name": name, "train_start": train_start.isoformat(), "train_end": train_end.isoformat(), "test_start": test_start.isoformat(), "test_end": test_end.isoformat()})
+        definition = {"base": base, "windows": windows}
+        artifact_id = str(uuid5(NAMESPACE_URL, "backtest-walk-forward:" + hashlib.sha256(json.dumps(definition, sort_keys=True).encode()).hexdigest()))
+        if self.publisher.catalog.has(artifact_id):
+            _, existing = self.publisher.store.read_json("runs/backtest-walk-forward", artifact_id)
+            return existing
+        results: list[dict[str, object]] = []
+        upstream_ids: set[str] = set()
+        for window in windows:
+            command = dict(base)
+            command.update({"start_date": window["test_start"], "end_date": window["test_end"]})
+            result = self.execute(command)
+            results.append({"window": window, "result": result})
+            upstream_ids.add(str(result["artifact_id"]))
+        report = {"walk_forward_id": artifact_id, "base": base, "windows": results, "window_count": len(results), "read_only_comparison": True}
+        self.publisher.publish_json("runs/backtest-walk-forward", artifact_id, report, upstream_ids=tuple(sorted(upstream_ids)), quality=QualityStatus.PARTIAL)
+        return report
+
+    def attribute(self, payload: dict[str, Any]) -> dict[str, object]:
+        """Publish FIFO P&L attribution by instrument, sector, size, and factor."""
+        allowed = {"run_id", "sector_artifact_id", "market_cap_artifact_id", "factor_artifact_id"}
+        if not isinstance(payload, dict) or "run_id" not in payload or set(payload) - allowed:
+            raise DomainValidationError("attribution requires run_id and supported classification artifacts")
+        run_id = payload["run_id"]
+        if not isinstance(run_id, str) or not run_id.strip():
+            raise DomainValidationError("attribution run_id is invalid")
+        artifact_id = self.run_artifact_id(run_id)
+        _, report = self.publisher.store.read_json("runs/backtests", artifact_id)
+        fills = report.get("fills", [])
+        if not isinstance(fills, list):
+            raise DomainValidationError("backtest fills are malformed")
+        classifications: dict[str, dict[str, object]] = {}
+        upstream_ids = {artifact_id}
+        for field, category in (("sector_artifact_id", "reference/sectors"), ("market_cap_artifact_id", "reference/market-capitalization"), ("factor_artifact_id", f"features/{report.get('manifest', {}).get('parameters', {}).get('strategy_id', '')}")):
+            identifier = payload.get(field)
+            if identifier is None:
+                continue
+            if not isinstance(identifier, str) or not identifier.strip():
+                raise DomainValidationError(f"{field} is invalid")
+            try:
+                _, snapshot = self.publisher.store.read_json(category, identifier)
+                values = snapshot["values"]
+                if not isinstance(values, dict):
+                    raise TypeError("values")
+                classifications[field] = values
+                upstream_ids.add(identifier)
+            except (DomainValidationError, KeyError, TypeError, ValueError) as exc:
+                raise DomainValidationError(f"{field} was not found or is malformed") from exc
+        if not classifications:
+            raise DomainValidationError("attribution requires at least one classification artifact")
+        lots: dict[str, list[dict[str, Decimal]]] = {}
+        trades: list[dict[str, object]] = []
+        for fill in fills:
+            if not isinstance(fill, dict) or fill.get("side") not in {"BUY", "SELL"}:
+                raise DomainValidationError("backtest fill is malformed")
+            instrument = str(fill.get("instrument_id"))
+            units = int(str(fill.get("units")))
+            price = Decimal(str(fill.get("price")))
+            fee = Decimal(str(fill.get("fee", "0")))
+            if units < 1 or price <= 0:
+                raise DomainValidationError("backtest fill values are invalid")
+            if fill["side"] == "BUY":
+                lots.setdefault(instrument, []).append({"units": Decimal(units), "price": price, "fee_per_unit": fee / units})
+                continue
+            remaining = units
+            for lot in lots.get(instrument, []):
+                matched = min(remaining, int(lot["units"]))
+                if matched < 1:
+                    continue
+                pnl = (price - lot["price"]) * matched - lot["fee_per_unit"] * matched - fee * Decimal(matched) / units
+                trades.append({"instrument_id": instrument, "pnl": pnl})
+                lot["units"] -= matched
+                remaining -= matched
+                if remaining == 0:
+                    break
+            if remaining:
+                raise DomainValidationError("sell fill exceeds FIFO buys")
+        by_instrument: dict[str, Decimal] = {}
+        by_sector: dict[str, Decimal] = {}
+        by_market_cap: dict[str, Decimal] = {}
+        by_factor: dict[str, Decimal] = {}
+        cap_values = classifications.get("market_cap_artifact_id", {})
+        cap_numbers = sorted(Decimal(str(value)) for value in cap_values.values()) if cap_values else []
+        median_cap = cap_numbers[len(cap_numbers) // 2] if cap_numbers else Decimal(0)
+        for trade in trades:
+            instrument = str(trade["instrument_id"])
+            pnl = Decimal(str(trade["pnl"]))
+            by_instrument[instrument] = by_instrument.get(instrument, Decimal(0)) + pnl
+            sector = classifications.get("sector_artifact_id", {}).get(instrument)
+            if sector is not None:
+                by_sector[str(sector)] = by_sector.get(str(sector), Decimal(0)) + pnl
+            if instrument in cap_values:
+                bucket = "SMALL" if Decimal(str(cap_values[instrument])) <= median_cap else "LARGE"
+                by_market_cap[bucket] = by_market_cap.get(bucket, Decimal(0)) + pnl
+            factor_row = classifications.get("factor_artifact_id", {}).get(instrument, {})
+            factors = factor_row.get("factors", {}) if isinstance(factor_row, dict) else {}
+            if isinstance(factors, dict) and factors:
+                share = pnl / len(factors)
+                for factor in factors:
+                    by_factor[str(factor)] = by_factor.get(str(factor), Decimal(0)) + share
+        definition = {"run_id": run_id, **{key: payload.get(key) for key in sorted(allowed - {"run_id"})}}
+        attribution_id = str(uuid5(NAMESPACE_URL, "backtest-attribution:" + hashlib.sha256(json.dumps(definition, sort_keys=True).encode()).hexdigest()))
+        result = {
+            "attribution_id": attribution_id, "run_id": run_id, "basis": "FIFO closed-trade P&L; factor P&L split equally across available factors",
+            "by_instrument": {key: str(value) for key, value in sorted(by_instrument.items())},
+            "by_sector": {key: str(value) for key, value in sorted(by_sector.items())},
+            "by_market_cap": {key: str(value) for key, value in sorted(by_market_cap.items())},
+            "by_factor": {key: str(value) for key, value in sorted(by_factor.items())},
+            "closed_trade_count": len(trades),
+        }
+        if not self.publisher.catalog.has(attribution_id):
+            self.publisher.publish_json("runs/backtest-attribution", attribution_id, result, upstream_ids=tuple(sorted(upstream_ids)), quality=QualityStatus.PARTIAL)
+        return result
+
     def runs(self, limit: int = 50) -> list[dict[str, object]]:
         if not 1 <= limit <= 100:
             raise DomainValidationError("backtest limit must be 1..100")
@@ -302,3 +646,90 @@ class BacktestJobs:
         if row is None:
             raise DomainValidationError("backtest run was not found")
         return str(row["artifact_id"])
+
+    def legacy_runs(self, root: str | Path = "backtest_history", limit: int = 50) -> list[dict[str, object]]:
+        """Read legacy v3 report folders without presenting them as v4 runs."""
+        if not 1 <= limit <= 100:
+            raise DomainValidationError("legacy backtest limit must be 1..100")
+        directory = Path(root)
+        if not directory.is_dir():
+            return []
+        results: list[dict[str, object]] = []
+        for folder in sorted((item for item in directory.iterdir() if item.is_dir()), reverse=True):
+            files = {name: folder / name for name in ("summary.json", "equity_curve.json", "trades.json", "report.txt")}
+            if not all(path.is_file() for path in files.values()):
+                continue
+            digests = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}
+            results.append({"legacy_id": folder.name, "source": "v3-backtest-history", "read_only": True, "files": digests})
+            if len(results) >= limit:
+                break
+        return results
+
+    def legacy_run(self, legacy_id: str, root: str | Path = "backtest_history") -> dict[str, object]:
+        if not legacy_id or Path(legacy_id).name != legacy_id:
+            raise DomainValidationError("legacy backtest id is invalid")
+        folder = Path(root) / legacy_id
+        files = {name: folder / name for name in ("summary.json", "equity_curve.json", "trades.json", "report.txt")}
+        if not all(path.is_file() for path in files.values()):
+            raise DomainValidationError("legacy backtest run was not found")
+        try:
+            import json
+            payload = {name.removesuffix(".json"): json.loads(path.read_text(encoding="utf-8")) for name, path in files.items() if name.endswith(".json")}
+            payload["report"] = files["report.txt"].read_text(encoding="utf-8")
+        except (OSError, ValueError) as exc:
+            raise DomainValidationError("legacy backtest run is malformed") from exc
+        payload.update({"legacy_id": legacy_id, "source": "v3-backtest-history", "read_only": True,
+                        "digests": {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in files.items()}})
+        return payload
+
+    def compare_legacy(self, legacy_id: str, run_id: str, root: str | Path = "backtest_history") -> dict[str, object]:
+        """Return a deterministic, read-only trade diff between v3 files and a v4 report."""
+        legacy = self.legacy_run(legacy_id, root)
+        artifact_id = self.run_artifact_id(run_id)
+        _, current = self.publisher.store.read_json("runs/backtests", artifact_id)
+        old_trades = legacy.get("trades", [])
+        if isinstance(old_trades, dict):
+            old_trades = old_trades.get("trades", old_trades.get("data", []))
+        if not isinstance(old_trades, list):
+            raise DomainValidationError("legacy trade history is not a list")
+
+        def key(item: object) -> tuple[str, str, str, str]:
+            row = item if isinstance(item, dict) else {}
+            instrument = row.get("instrument_id", row.get("symbol", row.get("ticker", "")))
+            side = row.get("side", row.get("action", row.get("type", "")))
+            day = row.get("date", row.get("as_of_date", row.get("trade_date", "")))
+            units = row.get("units", row.get("quantity", row.get("qty", "")))
+            return str(instrument), str(side).upper(), str(day)[:10], str(units)
+
+        legacy_keys = [key(item) for item in old_trades]
+        v4_keys = [key(item) for item in current.get("fills", [])]
+        old_counter, new_counter = Counter(legacy_keys), Counter(v4_keys)
+        matched = sum((old_counter & new_counter).values())
+        return {
+            "legacy_id": legacy_id, "v4_run_id": run_id, "v4_artifact_id": artifact_id,
+            "legacy_trade_count": len(legacy_keys), "v4_trade_count": len(v4_keys),
+            "matched_trade_count": matched,
+            "legacy_only": [list(item) for item in sorted((old_counter - new_counter).elements())],
+            "v4_only": [list(item) for item in sorted((new_counter - old_counter).elements())],
+            "read_only": True,
+        }
+
+    def publish_legacy_comparison(
+        self, legacy_id: str, run_id: str, root: str | Path = "backtest_history"
+    ) -> dict[str, object]:
+        """Publish an immutable, digest-bearing v3/v4 execution comparison."""
+        comparison = self.compare_legacy(legacy_id, run_id, root)
+        definition = json.dumps(comparison, sort_keys=True)
+        artifact_id = str(
+            uuid5(NAMESPACE_URL, "backtest-parity:" + hashlib.sha256(definition.encode()).hexdigest())
+        )
+        payload = {"parity_artifact_id": artifact_id, **comparison}
+        if not self.publisher.catalog.has(artifact_id):
+            self.publisher.publish_json(
+                "runs/backtest-parity",
+                artifact_id,
+                payload,
+                upstream_ids=(str(comparison["v4_artifact_id"]),),
+                quality=QualityStatus.PARTIAL,
+            )
+        return payload

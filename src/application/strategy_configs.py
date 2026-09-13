@@ -74,6 +74,12 @@ class StrategyConfigs:
                         approved_at TEXT, retired_at TEXT)""",
                     "CREATE INDEX IF NOT EXISTS strategy_config_effective ON strategy_config_revisions(strategy_id, status, effective_from)",
                 )
+                ,2: (
+                    """CREATE TABLE IF NOT EXISTS strategy_config_aliases (
+                        alias TEXT PRIMARY KEY, strategy_id TEXT NOT NULL,
+                        revision_id TEXT NOT NULL, source TEXT NOT NULL,
+                        FOREIGN KEY(revision_id) REFERENCES strategy_config_revisions(revision_id))""",
+                )
             },
         )
 
@@ -231,3 +237,21 @@ class StrategyConfigs:
                 (strategy_id, requested.isoformat()),
             ).fetchone()
         return cast(ActiveStrategyConfig, self._decode(row)) if row is not None else None
+
+    def import_alias(self, alias: str, strategy_id: str, settings: object, source: str = "v3") -> dict[str, object]:
+        if not isinstance(alias, str) or not alias.strip() or not isinstance(source, str) or not source.strip():
+            raise DomainValidationError("configuration alias and source are required")
+        revision = self.create(strategy_id, settings)
+        with sqlite_connection(self.database) as connection:
+            connection.execute(
+                "INSERT INTO strategy_config_aliases(alias, strategy_id, revision_id, source) VALUES (?, ?, ?, ?) ON CONFLICT(alias) DO UPDATE SET strategy_id=excluded.strategy_id, revision_id=excluded.revision_id, source=excluded.source",
+                (alias.strip(), strategy_id, revision["revision_id"], source.strip()),
+            )
+        return {"alias": alias.strip(), "source": source.strip(), "revision": revision}
+
+    def alias(self, alias: str) -> dict[str, object]:
+        with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
+            row = connection.execute("SELECT * FROM strategy_config_aliases WHERE alias=?", (alias,)).fetchone()
+        if row is None:
+            raise DomainValidationError("configuration alias was not found")
+        return {**dict(row), "revision": self.get(str(row["revision_id"]))}

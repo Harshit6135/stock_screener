@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
@@ -34,26 +34,36 @@ class ResearchPipelineJobs:
                         job_id INTEGER NOT NULL, PRIMARY KEY(pipeline_id, stage_name),
                         FOREIGN KEY(pipeline_id) REFERENCES research_pipelines(pipeline_id))""",
                 )
+                ,2: (
+                    "ALTER TABLE research_pipelines ADD COLUMN start_date TEXT",
+                    "ALTER TABLE research_pipelines ADD COLUMN end_date TEXT",
+                )
             },
         )
 
     @staticmethod
-    def _request(payload: dict[str, Any]) -> tuple[date, tuple[str, ...]]:
+    def _request(payload: dict[str, Any]) -> tuple[date, date, tuple[str, ...], tuple[date, ...]]:
         if (
             not isinstance(payload, dict)
-            or set(payload) - {"as_of_date", "strategies"}
-            or "as_of_date" not in payload
+            or set(payload) - {"as_of_date", "start_date", "end_date", "strategies", "orchestrate_data", "trading_dates"}
+            or ("as_of_date" not in payload and not {"start_date", "end_date"}.issubset(payload))
         ):
-            raise DomainValidationError(
-                "research pipeline requires as_of_date and optional strategies"
-            )
+            raise DomainValidationError("research pipeline requires a date or start/end range")
         try:
-            as_of_date = date.fromisoformat(str(payload["as_of_date"]))
+            if "as_of_date" in payload:
+                start_date = end_date = date.fromisoformat(str(payload["as_of_date"]))
+            else:
+                start_date = date.fromisoformat(str(payload["start_date"]))
+                end_date = date.fromisoformat(str(payload["end_date"]))
         except ValueError as exc:
-            raise DomainValidationError("as_of_date must be an ISO date") from exc
-        if as_of_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
-            raise DomainValidationError("research pipeline requires a completed date")
+            raise DomainValidationError("pipeline dates must be ISO dates") from exc
+        if start_date > end_date or (end_date - start_date).days > 365:
+            raise DomainValidationError("pipeline date range must be at most 365 days")
+        if end_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
+            raise DomainValidationError("research pipeline requires completed dates")
         strategies_value = payload.get("strategies", ["strategy1", "strategy2"])
+        if not isinstance(payload.get("orchestrate_data", False), bool):
+            raise DomainValidationError("orchestrate_data must be boolean")
         if (
             not isinstance(strategies_value, list)
             or not strategies_value
@@ -61,11 +71,27 @@ class ResearchPipelineJobs:
             or any(strategy not in _STRATEGIES for strategy in strategies_value)
         ):
             raise DomainValidationError("strategies must be a unique non-empty strategy list")
-        return as_of_date, tuple(sorted(strategies_value))
+        trading_dates = payload.get("trading_dates")
+        if trading_dates is not None:
+            if not isinstance(trading_dates, list):
+                raise DomainValidationError("trading_dates must be a list")
+            try:
+                sessions = tuple(sorted({date.fromisoformat(str(item)) for item in trading_dates}))
+            except ValueError as exc:
+                raise DomainValidationError("trading_dates must be ISO dates") from exc
+            if any(item < start_date or item > end_date for item in sessions):
+                raise DomainValidationError("trading_dates must be within the pipeline range")
+        else:
+            sessions = ()
+        return start_date, end_date, tuple(sorted(strategies_value)), sessions
 
     def submit(self, payload: dict[str, Any]) -> dict[str, object]:
-        as_of_date, strategies = self._request(payload)
-        normalized = {"as_of_date": as_of_date.isoformat(), "strategies": strategies}
+        start_date, end_date, strategies, trading_dates = self._request(payload)
+        normalized = {
+            "start_date": start_date.isoformat(), "end_date": end_date.isoformat(),
+            "strategies": strategies, "orchestrate_data": bool(payload.get("orchestrate_data", False)),
+            "trading_dates": tuple(item.isoformat() for item in trading_dates),
+        }
         fingerprint = hashlib.sha256(json.dumps(normalized, sort_keys=True).encode()).hexdigest()
         pipeline_id = str(uuid5(NAMESPACE_URL, f"research-pipeline:{fingerprint}"))
         with sqlite_connection(self.database, read_only=True) as connection:
@@ -75,18 +101,33 @@ class ResearchPipelineJobs:
         if exists is not None:
             return self.status(pipeline_id)
         child_jobs = []
+        if normalized["orchestrate_data"]:
+            child_jobs.extend([
+                ("reference:sync", self.jobs.submit(
+                    f"research-pipeline:{fingerprint}:reference-sync", "reference.sync-kite-instruments", {},
+                )),
+                ("reference:reconcile", self.jobs.submit(
+                    f"research-pipeline:{fingerprint}:reference-reconcile", "reference.reconcile-market",
+                    {"as_of_date": end_date.isoformat()},
+                )),
+                ("market:refresh", self.jobs.submit(
+                    f"research-pipeline:{fingerprint}:market-refresh", "market.schedule-all-symbol-refresh",
+                    {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
+                )),
+            ])
+        dates = trading_dates or tuple(
+            start_date + timedelta(days=offset)
+            for offset in range((end_date - start_date).days + 1)
+            if (start_date + timedelta(days=offset)).weekday() < 5
+        )
         for strategy_id in strategies:
-            kind = f"research.calculate-{strategy_id}-day"
-            child_jobs.append(
-                (
-                    f"daily:{strategy_id}",
-                    self.jobs.submit(
-                        f"research-pipeline:{fingerprint}:{kind}",
-                        kind,
-                        {"as_of_date": as_of_date.isoformat()},
-                    ),
-                )
-            )
+            for session in dates:
+                kind = f"research.calculate-{strategy_id}-day"
+                name = f"daily:{strategy_id}" if start_date == end_date else f"daily:{strategy_id}:{session.isoformat()}"
+                child_jobs.append((name, self.jobs.submit(
+                    f"research-pipeline:{fingerprint}:{kind}:{session.isoformat()}", kind,
+                    {"as_of_date": session.isoformat()},
+                )))
         coordinator = self.jobs.submit(
             f"research-pipeline:{fingerprint}:advance",
             "research.pipeline-advance",
@@ -96,14 +137,16 @@ class ResearchPipelineJobs:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 """INSERT INTO research_pipelines
-                   (pipeline_id, fingerprint, as_of_date, strategies_json, created_at)
-                   VALUES (?, ?, ?, ?, ?)""",
+                   (pipeline_id, fingerprint, as_of_date, strategies_json, created_at, start_date, end_date)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     pipeline_id,
                     fingerprint,
-                    as_of_date.isoformat(),
+                    end_date.isoformat(),
                     json.dumps(strategies),
                     datetime.now(UTC).isoformat(),
+                    start_date.isoformat(),
+                    end_date.isoformat(),
                 ),
             )
             connection.executemany(
@@ -119,28 +162,33 @@ class ResearchPipelineJobs:
         pipeline_id = payload["pipeline_id"]
         pipeline = self._pipeline(pipeline_id)
         stages = self._stages(pipeline_id)
+        data_stages = [stage for stage in stages if str(stage["stage_name"]).startswith(("reference:", "market:"))]
+        data_statuses = [self.jobs.get(int(stage["job_id"])).status for stage in data_stages]
+        if any(status in {JobStatus.FAILED, JobStatus.CANCELLED} for status in data_statuses):
+            raise DomainValidationError("research pipeline has a failed data stage")
+        if not all(status == JobStatus.SUCCEEDED for status in data_statuses):
+            raise DomainValidationError("research pipeline data stages are incomplete")
         daily = [stage for stage in stages if stage["stage_name"].startswith("daily:")]
         statuses = [self.jobs.get(int(stage["job_id"])).status for stage in daily]
         if any(status in {JobStatus.FAILED, JobStatus.CANCELLED} for status in statuses):
             raise DomainValidationError("research pipeline has a failed daily stage")
         if not all(status == JobStatus.SUCCEEDED for status in statuses):
             raise DomainValidationError("research pipeline daily stages are incomplete")
-        as_of_date = date.fromisoformat(str(pipeline["as_of_date"]))
-        if as_of_date.weekday() != 4:
+        start_date = date.fromisoformat(str(pipeline["start_date"] or pipeline["as_of_date"]))
+        end_date = date.fromisoformat(str(pipeline["end_date"] or pipeline["as_of_date"]))
+        fridays = tuple(start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1) if (start_date + timedelta(days=offset)).weekday() == 4)
+        if not fridays:
             return self.status(pipeline_id)
         strategies = tuple(json.loads(str(pipeline["strategies_json"])))
         weekly_jobs = []
         for strategy_id in strategies:
-            name = f"weekly:{strategy_id}"
-            if any(stage["stage_name"] == name for stage in stages):
-                continue
-            kind = f"research.rank-{strategy_id}-week"
-            job = self.jobs.submit(
-                f"research-pipeline:{pipeline['fingerprint']}:{kind}",
-                kind,
-                {"week_end": as_of_date.isoformat()},
-            )
-            weekly_jobs.append((name, job.job_id))
+            for friday in fridays:
+                name = f"weekly:{strategy_id}" if len(fridays) == 1 and start_date == end_date else f"weekly:{strategy_id}:{friday.isoformat()}"
+                if any(stage["stage_name"] == name for stage in stages):
+                    continue
+                kind = f"research.rank-{strategy_id}-week"
+                job = self.jobs.submit(f"research-pipeline:{pipeline['fingerprint']}:{kind}:{friday.isoformat()}", kind, {"week_end": friday.isoformat()})
+                weekly_jobs.append((name, job.job_id))
         with sqlite_connection(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.executemany(
@@ -148,6 +196,29 @@ class ResearchPipelineJobs:
                 [(pipeline_id, name, job_id) for name, job_id in weekly_jobs],
             )
         return self.status(pipeline_id)
+
+    def retry_stage(self, pipeline_id: str, stage_name: str) -> dict[str, object]:
+        """Retry one failed pipeline stage and leave every other stage intact."""
+        pipeline = self._pipeline(pipeline_id)
+        stage = next(
+            (item for item in self._stages(pipeline_id) if item["stage_name"] == stage_name),
+            None,
+        )
+        if stage is None:
+            raise DomainValidationError("pipeline stage was not found")
+        job = self.jobs.retry_failed(int(stage["job_id"]))
+        return self.status(str(pipeline["pipeline_id"])) | {"retried_stage": stage_name, "job": job.job_id}
+
+    def cancel(self, pipeline_id: str) -> dict[str, object]:
+        """Request cancellation for all non-terminal child jobs."""
+        pipeline = self._pipeline(pipeline_id)
+        cancelled: list[str] = []
+        for stage in self._stages(pipeline_id):
+            job = self.jobs.get(int(stage["job_id"]))
+            if job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED}:
+                self.jobs.request_cancel(job.job_id)
+                cancelled.append(str(stage["stage_name"]))
+        return self.status(str(pipeline["pipeline_id"])) | {"cancelled_stages": cancelled}
 
     def status(self, pipeline_id: str) -> dict[str, object]:
         pipeline = self._pipeline(pipeline_id)
@@ -170,6 +241,8 @@ class ResearchPipelineJobs:
         return {
             "pipeline_id": pipeline_id,
             "as_of_date": pipeline["as_of_date"],
+            "start_date": pipeline["start_date"] or pipeline["as_of_date"],
+            "end_date": pipeline["end_date"] or pipeline["as_of_date"],
             "strategies": json.loads(str(pipeline["strategies_json"])),
             "status": state,
             "stages": stages,

@@ -48,4 +48,24 @@ def create_configs_blueprint(configs: StrategyConfigs) -> Blueprint:
         except DomainValidationError as exc:
             return jsonify({"error": str(exc)}), 404 if "not found" in str(exc) else 409
 
+    @blueprint.post("/aliases")
+    def import_alias():
+        error = require_operator_token()
+        if error:
+            return jsonify(error[0]), error[1]
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or set(body) not in ({"alias", "strategy_id", "settings"}, {"alias", "strategy_id", "settings", "source"}):
+            return jsonify({"error": "alias, strategy_id and settings are required"}), 400
+        try:
+            return jsonify(configs.import_alias(body["alias"], body["strategy_id"], body["settings"], body.get("source", "v3"))), 201
+        except DomainValidationError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @blueprint.get("/aliases/<alias>")
+    def read_alias(alias: str):
+        try:
+            return jsonify(configs.alias(alias))
+        except DomainValidationError:
+            return jsonify({"error": "configuration alias not found"}), 404
+
     return blueprint

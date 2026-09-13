@@ -9,7 +9,13 @@ import pytest
 from src.application import ArtifactCatalog, ArtifactPublisher, JobStatus, JobStore, JobWorker
 from src.application.ingestion import ingest_market_bars
 from src.application.operations import sqlite_ready
-from src.backtesting import BacktestRunManifest, BacktestStep, FillModelRevision, run
+from src.backtesting import (
+    BacktestResult,
+    BacktestRunManifest,
+    BacktestStep,
+    FillModelRevision,
+    run,
+)
 from src.execution_gateway import Ledger, PaperBroker
 from src.indicators import IndicatorConfiguration, IndicatorRevision
 from src.market_data import NormalizedBar
@@ -17,6 +23,7 @@ from src.platform_kernel import ArtifactStore, DomainValidationError, Money, Qua
 from src.portfolio_accounting import Fill, FillSide
 from src.portfolio_engine import (
     Candidate,
+    DecisionType,
     Holding,
     MarketBar,
     PortfolioPolicy,
@@ -241,6 +248,25 @@ def test_prior_close_score_exit_executes_at_next_open_not_current_close():
     assert state.cash == Money(90)
 
 
+def test_exit_proceeds_cannot_finance_same_date_open_buy():
+    state = PortfolioState(
+        Money(20),
+        (Holding("OLD", Quantity(1), Money(100), Money(50), Decimal(0)),),
+    )
+    bars = {
+        "OLD": MarketBar("OLD", date(2026, 1, 2), 90, 120, 80, 110),
+        "NEW": MarketBar("NEW", date(2026, 1, 2), 100, 110, 90, 105),
+    }
+
+    decisions, next_state = evaluate(
+        state, PortfolioPolicy(1, 1, 1), (Candidate("NEW", 100),), bars
+    )
+
+    assert [decision.type for decision in decisions] == [DecisionType.SCORE_EXIT]
+    assert next_state.cash == Money(110)
+    assert not next_state.holdings
+
+
 def test_alias_resolution_is_point_in_time():
     instrument = uuid4()
     old = InstrumentAlias(instrument, "ABC", "NSE", date(2020, 1, 1), date(2022, 12, 31), "1")
@@ -249,3 +275,14 @@ def test_alias_resolution_is_point_in_time():
     assert resolve_alias((old, new), "ABC", "NSE", date(2021, 1, 1)) == old
     with pytest.raises(DomainValidationError, match="exactly one"):
         resolve_alias((old, new), "ABC", "NSE", date(2024, 1, 1))
+
+
+def test_backtest_xirr_includes_dated_external_cash_flow():
+    result = BacktestResult(
+        uuid4(), (), (),
+        ((date(2026, 1, 1), Decimal(100)), (date(2027, 1, 1), Decimal(250))),
+        PortfolioState(Money("250")), Decimal(100), None,
+        ((date(2026, 7, 1), Decimal(-100)),),
+    )
+    assert result.metrics["xirr"] > 0
+    assert result.metrics["xirr"] != result.metrics["cagr"]

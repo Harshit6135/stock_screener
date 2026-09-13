@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
+from math import isfinite
 from pathlib import Path
-from statistics import mean
+from statistics import mean, pstdev
 from typing import Any, cast
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.application.market_repository import MarketRepository
 from src.application.publication import ArtifactPublisher
@@ -17,16 +19,19 @@ from src.application.research_strategy2 import (
 )
 from src.application.research_strategy2 import strategy2_factors, strategy2_indicators
 from src.application.sqlite import migrate_sqlite, sqlite_connection
+from src.application.strategy_configs import StrategyConfigs
 from src.platform_kernel import DomainValidationError, QualityStatus
 
 
 class ResearchJobs:
     def __init__(
-        self, database: str | Path, market: MarketRepository, publisher: ArtifactPublisher
+        self, database: str | Path, market: MarketRepository, publisher: ArtifactPublisher,
+        configs: StrategyConfigs | None = None,
     ):
         self.database = Path(database)
         self.market = market
         self.publisher = publisher
+        self.configs = configs
         migrate_sqlite(
             self.database,
             "research",
@@ -56,13 +61,208 @@ class ResearchJobs:
     def calculate_strategy2_day(self, payload: dict[str, Any]) -> dict[str, object]:
         return self._calculate_day(payload, "strategy2")
 
+    def sector_normalize(self, payload: dict[str, Any]) -> dict[str, object]:
+        required = {"as_of_date", "strategy_id", "feature_artifact_id", "sector_artifact_id"}
+        if not isinstance(payload, dict) or set(payload) != required or payload["strategy_id"] not in {"strategy1", "strategy2"}:
+            raise DomainValidationError("sector ranking command is incomplete")
+        try:
+            as_of = date.fromisoformat(str(payload["as_of_date"]))
+        except ValueError as exc:
+            raise DomainValidationError("sector ranking date must be ISO date") from exc
+        try:
+            _, features = self.publisher.store.read_json(f"features/{payload['strategy_id']}", str(payload["feature_artifact_id"]))
+            _, sectors = self.publisher.store.read_json("reference/sectors", str(payload["sector_artifact_id"]))
+        except DomainValidationError as exc:
+            raise DomainValidationError("feature or sector artifact was not found") from exc
+        values = features.get("values")
+        sector_values = sectors.get("values")
+        if not isinstance(values, dict) or not isinstance(sector_values, dict):
+            raise DomainValidationError("feature or sector artifact is malformed")
+        instruments = [
+            (str(instrument_id), item, str(sector_values[instrument_id]))
+            for instrument_id, item in values.items()
+            if isinstance(item, dict) and isinstance(item.get("factors"), dict) and instrument_id in sector_values and str(sector_values[instrument_id]).strip()
+        ]
+        if not instruments:
+            raise DomainValidationError("no sector-classified factor values are available")
+        factors = tuple(FACTOR_WEIGHTS)
+        by_sector: dict[str, list[dict[str, float]]] = defaultdict(list)
+        for _, item, sector in instruments:
+            by_sector[sector].append({factor: float(item["factors"].get(factor, 0)) for factor in factors})
+        members = []
+        for instrument_id, item, sector in instruments:
+            factor_values = {factor: float(item["factors"].get(factor, 0)) for factor in factors}
+            normalized: dict[str, float] = {}
+            peers = by_sector[sector]
+            for factor in factors:
+                average = sum(peer[factor] for peer in peers) / len(peers)
+                variance = sum((peer[factor] - average) ** 2 for peer in peers) / len(peers)
+                deviation = variance ** 0.5
+                normalized[factor] = (factor_values[factor] - average) / deviation if deviation else 0.0
+            members.append({"instrument_id": instrument_id, "symbol": item.get("symbol"), "sector": sector, "factor_zscores": normalized, "composite_score": sum(normalized[factor] * FACTOR_WEIGHTS[factor] for factor in factors)})
+        members.sort(key=lambda item: (-float(item["composite_score"]), str(item["instrument_id"])))
+        for rank, item in enumerate(members, 1):
+            item["rank"] = rank
+        artifact_id = str(uuid5(NAMESPACE_URL, "sector-ranking:" + json.dumps({"date": as_of.isoformat(), "strategy": payload["strategy_id"], "feature": payload["feature_artifact_id"], "sector": payload["sector_artifact_id"]}, sort_keys=True)))
+        report = {"snapshot_id": artifact_id, "as_of_date": as_of.isoformat(), "strategy_id": payload["strategy_id"], "normalization": "within_sector_zscore", "members": members}
+        if not self.publisher.catalog.has(artifact_id):
+            self.publisher.publish_json("research/sector-rankings", artifact_id, report, upstream_ids=(str(payload["feature_artifact_id"]), str(payload["sector_artifact_id"])), quality=QualityStatus.PARTIAL)
+        return {"artifact_id": artifact_id, **report}
+
+    def correlations(self, payload: dict[str, Any]) -> dict[str, object]:
+        required = {"as_of_date", "lookback_sessions", "correlation_threshold"}
+        if not isinstance(payload, dict) or set(payload) != required:
+            raise DomainValidationError("correlation command is incomplete")
+        try:
+            as_of = date.fromisoformat(str(payload["as_of_date"]))
+            lookback = int(payload["lookback_sessions"])
+            threshold = float(payload["correlation_threshold"])
+        except (TypeError, ValueError) as exc:
+            raise DomainValidationError("correlation parameters are invalid") from exc
+        if not 20 <= lookback <= 365 or not 0 < threshold <= 1 or as_of >= datetime.now(UTC).date():
+            raise DomainValidationError("correlation parameters are outside supported bounds")
+        histories = self.market.histories(as_of - timedelta(days=lookback * 3), as_of)
+        closes: dict[str, dict[str, float]] = {}
+        upstream_ids: set[str] = set()
+        for instrument_id, (bars, identity) in histories.items():
+            if str(identity["isin"]).startswith("INDEX:"):
+                continue
+            ordered = bars[-lookback:]
+            if len(ordered) < 20:
+                continue
+            closes[instrument_id] = {str(bar["as_of_date"]): float(bar["close"]) for bar in ordered}
+            upstream_ids.update(str(bar["snapshot_id"]) for bar in ordered)
+        if not 2 <= len(closes) <= 100:
+            raise DomainValidationError("correlation requires 2..100 instruments with sufficient bars")
+        instruments = sorted(closes)
+        returns: dict[str, dict[str, float]] = {
+            instrument_id: {
+                day: closes[instrument_id][day] / closes[instrument_id][prior] - 1
+                for prior, day in zip(sorted(closes[instrument_id])[:-1], sorted(closes[instrument_id])[1:], strict=True)
+            }
+            for instrument_id in instruments
+        }
+        matrix: dict[str, dict[str, float]] = {instrument_id: {} for instrument_id in instruments}
+        for left in instruments:
+            for right in instruments:
+                common = sorted(set(returns[left]) & set(returns[right]))
+                left_values = [returns[left][day] for day in common]
+                right_values = [returns[right][day] for day in common]
+                left_mean = sum(left_values) / len(left_values)
+                right_mean = sum(right_values) / len(right_values)
+                numerator = sum((a - left_mean) * (b - right_mean) for a, b in zip(left_values, right_values, strict=True))
+                left_dev = sum((value - left_mean) ** 2 for value in left_values) ** 0.5
+                right_dev = sum((value - right_mean) ** 2 for value in right_values) ** 0.5
+                matrix[left][right] = numerator / (left_dev * right_dev) if left_dev and right_dev else 0.0
+        parent = {instrument_id: instrument_id for instrument_id in instruments}
+
+        def find(item: str) -> str:
+            while parent[item] != item:
+                parent[item] = parent[parent[item]]
+                item = parent[item]
+            return item
+
+        for left in instruments:
+            for right in instruments:
+                if left < right and abs(matrix[left][right]) >= threshold:
+                    parent[find(left)] = find(right)
+        clusters: dict[str, list[str]] = defaultdict(list)
+        for instrument_id in instruments:
+            clusters[find(instrument_id)].append(instrument_id)
+        artifact_id = str(uuid5(NAMESPACE_URL, "correlations:" + json.dumps(payload, sort_keys=True)))
+        report = {"snapshot_id": artifact_id, "as_of_date": as_of.isoformat(), "lookback_sessions": lookback, "correlation_threshold": threshold, "matrix": matrix, "clusters": sorted((sorted(values) for values in clusters.values()), key=lambda values: values[0])}
+        if not self.publisher.catalog.has(artifact_id):
+            self.publisher.publish_json("research/correlations", artifact_id, report, upstream_ids=tuple(sorted(upstream_ids)), quality=QualityStatus.PARTIAL)
+        return {"artifact_id": artifact_id, **report}
+
+    def anomalies(self, payload: dict[str, Any]) -> dict[str, object]:
+        """Publish a bounded, deterministic return-anomaly report."""
+        required = {"as_of_date", "lookback_sessions", "z_threshold", "min_sessions"}
+        if not isinstance(payload, dict) or set(payload) != required:
+            raise DomainValidationError("anomaly command is incomplete")
+        try:
+            as_of = date.fromisoformat(str(payload["as_of_date"]))
+            lookback = int(payload["lookback_sessions"])
+            threshold = float(payload["z_threshold"])
+            minimum = int(payload["min_sessions"])
+        except (TypeError, ValueError) as exc:
+            raise DomainValidationError("anomaly parameters are invalid") from exc
+        if (
+            not 20 <= lookback <= 365
+            or not 2 <= threshold <= 10
+            or not 20 <= minimum <= lookback
+            or as_of >= datetime.now(UTC).date()
+        ):
+            raise DomainValidationError("anomaly parameters are outside supported bounds")
+        histories = self.market.histories(as_of - timedelta(days=lookback * 3), as_of)
+        rows: list[dict[str, object]] = []
+        upstream_ids: set[str] = set()
+        for instrument_id, (bars, identity) in histories.items():
+            if str(identity["isin"]).startswith("INDEX:"):
+                continue
+            ordered = sorted(bars, key=lambda item: str(item["as_of_date"]))[-(lookback + 2):]
+            if len(ordered) < minimum + 2:
+                continue
+            returns = [
+                float(ordered[index]["close"]) / float(ordered[index - 1]["close"]) - 1
+                for index in range(1, len(ordered))
+            ]
+            baseline, latest = returns[:-1], returns[-1]
+            if len(baseline) < minimum:
+                continue
+            average = mean(baseline)
+            deviation = pstdev(baseline)
+            score = (latest - average) / deviation if deviation else 0.0
+            upstream_ids.update(str(item["snapshot_id"]) for item in ordered)
+            rows.append({
+                "instrument_id": str(instrument_id),
+                "symbol": str(identity["symbol"]),
+                "latest_date": str(ordered[-1]["as_of_date"]),
+                "latest_return": latest,
+                "baseline_mean": average,
+                "baseline_stddev": deviation,
+                "z_score": score,
+                "anomaly": abs(score) >= threshold,
+            })
+        if not rows:
+            raise DomainValidationError("no instruments have sufficient return history")
+        rows.sort(key=lambda item: (-abs(float(item["z_score"])), str(item["instrument_id"])))
+        artifact_id = str(uuid5(NAMESPACE_URL, "research-anomalies:" + json.dumps(payload, sort_keys=True)))
+        report = {
+            "snapshot_id": artifact_id,
+            "as_of_date": as_of.isoformat(),
+            "lookback_sessions": lookback,
+            "z_threshold": threshold,
+            "min_sessions": minimum,
+            "method": "latest-return-versus-prior-return-z-score",
+            "rows": rows,
+            "anomaly_count": sum(bool(row["anomaly"]) for row in rows),
+        }
+        if not self.publisher.catalog.has(artifact_id):
+            self.publisher.publish_json(
+                "research/anomalies", artifact_id, report,
+                upstream_ids=tuple(sorted(upstream_ids)), quality=QualityStatus.PARTIAL,
+            )
+        return {"artifact_id": artifact_id, **report}
+
     def _calculate_day(self, payload: dict[str, Any], strategy_id: str) -> dict[str, object]:
-        if set(payload) != {"as_of_date"} or not isinstance(payload.get("as_of_date"), str):
+        if set(payload) - {"as_of_date", "symbols"} or "as_of_date" not in payload or not isinstance(payload.get("as_of_date"), str):
             raise DomainValidationError("daily calculation requires as_of_date")
+        requested_symbols = payload.get("symbols")
+        if requested_symbols is not None and (
+            not isinstance(requested_symbols, list)
+            or not requested_symbols
+            or len(requested_symbols) > 500
+            or len(set(requested_symbols)) != len(requested_symbols)
+            or any(not isinstance(symbol, str) or not symbol.strip() for symbol in requested_symbols)
+        ):
+            raise DomainValidationError("symbols must be a unique non-empty list of at most 500 values")
         try:
             as_of_date = date.fromisoformat(payload["as_of_date"])
         except ValueError as exc:
             raise DomainValidationError("as_of_date must be an ISO date") from exc
+        active_config = self.configs.active(strategy_id, as_of_date) if self.configs else None
+        config_artifact_id = str(active_config["artifact_id"]) if active_config else None
         histories = self.market.histories(as_of_date - timedelta(days=420), as_of_date)
         benchmark: list[dict[str, object]] = []
         if strategy_id == "strategy2":
@@ -77,6 +277,8 @@ class ResearchJobs:
         symbols: dict[str, str] = {}
         upstream_ids: set[str] = set()
         for instrument_id, (bars, identity) in histories.items():
+            if requested_symbols is not None and instrument_id not in requested_symbols and identity["symbol"] not in requested_symbols:
+                continue
             if bars[-1]["as_of_date"] != as_of_date.isoformat() or str(identity["isin"]).startswith(
                 "INDEX:"
             ):
@@ -112,6 +314,7 @@ class ResearchJobs:
                 "snapshot_id": feature_id,
                 "as_of_date": as_of_date.isoformat(),
                 "strategy_id": strategy_id,
+                "config_revision_id": active_config["revision_id"] if active_config else None,
                 "formula_revision": FORMULA_REVISION
                 if strategy_id == "strategy1"
                 else STRATEGY2_FORMULA_REVISION,
@@ -126,7 +329,7 @@ class ResearchJobs:
                     for instrument_id, value in sorted(results.items())
                 },
             },
-            upstream_ids=tuple(sorted(upstream_ids)),
+            upstream_ids=tuple(sorted(upstream_ids | ({config_artifact_id} if config_artifact_id else set()))),
             quality=QualityStatus.PARTIAL
             if strategy_id == "strategy2" or len(results) < len(histories)
             else QualityStatus.COMPLETE,
@@ -154,6 +357,7 @@ class ResearchJobs:
                 "snapshot_id": percentile_id,
                 "as_of_date": as_of_date.isoformat(),
                 "strategy_id": strategy_id,
+                "config_revision_id": active_config["revision_id"] if active_config else None,
                 "feature_snapshot_id": feature_id,
                 "values": percentiles,
             },
@@ -192,17 +396,25 @@ class ResearchJobs:
                 "percentile_snapshot_id": percentile_id,
                 "values": scores,
             },
-            upstream_ids=(percentile_id,),
+            upstream_ids=tuple(
+                item for item in (percentile_id, config_artifact_id) if item is not None
+            ),
         )
         with sqlite_connection(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")
             # A recomputation can shrink the universe. Replace the complete
             # date projection so removed instruments cannot survive as stale
             # scores and later leak into weekly rankings.
-            connection.execute(
-                "DELETE FROM research_daily_scores WHERE strategy_id=? AND as_of_date=?",
-                (strategy_id, as_of_date.isoformat()),
-            )
+            if requested_symbols is None:
+                connection.execute(
+                    "DELETE FROM research_daily_scores WHERE strategy_id=? AND as_of_date=?",
+                    (strategy_id, as_of_date.isoformat()),
+                )
+            else:
+                connection.executemany(
+                    "DELETE FROM research_daily_scores WHERE strategy_id=? AND as_of_date=? AND (instrument_id=? OR symbol=?)",
+                    [(strategy_id, as_of_date.isoformat(), symbol, symbol) for symbol in requested_symbols],
+                )
             connection.executemany(
                 """INSERT INTO research_daily_scores
                    (strategy_id, as_of_date, instrument_id, symbol, score, penalty, artifact_id)
@@ -282,6 +494,8 @@ class ResearchJobs:
                 "snapshot_id": artifact_id,
                 "strategy_id": strategy_id,
                 "week_end": week_end.isoformat(),
+                "formula_revision": FORMULA_REVISION if strategy_id == "strategy1" else STRATEGY2_FORMULA_REVISION,
+                "tie_policy": "composite_score_desc_symbol_asc",
                 "members": members,
             },
             upstream_ids=tuple(sorted(upstream_ids)),
@@ -343,3 +557,224 @@ class ResearchJobs:
                 (strategy_id,),
             ).fetchall()
         return tuple(date.fromisoformat(row["week_end"]) for row in rows)
+
+    def read_snapshot(
+        self,
+        kind: str,
+        strategy_id: str,
+        as_of_date: date | None = None,
+        symbol: str | None = None,
+    ) -> dict[str, object] | None:
+        """Read the newest checksum-verified research snapshot matching a query.
+
+        Research artifacts are immutable, so this read model can safely resolve
+        a date or latest snapshot without exposing the artifact directory.
+        """
+        categories = {
+            "features": f"features/{strategy_id}",
+            "percentiles": "research/percentiles",
+            "scores": "research/scores",
+            "rankings": "research/rankings",
+        }
+        category = categories.get(kind)
+        if category is None or strategy_id not in {"strategy1", "strategy2"}:
+            raise DomainValidationError("research snapshot query is invalid")
+        candidates: list[tuple[str, dict[str, object]]] = []
+        for manifest in self.publisher.store.manifests():
+            if manifest.category != category:
+                continue
+            try:
+                _, payload = self.publisher.store.read_json(category, manifest.artifact_id)
+            except DomainValidationError:
+                continue
+            if payload.get("strategy_id") != strategy_id:
+                continue
+            snapshot_date = payload.get("as_of_date", payload.get("week_end"))
+            if as_of_date is not None and snapshot_date != as_of_date.isoformat():
+                continue
+            if symbol is not None:
+                values = payload.get("values", payload.get("members", []))
+                if isinstance(values, dict):
+                    matches = any(
+                        isinstance(value, dict) and value.get("symbol") == symbol
+                        for value in values.values()
+                    )
+                else:
+                    matches = any(
+                        isinstance(value, dict) and value.get("symbol") == symbol
+                        for value in values
+                    ) if isinstance(values, list) else False
+                if not matches:
+                    continue
+            candidates.append((manifest.created_at, payload))
+        if not candidates:
+            return None
+        _, payload = max(candidates, key=lambda item: item[0])
+        return payload
+
+    def compare_strategy2_parity(self, payload: dict[str, Any]) -> dict[str, object]:
+        """Publish a deterministic comparison against a frozen v3 factor baseline."""
+        required = {"as_of_date", "strategy_id", "feature_artifact_id", "legacy_factors"}
+        if (
+            not isinstance(payload, dict)
+            or set(payload) != required
+            or payload["strategy_id"] != "strategy2"
+        ):
+            raise DomainValidationError("parity command is incomplete")
+        try:
+            as_of = date.fromisoformat(str(payload["as_of_date"]))
+        except ValueError as exc:
+            raise DomainValidationError("parity date must be ISO date") from exc
+        legacy = payload["legacy_factors"]
+        if not isinstance(legacy, dict) or not 1 <= len(legacy) <= 500:
+            raise DomainValidationError("legacy_factors must contain 1..500 instruments")
+        try:
+            _, features = self.publisher.store.read_json(
+                f"features/{payload['strategy_id']}", str(payload["feature_artifact_id"])
+            )
+        except DomainValidationError as exc:
+            raise DomainValidationError("feature artifact was not found") from exc
+        if features.get("as_of_date") != as_of.isoformat() or features.get("strategy_id") != payload["strategy_id"]:
+            raise DomainValidationError("feature artifact does not match the parity request")
+        values = features.get("values")
+        if not isinstance(values, dict):
+            raise DomainValidationError("feature artifact is malformed")
+        factors = tuple(FACTOR_WEIGHTS)
+        normalized_legacy: dict[str, dict[str, float]] = {}
+        deltas: dict[str, dict[str, float]] = {}
+        for instrument_id, baseline in legacy.items():
+            current = values.get(str(instrument_id))
+            if not isinstance(baseline, dict) or not isinstance(current, dict):
+                raise DomainValidationError("parity instrument factors are malformed")
+            current_factors = current.get("factors")
+            if not isinstance(current_factors, dict):
+                raise DomainValidationError("feature artifact has no factor values")
+            normalized: dict[str, float] = {}
+            difference: dict[str, float] = {}
+            for factor in factors:
+                raw = baseline.get(factor, baseline.get(f"factor_{factor}"))
+                if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+                    raise DomainValidationError("legacy factor values must be numeric")
+                try:
+                    legacy_value = float(raw)
+                    current_value = float(current_factors[factor])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise DomainValidationError("legacy factor values must be numeric") from exc
+                if not isfinite(legacy_value) or not isfinite(current_value):
+                    raise DomainValidationError("legacy factor values must be finite")
+                normalized[factor] = legacy_value
+                difference[factor] = current_value - legacy_value
+            normalized_legacy[str(instrument_id)] = normalized
+            deltas[str(instrument_id)] = difference
+        report = {
+            "as_of_date": as_of.isoformat(),
+            "strategy_id": payload["strategy_id"],
+            "feature_artifact_id": str(payload["feature_artifact_id"]),
+            "v4_formula_revision": features.get("formula_revision"),
+            "v3_formula_revision": "v3-archived-factors-service-v2",
+            "tie_policy": "score_desc_symbol_asc",
+            "legacy_factors": normalized_legacy,
+            "v4_feature_values": {
+                key: values[key] for key in sorted(normalized_legacy)
+            },
+            "factor_deltas": deltas,
+        }
+        artifact_id = str(uuid5(NAMESPACE_URL, "research-parity:" + json.dumps(report, sort_keys=True)))
+        if not self.publisher.catalog.has(artifact_id):
+            self.publisher.publish_json(
+                "research/parity", artifact_id,
+                {"snapshot_id": artifact_id, **report},
+                upstream_ids=(str(payload["feature_artifact_id"]),),
+            )
+        return {"artifact_id": artifact_id, "as_of_date": as_of.isoformat(), "strategy_id": payload["strategy_id"], "compared_count": len(normalized_legacy)}
+
+    def compare_strategy2_candidates(self, payload: dict[str, Any]) -> dict[str, object]:
+        """Publish a deterministic v3/v4 candidate-set and rank comparison."""
+        required = {"week_end", "ranking_artifact_id", "legacy_candidates"}
+        if not isinstance(payload, dict) or set(payload) != required:
+            raise DomainValidationError("candidate parity command is incomplete")
+        try:
+            week_end = date.fromisoformat(str(payload["week_end"]))
+        except ValueError as exc:
+            raise DomainValidationError("candidate parity date must be ISO date") from exc
+        legacy_rows = payload["legacy_candidates"]
+        if not isinstance(legacy_rows, list) or not 1 <= len(legacy_rows) <= 500:
+            raise DomainValidationError("legacy_candidates must contain 1..500 rows")
+        try:
+            _, ranking = self.publisher.store.read_json(
+                "research/rankings", str(payload["ranking_artifact_id"])
+            )
+        except DomainValidationError as exc:
+            raise DomainValidationError("ranking artifact was not found") from exc
+        if ranking.get("strategy_id") != "strategy2" or ranking.get("week_end") != week_end.isoformat():
+            raise DomainValidationError("ranking artifact does not match candidate parity")
+        current_rows = ranking.get("members")
+        if not isinstance(current_rows, list) or len(current_rows) > 500:
+            raise DomainValidationError("ranking artifact members are malformed")
+
+        def normalize(rows: list[object], label: str) -> dict[str, dict[str, object]]:
+            result: dict[str, dict[str, object]] = {}
+            for index, row in enumerate(rows, 1):
+                if isinstance(row, str):
+                    identity, symbol, rank = row, row, index
+                elif isinstance(row, dict):
+                    identity = row.get("instrument_id", row.get("symbol"))
+                    symbol = row.get("symbol", identity)
+                    rank = row.get("rank", index)
+                else:
+                    raise DomainValidationError(f"{label} rows are malformed")
+                if not isinstance(identity, str) or not identity.strip() or not isinstance(symbol, str):
+                    raise DomainValidationError(f"{label} rows are malformed")
+                if isinstance(rank, bool) or not isinstance(rank, int) or rank < 1:
+                    raise DomainValidationError(f"{label} ranks are invalid")
+                if identity in result:
+                    raise DomainValidationError(f"{label} contains duplicate instruments")
+                result[identity] = {"instrument_id": identity, "symbol": symbol, "rank": rank}
+            return result
+
+        legacy = normalize(legacy_rows, "legacy candidate")
+        current = normalize(current_rows, "v4 candidate")
+        all_ids = sorted(set(legacy) | set(current))
+        comparisons = []
+        for instrument_id in all_ids:
+            old = legacy.get(instrument_id)
+            new = current.get(instrument_id)
+            comparisons.append({
+                "instrument_id": instrument_id,
+                "symbol": (new or old)["symbol"],
+                "v3_rank": old["rank"] if old else None,
+                "v4_rank": new["rank"] if new else None,
+                "rank_delta": new["rank"] - old["rank"] if old and new else None,
+                "status": "UNCHANGED" if old and new else "ADDED" if new else "REMOVED",
+            })
+        report = {
+            "snapshot_id": "",
+            "week_end": week_end.isoformat(),
+            "strategy_id": "strategy2",
+            "ranking_artifact_id": str(payload["ranking_artifact_id"]),
+            "v3_formula_revision": "v3-archived-score-service",
+            "v4_formula_revision": ranking.get("formula_revision"),
+            "tie_policy": ranking.get("tie_policy"),
+            "v3_candidates": legacy,
+            "v4_candidates": current,
+            "comparisons": comparisons,
+            "added": sorted(set(current) - set(legacy)),
+            "removed": sorted(set(legacy) - set(current)),
+        }
+        artifact_id = str(
+            uuid5(NAMESPACE_URL, "research-candidate-parity:" + json.dumps(report, sort_keys=True))
+        )
+        report["snapshot_id"] = artifact_id
+        if not self.publisher.catalog.has(artifact_id):
+            self.publisher.publish_json(
+                "research/candidate-parity", artifact_id, report,
+                upstream_ids=(str(payload["ranking_artifact_id"]),),
+            )
+        return {
+            "artifact_id": artifact_id,
+            "week_end": week_end.isoformat(),
+            "strategy_id": "strategy2",
+            "compared_count": len(comparisons),
+            "added_count": len(report["added"]),
+            "removed_count": len(report["removed"]),
+        }

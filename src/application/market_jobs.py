@@ -15,6 +15,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from kiteconnect import KiteConnect  # type: ignore[import-untyped]
 
 from src.application.ingestion import ingest_market_bars
+from src.application.intraday_alerts import IntradayStopAlerts
 from src.application.kite_auth import KiteCredentials
 from src.application.market_repository import MarketRepository, TrackedInstrument
 from src.application.providers import KiteHistoricalBarsProvider
@@ -39,6 +40,7 @@ class KiteMarketJobs:
         nse_csv_path: str | Path,
         bse_csv_path: str | Path | None = None,
         legacy_market_path: str | Path | None = None,
+        intraday_alerts: IntradayStopAlerts | None = None,
     ) -> None:
         self.repository = repository
         self.publisher = publisher
@@ -47,6 +49,7 @@ class KiteMarketJobs:
         self.nse_csv_path = Path(nse_csv_path)
         self.bse_csv_path = Path(bse_csv_path) if bse_csv_path else None
         self.legacy_market_path = Path(legacy_market_path) if legacy_market_path else None
+        self.intraday_alerts = intraday_alerts
 
     def _client(self) -> KiteConnect:
         if self.credentials is None:
@@ -380,6 +383,38 @@ class KiteMarketJobs:
             "observed_at": observed_at,
             "quote_count": len(quotes),
         }
+
+    def fetch_intraday_stop_alerts(self, payload: dict[str, Any]) -> dict[str, object]:
+        """Poll current holding quotes and hand them to the durable alert model."""
+        if self.intraday_alerts is None:
+            raise DomainValidationError("intraday alert service is unavailable")
+        if not isinstance(payload, dict) or set(payload) not in ({"account_id"}, {"account_id", "instrument_ids"}) or not isinstance(payload.get("account_id"), str):
+            raise DomainValidationError("intraday alert poll requires account_id")
+        projection = self.intraday_alerts.ledger.projection(str(payload["account_id"]))
+        requested = payload.get("instrument_ids")
+        if requested is not None and (not isinstance(requested, list) or any(not isinstance(item, str) for item in requested)):
+            raise DomainValidationError("instrument_ids must be a list of strings")
+        requested_ids = set(requested or [])
+        holdings = [lot.instrument_id for lot in projection.open_lots if not requested_ids or lot.instrument_id in requested_ids]
+        if not holdings:
+            raise DomainValidationError("account has no requested open holdings")
+        instruments = {instrument["instrument_id"]: instrument for instrument in self.repository.instruments(limit=500)}
+        keys = []
+        for instrument_id in holdings:
+            identity = instruments.get(instrument_id)
+            if identity is not None:
+                keys.append((instrument_id, f"{identity['exchange']}:{identity['symbol']}"))
+        raw = self._client().ohlc([key for _, key in keys])
+        observed_at = datetime.now(UTC).isoformat()
+        observations = []
+        for instrument_id, key in keys:
+            item = raw.get(key) if isinstance(raw, dict) else None
+            if not isinstance(item, dict) or "last_price" not in item:
+                continue
+            observations.append({"instrument_id": instrument_id, "price": item["last_price"], "observed_at": observed_at, "source": "kite-ohlc"})
+        if not observations:
+            raise DomainValidationError("Kite returned no holding quotes")
+        return self.intraday_alerts.ingest({"account_id": str(payload["account_id"]), "observations": observations})
 
     def fetch_bars(self, payload: dict[str, Any]) -> dict[str, object]:
         symbol = payload.get("symbol")

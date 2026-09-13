@@ -40,6 +40,33 @@ class Job:
     last_error: str | None = None
 
 
+class JobExecutionContext:
+    """Cooperative controls exposed to long-running job handlers.
+
+    Handlers may call ``checkpoint`` between provider/page operations.  The
+    method renews the lease and raises a domain error when an operator has
+    requested cancellation, allowing the worker to resolve the job safely.
+    """
+
+    def __init__(self, jobs: "JobStore", job: Job, lease_seconds: int = 60) -> None:
+        self.jobs, self.job_id, self.claim_token = jobs, job.job_id, job.claim_token
+        self.lease_seconds = lease_seconds
+
+    def checkpoint(self, *, progress: dict[str, Any] | None = None) -> Job:
+        job = self.jobs.heartbeat(self.job_id, str(self.claim_token), self.lease_seconds)
+        if progress:
+            self.jobs.emit(self.job_id, "progress", progress)
+        if job.cancel_requested:
+            raise DomainValidationError("job cancellation requested")
+        return job
+
+    def heartbeat(self) -> Job:
+        return self.checkpoint()
+
+    def cancelled(self) -> bool:
+        return self.jobs.get(self.job_id).cancel_requested
+
+
 class JobStore:
     def __init__(self, path: str | Path):
         self.path = str(path)
@@ -305,6 +332,31 @@ class JobStore:
             else:
                 raise DomainValidationError("terminal jobs cannot be cancelled")
             self._append(connection, job_id, "cancel_requested", {})
+        return self.get(job_id)
+
+    def retry_failed(self, job_id: int) -> Job:
+        """Requeue exactly one terminal failed job for an operator retry.
+
+        A retry is an explicit state transition.  It does not create a second
+        job or reset the event history, and it is intentionally unavailable for
+        queued, running, or successful jobs.
+        """
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT status FROM ops_jobs WHERE job_id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                raise DomainValidationError("job does not exist")
+            if JobStatus(row["status"]) != JobStatus.FAILED:
+                raise DomainValidationError("only failed jobs can be retried")
+            connection.execute(
+                """UPDATE ops_jobs SET status = ?, attempts = 0,
+                   next_attempt_at = NULL, last_error = NULL, result_json = NULL,
+                   cancel_requested = 0, updated_at = ? WHERE job_id = ?""",
+                (JobStatus.QUEUED.value, self._now(), job_id),
+            )
+            self._append(connection, job_id, "retry_requested", {})
         return self.get(job_id)
 
     def heartbeat(self, job_id: int, claim_token: str, lease_seconds: int = 60) -> Job:

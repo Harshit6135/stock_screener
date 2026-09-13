@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, date, datetime, time
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, cast
 from uuid import NAMESPACE_URL, uuid5
@@ -59,7 +59,13 @@ class LegacyPortfolioImporter:
 
     def _snapshot(
         self, path: Path, requested_date: object | None
-    ) -> tuple[date, list[dict[str, object]], Decimal]:
+    ) -> tuple[
+        date,
+        list[dict[str, object]],
+        Decimal,
+        list[dict[str, object]],
+        list[dict[str, object]],
+    ]:
         try:
             with sqlite_connection(path, read_only=True, row_factory=True) as connection:
                 tables = {
@@ -93,6 +99,26 @@ class LegacyPortfolioImporter:
                        WHERE date<=? ORDER BY date DESC LIMIT 1""",
                     (snapshot_date.isoformat(),),
                 ).fetchone()
+                capital_events: list[dict[str, object]] = []
+                if "capital_events" in tables:
+                    capital_events = [
+                        dict(row)
+                        for row in connection.execute(
+                            """SELECT date, amount, event_type, note
+                               FROM capital_events ORDER BY date, id"""
+                        ).fetchall()
+                    ]
+                source_actions: list[dict[str, object]] = []
+                if "actions" in tables:
+                    source_actions = [
+                        dict(row)
+                        for row in connection.execute(
+                            """SELECT action_id, action_date, type, reason, symbol,
+                                      units, prev_close, execution_price, capital,
+                                      status, buy_cost, sell_cost, tax
+                               FROM actions ORDER BY action_date, action_id"""
+                        ).fetchall()
+                    ]
         except (OSError, ValueError) as exc:
             raise DomainValidationError("legacy database snapshot is invalid") from exc
         if not holdings or summary is None or summary["remaining_capital"] is None:
@@ -100,7 +126,62 @@ class LegacyPortfolioImporter:
         cash = Decimal(str(summary["remaining_capital"]))
         if cash < 0:
             raise DomainValidationError("legacy snapshot has negative remaining capital")
-        return snapshot_date, holdings, cash
+        normalized_events: list[dict[str, object]] = []
+        for event in capital_events:
+            try:
+                event_date = date.fromisoformat(str(event["date"]))
+                amount = Decimal(str(event["amount"]))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise DomainValidationError("legacy capital event is invalid") from exc
+            if not amount.is_finite() or not str(event.get("event_type", "")).strip():
+                raise DomainValidationError("legacy capital event is invalid")
+            normalized_events.append(
+                {
+                    "date": event_date.isoformat(),
+                    "amount": str(amount),
+                    "event_type": str(event["event_type"]),
+                    "note": str(event["note"]) if event.get("note") is not None else None,
+                }
+            )
+        normalized_actions: list[dict[str, object]] = []
+        numeric_fields = {
+            "units",
+            "prev_close",
+            "execution_price",
+            "capital",
+            "buy_cost",
+            "sell_cost",
+            "tax",
+        }
+        for action in source_actions:
+            try:
+                action_date = date.fromisoformat(str(action["action_date"]))
+            except (KeyError, TypeError, ValueError) as exc:
+                raise DomainValidationError("legacy action is invalid") from exc
+            normalized: dict[str, object] = {
+                "action_id": str(action["action_id"]),
+                "action_date": action_date.isoformat(),
+                "type": str(action["type"]),
+                "reason": str(action["reason"]) if action.get("reason") is not None else None,
+                "symbol": str(action["symbol"]),
+                "status": str(action["status"]),
+            }
+            if not normalized["type"] or not normalized["symbol"] or not normalized["status"]:
+                raise DomainValidationError("legacy action is invalid")
+            for field in numeric_fields:
+                raw = action.get(field)
+                if raw is None:
+                    normalized[field] = None
+                    continue
+                try:
+                    value = Decimal(str(raw))
+                except (InvalidOperation, ValueError) as exc:
+                    raise DomainValidationError("legacy action is invalid") from exc
+                if not value.is_finite():
+                    raise DomainValidationError("legacy action is invalid")
+                normalized[field] = str(value)
+            normalized_actions.append(normalized)
+        return snapshot_date, holdings, cash, normalized_events, normalized_actions
 
     def preview(self, payload: dict[str, Any]) -> dict[str, object]:
         if (
@@ -112,7 +193,9 @@ class LegacyPortfolioImporter:
                 "legacy preview requires legacy_path and optional snapshot_date"
             )
         path = self._source(payload["legacy_path"])
-        snapshot_date, holdings, cash = self._snapshot(path, payload.get("snapshot_date"))
+        snapshot_date, holdings, cash, capital_events, source_actions = self._snapshot(
+            path, payload.get("snapshot_date")
+        )
         resolved: list[dict[str, object]] = []
         unresolved: list[str] = []
         cost = Decimal(0)
@@ -151,9 +234,24 @@ class LegacyPortfolioImporter:
             "remaining_cash": str(cash),
             "holding_cost": str(cost),
             "opening_cash_required": str(cash + cost),
+            "source_capital_events": capital_events,
+            "source_actions": source_actions,
+            "source_approved_action_count": sum(
+                str(action["status"]).lower() == "approved" for action in source_actions
+            ),
+            "source_realised_gain_total": str(
+                sum(
+                    (
+                        Decimal(str(event["amount"]))
+                        for event in capital_events
+                        if str(event["event_type"]).lower() in {"realised_gain", "realized_gain"}
+                    ),
+                    Decimal(0),
+                )
+            ),
             "limitations": [
                 "imports only the latest v3 holding snapshot and cash projection",
-                "historical realised P&L and individual sell history are unavailable in v3 holdings",
+                "aggregated v3 capital events are retained as source-only evidence; historical FIFO realised P&L and individual sell history are unavailable",
                 "unresolved symbols must be reconciled before import",
             ],
         }

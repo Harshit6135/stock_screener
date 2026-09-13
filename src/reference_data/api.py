@@ -358,8 +358,20 @@ class ExchangeCalendar:
             not self.exchange
             or not self.trading_dates
             or tuple(sorted(self.trading_dates)) != self.trading_dates
+            or len(set(self.trading_dates)) != len(self.trading_dates)
         ):
             raise DomainValidationError("exchange calendar is invalid")
+
+    def is_trading_day(self, value: date) -> bool:
+        return value in self.trading_dates
+
+    def next_trading_day(self, value: date) -> date | None:
+        return next((item for item in self.trading_dates if item > value), None)
+
+    def sessions_between(self, start: date, end: date) -> tuple[date, ...]:
+        if end < start:
+            raise DomainValidationError("calendar range is invalid")
+        return tuple(item for item in self.trading_dates if start <= item <= end)
 
 
 @dataclass(frozen=True)

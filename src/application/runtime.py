@@ -33,5 +33,6 @@ class RuntimeConfig:
     PORTFOLIO_KITE_ACCESS_TOKEN_PATH = Path(
         os.environ.get("SCREENER_PORTFOLIO_KITE_ACCESS_TOKEN_PATH", "portfolio_access_token.txt")
     )
+    PORTFOLIO_KITE_LIVE_EXECUTION = os.environ.get("SCREENER_PORTFOLIO_KITE_LIVE_EXECUTION", "false").lower() == "true"
     JSON_SORT_KEYS = False
     MAX_CONTENT_LENGTH = 64 * 1024
