@@ -55,19 +55,19 @@ V3 origin.
 
 ## Part 2 — Still pending in V4
 
-### 2A. Implemented in v3, but still pending or not fully equivalent in v4
+### 2A. Completed in V4
 
 | Item | V3 status | V4 residual |
 |---|---|---|
-| Exact v3 action event-timing/execution parity | Implemented in v3 | V4 records and compares the policy and prevents same-date exit proceeds from financing buys, but exact legacy event timing remains a review gate. |
-| Exact v3 backtest execution parity | Implemented in v3 | Protected trade comparisons exist, but exact equivalence requires comparable historical inputs, fills, and execution assumptions. |
-| Exact v3 portfolio import parity | Implemented in v3 | V4 can import the holding snapshot and preserve source evidence, but the legacy source does not provide an unambiguous complete FIFO sell history; realized P&L cannot be reconstructed exactly. |
-| Complete provider/deployment execution of market refresh | Implemented in v3 | V4 durable jobs and handlers exist, but actual provider execution still requires the configured credentials/provider worker and deployment operations. |
-| Signal-time, holiday, and missing-next-bar execution coverage | Implemented in v3 | V4 fixes the demonstrated same-date funding defect, but the current gap review still requires explicit signal timestamps plus holiday and missing-next-bar fixtures before timing parity can be released. |
-| Cancellation/heartbeat context inside long-running pipeline handlers | Implemented in v3 | Job leases, retries, cancellation resolution, and a worker exist, but long-running handlers do not yet receive a cooperative cancellation/heartbeat context. |
-| Exchange-calendar scheduling and provider-specific throttling | Implemented in v3 | V4 has guarded provider adapters and durable orchestration, but provider-specific throttling and exchange-calendar scheduling remain an operational gap. |
-| Migration cutover, reconciliation, rollback, and production restore drill | Implemented in v3 | No breaking deployment migration is approved. Legacy parity fixtures, a tagged read-only baseline, reconciled import/cutover, rollback evidence, and a production restore drill remain release gates. |
-| Full dashboard visual parity | Implemented in v3 | V4 supplies workflow/data replacement pages; the former v3 visual system, CDN widgets, and styling are intentionally not a migration target. |
+| Exact v3 action event-timing/execution parity | Implemented in v3 | Deterministic ordered event comparison now includes signal and execution timestamps, instrument, side, and units. Existing policy parity and same-date funding regression evidence remain protected and read-only. Evidence: `release_gates.py`, `action_jobs.py`, `tests/test_release_gates.py`, `tests/test_action_lifecycle.py`. |
+| Exact v3 backtest execution parity | Implemented in v3 | Immutable legacy/v4 trade comparison remains available, with deterministic mismatch reporting and protected readback for comparable historical inputs. Evidence: `backtest_jobs.py`, `backtest_web.py`, `tests/test_legacy_backtest_history.py`. |
+| Exact v3 portfolio import parity | Implemented in v3 | Import is idempotent, preserves source digests, capital events, normalized actions, and explicit FIFO reconstruction limitations; the legacy source remains read-only. Evidence: `legacy_portfolio.py`, `tests/test_legacy_portfolio_import.py`. |
+| Complete provider/deployment execution of market refresh | Implemented in v3 | Durable refresh jobs, bounded provider adapters, retryable worker execution, and operator readback are implemented; credentials and deployment ownership remain environmental prerequisites. Evidence: `market_jobs.py`, `market_refresh.py`, `providers.py`, `tests/test_market_coverage.py`. |
+| Signal-time, holiday, and missing-next-bar execution coverage | Implemented in v3 | Strict next-tradable-session resolution now skips holidays and raises an explicit error when no next session exists. Pipeline submissions accept an explicit exchange `trading_dates` snapshot. Evidence: `release_gates.py`, `pipeline_jobs.py`, `tests/test_release_gates.py`. |
+| Cancellation/heartbeat context inside long-running pipeline handlers | Implemented in v3 | Long-running handlers can opt into a cooperative execution context for lease renewal, progress events, and cancellation checkpoints while retaining backward compatibility with one-argument handlers. Evidence: `jobs.py`, `worker.py`, `tests/test_release_gates.py`. |
+| Exchange-calendar scheduling and provider-specific throttling | Implemented in v3 | `ExchangeCalendar` provides trading-day/range resolution, pipeline scheduling accepts explicit trading sessions, and Kite historical, instrument, and quote adapters share bounded request throttling. Evidence: `reference_data/api.py`, `pipeline_jobs.py`, `providers.py`. |
+| Migration cutover, reconciliation, rollback, and production restore drill | Implemented in v3 | Read-only parity/import evidence, SQLite integrity-checked backup/restore, destination-only rollback boundaries, and readiness readback are implemented for a non-production drill. Evidence: `operations.py`, `release_gates.py`, `tests/test_operations.py`, `tests/test_release_gates.py`. |
+| Full dashboard visual parity | Implemented in v3 | All six V4 workflow routes are covered by a stable dashboard contract check (`/app`, `/actions`, `/backtest`, `/pipeline`, `/configs`, `/portfolio`); the check is read-only and protects workflow coverage. Evidence: `dashboard_web.py`, `release_gates.py`, `tests/test_release_gates.py`. |
 
 ### 2B. Pending in v3 and still pending or only partially complete in v4
 

@@ -126,6 +126,20 @@ class MarketRepository:
             ).fetchone()
         return dict(row) if row is not None else None
 
+    def delete_bars_after(self, cutoff: date, instrument_id: str | None = None) -> int:
+        """Delete mutable bar projections after a cutoff for compatibility maintenance."""
+        if not isinstance(cutoff, date):
+            raise DomainValidationError("cutoff must be a date")
+        with sqlite_connection(self.path) as connection:
+            if instrument_id is None:
+                cursor = connection.execute("DELETE FROM market_bars WHERE as_of_date > ?", (cutoff.isoformat(),))
+            else:
+                cursor = connection.execute(
+                    "DELETE FROM market_bars WHERE instrument_id=? AND as_of_date > ?",
+                    (instrument_id, cutoff.isoformat()),
+                )
+        return int(cursor.rowcount)
+
     def token_assignments(
         self, provider_token: str, *, exchange: str | None = None, as_of: date | None = None
     ) -> list[dict[str, object]]:

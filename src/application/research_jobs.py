@@ -20,6 +20,7 @@ from src.application.research_strategy2 import (
 from src.application.research_strategy2 import strategy2_factors, strategy2_indicators
 from src.application.sqlite import migrate_sqlite, sqlite_connection
 from src.application.strategy_configs import StrategyConfigs
+from src.application.yfinance_provider import download_daily_bars
 from src.platform_kernel import DomainValidationError, QualityStatus
 
 
@@ -270,7 +271,12 @@ class ResearchJobs:
                 benchmark_id = str(self.market.instrument("NIFTY 500")["instrument_id"])
                 benchmark = histories[benchmark_id][0]
             except (DomainValidationError, KeyError) as exc:
-                raise DomainValidationError("NIFTY 500 benchmark history is required") from exc
+                # Preserve the v3 Kite→YFinance fallback for migrations where
+                # the benchmark has not yet been imported into the v4 store.
+                try:
+                    benchmark = download_daily_bars("^CNX500", as_of_date - timedelta(days=420), as_of_date)
+                except DomainValidationError:
+                    raise DomainValidationError("NIFTY 500 benchmark history is required") from exc
             if benchmark[-1]["as_of_date"] != as_of_date.isoformat():
                 raise DomainValidationError("NIFTY 500 benchmark is stale for requested date")
         results: dict[str, dict[str, object]] = {}

@@ -1,13 +1,14 @@
 import os
 from pathlib import Path
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, redirect
 from waitress import serve  # type: ignore[import-untyped]
 
 from src.application.actions_web import create_actions_blueprint
 from src.application.backtest_web import create_backtest_blueprint
 from src.application.broker_web import create_broker_blueprint
 from src.application.composition import ApplicationServices
+from src.application.compatibility_web import create_compatibility_blueprint
 from src.application.configs_web import create_configs_blueprint
 from src.application.dashboard_web import create_dashboard_blueprint
 from src.application.kite_auth import KiteAuthService, load_kite_credentials
@@ -76,6 +77,11 @@ def create_app(config_class=RuntimeConfig):
     app.register_blueprint(create_legacy_portfolio_blueprint(services.legacy_portfolio))
     app.register_blueprint(create_backtest_blueprint(services.backtests, services.artifacts))
     app.register_blueprint(create_actions_blueprint(services.actions))
+    app.register_blueprint(create_compatibility_blueprint(services))
+
+    @app.get("/")
+    def legacy_dashboard_root():
+        return redirect("/app")
     app.register_blueprint(
         create_kite_auth_blueprint(
             KiteAuthService(market_data_credentials, market_data_token_path)

@@ -647,6 +647,14 @@ class BacktestJobs:
             raise DomainValidationError("backtest run was not found")
         return str(row["artifact_id"])
 
+    def delete_run(self, run_id: str) -> bool:
+        """Remove a run from the operational index while retaining its immutable artifact."""
+        with sqlite_connection(self.database) as connection:
+            cursor = connection.execute("DELETE FROM backtest_runs WHERE run_id=?", (run_id,))
+        if cursor.rowcount == 0:
+            raise DomainValidationError("backtest run was not found")
+        return True
+
     def legacy_runs(self, root: str | Path = "backtest_history", limit: int = 50) -> list[dict[str, object]]:
         """Read legacy v3 report folders without presenting them as v4 runs."""
         if not 1 <= limit <= 100:
