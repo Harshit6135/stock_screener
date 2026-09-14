@@ -9,7 +9,7 @@ from src.application.web import require_operator_token
 from src.platform_kernel import DomainValidationError
 
 
-def create_actions_blueprint(actions: ActionJobs) -> Blueprint:
+def create_actions_blueprint(actions: ActionJobs, automatic_paper_mode: bool = False) -> Blueprint:
     blueprint = Blueprint("actions_v2", __name__, url_prefix="/api/v2/actions")
 
     @blueprint.before_request
@@ -67,7 +67,10 @@ def create_actions_blueprint(actions: ActionJobs) -> Blueprint:
         if not isinstance(body, dict):
             return jsonify({"error": "manual action payload must be an object"}), 400
         try:
-            return jsonify(actions.create_manual(body)), 201
+            proposal = actions.create_manual(body)
+            if automatic_paper_mode:
+                proposal = actions.automatically_process_paper_proposal(proposal)
+            return jsonify(proposal), 201
         except DomainValidationError as exc:
             return jsonify({"error": str(exc)}), 400
 

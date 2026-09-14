@@ -6,6 +6,9 @@ future-work documents were retired after consolidation.
 
 ## Current implementation
 
+- [V4 usage guide](current/V4%20usage%20guide.md) — detailed architecture,
+  setup, operating workflows, API conventions, and testing.
+
 - [Consolidated delivery status](current/Consolidated%20pending%20items.md) —
   the authoritative completed/pending ledger, including V3 provenance and V4
   release gates.

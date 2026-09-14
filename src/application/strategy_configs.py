@@ -38,6 +38,7 @@ _DEFAULTS = {
     "atr_fallback_percent": "0.06",
     "max_concentration_pct": "0.25",
 }
+_SUPPORTED_FACTORS = {"trend", "momentum", "efficiency", "volume", "structure"}
 
 
 class StrategySettings(TypedDict):
@@ -111,8 +112,8 @@ class StrategyConfigs:
         parsed["max_positions"] = positions
         if "factor_weights" in value:
             weights = value["factor_weights"]
-            if not isinstance(weights, dict) or not weights:
-                raise DomainValidationError("factor_weights must be a non-empty object")
+            if not isinstance(weights, dict) or set(weights) != _SUPPORTED_FACTORS:
+                raise DomainValidationError("factor_weights must name every supported factor exactly once")
             parsed_weights: dict[str, str] = {}
             for k, v in weights.items():
                 if not isinstance(k, str) or not k.strip():

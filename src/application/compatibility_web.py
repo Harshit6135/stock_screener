@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
-from flask import Blueprint, Response, jsonify, request, stream_with_context
+from flask import Blueprint, Response, current_app, jsonify, request, stream_with_context
 
 from src.application.web import require_operator_token
 from src.market_data import NormalizedBar
@@ -78,69 +78,23 @@ def create_compatibility_blueprint(services) -> Blueprint:
         broadcast_log("INFO | Pipeline | Starting in-order pipeline stages...")
 
         try:
-            today = datetime.now(UTC).date()
-
-            # Step 1: Init Universe
-            if steps_config["init"]:
-                broadcast_log("INFO | Pipeline | Step 1: Ingesting & syncing master universe...")
-                try:
-                    res = services.market_jobs.enrich_and_sync_universe({
-                        "enrich_yfinance": False,
-                        "min_market_cap_cr": 500,
-                        "min_price": 75,
-                    })
-                    results["init"] = f"success (tracked={res.get('total_tracked', 0)})"
-                except DomainValidationError as exc:
-                    tracked = services.market.tracked_instruments()
-                    results["init"] = f"skipped ({exc}; fallback tracked={len(tracked)})"
-                broadcast_log(f"INFO | Pipeline | Init step: {results['init']}")
-
-            # Step 2: Market Data
-            if steps_config["marketdata"] or steps_config["historical"]:
-                broadcast_log("INFO | Pipeline | Step 2: Scheduling market data refresh...")
-                try:
-                    sched = services.market_refresh.schedule({
-                        "start_date": today.isoformat(),
-                        "end_date": today.isoformat(),
-                    })
-                    results["marketdata"] = f"success (scheduled={sched.get('scheduled_count', 0)})"
-                except DomainValidationError as exc:
-                    results["marketdata"] = f"skipped ({exc})"
-                broadcast_log(f"INFO | Pipeline | Market data step: {results['marketdata']}")
-
-
-
-            # Step 3: Indicators
-            if steps_config["indicators"]:
-                broadcast_log("INFO | Pipeline | Step 3: Queueing indicator calculation...")
-                for st in ("strategy1", "strategy2"):
-                    services.jobs.submit(
-                        f"pipe-ind-{st}-{today.isoformat()}",
-                        f"research.calculate-{st}-day",
-                        {"as_of_date": today.isoformat()},
-                    )
-                results["indicators"] = "success"
-                broadcast_log("INFO | Pipeline | Indicators queued")
-
-            # Steps 4-6: Percentiles, Scores, Rankings
-            if steps_config["ranking"] or steps_config["score"] or steps_config["percentile"]:
-                broadcast_log("INFO | Pipeline | Step 4-6: Queueing factor rankings...")
-                for st in ("strategy1", "strategy2"):
-                    services.jobs.submit(
-                        f"pipe-rank-{st}-{today.isoformat()}",
-                        f"research.rank-{st}-week",
-                        {"week_end": today.isoformat()},
-                    )
-                if steps_config["percentile"]:
-                    results["percentile"] = "success"
-                if steps_config["score"]:
-                    results["score"] = "success"
-                if steps_config["ranking"]:
-                    results["ranking"] = "success"
-                broadcast_log("INFO | Pipeline | Ranking stages queued")
-
-            broadcast_log("INFO | Pipeline | Pipeline execution completed successfully.")
-            return jsonify({"message": "Pipeline completed successfully", "results": results}), 200
+            latest_market_date = services.market.latest_market_date()
+            if latest_market_date is None:
+                return jsonify({"message": "Pipeline requires a completed market date", "results": results}), 409
+            # V4's durable coordinator is the single source of truth.  It
+            # waits through its data and calculation stages; this compatibility
+            # route must never label queued work as completed.
+            pipeline = services.pipelines.submit({
+                "as_of_date": latest_market_date.isoformat(),
+                "strategies": ["strategy1", "strategy2"],
+                "orchestrate_data": steps_config["init"] or steps_config["marketdata"] or steps_config["historical"],
+            })
+            broadcast_log(f"INFO | Pipeline | Queued V4 pipeline {pipeline['pipeline_id']} for {latest_market_date}.")
+            return jsonify({
+                "message": "Pipeline queued; inspect its terminal status before using results",
+                "pipeline": pipeline,
+                "results": {key: "queued" for key, enabled in steps_config.items() if enabled},
+            }), 202
 
         except Exception as exc:
             broadcast_log(f"ERROR | Pipeline | Pipeline aborted: {exc}")
@@ -376,6 +330,24 @@ def create_compatibility_blueprint(services) -> Blueprint:
         _TICKER_STATE["active"] = False
         return jsonify({"message": "Ticker stopped"}), 200
 
+    # Legacy dashboard aliases.  They expose the same durable-bar snapshot as
+    # the compatibility ticker; callers can tell it is not a broker stream.
+    @bp.post("/investment/start-ticker")
+    def legacy_prices_start():
+        return prices_start()
+
+    @bp.post("/investment/stop-ticker")
+    def legacy_prices_stop():
+        return prices_stop()
+
+    @bp.get("/investment/live-prices")
+    def legacy_prices_get():
+        return prices_get()
+
+    @bp.post("/investment/sync-prices")
+    def sync_prices():
+        return prices_start()
+
     # -------------------------------------------------------------------------
     # 6. Portfolio & Investment Read & Manual Trade Models
     # -------------------------------------------------------------------------
@@ -455,20 +427,50 @@ def create_compatibility_blueprint(services) -> Blueprint:
     @bp.get("/investment/summary/history")
     def investment_summary_history():
         account_id = request.args.get("account_id", "paper")
-        # Return valuation snapshot history or fallback point
-        today = datetime.now(UTC).date()
-        summary = investment_summary().get_json()
+        try:
+            snapshots = list(reversed(services.ledger.valuations(account_id, 100)))
+        except DomainValidationError:
+            snapshots = []
         return jsonify([{
-            "date": today.isoformat(),
-            "portfolio_value": summary.get("portfolio_value", 0),
-            "cash_balance": summary.get("remaining_capital", 0),
-        }])
+            "date": item["as_of_date"],
+            "portfolio_value": float(item["payload"]["equity"]),
+            "cash_balance": float(item["payload"]["cash"]),
+        } for item in snapshots])
 
     @bp.get("/investment/trade-journal")
     def investment_trade_journal():
         account_id = request.args.get("account_id", "paper")
-        # Read closed trades from ledger events
-        return jsonify([])
+        try:
+            return jsonify(services.ledger.journal(account_id))
+        except DomainValidationError:
+            return jsonify([])
+
+    @bp.post("/investment/capital-events")
+    def capital_event():
+        error = require_operator_token()
+        if error:
+            return jsonify(error[0]), error[1]
+        body = request.get_json(silent=True) or {}
+        if not isinstance(body, dict):
+            return jsonify({"error": "capital event payload must be an object"}), 400
+        account_id = str(body.get("account_id", "paper"))
+        event_type = str(body.get("event_type", "")).upper()
+        direction = "DEPOSIT" if event_type in {"DEPOSIT", "ADD", "ADD_CAPITAL"} else "WITHDRAW" if event_type in {"WITHDRAW", "REMOVE", "WITHDRAW_CAPITAL"} else None
+        try:
+            amount = Money(Decimal(str(body["amount"])))
+            occurred = datetime.fromisoformat(str(body.get("date", datetime.now(UTC).date())))
+            account = next(item for item in services.ledger.accounts() if item["account_id"] == account_id)
+            version = services.ledger.record_cash_transfer(account_id, f"v1-capital-{uuid4()}", account["version"], direction, amount, occurred)
+        except StopIteration:
+            if direction != "DEPOSIT":
+                return jsonify({"error": "an account must be funded before withdrawal"}), 400
+            services.ledger.open_account(account_id, amount)
+            version = 0
+        except (KeyError, TypeError, ValueError, DomainValidationError) as exc:
+            return jsonify({"error": str(exc)}), 400
+        if direction is None:
+            return jsonify({"error": "event_type must be DEPOSIT or WITHDRAW"}), 400
+        return jsonify({"message": "Capital event recorded", "account_id": account_id, "version": version}), 201
 
     @bp.post("/investment/cash/projection")
     def cash_projection():
@@ -558,6 +560,8 @@ def create_compatibility_blueprint(services) -> Blueprint:
                 "action_date": action_date,
                 "strategy_id": request.args.get("strategy_id", "strategy1"),
             })
+            if current_app.config.get("AUTOMATIC_PAPER_MODE", False):
+                res = services.actions.automatically_process_paper_proposal(res)
             return jsonify({"message": "Actions generated successfully", "result": res}), 200
         except DomainValidationError as exc:
             return jsonify({"message": str(exc), "error": str(exc)}), 400
@@ -570,9 +574,27 @@ def create_compatibility_blueprint(services) -> Blueprint:
         body = request.get_json(silent=True) or {}
         proposal_id = body.get("proposal_id") or request.args.get("proposal_id")
         try:
+            if proposal_id is None and request.args.get("date"):
+                action_date = date.fromisoformat(request.args["date"])
+                proposals = services.actions.proposals(request.args.get("account_id", "paper"), 100, action_date)
+                approved = [services.actions.approve(str(item["proposal_id"])) for item in proposals if item.get("status") == "PENDING"]
+                return jsonify({"message": "Proposals approved", "results": approved}), 200
             res = services.actions.approve(proposal_id)
             return jsonify({"message": "Proposal approved", "result": res}), 200
         except DomainValidationError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @bp.post("/actions/reject-all")
+    def reject_all_actions():
+        error = require_operator_token()
+        if error:
+            return jsonify(error[0]), error[1]
+        try:
+            action_date = date.fromisoformat(request.args["date"])
+            proposals = services.actions.proposals(request.args.get("account_id", "paper"), 100, action_date)
+            rejected = [services.actions.reject(str(item["proposal_id"])) for item in proposals if item.get("status") == "PENDING"]
+            return jsonify({"message": "Proposals rejected", "results": rejected}), 200
+        except (KeyError, ValueError, DomainValidationError) as exc:
             return jsonify({"error": str(exc)}), 400
 
     @bp.post("/actions/reject")
@@ -599,6 +621,19 @@ def create_compatibility_blueprint(services) -> Blueprint:
             res = services.actions.process(proposal_id)
             return jsonify({"message": "Proposal applied to ledger", "result": res}), 200
         except DomainValidationError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @bp.post("/actions/process")
+    def process_actions_for_date():
+        error = require_operator_token()
+        if error:
+            return jsonify(error[0]), error[1]
+        try:
+            action_date = date.fromisoformat(request.args["date"])
+            proposals = services.actions.proposals(request.args.get("account_id", "paper"), 100, action_date)
+            processed = [services.actions.process(str(item["proposal_id"])) for item in proposals if item.get("status") == "APPROVED"]
+            return jsonify({"message": "Approved proposals processed", "results": processed}), 200
+        except (KeyError, ValueError, DomainValidationError) as exc:
             return jsonify({"error": str(exc)}), 400
 
     @bp.put("/actions/<proposal_id>")
@@ -712,18 +747,37 @@ def create_compatibility_blueprint(services) -> Blueprint:
         strategy_id = "strategy2" if "strategy2" in name else "strategy1"
         try:
             conf = services.configs.active(strategy_id, datetime.now(UTC).date())
-            return jsonify(conf or {"name": name, "strategy_id": strategy_id})
+            if conf:
+                return jsonify({"name": name, "strategy_id": strategy_id, **conf["settings"]})
+            return jsonify({"name": name, "strategy_id": strategy_id, **services.configs.defaults()})
         except Exception:
-            return jsonify({"name": name, "strategy_id": strategy_id})
+            return jsonify({"name": name, "strategy_id": strategy_id, **services.configs.defaults()})
 
     @bp.post("/config")
     @bp.post("/config/<name>")
+    @bp.put("/config/<name>")
     def save_config(name: str = "momentum_config"):
         error = require_operator_token()
         if error:
             return jsonify(error[0]), error[1]
         body = request.get_json(silent=True) or {}
-        return jsonify({"message": f"Config {name} saved", "config": body}), 200
+        if not isinstance(body, dict):
+            return jsonify({"error": "configuration payload must be an object"}), 400
+        strategy_id = "strategy2" if "strategy2" in name else "strategy1"
+        settings = services.configs.defaults() | body
+        try:
+            revision = services.configs.create(strategy_id, settings)
+            approved = services.configs.approve(revision["revision_id"], datetime.now(UTC).date())
+            services.configs.import_alias(name, strategy_id, settings, source="v1-compatibility")
+        except DomainValidationError as exc:
+            return jsonify({"error": str(exc), "message": str(exc)}), 400
+        return jsonify({
+            "message": f"Config {name} saved",
+            "name": name,
+            "strategy_id": strategy_id,
+            "config": approved["settings"],
+            "revision_id": approved["revision_id"],
+        }), 200
 
     # -------------------------------------------------------------------------
     # 11. OpenAPI Specification & Swagger UI

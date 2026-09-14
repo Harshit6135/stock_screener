@@ -15,6 +15,7 @@ from src.application.market_repository import MarketRepository
 from src.application.publication import ArtifactPublisher
 from src.application.research_strategy1 import FACTOR_WEIGHTS, FORMULA_REVISION, strategy1_factors
 from src.application.research_strategy2 import (
+    FACTOR_WEIGHTS as STRATEGY2_FACTOR_WEIGHTS,
     FORMULA_REVISION as STRATEGY2_FORMULA_REVISION,
 )
 from src.application.research_strategy2 import strategy2_factors, strategy2_indicators
@@ -246,6 +247,28 @@ class ResearchJobs:
             )
         return {"artifact_id": artifact_id, **report}
 
+    @staticmethod
+    def _configured_factor_weights(
+        strategy_id: str, active_config: dict[str, object] | None
+    ) -> dict[str, float]:
+        """Resolve the approved revision's factor mix for one strategy."""
+        defaults = FACTOR_WEIGHTS if strategy_id == "strategy1" else STRATEGY2_FACTOR_WEIGHTS
+        raw = active_config["settings"].get("factor_weights") if active_config else None
+        if raw is None:
+            return dict(defaults)
+        if not isinstance(raw, dict) or set(raw) != set(defaults):
+            raise DomainValidationError("factor_weights must name every supported factor exactly once")
+        try:
+            parsed = {name: float(value) for name, value in raw.items()}
+        except (TypeError, ValueError) as exc:
+            raise DomainValidationError("factor_weights must be numeric") from exc
+        if any(not isfinite(value) or value < 0 for value in parsed.values()):
+            raise DomainValidationError("factor_weights must be finite and non-negative")
+        total = sum(parsed.values())
+        if total <= 0:
+            raise DomainValidationError("factor_weights must sum to a positive value")
+        return {name: value / total for name, value in parsed.items()}
+
     def _calculate_day(self, payload: dict[str, Any], strategy_id: str) -> dict[str, object]:
         if set(payload) - {"as_of_date", "symbols"} or "as_of_date" not in payload or not isinstance(payload.get("as_of_date"), str):
             raise DomainValidationError("daily calculation requires as_of_date")
@@ -264,6 +287,7 @@ class ResearchJobs:
             raise DomainValidationError("as_of_date must be an ISO date") from exc
         active_config = self.configs.active(strategy_id, as_of_date) if self.configs else None
         config_artifact_id = str(active_config["artifact_id"]) if active_config else None
+        factor_weights = self._configured_factor_weights(strategy_id, active_config)
         histories = self.market.histories(as_of_date - timedelta(days=420), as_of_date)
         benchmark: list[dict[str, object]] = []
         if strategy_id == "strategy2":
@@ -321,6 +345,7 @@ class ResearchJobs:
                 "as_of_date": as_of_date.isoformat(),
                 "strategy_id": strategy_id,
                 "config_revision_id": active_config["revision_id"] if active_config else None,
+                "factor_weights": factor_weights,
                 "formula_revision": FORMULA_REVISION
                 if strategy_id == "strategy1"
                 else STRATEGY2_FORMULA_REVISION,
@@ -341,7 +366,7 @@ class ResearchJobs:
             else QualityStatus.COMPLETE,
         )
         percentiles: dict[str, dict[str, float]] = {key: {} for key in results}
-        for factor in FACTOR_WEIGHTS:
+        for factor in factor_weights:
             ordered = sorted(results, key=lambda key: (factor_values[key][factor], key))
             start = 0
             while start < len(ordered):
@@ -364,6 +389,7 @@ class ResearchJobs:
                 "as_of_date": as_of_date.isoformat(),
                 "strategy_id": strategy_id,
                 "config_revision_id": active_config["revision_id"] if active_config else None,
+                "factor_weights": factor_weights,
                 "feature_snapshot_id": feature_id,
                 "values": percentiles,
             },
@@ -379,7 +405,7 @@ class ResearchJobs:
                 percentiles[instrument_id][factor]
                 * weight
                 * (adx_multiplier if factor in {"trend", "momentum"} else 1)
-                for factor, weight in FACTOR_WEIGHTS.items()
+                for factor, weight in factor_weights.items()
             )
             penalty = float(cast(Any, values["penalty"]))
             scores[instrument_id] = {
@@ -399,6 +425,8 @@ class ResearchJobs:
                 "snapshot_id": score_id,
                 "as_of_date": as_of_date.isoformat(),
                 "strategy_id": strategy_id,
+                "config_revision_id": active_config["revision_id"] if active_config else None,
+                "factor_weights": factor_weights,
                 "percentile_snapshot_id": percentile_id,
                 "values": scores,
             },

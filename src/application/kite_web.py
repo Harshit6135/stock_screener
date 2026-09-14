@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import secrets
 import time
+import logging
 from html import escape
 
 from flask import Blueprint, Response, current_app, jsonify, redirect, request, session, url_for
@@ -14,6 +15,7 @@ from src.application.kite_auth import KiteAuthService
 
 _SESSION_STARTED_AT = "kite_authorization_started_at"
 _SESSION_TTL_SECONDS = 10 * 60
+_LOGGER = logging.getLogger(__name__)
 
 
 def create_kite_auth_blueprint(
@@ -27,6 +29,12 @@ def create_kite_auth_blueprint(
     def home() -> ResponseReturnValue:
         if "request_token" in request.args or "status" in request.args:
             return _callback("market-data", market_data_service)
+        if (
+            current_app.config.get("AUTOMATIC_PAPER_MODE", False)
+            and market_data_service is not None
+            and not market_data_service.token_exists
+        ):
+            return redirect(url_for("kite_auth.authorization_page"))
         return redirect(url_for("dashboard_v2.dashboard"))
 
     @blueprint.get("/integrations/kite")
@@ -60,6 +68,7 @@ def create_kite_auth_blueprint(
             if profile == "portfolio"
             else "<p>This shared profile is used only by market-data jobs.</p>"
         )
+        automatic = "true" if current_app.config.get("AUTOMATIC_PAPER_MODE", False) else "false"
         return Response(
             f"""<!doctype html><title>{escape(profile_label)} Kite authorization</title>
 <main><h1>{escape(profile_label)} Kite authorization</h1><p>{escape(message)}</p>
@@ -69,10 +78,14 @@ def create_kite_auth_blueprint(
 <button id=authorize {disabled}>Authorize Kite for today</button><p id=status></p></main>
 <script>
 document.getElementById('authorize').addEventListener('click', async () => {{
-  const token = window.prompt('Enter the local operator token');
-  if (!token) return;
+  const headers = {{}};
+  if (!{automatic}) {{
+    const token = window.prompt('Enter the local operator token');
+    if (!token) return;
+    headers['X-Operator-Token'] = token;
+  }}
   const response = await fetch('/api/v2/integrations/kite/{profile}/authorize', {{
-    method: 'POST', headers: {{'X-Operator-Token': token}}
+    method: 'POST', headers: headers
   }});
   if (!response.ok) {{ document.getElementById('status').textContent = 'Authorization could not start.'; return; }}
   window.location.assign((await response.json()).authorization_url);
@@ -95,11 +108,13 @@ document.getElementById('authorize').addEventListener('click', async () => {{
             return jsonify({"error": f"Kite {profile} credentials are not configured"}), 503
         configured_operator_token = current_app.config.get("OPERATOR_TOKEN")
         supplied_operator_token = request.headers.get("X-Operator-Token", "")
+        session[f"{_SESSION_STARTED_AT}:{profile}"] = time.time()
+        if current_app.config.get("AUTOMATIC_PAPER_MODE", False):
+            return jsonify({"authorization_url": service.login_url()})
         if not isinstance(configured_operator_token, str) or not configured_operator_token:
             return jsonify({"error": "operator token is not configured"}), 503
         if not secrets.compare_digest(supplied_operator_token, configured_operator_token):
             return jsonify({"error": "operator token is required"}), 401
-        session[f"{_SESSION_STARTED_AT}:{profile}"] = time.time()
         return jsonify({"authorization_url": service.login_url()})
 
     @blueprint.get("/integrations/kite/callback")
@@ -121,14 +136,26 @@ document.getElementById('authorize').addEventListener('click', async () => {{
         if service is None:
             return Response("Kite credentials are not configured.", status=503)
         started_at = session.pop(f"{_SESSION_STARTED_AT}:{profile}", None)
-        if not isinstance(started_at, float) or time.time() - started_at > _SESSION_TTL_SECONDS:
+        automatic = bool(current_app.config.get("AUTOMATIC_PAPER_MODE", False))
+        if (
+            not automatic
+            and (not isinstance(started_at, float) or time.time() - started_at > _SESSION_TTL_SECONDS)
+        ):
             return Response("Start Kite authorization from this app, then try again.", status=400)
         if request.args.get("status") != "success":
             return Response("Kite authorization was not completed.", status=400)
         try:
             service.exchange_request_token(request.args.get("request_token", ""))
-        except (KiteException, OSError, RuntimeError, ValueError):
-            return Response("Kite token refresh failed. Start authorization again.", status=502)
+        except (KiteException, OSError, RuntimeError, ValueError) as exc:
+            _LOGGER.warning("Kite token exchange failed (%s): %s", type(exc).__name__, str(exc))
+            detail = " ".join(str(exc).split()) or "no diagnostic message"
+            return Response(
+                f"Kite token refresh failed ({type(exc).__name__}): {escape(detail)} "
+                "Start authorization again.",
+                status=502,
+            )
+        if current_app.config.get("AUTOMATIC_PAPER_MODE", False) and profile == "market-data":
+            return redirect(url_for("dashboard_v2.dashboard"))
         return Response(
             "<!doctype html><title>Kite authorized</title><main><h1>Kite authorized</h1>"
             "<p>The local access token has been refreshed. You can close this tab.</p></main>",

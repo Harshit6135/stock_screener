@@ -750,6 +750,17 @@ class ActionJobs:
             )
         return self.proposal(proposal_id)
 
+    def automatically_process_paper_proposal(self, proposal: dict[str, object]) -> dict[str, object]:
+        """Approve and process a generated proposal for local paper mode.
+
+        The normal lifecycle and its audit events remain intact. This helper
+        only removes the redundant operator clicks; it never calls the broker
+        gateway and therefore cannot place a live order.
+        """
+        proposal_id = str(proposal["proposal_id"])
+        approved = self.decide(proposal_id, "APPROVED")
+        return self.process(str(approved["proposal_id"]))
+
     def generate_midweek_stop(self, payload: dict[str, object]) -> dict[str, object]:
         """Create a reviewable next-open SELL proposal for breached stops."""
         required = {"account_id", "signal_date", "action_date", "reason"}

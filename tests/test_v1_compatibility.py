@@ -200,15 +200,34 @@ def test_pipeline_in_order_execution(test_app):
         "ranking": True,
     }
     resp = client.post("/api/v1/app/run-pipeline", json=payload, headers=headers)
-    assert resp.status_code == 200
-
+    assert resp.status_code == 202
 
     res = resp.get_json()
-    assert res["message"] == "Pipeline completed successfully"
+    assert res["message"].startswith("Pipeline queued")
+    assert res["pipeline"]["status"] in {"QUEUED", "RUNNING"}
     assert "init" in res["results"]
     assert "marketdata" in res["results"]
     assert "indicators" in res["results"]
     assert "ranking" in res["results"]
+
+
+def test_legacy_config_save_persists_an_approved_revision(test_app):
+    app, _, _ = test_app
+    client = app.test_client()
+    headers = {"X-Operator-Token": "test-operator-secret"}
+    response = client.put(
+        "/api/v1/config/momentum_config",
+        headers=headers,
+        json={"initial_capital": 250000, "max_positions": 12},
+    )
+    assert response.status_code == 200
+    saved = response.get_json()
+    assert saved["config"]["initial_capital"] == "250000"
+    assert saved["config"]["max_positions"] == 12
+
+    readback = client.get("/api/v1/config/momentum_config")
+    assert readback.status_code == 200
+    assert readback.get_json()["initial_capital"] == "250000"
 
 
 def test_delete_backtest_run(test_app):

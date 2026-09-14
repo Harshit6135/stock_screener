@@ -10,6 +10,9 @@ class RuntimeConfig:
     SECRET_KEY = os.environ.get("SCREENER_SECRET_KEY", "local-development-only")
     DATA_DIRECTORY = Path(os.environ.get("SCREENER_DATA_DIRECTORY", "instance"))
     OPERATOR_TOKEN = os.environ.get("SCREENER_OPERATOR_TOKEN")
+    # Local paper-only convenience mode. It removes approval clicks but never
+    # enables broker order submission.
+    AUTOMATIC_PAPER_MODE = os.environ.get("SCREENER_AUTOMATIC_PAPER_MODE", "false").lower() == "true"
     # Market-data access is a shared, read-only operational profile.  The
     # legacy KITE_* names remain a migration fallback only.
     MARKET_DATA_KITE_API_KEY = os.environ.get("MARKET_DATA_KITE_API_KEY")

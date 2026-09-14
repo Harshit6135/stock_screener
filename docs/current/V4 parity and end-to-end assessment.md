@@ -1,117 +1,167 @@
-# V4 feature parity and end-to-end assessment
+# V4 parity and end-to-end reassessment
 
 Reviewed: 2026-09-13  
 V3 comparison baseline: `dabff59`  
-V4 committed baseline: `f26cc48`
+Current V4 working baseline: `40d3cab` (`Codex Enhancement`)
 
-This is a source-level assessment of the two commits above, not evidence of a
-successful provider-backed run. The working tree contained concurrent,
-uncommitted V4 changes during the review; those changes are not counted as
-completed parity here. Revalidate each row against the eventual implementation
-before treating it as a release verdict. No code was changed for this analysis.
+## Scope and method
 
-## Decision
+This is a source-level re-review. The V3 and V4 source, current browser code,
+compatibility routes, job orchestration, configuration handling, and relevant
+tests were read in full before reaching the conclusions below. No source code
+was changed. The assessment separates code that exists from workflows that are
+actually connected and verifiable.
 
-Proceeding with V4 is viable, but V3 feature parity must be defined as parity
-with **intended user behavior**, not reproduction of known V3 defects. Complete
-the backend and functional frontend together, prove a full end-to-end run, and
-then polish usability. Record any deliberate change from V3 behavior alongside
-its acceptance test.
+`pytest -q` passed: **138 passed**. That proves the tested unit and route
+contracts, but it is not end-to-end parity evidence. In particular,
+`test_v1_compatibility.py` builds a small separate Flask application and does
+not exercise `run.create_app`, the real `/dashboard` page, a worker-run job, or
+provider-backed data. `test_dashboard_web.py` checks that V4 pages return HTML;
+it does not run their browser workflows. `test_parity_assessment.py` checks
+isolated pipeline scheduling and configuration storage, not their integration
+with the V3 dashboard compatibility API.
 
-Functional frontend parity means that a user can perform the V3 task and see
-its result or failure in V4. It does not require pixel-for-pixel visual parity;
-visual refinement is a later step.
+## Corrected decision
 
-## Implementation Status (Updated 2026-09-13)
+V4 has useful capabilities that V3 did not have, but it does **not** currently
+have proven V3 feature parity or a working end-to-end path. Do not begin
+usability work or further feature expansion yet. First make a small set of
+vertical workflows work from the actual browser UI through persisted results,
+then test them on completed market dates with a worker and configured provider.
 
-All 4 blockers and the 6 workflow parity areas have been implemented and verified with automated test suites (`tests/test_v1_compatibility.py` and `tests/test_parity_assessment.py`, passing 138/138 total repository tests):
+The required product boundary remains:
 
-1. **Pipeline Data Dependencies Enforced**: `ResearchPipelineJobs.submit` and `advance` now strictly gate daily feature calculations until upstream data sync, all-symbol bar jobs, and reconciliation complete successfully.
-2. **Background Worker Added**: `BackgroundWorker` added in `src/application/worker.py` and wired into `run.py` and `ApplicationServices`. Operations endpoints (`/worker/status`, `/worker/start`, `/worker/stop`, `/worker/work-once`) exposed.
-3. **Research & Backtest Parity**: Supported `check_daily_sl`, `mid_week_buy`, `enable_pyramiding`, and `pyramid_fraction` in `PortfolioPolicy` and `BacktestJobs.execute`. Supported externalized `factor_weights` in `StrategyConfigs`.
-4. **Interactive Functional Frontend**: Upgraded `/actions`, `/backtest`, `/portfolio`, `/configs`, and `/pipeline` in `dashboard_web.py` from raw JSON textareas to interactive forms, tables, metric cards, and a unified navigation header.
+- A new indicator calculation may require a Python function.
+- Strategy indicator selection, factor composition, weights, and ordinary
+  strategy parameters must be data/configuration, not code edits.
 
-## Workflow parity status
+## What V4 adds beyond V3
 
-| V3 workflow | V4 backend status | V4 frontend status | Parity verdict |
+The following capabilities are present in V4 source and are meaningful reasons
+to continue with it once the integration gaps are fixed:
+
+| Priority | V4 capability absent or materially weaker in V3 | Current evidence | Why it matters |
 |---|---|---|---|
-| Initialize and screen NSE/BSE instruments; refresh latest and historical prices | Complete: Kite instrument sync, bar jobs, day-0 YFinance universe screen (`reference.enrich-day0-universe`), token history, and coverage. | Complete: Interactive `/pipeline` with stage progress bar, terminal counts, retry, cancel, and SSE log console (`/api/v1/app/logs/stream`). | **PARITY RESOLVED** |
-| Calculate indicators, factors, percentiles, scores and weekly rankings for both strategies | Complete: Strategy 1 and Strategy 2 calculations, Friday normalization with close price (`/ranking/symbol/<symbol>`), selective pipeline run (`/api/v1/app/run-pipeline`). Externalized factor weights supported. | Complete: `/app` and `/dashboard` displays weekly rankings with strategy switcher and score inspection. | **PARITY RESOLVED** |
-| Generate, edit, approve, reject and process weekly and midweek actions | Complete: Paper proposals, amendments, bulk decisions, pyramiding, manual intent builder (`/api/v2/actions/manual`), and single-stock fills (`/api/v1/investment/manual/buy`, `sell`). | Complete: `/actions` includes proposal status badges, decision breakdowns, interactive manual intent builder with dynamic rows, and approval/rejection controls. | **PARITY RESOLVED** |
-| View holdings, cash, capital events, journal, risk, equity history and live prices | Complete: Immutable append-only ledger, cash transfers, valuations, journal, and holdings price ticker (`/investment/prices/start`, `stop`, `prices`). | Complete: `/portfolio` includes total value / cash / equity / position stat cards, holdings table, deposit/withdraw cash transfer form, and transaction journal table. | **PARITY RESOLVED** |
-| Run backtests with V3 controls; inspect reports and history | Complete: Replay engine with `check_daily_sl`, `mid_week_buy`, `enable_pyramiding`, and `pyramid_fraction`. Delete backtest run endpoint (`DELETE /api/v1/backtest/history/<run_id>`). | Complete: `/backtest` provides full parameter form with check_daily_sl / mid_week_buy / pyramiding switches, saved reports table with delete controls, and KPI report cards with fills table. | **PARITY RESOLVED** |
-| Edit strategy configuration and run maintenance | Complete: Approved strategy revisions for capital/risk settings and optional `factor_weights`. Status lifecycle (DRAFT &rarr; APPROVED &rarr; ACTIVE &rarr; RETIRED). | Complete: `/configs` provides active config inspector, draft revision editor with quick approval and activation controls, and revision history table. | **PARITY RESOLVED** |
+| P0 | Durable queued jobs, worker, cancellation, retry and job status | `jobs.py`, `worker.py`, `web.py` | Lets long-running provider and research work run outside HTTP requests. |
+| P0 | Explicit research pipeline model with staged dependencies | `pipeline_jobs.py` | Provides a sounder basis for orchestrating data, daily calculations and weekly rankings. |
+| P0 | Immutable strategy configuration revisions and approved effective dates | `strategy_configs.py`, `configs_web.py` | A suitable base for changing ordinary strategy settings safely. |
+| P0 | Immutable portfolio ledger, cash events, fills, valuations and journal | `portfolio_*`, `portfolio_web.py` | Replaces mutable portfolio calculations with auditable accounting. |
+| P1 | Paper action proposals, amendment history, approvals and manual intents | `actions.py`, `actions_web.py` | Separates a trade decision from its execution record. |
+| P1 | Replay/backtest engine with artifacts and saved reports | `backtest_jobs.py`, `backtests_web.py` | Supports reproducible backtests and stored reports. |
+| P1 | Corporate-action adjustment path, reference artifacts and data-quality artifacts | related V4 application modules | Supports more defensible historical research. |
+| P2 | Dedicated V4 operator pages for actions, portfolio, backtests, configs and pipeline | `dashboard_web.py` | Gives a foundation for a usable operator UI once its routes are corrected. |
 
-The committed V4 frontend is implemented in
-[`dashboard_web.py`](../../src/application/dashboard_web.py).
+These are implementation assets, not parity verdicts.
 
-## Concrete end-to-end blockers resolved
+## Reverified workflow status
 
-1. **Pipeline dependencies are enforced through market-data completion** (RESOLVED):
-   [`ResearchPipelineJobs.advance`](../../src/application/pipeline_jobs.py)
-   now checks both top-level data stages and all spawned child bar jobs from `market:refresh` (`job_ids`). Daily calculations cannot advance until all bar jobs have succeeded. If any bar job fails, the pipeline transitions to `FAILED`. Verified in `tests/test_parity_assessment.py`.
-2. **A submitted job needs an operating worker** (RESOLVED):
-   [`BackgroundWorker`](../../src/application/worker.py) runs a continuous daemon loop over `JobWorker.run_once()`. It is automatically started on app startup in [`run.py`](../../run.py) (controlled via `SCREENER_RUN_WORKER`), and exposes HTTP endpoints for status, starting, stopping, and manual stepping.
-3. **Research and execution differences need measured parity** (RESOLVED):
-   Backtest execution switches (`check_daily_sl`, `mid_week_buy`, `enable_pyramiding`, `pyramid_fraction`) are wired through `PortfolioPolicy` and `BacktestJobs.execute`. `StrategyConfigs` supports externalized `factor_weights`.
-4. **Frontend completion must be checked as workflows** (RESOLVED):
-   Every page (`/actions`, `/backtest`, `/pipeline`, `/configs`, `/portfolio`, `/app`, `/dashboard`) now provides interactive forms, structured tables, summary cards, and consistent navigation. Verified across `tests/test_parity_assessment.py` and `tests/test_dashboard_web.py`.
+| User workflow | What exists | Reverified result |
+|---|---|---|
+| V3 dashboard | `run.py` serves the legacy `templates/dashboard.html` at `/dashboard`; the V1 compatibility blueprint is registered. | **Broken parity.** The legacy JavaScript calls several routes that do not exist or use incompatible methods/payloads. |
+| V4 operator pages | `/app`, `/actions`, `/backtest`, `/portfolio`, `/configs`, `/pipeline` are served by `dashboard_web.py`. | **Partial.** Pages render and several V2 flows are wired, but the configuration page uses invalid V2 routes and request shapes. |
+| Initialize and screen instruments | Sync and a YFinance enrichment loop exist. | **Not parity.** The enrichment loop counts responses only; it does not persist enrichment/market-cap/price, mark eligibility, or exclude ineligible instruments. Broad exceptions also hide failures. |
+| Market-data refresh then research calculation | V4 has refresh jobs and research handlers. V1 `run-pipeline` exists. | **Blocked.** The V1 route schedules work and immediately reports each requested stage as successful. It uses the current UTC date, while V4 research/backtests require completed dates. It does not wait for refresh child jobs, calculation jobs, or ranking jobs. |
+| Indicators, factors, percentiles, scores and rankings | Strategy 1 and Strategy 2 calculations and weekly rankings exist. | **Partial.** The compatibility indicator GET returns only latest raw close/volume; POST does not persist indicators and DELETE reports zero. The patch endpoint queues a calculation but does not apply a supplied indicator patch. |
+| Rankings in the V1 dashboard | Ranking routes exist. | **Partial.** The top route derives the prior Friday from today; symbol response reads the latest close rather than the close on the requested ranking date. |
+| Generate, edit, approve, reject and process actions | V4 proposal and ledger services exist; V1 wrappers exist. | **Broken parity.** Legacy V3 UI calls bulk approval, reject-all and date/process routes absent from V1 compatibility. Its action edit sends units and execution price, but the compatibility update ignores both and only approves/rejects a proposal. |
+| Manual buys and sells | V1 manual fill routes call the V4 ledger. | **Partial.** They bypass V3 configuration behavior and create an absent account with hard-coded capital. They are not a demonstrated replacement for the V3 flow. |
+| Holdings, cash, journal, history and prices | V4 ledger/valuation endpoints exist. | **Partial.** V1 summary derives risk as a flat 5% and labels gain percentage as XIRR; history returns one point and trade journal returns an empty list. V1 ticker is a snapshot of latest stored bars, not live provider prices. Legacy UI also calls missing capital-event, price-sync, start/stop ticker and live-price routes. |
+| V4 portfolio page | Valuation, journal and cash transfer are wired. | **Partial.** Ticker response contains holdings but UI looks for `prices`, so it reports zero instruments. |
+| Backtests | V4 engine supports several controls, stored runs and reports. | **Partial.** `BacktestJobs.execute` rejects `WEEKLY`, though the V4 UI offers it. The legacy V1 dashboard payload uses V3 field names such as `config_name`, so its backtest call is not translated to V4's required `strategy_id` schema. |
+| Configuration editing | V4 stores supported config revisions and optional `factor_weights`. | **Broken functional UI and incomplete architecture.** `dashboard_web.py` calls `/api/v2/configs/active/<strategy>`, `/api/v2/configs/revisions`, and `/effective`; the actual API is `/<strategy>/active`, `/<strategy>/revisions`, and approval requires `{ "effective_from": ... }`. V1 configuration POST only echoes its body and does not save it; the legacy UI uses PUT. `factor_weights` are stored but research strategies do not read them. |
+| Maintenance | V1 cleanup/recalculate routes exist. | **Not parity.** Cleanup deletes only market bars. Recalculate queues one calculation for the start date; it does not rebuild all dates, factors, scores, or rankings. |
 
-## Acceptance gates
+## Exact frontend-to-API gaps found in the legacy dashboard
 
-### 1. Functional parity
+`static/js/dashboard.js`, used by the actual `/dashboard`, calls the following
+routes that are not supplied with matching V1 behavior:
 
-Create a traceable checklist for every V3 user journey: input, calculation,
-stored effect, API readback, browser control and visible outcome. Implement
-backend and functional frontend in vertical slices. Mark each item as
-equivalent, intentionally changed, or still missing; attach a focused test or
-repeatable manual check. Do not copy the V3 holdings, partial-sell, refresh,
-scoring-unit or pipeline-success defects into V4.
+| Legacy call | Current mismatch |
+|---|---|
+| `/investment/capital-events` | No compatibility route. |
+| `/investment/sync-prices`, `/start-ticker`, `/stop-ticker`, `/live-prices` | Compatibility exposes a static `prices` snapshot and differently shaped start/stop routes; it is not the legacy live ticker contract. |
+| `/actions/dates`, `/actions/approve`, `/actions/reject-all`, `/actions/process` | No matching compatibility routes. |
+| `PUT /config/<name>` | Compatibility has GET/POST only, and POST does not persist. |
+| V3 action `PUT /actions/<id>` with units and execution price | Compatibility ignores those edits and only changes proposal decision status. |
+| V3 backtest request | Compatibility forwards the V3 body directly to V4, whose accepted schema requires `strategy_id` and rejects unsupported fields. |
 
-### 2. Full end-to-end run
+This makes `/dashboard` a rendered legacy screen, not a working parity frontend.
 
-On a fresh local store and a known range of completed trading sessions, prove
-the following chain without manually repairing intermediate state:
+## Configuration architecture verdict
 
-1. Authorize the required provider profile and initialize the dated universe.
-2. Fetch and validate market history; confirm coverage and quality readback.
-3. Calculate both strategies through indicators, factors, scores and rankings.
-4. Generate and review actions, then approve/process paper fills.
-5. Confirm holdings, cash, capital events, partial-sell accounting and journal.
-6. Run a backtest with its chosen options and reopen the saved report.
-7. Restart the app and worker; confirm durable results and clear failure states.
-8. Perform the same supported journey from the browser, not just through APIs.
+The current revision made one useful move: `StrategyConfigs` validates and
+stores an optional `factor_weights` map. It is still not enough for the stated
+goal. `research_strategy1.py` and `research_strategy2.py` do not read it; their
+formulas, factors and indicator composition remain in Python. Therefore a
+saved configuration can record weights without changing research output.
 
-Use frozen V3 examples for behavior comparison. Specify tolerances and document
-intentional differences rather than requiring identical outputs from known
-incorrect V3 paths. A run is not successful when a required stage is merely
-queued, skipped without explanation, or reported complete after its calculation
-failed.
+The smallest appropriate target is a versioned strategy-definition schema that
+contains strategy-to-indicator dependencies, factor composition and weights.
+The calculation registry can map an indicator name to its Python function.
+Validation must reject unknown indicators/factors and incompatible parameters.
+Research and backtests must load the approved definition and record its
+revision/artifact in every output. This preserves code for genuinely new
+indicator functions while removing code edits for composition and weights.
 
-### 3. Usability
+## Priority order before any usability work
 
-After the functional journeys pass, replace JSON-oriented screens with forms,
-tables, charts, progress, actionable errors and readable history. This stage
-improves presentation and speed of use; it must not substitute for missing
-backend behavior.
+1. **Make one V3-equivalent completed-date pipeline real.** Submit it, execute
+   it with a worker, wait for market child jobs, calculate both strategies,
+   rank, and verify persisted outputs. Do not return success until terminal
+   results are known.
+2. **Choose one browser surface.** Either complete the V1 compatibility
+   contract used by `/dashboard`, or retire it and migrate users to V2 pages.
+   Keeping both partial surfaces is the immediate source of complexity.
+3. **Repair configurations as a vertical slice.** Correct V2 page routes and
+   request bodies, make V1 behavior deliberate, and wire approved
+   strategy-definition data into research and backtests.
+4. **Complete portfolio/action behavior.** Use real ledger calculations for
+   risk/history/journal, define action amendments and bulk processing, and
+   prove manual and proposed fills through UI readback.
+5. **Complete backtest parity.** Align supported frequencies and translate or
+   replace the V3 input schema. Test report persistence and reopening.
+6. **Add workflow tests.** Use `create_app`, a temporary store and a controlled
+   completed-date fixture. Each test should exercise browser/API input, queued
+   work, persisted effect and readback. Rendering and scheduling tests remain
+   useful but cannot be the parity gate.
 
-## Original architecture goal remains separate from parity
+## End-to-end acceptance evidence required
 
-V3 parity alone does not deliver the stated goal: changing a strategy's
-indicator selection, factor composition or weights without editing application
-code. At `f26cc48`, approved V4 strategy revisions cover capital and risk
-settings in [`strategy_configs.py`](../../src/application/strategy_configs.py),
-while research weights/formulas and strategy selection remain in
-[`research_strategy1.py`](../../src/application/research_strategy1.py),
-[`research_strategy2.py`](../../src/application/research_strategy2.py) and
-[`research_jobs.py`](../../src/application/research_jobs.py). Treat externalized
-strategy definitions as an explicit acceptance item before declaring V4 the
-desired product. A genuinely new indicator calculation may still require a
-Python function.
+On a fresh temporary data directory and known completed sessions, prove:
 
-## Review boundary
+1. Instrument sync, persisted screening decision and market-bar coverage.
+2. Worker-completed research output for both strategies and weekly rankings.
+3. Browser readback of those rankings, action generation, approval, processing
+   and ledger/journal result.
+4. Configuration revision that changes a supported factor weight or composition
+   and demonstrably changes the recorded research definition used by output.
+5. Backtest submission, completed job, saved report, reopen after restart.
+6. Clear failure response when a provider, a child job or a prerequisite fails.
 
-This document records source-observed gaps at the committed baseline. It does
-not claim current runtime failures, provider connectivity, production readiness
-or completeness of concurrent uncommitted work. The current code and focused
-tests should be rechecked when implementing each gate.
+Until these checks pass, the accurate status is: V4 contains valuable building
+blocks, but feature parity and an end-to-end working application are incomplete.
+
+## Implementation update — 2026-09-13
+
+The first corrective implementation pass completed after this assessment:
+
+- Pipeline coordination now defers its next pass while data or daily jobs are
+  pending, instead of failing a pipeline solely because its prerequisites have
+  not run yet. The V1 pipeline endpoint now returns `202` and a pipeline ID;
+  it no longer reports queued work as completed.
+- Approved configuration `factor_weights` are validated against the supported
+  factor set, normalized, applied to percentile scoring, and recorded in
+  feature, percentile and score artifacts. The V4 configuration page now uses
+  the actual API paths and approval request shape, and exposes a weights JSON
+  field.
+- Weekly backtest frequency is now accepted by the API, policy and replay
+  engine, matching the V4 browser control.
+- The V1 compatibility layer now persists legacy configuration saves, provides
+  the legacy ticker aliases, capital events, valuation history/journal readback,
+  and bulk action approval/rejection/processing routes. These use V4 durable
+  stores rather than placeholders.
+
+Validation after these changes: **141 tests passed**. This includes real
+`create_app` coverage for `/dashboard` and V1 configuration persistence. It
+does not substitute for a run with real provider credentials and a completed
+market-data range; that remains the final acceptance evidence above.

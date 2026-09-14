@@ -169,7 +169,7 @@ class BacktestJobs:
         raw_cash_flows = payload.get("cash_flows", [])
         volume_participation = _decimal(payload.get("max_volume_participation", "1"), "max_volume_participation")
         rebalance_frequency = payload.get("rebalance_frequency", "DAILY")
-        if rebalance_frequency not in {"DAILY", "BIWEEKLY", "MONTHLY"}:
+        if rebalance_frequency not in {"DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY"}:
             raise DomainValidationError("rebalance_frequency is invalid")
         market_cap_artifact_id = payload.get("market_cap_artifact_id")
         market_cap_sizing = payload.get("market_cap_sizing", "NONE")

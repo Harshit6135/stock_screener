@@ -7,7 +7,7 @@ from src.application.web import require_operator_token
 from src.platform_kernel import DomainValidationError
 
 
-def create_configs_blueprint(configs: StrategyConfigs) -> Blueprint:
+def create_configs_blueprint(configs: StrategyConfigs, automatic_paper_mode: bool = False) -> Blueprint:
     blueprint = Blueprint("configs_v2", __name__, url_prefix="/api/v2/configs")
 
     @blueprint.get("/<strategy_id>/revisions")
@@ -31,7 +31,12 @@ def create_configs_blueprint(configs: StrategyConfigs) -> Blueprint:
         if error:
             return jsonify(error[0]), error[1]
         try:
-            return jsonify(configs.create(strategy_id, request.get_json(silent=True))), 201
+            revision = configs.create(strategy_id, request.get_json(silent=True))
+            if automatic_paper_mode:
+                from datetime import UTC, datetime
+
+                revision = configs.approve(revision["revision_id"], datetime.now(UTC).date())
+            return jsonify(revision), 201
         except DomainValidationError as exc:
             return jsonify({"error": str(exc)}), 400
 

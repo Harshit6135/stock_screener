@@ -108,9 +108,6 @@ class MarketRefreshPlanner:
             if str(item["isin"]).startswith("INDEX:"):
                 excluded.append({"instrument_id": str(item["instrument_id"]), "reason": "index_identity"})
                 continue
-            if date.fromisoformat(str(item["observed_on"])) > end:
-                excluded.append({"instrument_id": str(item["instrument_id"]), "reason": "identity_not_active_for_range"})
-                continue
             if not str(item["provider_token"]).strip():
                 excluded.append({"instrument_id": str(item["instrument_id"]), "reason": "missing_provider_token"})
                 continue

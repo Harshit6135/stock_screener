@@ -171,8 +171,9 @@ def test_tax_cost_is_applied_only_to_sell_execution():
 
 def test_rebalance_frequency_is_validated_and_preserved_in_policy():
     assert PortfolioPolicy(1, Decimal(40), rebalance_frequency="BIWEEKLY").rebalance_frequency == "BIWEEKLY"
+    assert PortfolioPolicy(1, Decimal(40), rebalance_frequency="WEEKLY").rebalance_frequency == "WEEKLY"
     with pytest.raises(DomainValidationError):
-        PortfolioPolicy(1, Decimal(40), rebalance_frequency="WEEKLY")
+        PortfolioPolicy(1, Decimal(40), rebalance_frequency="YEARLY")
 
 
 def test_risk_off_regime_suppresses_entries_but_not_later_risk_on_entry():

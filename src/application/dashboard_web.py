@@ -784,7 +784,7 @@ async function loadTicker() {{
     }});
     const data = await res.json();
     if (!res.ok) throw Error(data.error || 'Failed to load ticker');
-    alert('Ticker updated for ' + acc + ' with ' + (data.prices ? Object.keys(data.prices).length : 0) + ' instruments.');
+    alert('Ticker updated for ' + acc + ' with ' + (data.holdings ? data.holdings.length : 0) + ' instruments.');
     loadValuation();
   }} catch (e) {{ alert(e.message); }}
 }}
@@ -863,6 +863,7 @@ loadValuation();
       <div class="form-group"><label>SL Multiplier</label><input id="edit-sl-mult" value="2"></div>
       <div class="form-group"><label>Hard SL %</label><input id="edit-hard-sl" value="0.03"></div>
       <div class="form-group"><label>ATR Fallback %</label><input id="edit-atr" value="0.06"></div>
+      <div class="form-group" style="grid-column:span 2;"><label>Factor weights (JSON)</label><textarea id="edit-factor-weights" rows="3" placeholder='{{"trend": 0.30, "momentum": 0.25, "efficiency": 0.20, "volume": 0.15, "structure": 0.10}}'></textarea></div>
     </div>
     <div class="form-row" style="margin-top:1rem;">
       <button id="btn-create-rev" class="success">Save Draft Revision</button>
@@ -886,12 +887,14 @@ async function loadActiveConfig() {{
   const tbody = document.getElementById('cfg-active-tbody');
   const meta = document.getElementById('cfg-meta');
   try {{
-    const res = await fetch('/api/v2/configs/active/' + encodeURIComponent(s) + '?as_of_date=' + encodeURIComponent(d));
+    const res = await fetch('/api/v2/configs/' + encodeURIComponent(s) + '/active?as_of_date=' + encodeURIComponent(d));
     const data = await res.json();
     if (!res.ok) throw Error(data.error || 'Failed to load configuration');
-    meta.textContent = 'Revision: ' + data.revision_id + ' | Artifact: ' + (data.artifact_id || '').slice(0, 16) + '...';
+    const revision = data.revision;
+    if (!revision) throw Error('No approved configuration is effective on this date');
+    meta.textContent = 'Revision: ' + revision.revision_id + ' | Artifact: ' + (revision.artifact_id || '').slice(0, 16) + '...';
     tbody.replaceChildren();
-    const settings = data.settings || {{}};
+    const settings = revision.settings || {{}};
     for (const [k, v] of Object.entries(settings)) {{
       if (k === 'factor_weights') continue;
       const tr = document.createElement('tr');
@@ -914,6 +917,7 @@ async function loadActiveConfig() {{
     if (settings.sl_multiplier) document.getElementById('edit-sl-mult').value = settings.sl_multiplier;
     if (settings.hard_sl_percent) document.getElementById('edit-hard-sl').value = settings.hard_sl_percent;
     if (settings.atr_fallback_percent) document.getElementById('edit-atr').value = settings.atr_fallback_percent;
+    document.getElementById('edit-factor-weights').value = settings.factor_weights ? JSON.stringify(settings.factor_weights) : '';
   }} catch (e) {{ alert(e.message); }}
 }}
 
@@ -934,11 +938,16 @@ async function createRevision() {{
     hard_sl_percent: document.getElementById('edit-hard-sl').value,
     atr_fallback_percent: document.getElementById('edit-atr').value
   }};
+  const rawWeights = document.getElementById('edit-factor-weights').value.trim();
+  if (rawWeights) {{
+    try {{ settings.factor_weights = JSON.parse(rawWeights); }}
+    catch (e) {{ statusEl.textContent = 'Factor weights must be valid JSON.'; return; }}
+  }}
   try {{
-    const res = await fetch('/api/v2/configs/revisions', {{
+    const res = await fetch('/api/v2/configs/' + encodeURIComponent(s) + '/revisions', {{
       method: 'POST',
       headers: {{ 'Content-Type': 'application/json', 'X-Operator-Token': token }},
-      body: JSON.stringify({{ strategy_id: s, settings: settings }})
+      body: JSON.stringify(settings)
     }});
     const data = await res.json();
     if (!res.ok) throw Error(data.error || 'Failed to create revision');
@@ -956,38 +965,23 @@ function addRevisionRow(r) {{
     '<td><span class="badge badge-amber">' + r.status + '</span></td>' +
     '<td><div style="display:flex;gap:0.35rem;">' +
     '<button class="success small" onclick="approveRevision(\\'' + r.revision_id + '\\')">Approve</button>' +
-    '<button class="primary small" onclick="activateRevision(\\'' + r.revision_id + '\\')">Set Effective</button>' +
     '</div></td>';
   tbody.prepend(tr);
 }}
 
 async function approveRevision(revId) {{
   const token = getToken();
+  const effectiveFrom = prompt('Effective from ISO date (e.g. 2026-01-01):', '{today}');
+  if (!effectiveFrom) return;
   try {{
     const res = await fetch('/api/v2/configs/revisions/' + encodeURIComponent(revId) + '/approve', {{
       method: 'POST',
-      headers: {{ 'X-Operator-Token': token }}
+      headers: {{ 'Content-Type': 'application/json', 'X-Operator-Token': token }},
+      body: JSON.stringify({{ effective_from: effectiveFrom }})
     }});
     const data = await res.json();
     if (!res.ok) throw Error(data.error || 'Approval failed');
     alert('Revision ' + revId + ' approved!');
-  }} catch (e) {{ alert(e.message); }}
-}}
-
-async function activateRevision(revId) {{
-  const token = getToken();
-  const eff = prompt('Effective from ISO date (e.g. 2026-01-01):', '{today}');
-  if (!eff) return;
-  try {{
-    const res = await fetch('/api/v2/configs/revisions/' + encodeURIComponent(revId) + '/effective', {{
-      method: 'POST',
-      headers: {{ 'Content-Type': 'application/json', 'X-Operator-Token': token }},
-      body: JSON.stringify({{ effective_from: eff }})
-    }});
-    const data = await res.json();
-    if (!res.ok) throw Error(data.error || 'Activation failed');
-    alert('Revision ' + revId + ' effective from ' + eff);
-    loadActiveConfig();
   }} catch (e) {{ alert(e.message); }}
 }}
 

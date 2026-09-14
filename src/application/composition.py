@@ -66,6 +66,7 @@ class ApplicationServices:
         portfolio_kite_credentials: KiteCredentials | None = None,
         portfolio_kite_token_path: str | Path = "portfolio_access_token.txt",
         portfolio_live_execution: bool = False,
+        automatic_paper_mode: bool = False,
     ) -> "ApplicationServices":
         root = Path(data_directory)
         database = root / "system.db"
@@ -111,6 +112,12 @@ class ApplicationServices:
                 "quality": manifest.quality.value,
             }
 
+        def generate_paper_proposal(payload: dict[str, Any]) -> dict[str, object]:
+            proposal = actions.generate(payload)
+            if portfolio_live_execution is False and automatic_paper_mode:
+                return actions.automatically_process_paper_proposal(proposal)
+            return proposal
+
         worker = JobWorker(
             jobs,
             "local-writer",
@@ -134,7 +141,7 @@ class ApplicationServices:
                 "backtest.stress": backtests.stress,
                 "backtest.walk-forward": backtests.walk_forward,
                 "backtest.attribute": backtests.attribute,
-                "actions.generate-paper-proposal": actions.generate,
+                "actions.generate-paper-proposal": generate_paper_proposal,
                 "research.pipeline-advance": pipelines.advance,
                 "reference.enrich-day0-universe": market_jobs.enrich_and_sync_universe,
             },
@@ -163,4 +170,3 @@ class ApplicationServices:
             market_jobs,
             background_worker=BackgroundWorker(worker),
         )
-

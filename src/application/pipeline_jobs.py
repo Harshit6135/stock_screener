@@ -157,6 +157,27 @@ class ResearchPipelineJobs:
             )
         return self.status(pipeline_id)
 
+    def _defer_advance(self, pipeline_id: str, fingerprint: str) -> dict[str, object]:
+        """Queue the next coordinator pass after work already queued ahead of it.
+
+        Job workers complete handlers atomically.  A coordinator therefore must
+        not fail merely because its prerequisite jobs are still queued.  Moving
+        the stage pointer to a successor lets the worker drain those jobs first
+        and then revisit the pipeline without claiming completion early.
+        """
+        job = self.jobs.submit(
+            f"research-pipeline:{fingerprint}:advance:{uuid5(NAMESPACE_URL, str(datetime.now(UTC).timestamp()))}",
+            "research.pipeline-advance",
+            {"pipeline_id": pipeline_id},
+        )
+        with sqlite_connection(self.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "UPDATE research_pipeline_stages SET job_id=? WHERE pipeline_id=? AND stage_name='advance'",
+                (job.job_id, pipeline_id),
+            )
+        return self.status(pipeline_id) | {"deferred": True}
+
     def advance(self, payload: dict[str, Any]) -> dict[str, object]:
         if set(payload) != {"pipeline_id"} or not isinstance(payload["pipeline_id"], str):
             raise DomainValidationError("pipeline advance requires pipeline_id")
@@ -168,7 +189,7 @@ class ResearchPipelineJobs:
         if any(status in {JobStatus.FAILED, JobStatus.CANCELLED} for status in data_statuses):
             raise DomainValidationError("research pipeline has a failed data stage")
         if not all(status == JobStatus.SUCCEEDED for status in data_statuses):
-            raise DomainValidationError("research pipeline data stages are incomplete")
+            return self._defer_advance(pipeline_id, str(pipeline["fingerprint"]))
 
         # Check any spawned child bar jobs from market:refresh
         market_stage = next((stage for stage in data_stages if stage["stage_name"] == "market:refresh"), None)
@@ -179,7 +200,7 @@ class ResearchPipelineJobs:
                 if any(job.status in {JobStatus.FAILED, JobStatus.CANCELLED} for job in child_bar_jobs):
                     raise DomainValidationError("research pipeline has a failed data stage")
                 if not all(job.status == JobStatus.SUCCEEDED for job in child_bar_jobs):
-                    raise DomainValidationError("research pipeline data stages are incomplete")
+                    return self._defer_advance(pipeline_id, str(pipeline["fingerprint"]))
 
         daily = [stage for stage in stages if stage["stage_name"].startswith("daily:")]
         start_date = date.fromisoformat(str(pipeline["start_date"] or pipeline["as_of_date"]))
@@ -209,13 +230,13 @@ class ResearchPipelineJobs:
                     "INSERT OR IGNORE INTO research_pipeline_stages(pipeline_id, stage_name, job_id) VALUES (?, ?, ?)",
                     [(pipeline_id, name, job_id) for name, job_id in daily_jobs],
                 )
-            return self.status(pipeline_id)
+            return self._defer_advance(pipeline_id, str(pipeline["fingerprint"]))
 
         statuses = [self.jobs.get(int(stage["job_id"])).status for stage in daily]
         if any(status in {JobStatus.FAILED, JobStatus.CANCELLED} for status in statuses):
             raise DomainValidationError("research pipeline has a failed daily stage")
         if not all(status == JobStatus.SUCCEEDED for status in statuses):
-            raise DomainValidationError("research pipeline daily stages are incomplete")
+            return self._defer_advance(pipeline_id, str(pipeline["fingerprint"]))
 
         fridays = tuple(start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1) if (start_date + timedelta(days=offset)).weekday() == 4)
         if not fridays:

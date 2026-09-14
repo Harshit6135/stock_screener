@@ -30,13 +30,9 @@ def test_pipeline_enforces_market_data_and_child_bar_jobs(tmp_path):
     assert "advance" in stage_names
     assert not any(name.startswith("daily:") for name in stage_names)
 
-    # If advance is called while data stages are incomplete, it raises DomainValidationError
-    advance_job = next(s for s in pipeline["stages"] if s["name"] == "advance")
-    try:
-        pipelines.advance({"pipeline_id": pipeline["pipeline_id"]})
-        assert False, "should have raised DomainValidationError"
-    except DomainValidationError as e:
-        assert "incomplete" in str(e)
+    # An incomplete coordinator pass is deferred, rather than marked failed.
+    deferred = pipelines.advance({"pipeline_id": pipeline["pipeline_id"]})
+    assert deferred["deferred"] is True
 
     # Complete reference:sync and reference:reconcile
     ref_sync = next(s for s in pipeline["stages"] if s["name"] == "reference:sync")
@@ -52,12 +48,8 @@ def test_pipeline_enforces_market_data_and_child_bar_jobs(tmp_path):
     claimed_rec = jobs.claim_next("worker-1")
     jobs.complete(claimed_rec.job_id, {"reconciled": True}, claimed_rec.claim_token)
 
-    # Child bar job is still QUEUED, so advance should fail
-    try:
-        pipelines.advance({"pipeline_id": pipeline["pipeline_id"]})
-        assert False, "should have raised DomainValidationError because child bar job is incomplete"
-    except DomainValidationError as e:
-        assert "incomplete" in str(e)
+    # Child bar job is still QUEUED, so the coordinator remains deferred.
+    assert pipelines.advance({"pipeline_id": pipeline["pipeline_id"]})["deferred"] is True
 
     # Complete child bar job
     while True:

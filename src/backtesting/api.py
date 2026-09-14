@@ -372,6 +372,8 @@ def run(
             and (
                 policy.rebalance_frequency == "BIWEEKLY"
                 and (step.as_of_date - first_rebalance_day).days % 14 == 0
+                or policy.rebalance_frequency == "WEEKLY"
+                and (step.as_of_date - first_rebalance_day).days % 7 == 0
                 or policy.rebalance_frequency == "MONTHLY"
                 and (step.as_of_date.year, step.as_of_date.month) not in rebalance_months
             )

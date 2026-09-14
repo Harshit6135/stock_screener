@@ -113,7 +113,7 @@ class PortfolioPolicy:
             or not Decimal(0) < initial_stop_fraction < Decimal(1)
             or participation is not None and not Decimal(0) < participation <= Decimal(1)
             or self.ltcg_hold_days is not None and (isinstance(self.ltcg_hold_days, bool) or not isinstance(self.ltcg_hold_days, int) or self.ltcg_hold_days < 1)
-            or self.rebalance_frequency not in {"DAILY", "BIWEEKLY", "MONTHLY"}
+            or self.rebalance_frequency not in {"DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY"}
             or _amount(self.swap_cost_bps, "swap_cost_bps") < 0
             or _amount(self.swap_cost_bps, "swap_cost_bps") >= 10_000
         ):

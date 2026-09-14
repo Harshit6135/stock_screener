@@ -58,6 +58,7 @@ def create_app(config_class=RuntimeConfig):
         portfolio_kite_credentials=portfolio_credentials,
         portfolio_kite_token_path=portfolio_token_path,
         portfolio_live_execution=bool(app.config.get("PORTFOLIO_KITE_LIVE_EXECUTION", False)),
+        automatic_paper_mode=bool(app.config.get("AUTOMATIC_PAPER_MODE", False)),
         nse_csv_path=Path.cwd() / "data" / "imports" / "NSE.csv",
         bse_csv_path=Path.cwd() / "data" / "imports" / "BSE.csv",
         legacy_market_path=Path.cwd() / "instance" / "market_data.db",
@@ -72,25 +73,36 @@ def create_app(config_class=RuntimeConfig):
             background_worker=services.background_worker,
         )
     )
-    if (
-        os.environ.get("SCREENER_RUN_WORKER", "true").lower() in {"1", "true", "yes"}
-        and services.background_worker is not None
-    ):
-        services.background_worker.start()
     app.register_blueprint(create_reference_blueprint(services.artifacts, services.market, services.publisher))
     app.register_blueprint(create_market_blueprint(services.market, services.catalog, services.index_poller, services.market_refresh, services.corporate_actions, services.intraday_alerts, services.intraday_stream))
     app.register_blueprint(create_research_blueprint(services.artifacts, services.research, services.jobs))
     app.register_blueprint(create_pipeline_blueprint(services.pipelines))
-    app.register_blueprint(create_configs_blueprint(services.configs))
+    app.register_blueprint(
+        create_configs_blueprint(
+            services.configs,
+            automatic_paper_mode=bool(app.config.get("AUTOMATIC_PAPER_MODE", False)),
+        )
+    )
     app.register_blueprint(create_portfolio_blueprint(services.ledger, services.market))
     app.register_blueprint(create_broker_blueprint(services.broker_orders))
     app.register_blueprint(create_legacy_portfolio_blueprint(services.legacy_portfolio))
     app.register_blueprint(create_backtest_blueprint(services.backtests, services.artifacts))
-    app.register_blueprint(create_actions_blueprint(services.actions))
+    app.register_blueprint(
+        create_actions_blueprint(
+            services.actions,
+            automatic_paper_mode=bool(app.config.get("AUTOMATIC_PAPER_MODE", False)),
+        )
+    )
     app.register_blueprint(create_compatibility_blueprint(services))
 
     @app.get("/")
     def legacy_dashboard_root():
+        if (
+            app.config.get("AUTOMATIC_PAPER_MODE", False)
+            and services.market_jobs.credentials is not None
+            and not services.market_jobs.token_path.exists()
+        ):
+            return redirect("/integrations/kite")
         return redirect("/app")
 
     @app.get("/dashboard")
@@ -153,10 +165,20 @@ def main() -> None:
         raise RuntimeError(
             "non-loopback binding requires SCREENER_ALLOW_NETWORK_BIND=true and a TLS-capable reverse proxy"
         )
-    print(f"Starting Waitress server on http://{host}:5000 ...")
+    print("Initializing application services...", flush=True)
 
+    app = create_app()
+    services = app.extensions.get("screener_services")
+    if (
+        os.environ.get("SCREENER_RUN_WORKER", "true").lower() in {"1", "true", "yes"}
+        and services is not None
+        and services.background_worker is not None
+    ):
+        services.background_worker.start()
+
+    print(f"Serving Waitress on http://{host}:5000 ...", flush=True)
     serve(
-        create_app(),
+        app,
         host=host,
         port=5000,
         threads=3,  # SSE stream + pipeline + dashboard run concurrently
