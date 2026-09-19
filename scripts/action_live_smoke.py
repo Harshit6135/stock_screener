@@ -1,4 +1,4 @@
-"""Replay stored v4 rankings and bars through an isolated paper action lifecycle."""
+"""Replay stored rankings and bars through an isolated proposal lifecycle."""
 
 from __future__ import annotations
 
@@ -83,12 +83,12 @@ def main() -> None:
                         ranking_artifact.artifact_id,
                     ),
                 )
-        services.ledger.open_account("smoke-paper", Money(100000))
+        services.ledger.open_account("portfolio", Money(100000))
         job = services.jobs.submit(
             "smoke-action-strategy1-20260907",
-            "actions.generate-paper-proposal",
+            "actions.generate-portfolio-proposal",
             {
-                "account_id": "smoke-paper",
+                "account_id": "portfolio",
                 "strategy_id": "strategy1",
                 "action_date": "2026-09-07",
                 "max_positions": 3,
@@ -101,27 +101,26 @@ def main() -> None:
             or completed.status.value != "SUCCEEDED"
         ):
             raise RuntimeError(f"proposal job failed: {completed}")
-        proposal = services.actions.proposals("smoke-paper")[0]
+        proposal = services.actions.proposals("portfolio")[0]
         app = Flask(__name__)
-        app.config["OPERATOR_TOKEN"] = "smoke-secret"
         app.register_blueprint(create_actions_blueprint(services.actions))
         client = app.test_client()
-        headers = {"X-Operator-Token": "smoke-secret"}
         path = f"/api/v2/actions/proposals/{proposal['proposal_id']}"
-        approved = client.post(f"{path}/approve", headers=headers)
-        processed = client.post(f"{path}/process", headers=headers)
-        if approved.status_code != 200 or processed.status_code != 200:
+        approved = client.post(f"{path}/approve")
+        processed = client.post(f"{path}/process")
+        if approved.status_code != 200 or processed.status_code != 409:
             raise RuntimeError(f"review/process failed: {approved.json}, {processed.json}")
         result = {
             "job_status": completed.status.value,
-            "proposal_status": processed.json["status"],
+            "proposal_status": services.actions.proposal(proposal["proposal_id"])["status"],
+            "processing_blocked": processed.json["error"],
             "decision_types": [item["type"] for item in proposal["decisions"]],
             "event_types": [
                 item["event_type"] for item in services.actions.events(proposal["proposal_id"])
             ],
             "ledger_version": services.ledger.accounts()[0]["version"],
-            "open_lots": len(services.ledger.projection("smoke-paper").open_lots),
-            "cash": str(services.ledger.projection("smoke-paper").cash.amount),
+            "open_lots": len(services.ledger.projection("portfolio").open_lots),
+            "cash": str(services.ledger.projection("portfolio").cash.amount),
         }
         print(json.dumps(result, sort_keys=True))
 

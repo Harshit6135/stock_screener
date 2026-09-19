@@ -15,7 +15,6 @@ from .ports import Broker, HistoricalBarsProvider, InstrumentProvider, LiveQuote
 __all__ = [
     "ArtifactManifest",
     "ArtifactStore",
-    "SqliteArtifactStore",
     "Broker",
     "CommandMetadata",
     "DomainValidationError",
@@ -26,6 +25,7 @@ __all__ = [
     "Money",
     "QualityStatus",
     "Quantity",
+    "SqliteArtifactStore",
     "VersionedReference",
     "freeze_value",
 ]

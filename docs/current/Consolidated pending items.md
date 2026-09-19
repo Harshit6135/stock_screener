@@ -6,47 +6,25 @@ This is the only active implementation backlog. Completed work is deliberately
 omitted. Current code and tests are authoritative; archived V3 material is
 historical reference, not a current requirement.
 
-Validation baseline: `125 passed`. The live `instance/system.db` currently has
+The live `instance/system.db` currently has
 zero market bars, indicators, daily scores, weekly rankings, and backtest runs.
 It contains 1,744 universe rows left by an interrupted build, so those rows are
-not accepted as a completed universe.
+inactive and are not accepted as a completed universe.
 
 ## Backend correctness blockers
 
-### Confirmed fills only in the real portfolio
+### Restore the static-type validation gate
 
-`ActionJobs.process()` still converts approved strategy decisions into ledger
-fills using stored model/historical prices. That violates the real-portfolio
-boundary. Change proposal processing to create an execution intent only.
-Holdings may change only from:
-
-- complete manually confirmed execution facts; or
-- Kite-confirmed/reconciled trades.
-
-Add explicit transaction provenance, broker trade/order identifiers, and a
-manual-versus-Kite reconciliation path so the same trade cannot be posted
-twice. Backtest fills must remain isolated from the portfolio ledger.
-
-### Atomic fixed-universe publication
-
-The ₹500 crore YFinance screen retains existing members and adds newly eligible
-stocks, but `universe_membership` has no completed-build marker. A failed first
-scan can therefore leave a non-empty partial universe that market refresh will
-accept.
-
-Required work:
-
-- Build a candidate snapshot separately from the active membership.
-- Publish/activate it atomically only after the scan reaches a terminal state.
-- Record resolved, unresolved, selected, threshold, source, and completion
-  metadata.
-- Keep the previous completed universe active when a later refresh fails.
-- Clear the current untrusted 1,744-row partial build and rerun day zero.
+`mypy src run.py` does not currently pass. Most findings are unchecked
+`object`/JSON/SQLite boundary types across the backtest, ledger, market,
+research, and web layers. Add typed payload and row boundaries and make mypy a
+required validation gate; do not suppress these findings globally.
 
 ### Validate the full historical rebuild
 
 No completed provider-backed rebuild from 2015-01-01 exists in the current
-database. After the universe is rebuilt, download and validate the full market
+database. Run the day-zero universe job to replace the inactive 1,744-row
+interrupted build, then download and validate the full market
 history, then generate features, scores, and rankings for both strategies.
 Validation must include coverage gaps, benchmark coverage, new listings,
 delisted/held instruments, duplicate ISINs, ranking counts, and sample numerical
@@ -106,8 +84,10 @@ exchange calendar. Add a revision-based history planner that:
 ## Portfolio and execution work
 
 - Establish `portfolio` as the default account identity for new workflows.
-- Add explicit fill provenance and complete fee/tax fields.
-- Finish Kite holdings/orders/trades import and reconciliation.
+- Add a Kite execution-intent route, explicit fill provenance, broker trade and
+  order identifiers, and complete fee/tax fields.
+- Finish Kite holdings/orders/trades import and deduplicated reconciliation
+  with manually confirmed transactions.
 - Keep live Kite order placement disabled until a separate rollout policy,
   kill-switch procedure, and real-account acceptance test are approved.
 - Retain operator-reviewed delisting liquidation; automatic broker liquidation
@@ -143,13 +123,11 @@ exchange calendar. Add a revision-based history planner that:
 
 The active backlog is complete only when:
 
-1. Strategy proposals cannot create portfolio fills.
-2. Manual and Kite-confirmed transactions share one deduplicated real ledger.
-3. A strategy composed from supported indicators and operations runs and
+1. Manual and Kite-confirmed transactions share one deduplicated real ledger.
+2. A strategy composed from supported indicators and operations runs and
    backfills without Python changes.
-4. Pandas TA conformance, parity, no-look-ahead, and performance gates pass.
-5. The fixed universe is atomically published and the 2015-present rebuild is
-   validated.
-6. Both strategies produce validated rankings and backtests from rebuilt data.
-7. The indicator/strategy UI and deferred dashboard refresh work are completed
+3. Pandas TA conformance, parity, no-look-ahead, and performance gates pass.
+4. The 2015-present rebuild is validated.
+5. Both strategies produce validated rankings and backtests from rebuilt data.
+6. The indicator/strategy UI and deferred dashboard refresh work are completed
    in the later UI workstream.

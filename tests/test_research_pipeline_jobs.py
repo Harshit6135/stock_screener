@@ -44,7 +44,6 @@ def test_pipeline_api_is_operator_protected(tmp_path):
     jobs = JobStore(tmp_path / "system.db")
     pipelines = ResearchPipelineJobs(tmp_path / "system.db", jobs)
     app = Flask(__name__)
-    app.config["OPERATOR_TOKEN"] = "test-secret"
     app.register_blueprint(create_pipeline_blueprint(pipelines))
     client = app.test_client()
     assert (
@@ -54,7 +53,6 @@ def test_pipeline_api_is_operator_protected(tmp_path):
     response = client.post(
         "/api/v2/pipelines/research",
         json={"as_of_date": "2026-09-11", "strategies": ["strategy1"]},
-        headers={"X-Operator-Token": "test-secret"},
     )
     assert response.status_code == 202
     assert (

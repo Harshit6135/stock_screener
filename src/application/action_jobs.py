@@ -717,7 +717,7 @@ class ActionJobs:
         }, sort_keys=True).encode()).hexdigest()
         proposal_id = str(uuid5(NAMESPACE_URL, f"{source}-action-proposal:{fingerprint}"))
         if self.publisher.catalog.has(proposal_id):
-            self._recover_projection(proposal_id)
+            self._recover_manual_projection(proposal_id)
             return self.proposal(proposal_id)
         self.publisher.publish_json(
             "actions/manual-intents", proposal_id,
@@ -844,6 +844,46 @@ class ActionJobs:
                     """INSERT INTO action_proposal_events
                        (proposal_id, event_type, occurred_at, detail_json)
                        VALUES (?, 'GENERATED', ?, '{}')""",
+                    (proposal_id, timestamp),
+                )
+
+    def _recover_manual_projection(self, proposal_id: str) -> None:
+        """Recover a confirmed-transaction projection after publication."""
+        manifest, payload = self.publisher.store.read_json(
+            "actions/manual-intents", proposal_id
+        )
+        if manifest.artifact_id != proposal_id:
+            raise DomainValidationError("manual action artifact identity is invalid")
+        source = str(payload.get("source", "manual"))
+        if source not in {"manual", "midweek_stop"}:
+            raise DomainValidationError("manual action artifact source is invalid")
+        timestamp = manifest.created_at
+        with sqlite_connection(self.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """INSERT OR IGNORE INTO action_proposals
+                   (proposal_id, account_id, strategy_id, action_date, ranking_week_end,
+                    expected_ledger_version, status, artifact_id, decision_json,
+                    created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)""",
+                (
+                    proposal_id,
+                    payload["account_id"],
+                    source,
+                    payload["action_date"],
+                    payload["action_date"],
+                    payload["expected_ledger_version"],
+                    manifest.artifact_id,
+                    json.dumps(payload["decisions"], sort_keys=True),
+                    timestamp,
+                    timestamp,
+                ),
+            )
+            if connection.execute("SELECT changes()").fetchone()[0] == 1:
+                connection.execute(
+                    """INSERT INTO action_proposal_events
+                       (proposal_id, event_type, occurred_at, detail_json)
+                       VALUES (?, 'GENERATED_MANUAL', ?, '{}')""",
                     (proposal_id, timestamp),
                 )
 

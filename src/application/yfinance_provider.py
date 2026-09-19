@@ -1,10 +1,13 @@
 """Optional YFinance bridge for universe enrichment and benchmark support."""
 
+import logging
 import time
 from datetime import date
 from typing import Any
 
 from src.platform_kernel import DomainValidationError
+
+logger = logging.getLogger(__name__)
 
 
 def download_daily_bars(symbol: str, start: date, end: date) -> list[dict[str, Any]]:
@@ -15,7 +18,7 @@ def download_daily_bars(symbol: str, start: date, end: date) -> list[dict[str, A
     core provider contracts.
     """
     try:
-        import yfinance as yf  # type: ignore[import-not-found]
+        import yfinance as yf  # type: ignore[import-untyped]
     except ImportError as exc:
         raise DomainValidationError("yfinance is not installed") from exc
     frame = yf.download(symbol, start=start.isoformat(), end=end.isoformat(), auto_adjust=False, progress=False)
@@ -42,7 +45,9 @@ def fetch_symbol_enrichment(
 ) -> dict[str, Any]:
     """Fetch metadata and quote info from yfinance for a single stock."""
     try:
-        import yfinance as yf  # type: ignore[import-not-found]
+        import yfinance as yf  # type: ignore[import-untyped]
+        from curl_cffi.requests.exceptions import RequestException
+        from yfinance.exceptions import YFException  # type: ignore[import-untyped]
     except ImportError as exc:
         raise DomainValidationError("yfinance is not installed") from exc
     if request_delay_seconds < 0:
@@ -57,7 +62,8 @@ def fetch_symbol_enrichment(
         try:
             ticker = yf.Ticker(ticker_str)
             info = getattr(ticker, "info", None) or {}
-        except Exception:
+        except (YFException, RequestException, OSError, TypeError, ValueError) as exc:
+            logger.debug("yfinance enrichment failed for %s", ticker_str, exc_info=exc)
             info = {}
         if info.get("marketCap"):
             break

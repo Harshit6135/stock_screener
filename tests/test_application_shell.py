@@ -6,7 +6,6 @@ def test_backend_shell_exposes_only_new_api_and_health(tmp_path):
         TESTING = True
         SECRET_KEY = "test"
         DATA_DIRECTORY = tmp_path
-        OPERATOR_TOKEN = "operator"
 
     app = create_app(TestConfig)
     client = app.test_client()
@@ -17,7 +16,6 @@ def test_backend_shell_exposes_only_new_api_and_health(tmp_path):
     created = client.post(
         "/api/v2/operations/jobs",
         json={"fingerprint": "run-1", "kind": "system.echo", "payload": {"value": 1}},
-        headers={"X-Operator-Token": "operator"},
     )
     assert created.status_code == 202
     assert (

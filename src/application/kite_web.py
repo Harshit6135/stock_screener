@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import time
 import logging
+import time
 from html import escape
 
-from flask import Blueprint, Response, current_app, jsonify, redirect, request, session, url_for
+from flask import Blueprint, Response, jsonify, redirect, request, session, url_for
 from flask.typing import ResponseReturnValue
 from kiteconnect.exceptions import KiteException  # type: ignore[import-untyped]
 

@@ -1,5 +1,6 @@
 """Durable intent and interval lease for the local index quote poller."""
 
+import logging
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -8,6 +9,8 @@ from zoneinfo import ZoneInfo
 from src.application.jobs import JobStore
 from src.application.sqlite import migrate_sqlite, sqlite_connection
 from src.platform_kernel import DomainValidationError
+
+logger = logging.getLogger(__name__)
 
 
 class IndexQuotePoller:
@@ -73,6 +76,15 @@ class IndexQuotePoller:
                     connection.execute("UPDATE index_poller_leases SET last_error=? WHERE poller_name=?", (job.last_error or "quote job failed", self.poller_name))
         return self.state()
 
+    def record_error(self, error: BaseException) -> None:
+        """Persist a background scheduling failure for operational visibility."""
+        message = f"{type(error).__name__}: {error}"[:2000]
+        with sqlite_connection(self.database) as connection:
+            connection.execute(
+                "UPDATE index_poller_leases SET last_error=? WHERE poller_name=?",
+                (message, self.poller_name),
+            )
+
 
 def market_is_open(now: datetime | None = None) -> bool:
     """Return whether the NSE cash session is open in Asia/Kolkata time."""
@@ -107,7 +119,10 @@ class BackgroundIndexPoller:
                 if market_is_open():
                     self.poller.tick(datetime.now(UTC))
                     self.poller.reconcile()
-            except Exception:
-                # The durable poller state and worker remain available if one tick fails.
-                pass
+            except Exception as exc:
+                logger.exception("index quote poller tick failed")
+                try:
+                    self.poller.record_error(exc)
+                except Exception:
+                    logger.exception("could not persist index quote poller failure")
             self._stop.wait(1)

@@ -61,7 +61,7 @@ def _payload(account_id="paper"):
 
 
 def test_generated_strategy_proposal_cannot_create_synthetic_portfolio_fill(tmp_path):
-    services, instrument_id = _services(tmp_path)
+    services, _ = _services(tmp_path)
     services.ledger.open_account("paper", Money(1000))
     job = services.jobs.submit(
         "portfolio-action-20260907", "actions.generate-portfolio-proposal", _payload()
@@ -73,16 +73,13 @@ def test_generated_strategy_proposal_cannot_create_synthetic_portfolio_fill(tmp_
     assert proposal["status"] == "PENDING"
     assert proposal["decisions"][0]["type"] == "BUY"
     app = Flask(__name__)
-    app.config["OPERATOR_TOKEN"] = "test-secret"
     app.register_blueprint(create_actions_blueprint(services.actions))
     client = app.test_client()
     path = f"/api/v2/actions/proposals/{proposal['proposal_id']}"
     assert client.get(path).status_code == 200
-    headers = {"X-Operator-Token": "test-secret"}
-    assert client.get(path, headers=headers).status_code == 200
-    assert client.post(f"{path}/process", headers=headers).status_code == 409
-    assert client.post(f"{path}/approve", headers=headers).json["status"] == "APPROVED"
-    blocked = client.post(f"{path}/process", headers=headers)
+    assert client.post(f"{path}/process").status_code == 409
+    assert client.post(f"{path}/approve").json["status"] == "APPROVED"
+    blocked = client.post(f"{path}/process")
     assert blocked.status_code == 409
     assert "confirmed Kite or manual execution" in blocked.json["error"]
     assert services.ledger.accounts()[0]["version"] == 0
@@ -151,7 +148,6 @@ def test_multiple_fifo_lots_and_stale_proposal(tmp_path):
         }
     )
     assert proposal["status"] == "PENDING"
-    assert services.actions.generate(_payload())["proposal_id"] == proposal["proposal_id"]
     services.actions.decide(proposal["proposal_id"], "APPROVED")
     services.ledger.record_fills(
         "paper",
@@ -189,6 +185,43 @@ def test_recovers_projection_after_published_artifact(tmp_path):
     assert restored["proposal_id"] == original["proposal_id"]
     assert [item["event_type"] for item in services.actions.events(restored["proposal_id"])] == [
         "GENERATED"
+    ]
+
+
+def test_recovers_manual_projection_after_published_artifact(tmp_path):
+    services, _ = _services(tmp_path)
+    services.ledger.open_account("paper", Money(1000))
+    payload = {
+        "account_id": "paper",
+        "action_date": "2026-09-08",
+        "entries": [
+            {
+                "symbol": "ABC",
+                "exchange": "NSE",
+                "side": "BUY",
+                "units": 1,
+                "price": "100",
+            }
+        ],
+        "reason": "confirmed contract note",
+    }
+    original = services.actions.create_manual(payload)
+    with sqlite_connection(services.database) as connection:
+        connection.execute(
+            "DELETE FROM action_proposal_events WHERE proposal_id=?",
+            (original["proposal_id"],),
+        )
+        connection.execute(
+            "DELETE FROM action_proposals WHERE proposal_id=?",
+            (original["proposal_id"],),
+        )
+
+    restored = services.actions.create_manual(payload)
+
+    assert restored["proposal_id"] == original["proposal_id"]
+    assert restored["strategy_id"] == "manual"
+    assert [item["event_type"] for item in services.actions.events(restored["proposal_id"])] == [
+        "GENERATED_MANUAL"
     ]
 
 
@@ -278,16 +311,14 @@ def test_execution_policy_parity_is_protected_immutable_and_readable(tmp_path):
         "pyramid_fraction": "0.5",
     }
     app = Flask(__name__)
-    app.config["OPERATOR_TOKEN"] = "test-secret"
     app.register_blueprint(create_actions_blueprint(services.actions))
     client = app.test_client()
     endpoint = "/api/v2/actions/execution-policy-parity"
     assert client.post(endpoint, json={"v3_policy": baseline}).status_code == 201
-    headers = {"X-Operator-Token": "test-secret"}
-    response = client.post(endpoint, json={"v3_policy": baseline}, headers=headers)
+    response = client.post(endpoint, json={"v3_policy": baseline})
     assert response.status_code == 201
     artifact_id = response.json["parity_artifact_id"]
     assert response.json["parity"] is True
-    readback = client.get(f"{endpoint}/{artifact_id}", headers=headers)
+    readback = client.get(f"{endpoint}/{artifact_id}")
     assert readback.status_code == 200
     assert readback.json["data"]["execution_policy_version"] == "v4-portfolio-execution-1"

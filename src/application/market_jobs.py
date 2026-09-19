@@ -561,7 +561,7 @@ class KiteMarketJobs:
                     bse_scrip_codes.get(str(item["symbol"])),
                 )
                 enriched_count += 1
-            except Exception:
+            except DomainValidationError:
                 unresolved_count += 1
                 if isin in existing:
                     members.append(existing[isin])

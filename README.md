@@ -63,12 +63,12 @@ default.
 Important current limitations:
 
 - The existing 1,744-row universe is from an interrupted build and must be
-  rebuilt after atomic universe publication is implemented.
+  replaced by a completed day-zero build; those partial rows are inactive.
 - No validated 2015-present market/research rebuild exists in the active DB.
 - Strategy YAML still dispatches to two registered custom whole-strategy
   implementations; the generic indicator DAG executor remains pending.
-- Processing a strategy proposal can still create model-priced fills and must
-  not be used for the real portfolio until converted to intent-only behavior.
+- Generated strategy and stop proposals cannot create real ledger fills. Kite
+  execution-intent and trade-reconciliation workflows remain pending.
 
 ## Development
 

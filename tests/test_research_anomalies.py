@@ -25,12 +25,11 @@ class _Market:
         return {"instrument-1": (bars, {"isin": "INE000000001", "symbol": "ABC"})}
 
 
-def test_protected_anomaly_report_is_immutable_and_readable(tmp_path):
+def test_anomaly_report_is_immutable_and_readable(tmp_path):
     database = tmp_path / "system.db"
     publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
     research = ResearchJobs(database, _Market(), publisher)
     app = Flask(__name__)
-    app.config["OPERATOR_TOKEN"] = "operator"
     app.register_blueprint(create_research_blueprint(publisher.store, research))
     client = app.test_client()
     command = {
@@ -43,7 +42,6 @@ def test_protected_anomaly_report_is_immutable_and_readable(tmp_path):
     response = client.post(
         "/api/v2/research/anomalies",
         json=command,
-        headers={"X-Operator-Token": "operator"},
     )
     assert response.status_code == 201
     assert response.json["anomaly_count"] == 1
@@ -55,6 +53,5 @@ def test_protected_anomaly_report_is_immutable_and_readable(tmp_path):
     repeat = client.post(
         "/api/v2/research/anomalies",
         json=command,
-        headers={"X-Operator-Token": "operator"},
     )
     assert repeat.json["artifact_id"] == artifact_id

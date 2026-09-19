@@ -17,7 +17,6 @@ def main() -> int:
                 TESTING = True
                 SECRET_KEY = "smoke-only"
                 DATA_DIRECTORY = Path(temporary_directory)
-                OPERATOR_TOKEN = "smoke-only"
 
             app = create_app(SmokeConfig)
             services = app.extensions["screener_services"]

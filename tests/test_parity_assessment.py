@@ -1,13 +1,14 @@
-from decimal import Decimal
 from datetime import date
+from decimal import Decimal
+
 from flask import Flask
 
 from src.application.dashboard_web import create_dashboard_blueprint
-from src.application.jobs import JobStore, JobStatus
+from src.application.jobs import JobStatus, JobStore
 from src.application.pipeline_jobs import ResearchPipelineJobs
 from src.application.worker import BackgroundWorker, JobWorker
+from src.platform_kernel import Money
 from src.portfolio_engine import Candidate, MarketBar, PortfolioPolicy, PortfolioState, evaluate
-from src.platform_kernel import DomainValidationError, Money
 
 
 def test_pipeline_enforces_market_data_and_child_bar_jobs(tmp_path):
@@ -34,7 +35,7 @@ def test_pipeline_enforces_market_data_and_child_bar_jobs(tmp_path):
     assert deferred["deferred"] is True
 
     # Complete reference:sync and reference:reconcile
-    ref_sync = next(s for s in pipeline["stages"] if s["name"] == "reference:sync")
+    next(s for s in pipeline["stages"] if s["name"] == "reference:sync")
     claimed_sync = jobs.claim_next("worker-1")
     jobs.complete(claimed_sync.job_id, {"synced": 10}, claimed_sync.claim_token)
 
@@ -43,7 +44,7 @@ def test_pipeline_enforces_market_data_and_child_bar_jobs(tmp_path):
     claimed_mkt = jobs.claim_next("worker-1")
     jobs.complete(claimed_mkt.job_id, {"job_ids": [child_bar_job.job_id], "scheduled_count": 1}, claimed_mkt.claim_token)
 
-    ref_rec = next(s for s in pipeline["stages"] if s["name"] == "reference:reconcile")
+    next(s for s in pipeline["stages"] if s["name"] == "reference:reconcile")
     claimed_rec = jobs.claim_next("worker-1")
     jobs.complete(claimed_rec.job_id, {"reconciled": True}, claimed_rec.claim_token)
 
@@ -156,4 +157,3 @@ def test_dashboard_web_routes_render():
         assert res.status_code == 200, f"failed for {path}"
         html = res.get_data(as_text=True)
         assert 'class="navbar"' in html
-        assert 'Operator Token:' not in html

@@ -3,8 +3,9 @@
 import json
 from pathlib import Path
 
-from src.application.catalog import ArtifactCatalog
 from src.application.legacy_portfolio import LegacyPortfolioImporter
+
+from src.application.catalog import ArtifactCatalog
 from src.application.market_repository import MarketRepository
 from src.application.publication import ArtifactPublisher
 from src.execution_gateway import Ledger

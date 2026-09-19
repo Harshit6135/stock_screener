@@ -79,7 +79,6 @@ def main() -> int:
                 TESTING = True
                 SECRET_KEY = "integration-only"
                 DATA_DIRECTORY = temporary_path
-                OPERATOR_TOKEN = "integration-only"
 
             app = create_app(IntegrationConfig)
             services = app.extensions["screener_services"]

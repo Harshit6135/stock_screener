@@ -2,8 +2,9 @@
 
 from datetime import date, timedelta
 
-from run import create_app
 from src.application.research_strategy2 import strategy2_factors, strategy2_indicators
+
+from run import create_app
 
 
 def main() -> int:

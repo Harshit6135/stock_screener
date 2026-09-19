@@ -30,3 +30,13 @@ def test_index_poller_reconcile_records_provider_success(tmp_path):
     state = poller.reconcile()
     assert state["last_success"] is not None
     assert state["last_error"] is None
+
+
+def test_index_poller_records_background_error(tmp_path):
+    database = tmp_path / "system.db"
+    jobs = JobStore(database)
+    poller = IndexQuotePoller(database, jobs)
+
+    poller.record_error(RuntimeError("provider unavailable"))
+
+    assert poller.state()["last_error"] == "RuntimeError: provider unavailable"

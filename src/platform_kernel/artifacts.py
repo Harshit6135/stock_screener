@@ -3,8 +3,8 @@
 import hashlib
 import json
 import os
-import sqlite3
 import shutil
+import sqlite3
 import zlib
 from contextlib import closing
 from dataclasses import asdict, dataclass

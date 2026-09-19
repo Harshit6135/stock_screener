@@ -1,4 +1,4 @@
-"""Exercise the real portfolio HTTP routes against an isolated paper account."""
+"""Exercise the real portfolio HTTP routes against an isolated account."""
 
 from datetime import date
 from tempfile import TemporaryDirectory
@@ -14,7 +14,6 @@ def main() -> int:
 
         class SmokeConfig(RuntimeConfig):
             DATA_DIRECTORY = root
-            OPERATOR_TOKEN = "smoke-only-token"
 
         app = create_app(SmokeConfig)
         services = app.extensions["screener_services"]
@@ -22,16 +21,14 @@ def main() -> int:
             [TrackedInstrument(str(uuid4()), "INE000000001", "ABC", "NSE", "42", date(2026, 9, 1))]
         )
         client = app.test_client()
-        headers = {"X-Operator-Token": "smoke-only-token"}
         opened = client.post(
             "/api/v2/portfolio/accounts",
-            json={"account_id": "paper", "opening_cash": "1000"},
-            headers=headers,
+            json={"account_id": "portfolio", "opening_cash": "1000"},
         )
         if opened.status_code != 201:
-            raise RuntimeError("paper account creation failed")
+            raise RuntimeError("portfolio account creation failed")
         buy = client.post(
-            "/api/v2/portfolio/accounts/paper/fills",
+            "/api/v2/portfolio/accounts/portfolio/fills",
             json={
                 "idempotency_key": "buy-1",
                 "expected_version": 0,
@@ -45,12 +42,11 @@ def main() -> int:
                     }
                 ],
             },
-            headers=headers,
         )
         if buy.status_code != 201:
-            raise RuntimeError("paper buy fill failed")
+            raise RuntimeError("portfolio buy fill failed")
         sell = client.post(
-            "/api/v2/portfolio/accounts/paper/fills",
+            "/api/v2/portfolio/accounts/portfolio/fills",
             json={
                 "idempotency_key": "sell-1",
                 "expected_version": 1,
@@ -64,12 +60,11 @@ def main() -> int:
                     }
                 ],
             },
-            headers=headers,
         )
         if sell.status_code != 201:
-            raise RuntimeError("paper sell fill failed")
-        account = client.get("/api/v2/portfolio/accounts/paper", headers=headers)
-        events = client.get("/api/v2/portfolio/accounts/paper/events", headers=headers)
+            raise RuntimeError("portfolio sell fill failed")
+        account = client.get("/api/v2/portfolio/accounts/portfolio")
+        events = client.get("/api/v2/portfolio/accounts/portfolio/events")
         if (
             account.status_code != 200
             or account.json["cash"] != "910"
@@ -77,8 +72,8 @@ def main() -> int:
             or account.json["open_lots"][0]["units"] != 1
             or len(events.json["events"]) != 2
         ):
-            raise RuntimeError("paper portfolio projection or event readback failed")
-        print("paper_portfolio_verified=account,buy,sell,FIFO,events", flush=True)
+            raise RuntimeError("portfolio projection or event readback failed")
+        print("portfolio_verified=account,buy,sell,FIFO,events", flush=True)
     return 0
 
 

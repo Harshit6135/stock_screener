@@ -87,14 +87,10 @@ def test_execution_controls_readback_is_operator_protected(tmp_path):
     database = tmp_path / "system.db"
     orders = BrokerOrderService(database, Ledger(database), FakeBroker())
     app = Flask(__name__)
-    app.config["OPERATOR_TOKEN"] = "operator"
     app.register_blueprint(create_broker_blueprint(orders))
     client = app.test_client()
     assert client.get("/api/v2/portfolio/execution-controls").status_code == 200
-    response = client.get(
-        "/api/v2/portfolio/execution-controls",
-        headers={"X-Operator-Token": "operator"},
-    )
+    response = client.get("/api/v2/portfolio/execution-controls")
     assert response.status_code == 200
     assert response.json["gateway"] == "FakeBroker"
 

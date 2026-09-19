@@ -2,9 +2,9 @@
 
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
-from collections.abc import Callable
 from typing import Any
 
 from src.application.jobs import JobStore

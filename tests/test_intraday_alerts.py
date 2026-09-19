@@ -48,13 +48,12 @@ def test_intraday_alerts_have_sse_readback(tmp_path):
     assert b"event: stop-alert" in response.data
 
 
-def test_intraday_stream_lease_is_protected_and_restart_safe(tmp_path):
+def test_intraday_stream_lease_is_restart_safe(tmp_path):
     from flask import Flask
 
     database = tmp_path / "system.db"
     lease = IntradayStreamLease(database)
     app = Flask(__name__)
-    app.config["OPERATOR_TOKEN"] = "operator"
     app.register_blueprint(create_market_blueprint(MarketRepository(database), ArtifactCatalog(database), stream=lease))
     client = app.test_client()
     assert client.get("/api/v2/market/intraday/stream").json["enabled"] == 0
@@ -62,27 +61,23 @@ def test_intraday_stream_lease_is_protected_and_restart_safe(tmp_path):
     response = client.post(
         "/api/v2/market/intraday/stream",
         json={"action": "start", "account_id": "paper", "token_count": 2},
-        headers={"X-Operator-Token": "operator"},
     )
     assert response.status_code == 202
     assert response.json["status"] == "REQUESTED"
     connected = client.post(
         "/api/v2/market/intraday/stream",
         json={"action": "connected", "token_count": 2},
-        headers={"X-Operator-Token": "operator"},
     )
     assert connected.json["status"] == "CONNECTED"
     heartbeat = client.post(
         "/api/v2/market/intraday/stream",
         json={"action": "heartbeat"},
-        headers={"X-Operator-Token": "operator"},
     )
     assert heartbeat.status_code == 202
     assert heartbeat.json["last_heartbeat_at"]
     failed = client.post(
         "/api/v2/market/intraday/stream",
         json={"action": "error", "message": "provider disconnected"},
-        headers={"X-Operator-Token": "operator"},
     )
     assert failed.json["status"] == "ERROR"
     assert failed.json["last_error"] == "provider disconnected"
@@ -91,6 +86,5 @@ def test_intraday_stream_lease_is_protected_and_restart_safe(tmp_path):
     stopped = client.post(
         "/api/v2/market/intraday/stream",
         json={"action": "stop"},
-        headers={"X-Operator-Token": "operator"},
     )
     assert stopped.json["status"] == "STOPPED"

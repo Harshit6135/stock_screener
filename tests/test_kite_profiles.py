@@ -21,7 +21,6 @@ def test_portfolio_profile_never_uses_legacy_or_market_data_credentials():
 def test_profile_pages_are_isolated_and_market_data_worker_has_no_portfolio_credentials(tmp_path):
     class TestConfig(RuntimeConfig):
         DATA_DIRECTORY = tmp_path
-        OPERATOR_TOKEN = "test-secret"
         MARKET_DATA_KITE_API_KEY = None
         MARKET_DATA_KITE_API_SECRET = None
         KITE_API_KEY = None
@@ -40,7 +39,6 @@ def test_profile_pages_are_isolated_and_market_data_worker_has_no_portfolio_cred
     assert (
         client.post(
             "/api/v2/integrations/kite/portfolio/authorize",
-            headers={"X-Operator-Token": "test-secret"},
         ).status_code
         == 503
     )

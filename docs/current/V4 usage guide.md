@@ -55,8 +55,6 @@ The portfolio profile never falls back to market-data credentials. Live order
 dispatch is disabled unless `SCREENER_PORTFOLIO_KITE_LIVE_EXECUTION=true`, and
 it must remain disabled until the pending real-account rollout is approved.
 
-No route needs `SCREENER_OPERATOR_TOKEN` or `X-Operator-Token`.
-
 ## Data workflow
 
 ### Build the reference universe
@@ -69,8 +67,10 @@ strictly greater than ₹500 crore. Existing members are retained on later runs,
 and newly eligible listings are added.
 
 The current database contains an interrupted partial universe and must be
-rebuilt before market history is trusted. See the active backlog for the atomic
-publication fix required before that rebuild.
+rebuilt before market history is trusted. Those rows are inactive: market
+refresh accepts a universe only after the full scan is atomically committed
+with its resolved, unresolved, selected, threshold, source, and completion
+metadata. A failed scan leaves the prior completed universe active.
 
 ### Download market data
 
@@ -141,11 +141,10 @@ same ledger. Cash, FIFO lots, valuation, events, and journal readbacks are
 available from the account routes and `/portfolio`.
 
 Strategy action proposals are review records, not proof that a transaction
-occurred. The current `process` implementation can still post model-priced
-fills and is therefore not approved for a real portfolio. Do not process a
-strategy proposal into the real ledger until the pending intent-only change is
-implemented. Use the manual fill endpoint only for actual completed
-transactions with true execution facts.
+occurred. Processing generated strategy and stop proposals into the ledger is
+blocked. Only a manually confirmed transaction can currently be processed, and
+it must contain actual completed execution facts. Kite execution intents and
+broker reconciliation remain pending.
 
 Backtests are isolated simulations and never write their fills to the
 portfolio ledger.
@@ -188,10 +187,12 @@ Current reports cannot be treated as validated strategy evidence until the
 ```powershell
 poetry run python -m pytest tests -q
 poetry run ruff check src tests run.py
-poetry run mypy src run.py
 poetry run screener-ops check-sqlite instance/system.db
 poetry run screener-ops backup-sqlite instance/system.db backups/system.db
 ```
+
+The static-type gate is not yet clean; `mypy src run.py` is tracked in the
+active backlog and should not currently be treated as a passing validation.
 
 If Poetry is unavailable, replace `poetry run python` with
 `.\.venv\Scripts\python.exe`.

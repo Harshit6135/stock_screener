@@ -193,3 +193,30 @@ def test_refresh_refuses_partial_universe_rows_without_completed_build(tmp_path)
         MarketRefreshPlanner(database, market, JobStore(database)).schedule(
             {"start_date": "2025-01-01", "end_date": "2025-12-31"}
         )
+
+
+def test_fetch_coverage_uses_completed_provider_windows_not_bar_boundaries(tmp_path):
+    database = tmp_path / "system.db"
+    market = MarketRepository(database)
+    observed_on = date(2026, 1, 1)
+    market.upsert_instruments(
+        [TrackedInstrument("stock", "IN0000000001", "STOCK", "NSE", "1", observed_on)]
+    )
+    market.upsert_bars(
+        "stock",
+        (
+            NormalizedBar("stock", date(2025, 1, 2), Decimal(10), Decimal(11), Decimal(9), Decimal(10), 1),
+            NormalizedBar("stock", date(2025, 12, 30), Decimal(10), Decimal(11), Decimal(9), Decimal(10), 1),
+        ),
+        "snapshot",
+    )
+    assert not market.has_coverage("stock", date(2025, 1, 1), date(2025, 12, 31))
+
+    market.record_fetch_coverage(
+        "stock", date(2025, 1, 1), date(2025, 6, 30), provider="kite", bar_count=1
+    )
+    market.record_fetch_coverage(
+        "stock", date(2025, 7, 1), date(2025, 12, 31), provider="kite", bar_count=1
+    )
+
+    assert market.has_coverage("stock", date(2025, 1, 1), date(2025, 12, 31))
