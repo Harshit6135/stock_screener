@@ -1,0 +1,57 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Portfolio journey",
+  "description": "Follow real transaction entry, ledger projection, strategy proposals, broker intent, and reconciliation.",
+  "steps": [
+    {
+      "file": "src/application/portfolio_web.py",
+      "line": 47,
+      "description": "Portfolio HTTP routes create accounts and expose projection, fill, cash-transfer, valuation, ticker, journal, and event operations. There is no paper-trading account type." 
+    },
+    {
+      "file": "src/application/portfolio_web.py",
+      "line": 101,
+      "description": "Manual fill input is normalized to domain `Fill` values. These fields must describe transactions that actually completed, not model prices." 
+    },
+    {
+      "file": "src/execution_gateway/ledger.py",
+      "line": 73,
+      "description": "`record_fills` is the real accounting write boundary. It enforces idempotency, expected version, cash/holding constraints, and appends the entire valid batch atomically." 
+    },
+    {
+      "file": "src/execution_gateway/ledger.py",
+      "line": 240,
+      "description": "Current cash, FIFO lots, holdings, and realized P&L are projections replayed from immutable ledger events rather than mutable position rows." 
+    },
+    {
+      "file": "src/application/action_jobs.py",
+      "line": 83,
+      "description": "Action generation combines prior rankings, the current ledger, market bars, strategy policy, and optional risk artifacts to produce an immutable review proposal." 
+    },
+    {
+      "file": "src/application/action_jobs.py",
+      "line": 655,
+      "description": "A manual proposal captures explicitly confirmed transaction facts. Its source and fingerprint distinguish it from generated strategy and stop proposals." 
+    },
+    {
+      "file": "src/application/action_jobs.py",
+      "line": 966,
+      "description": "The safety boundary is explicit: processing rejects every source except `manual`. Approval of a generated strategy or stop proposal is not proof of execution." 
+    },
+    {
+      "file": "src/execution_gateway/broker.py",
+      "line": 186,
+      "description": "Broker order creation records an execution intent separately from the ledger. The Kite gateway remains disabled unless explicitly configured and armed." 
+    },
+    {
+      "file": "src/execution_gateway/broker.py",
+      "line": 239,
+      "description": "Reconciliation reads broker status and confirmed fills, records execution events, and posts each fill to the ledger once through an idempotent boundary." 
+    },
+    {
+      "file": "src/application/backtest_jobs.py",
+      "line": 91,
+      "description": "Compare the portfolio path with backtesting: simulations generate report-local fills only and never call the real ledger." 
+    }
+  ]
+}

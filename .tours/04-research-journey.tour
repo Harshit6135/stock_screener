@@ -1,0 +1,57 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Research journey",
+  "description": "Trace a research request through pipeline stages, daily factors, weekly rankings, artifacts, and backtesting.",
+  "steps": [
+    {
+      "file": "src/application/pipeline_web.py",
+      "line": 1,
+      "description": "Research pipeline routes submit, inspect, retry, and cancel durable orchestration. A `202` response means accepted, not completed." 
+    },
+    {
+      "file": "src/application/pipeline_jobs.py",
+      "line": 50,
+      "description": "Pipeline input is normalized here. It validates completed dates, active unique strategies, the current 365-day bound, and optional explicit trading sessions." 
+    },
+    {
+      "file": "src/application/pipeline_jobs.py",
+      "line": 93,
+      "description": "Submission fingerprints all material inputs and creates either data orchestration stages or per-strategy daily jobs, plus a durable coordinator." 
+    },
+    {
+      "file": "src/application/pipeline_jobs.py",
+      "line": 188,
+      "description": "The coordinator waits for data jobs and spawned bar jobs, then daily jobs, then queues one ranking job for each week's last submitted session." 
+    },
+    {
+      "file": "src/application/research_jobs.py",
+      "line": 262,
+      "description": "Daily calculation loads point-in-time histories, active strategy revision, factor weights, and optional benchmark before invoking the strategy runtime." 
+    },
+    {
+      "file": "src/indicators/custom/momentum_quality.py",
+      "line": 1,
+      "description": "Strategy 1's current custom implementation computes instrument-local momentum-quality features. It must remain deterministic and free of future data." 
+    },
+    {
+      "file": "src/indicators/custom/relative_strength.py",
+      "line": 1,
+      "description": "Strategy 2 computes benchmark-relative features and cross-sectional factors using the same dated universe histories." 
+    },
+    {
+      "file": "src/application/research_jobs.py",
+      "line": 457,
+      "description": "Weekly ranking aggregates daily scores, applies deterministic ordering, publishes an immutable ranking artifact, and updates the revision-aware projection." 
+    },
+    {
+      "file": "src/application/research_web.py",
+      "line": 48,
+      "description": "Research APIs read top rankings, weeks, snapshots, sector views, correlations, and anomaly artifacts from verified stores and projections." 
+    },
+    {
+      "file": "src/application/backtest_jobs.py",
+      "line": 91,
+      "description": "Backtesting consumes historical rankings and bars for the selected revision, replays the portfolio, and publishes metrics and simulated fills without touching the real ledger." 
+    }
+  ]
+}

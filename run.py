@@ -165,11 +165,12 @@ def main() -> None:
         index_poller.start()
 
     print(f"Serving Waitress on http://{host}:5000 ...", flush=True)
+    waitress_threads = max(1, int(os.environ.get("SCREENER_WAITRESS_THREADS", "8")))
     serve(
         app,
         host=host,
         port=5000,
-        threads=3,  # SSE stream + pipeline + dashboard run concurrently
+        threads=waitress_threads,
         channel_timeout=600,  # keep SSE connections alive up to 10 min
     )
 

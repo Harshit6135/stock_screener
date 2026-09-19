@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from flask import Flask
 
 from src.application.catalog import ArtifactCatalog
+from src.application.jobs import JobStore
 from src.application.publication import ArtifactPublisher
 from src.application.research_jobs import ResearchJobs
 from src.application.research_web import create_research_blueprint
@@ -55,3 +56,30 @@ def test_anomaly_report_is_immutable_and_readable(tmp_path):
         json=command,
     )
     assert repeat.json["artifact_id"] == artifact_id
+
+
+def test_targeted_recalculation_submits_the_registered_generic_job(tmp_path):
+    database = tmp_path / "system.db"
+    publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
+    research = ResearchJobs(database, _Market(), publisher)
+    jobs = JobStore(database)
+    app = Flask(__name__)
+    app.register_blueprint(create_research_blueprint(publisher.store, research, jobs))
+
+    response = app.test_client().post(
+        "/api/v2/research/recalculate",
+        json={
+            "as_of_date": "2026-03-24",
+            "strategy_id": "strategy1",
+            "symbols": ["ABC"],
+        },
+    )
+
+    assert response.status_code == 202
+    job = jobs.get(response.json["job_id"])
+    assert job.kind == "research.calculate-day"
+    assert job.payload == {
+        "as_of_date": "2026-03-24",
+        "strategy_id": "strategy1",
+        "symbols": ["ABC"],
+    }

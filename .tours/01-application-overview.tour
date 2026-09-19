@@ -1,0 +1,57 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Application overview",
+  "description": "Follow startup, composition, durable jobs, persistence, and the main domain boundaries.",
+  "steps": [
+    {
+      "file": "run.py",
+      "line": 23,
+      "description": "`create_app` is the web entry point. It resolves the local data directory and separate Kite profiles, creates application services, and wires Flask blueprints without using an ORM-global schema." 
+    },
+    {
+      "file": "src/application/composition.py",
+      "line": 31,
+      "description": "`ApplicationServices` is the composition root contract. Every repository and workflow is explicit, which makes dependencies and test construction visible." 
+    },
+    {
+      "file": "src/application/composition.py",
+      "line": 58,
+      "description": "The factory points all active stores at one `system.db`, composes market, strategy, research, ledger, broker, and pipeline services, and seeds immutable strategy revisions." 
+    },
+    {
+      "file": "src/application/composition.py",
+      "line": 121,
+      "description": "This handler map is the allowlist of durable work. Web requests submit named jobs; workers invoke only handlers registered here." 
+    },
+    {
+      "file": "src/application/jobs.py",
+      "line": 70,
+      "description": "`JobStore` provides fingerprints, leases, claim tokens, retries, progress events, and cancellation. Long-running provider and research work survives a browser refresh or process restart." 
+    },
+    {
+      "file": "src/application/sqlite.py",
+      "line": 44,
+      "description": "Stores own namespaced, versioned migrations. Applied versions are recorded inside the same database instead of relying on a global ORM `create_all`." 
+    },
+    {
+      "file": "src/platform_kernel/artifacts.py",
+      "line": 190,
+      "description": "`SqliteArtifactStore` keeps compressed immutable payloads in the same SQLite file as projections, making backup and sharing a one-database operation." 
+    },
+    {
+      "file": "src/application/publication.py",
+      "line": 14,
+      "description": "`ArtifactPublisher` coordinates immutable payload publication, catalogue state, lineage, and recovery when a process stops between writes." 
+    },
+    {
+      "file": "src/application/dashboard_web.py",
+      "line": 1,
+      "description": "The dashboard blueprint serves the local UI. Area-specific APIs live in neighboring `*_web.py` adapters and delegate business behavior to composed services." 
+    },
+    {
+      "file": "run.py",
+      "line": 105,
+      "description": "`main` starts the background worker, optional market-hours index poller, and loopback Waitress server. Network binding requires a separate explicit override and security boundary." 
+    }
+  ]
+}

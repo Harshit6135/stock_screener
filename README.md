@@ -1,83 +1,61 @@
 # Stock Screener
 
-Local modular monolith for Indian-market research, strategy rankings,
-backtesting, and real portfolio accounting.
+Local Indian-market research, ranking, backtesting, and real-portfolio
+accounting application. It runs as a modular Python monolith, stores all
+runtime state and compressed artifacts in one SQLite database, and uses Kite
+OAuth as its only authentication flow.
 
-## Run
+## Start here
 
 ```powershell
 poetry install --with dev
 poetry run python run.py
 ```
 
-Or, with the repository virtual environment:
+Or use the repository virtual environment:
 
 ```powershell
 .\.venv\Scripts\python.exe run.py
 ```
 
-Open `http://127.0.0.1:5000/app`. The application is loopback-only by default,
-has no local authentication layer, and uses Kite OAuth as its only
-authentication flow.
+Open `http://127.0.0.1:5000/app`. The default database is
+`instance/system.db`.
 
-All current runtime data and compressed artifacts are stored in
-`instance/system.db`. Old split databases are not used by the application.
+## Documentation
 
-## Kite setup
+- [Architecture](docs/architecture.md)
+- [Design principles](docs/design.md)
+- [Implementation guide](docs/implementation.md)
+- [Data model](docs/data-model.md)
+- [System workflows](docs/workflows.md)
+- [Adding a strategy](docs/adding-a-strategy.md)
+- [Usage guide](docs/usage.md)
+- [Operations](docs/operations.md)
+- [Pending work](docs/pending-items.md)
 
-Configure the shared market-data profile:
+Interactive CodeTour files are under `.tours/`. With the VS Code CodeTour
+extension installed, use them to walk through the application overview,
+strategy creation, market-data flow, research flow, and portfolio flow.
 
-```text
-MARKET_DATA_KITE_API_KEY
-MARKET_DATA_KITE_API_SECRET
-```
+## Current guarantees
 
-Authorize it at `/integrations/kite`; the token defaults to
-`access_token.txt`.
+- NSE/BSE instruments are deduplicated by ISIN with NSE preferred.
+- A universe is active only after its complete build is committed atomically.
+- Market refresh always includes open portfolio holdings and the NIFTY 500
+  benchmark in addition to the fixed universe.
+- Strategy definitions are immutable, revisioned YAML imports backed by
+  canonical JSON in SQLite.
+- Backtests are isolated simulations and never write portfolio fills.
+- Generated strategy and stop proposals cannot create real ledger fills.
+- There is no paper-trading mode and no application authentication layer.
 
-Portfolio Kite credentials are intentionally separate:
-
-```text
-PORTFOLIO_KITE_API_KEY
-PORTFOLIO_KITE_API_SECRET
-```
-
-Authorize them at `/integrations/kite/portfolio`; the token defaults to
-`portfolio_access_token.txt`. Live broker order placement remains disabled by
-default.
-
-## Current architecture
-
-- Durable local jobs and background worker
-- NSE/BSE instrument matching with NSE-preferred ISIN deduplication
-- YFinance day-zero market-cap universe screening
-- Kite historical bars and index quotes
-- Immutable YAML-backed strategy revisions
-- Pandas TA allowlisted indicator catalogue
-- Revision-aware features, scores, and rankings
-- Append-only portfolio ledger for manual and Kite-confirmed transactions
-- Isolated backtesting with total return, CAGR, XIRR, annual returns, drawdown,
-  risk ratios, fills, and equity history
-- Compressed immutable artifacts inside the same SQLite database
-
-Important current limitations:
-
-- The existing 1,744-row universe is from an interrupted build and must be
-  replaced by a completed day-zero build; those partial rows are inactive.
-- No validated 2015-present market/research rebuild exists in the active DB.
-- Strategy YAML still dispatches to two registered custom whole-strategy
-  implementations; the generic indicator DAG executor remains pending.
-- Generated strategy and stop proposals cannot create real ledger fills. Kite
-  execution-intent and trade-reconciliation workflows remain pending.
-
-## Development
+## Validation
 
 ```powershell
-poetry run python -m pytest tests -q
-poetry run screener-ops check-sqlite instance/system.db
-poetry run screener-ops backup-sqlite instance/system.db backups/system.db
+poetry run python -m pytest -q
+poetry run ruff check src tests scripts run.py
+poetry run python -m compileall -q src tests scripts run.py
 ```
 
-See the [current application guide](docs/current/V4%20usage%20guide.md) for
-operations and [remaining implementation work](docs/current/Consolidated%20pending%20items.md)
-for the pending-only backlog.
+The static type-checking backlog and other incomplete work are recorded in
+[pending items](docs/pending-items.md).

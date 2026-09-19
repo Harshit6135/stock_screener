@@ -1,0 +1,57 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Adding a strategy",
+  "description": "Trace a strategy from YAML through immutable revisioning, calculation, research, ranking, and tests.",
+  "steps": [
+    {
+      "file": "strategies/momentum_quality.yml",
+      "line": 1,
+      "description": "Seed strategies begin as YAML. This file defines stable identity, semantic version, calculation implementation, factor weights, portfolio policy, and ranking policy." 
+    },
+    {
+      "file": "src/application/strategy_definitions.py",
+      "line": 53,
+      "description": "`create_from_yaml` parses, validates, canonicalizes, and hashes YAML. Equal definitions produce the same immutable revision ID." 
+    },
+    {
+      "file": "src/application/strategy_definitions.py",
+      "line": 128,
+      "description": "The validator is the strategy schema authority. Unknown fields, unavailable implementations, invalid weights, unsupported indicators, and unsafe policy values are rejected here." 
+    },
+    {
+      "file": "src/indicators/registry.py",
+      "line": 82,
+      "description": "`PandasTaAdapter` is an allowlist, not unrestricted dynamic access to pandas-ta. Add and test a specification here before a study is advertised as supported." 
+    },
+    {
+      "file": "src/indicators/custom/__init__.py",
+      "line": 1,
+      "description": "Current whole-strategy calculations are registered here. A genuinely new calculation needs a reusable implementation and registry entry until the generic DAG executor is complete." 
+    },
+    {
+      "file": "src/application/strategy_runtime.py",
+      "line": 23,
+      "description": "Startup seeding imports all YAML files. A seed creates a revision but does not mutate historical results tied to an older active revision." 
+    },
+    {
+      "file": "src/application/strategy_runtime.py",
+      "line": 54,
+      "description": "The runtime currently dispatches to the registered instrument implementation and optional benchmark/cross-sectional implementation named by the active revision." 
+    },
+    {
+      "file": "src/application/strategies_web.py",
+      "line": 9,
+      "description": "These routes create revisions, list history, inspect the active set, and activate a validated revision. Activation retires the prior active revision of the same strategy." 
+    },
+    {
+      "file": "src/application/research_jobs.py",
+      "line": 262,
+      "description": "Daily research loads the active revision, history, and benchmark, executes the strategy, publishes lineage-aware results, and updates the revision-specific score projection." 
+    },
+    {
+      "file": "tests/test_strategy_definitions.py",
+      "line": 1,
+      "description": "Extend definition tests for every schema change, then add calculation, no-look-ahead, research integration, ranking, and backtest acceptance tests before activating a new strategy." 
+    }
+  ]
+}

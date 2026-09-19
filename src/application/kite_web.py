@@ -138,10 +138,6 @@ document.getElementById('authorize').addEventListener('click', async () => {{
                 f"{escape(guidance)}",
                 status=502,
             )
-        return Response(
-            "<!doctype html><title>Kite authorized</title><main><h1>Kite authorized</h1>"
-            "<p>The local access token has been refreshed. You can close this tab.</p></main>",
-            mimetype="text/html",
-        )
+        return redirect(url_for("dashboard_v2.dashboard"))
 
     return blueprint
