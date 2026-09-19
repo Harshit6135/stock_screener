@@ -96,6 +96,25 @@ class MarketRepository:
                     )""",
                     "CREATE INDEX IF NOT EXISTS universe_membership_instrument ON universe_membership(instrument_id)",
                 ),
+                6: (
+                    """CREATE TABLE IF NOT EXISTS universe_build_state (
+                        singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                        snapshot_date TEXT NOT NULL, threshold_crore REAL NOT NULL,
+                        source TEXT NOT NULL, total_tracked INTEGER NOT NULL,
+                        resolved_count INTEGER NOT NULL, unresolved_count INTEGER NOT NULL,
+                        member_count INTEGER NOT NULL, completed_at TEXT NOT NULL
+                    )""",
+                ),
+                7: (
+                    """CREATE TABLE IF NOT EXISTS market_fetch_coverage (
+                        instrument_id TEXT NOT NULL, start_date TEXT NOT NULL,
+                        end_date TEXT NOT NULL, provider TEXT NOT NULL,
+                        fetched_at TEXT NOT NULL, bar_count INTEGER NOT NULL,
+                        PRIMARY KEY(instrument_id, start_date, end_date, provider),
+                        FOREIGN KEY(instrument_id) REFERENCES reference_instruments(instrument_id)
+                    )""",
+                    "CREATE INDEX IF NOT EXISTS market_fetch_coverage_range ON market_fetch_coverage(instrument_id, provider, start_date, end_date)",
+                ),
             },
         )
 
@@ -191,6 +210,20 @@ class MarketRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def universe_build_state(self) -> dict[str, object] | None:
+        with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
+            row = connection.execute(
+                "SELECT * FROM universe_build_state WHERE singleton=1"
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def active_universe_members(self) -> list[dict[str, object]]:
+        state = self.universe_build_state()
+        members = self.universe_members()
+        if state is None or int(state["member_count"]) != len(members):
+            return []
+        return members
+
     def upsert_universe_members(self, members: Iterable[dict[str, object]]) -> int:
         values = tuple(members)
         if not values:
@@ -218,6 +251,70 @@ class MarketRepository:
                     )
                     for item in values
                 ],
+            )
+        return len(values)
+
+    def replace_universe_members(
+        self,
+        members: Iterable[dict[str, object]],
+        *,
+        snapshot_date: str,
+        threshold_crore: float,
+        source: str,
+        total_tracked: int,
+        resolved_count: int,
+        unresolved_count: int,
+    ) -> int:
+        """Atomically replace and activate one completed universe snapshot."""
+        values = tuple(members)
+        if (
+            not values
+            or len({str(item["isin"]) for item in values}) != len(values)
+            or total_tracked < 1
+            or resolved_count < 0
+            or unresolved_count < 0
+            or resolved_count + unresolved_count != total_tracked
+            or threshold_crore <= 0
+            or not source.strip()
+        ):
+            raise DomainValidationError("completed universe snapshot is invalid")
+        with sqlite_connection(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("DELETE FROM universe_membership")
+            connection.executemany(
+                """INSERT INTO universe_membership
+                   (isin, instrument_id, symbol, exchange, membership_type,
+                    first_eligible_date, initial_market_cap, threshold_crore,
+                    source, snapshot_date, last_market_cap)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        item["isin"], item["instrument_id"], item["symbol"], item["exchange"],
+                        item["membership_type"], item["first_eligible_date"],
+                        item["initial_market_cap"], item["threshold_crore"],
+                        item["source"], item["snapshot_date"], item["last_market_cap"],
+                    )
+                    for item in values
+                ],
+            )
+            connection.execute(
+                """INSERT INTO universe_build_state
+                   (singleton, snapshot_date, threshold_crore, source, total_tracked,
+                    resolved_count, unresolved_count, member_count, completed_at)
+                   VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(singleton) DO UPDATE SET
+                   snapshot_date=excluded.snapshot_date,
+                   threshold_crore=excluded.threshold_crore,
+                   source=excluded.source,
+                   total_tracked=excluded.total_tracked,
+                   resolved_count=excluded.resolved_count,
+                   unresolved_count=excluded.unresolved_count,
+                   member_count=excluded.member_count,
+                   completed_at=excluded.completed_at""",
+                (
+                    snapshot_date, threshold_crore, source, total_tracked,
+                    resolved_count, unresolved_count, len(values), datetime.now(UTC).isoformat(),
+                ),
             )
         return len(values)
 
@@ -407,24 +504,59 @@ class MarketRepository:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def has_coverage(self, instrument_id: str, start_date: date, end_date: date) -> bool:
-        """Return whether a stored range already spans a requested fetch window.
+    def record_fetch_coverage(
+        self,
+        instrument_id: str,
+        start_date: date,
+        end_date: date,
+        *,
+        provider: str,
+        bar_count: int,
+    ) -> None:
+        """Record a completed provider request, including valid empty ranges."""
+        if start_date > end_date or not provider.strip() or bar_count < 0:
+            raise DomainValidationError("market fetch coverage is invalid")
+        with sqlite_connection(self.path) as connection:
+            connection.execute(
+                """INSERT INTO market_fetch_coverage
+                   (instrument_id, start_date, end_date, provider, fetched_at, bar_count)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(instrument_id, start_date, end_date, provider) DO UPDATE SET
+                   fetched_at=excluded.fetched_at, bar_count=excluded.bar_count""",
+                (
+                    instrument_id,
+                    start_date.isoformat(),
+                    end_date.isoformat(),
+                    provider,
+                    datetime.now(UTC).isoformat(),
+                    bar_count,
+                ),
+            )
 
-        Market sessions do not occur on every calendar day, so coverage is
-        checked by boundary span and a conservative minimum session count.
-        """
+    def has_coverage(
+        self, instrument_id: str, start_date: date, end_date: date, provider: str = "kite"
+    ) -> bool:
+        """Return whether completed provider windows cover the full calendar range."""
+        if start_date > end_date or not provider.strip():
+            raise DomainValidationError("market fetch coverage range is invalid")
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
-            row = connection.execute(
-                "SELECT COUNT(*) AS count, MIN(as_of_date) AS first_date, "
-                "MAX(as_of_date) AS last_date FROM market_bars WHERE instrument_id=? "
-                "AND as_of_date BETWEEN ? AND ?",
-                (instrument_id, start_date.isoformat(), end_date.isoformat()),
-            ).fetchone()
-        if row is None or int(row["count"]) < 150:
-            return False
-        first = date.fromisoformat(str(row["first_date"]))
-        last = date.fromisoformat(str(row["last_date"]))
-        return first <= start_date + timedelta(days=7) and last >= end_date - timedelta(days=7)
+            rows = connection.execute(
+                """SELECT start_date, end_date FROM market_fetch_coverage
+                   WHERE instrument_id=? AND provider=?
+                   AND end_date>=? AND start_date<=?
+                   ORDER BY start_date, end_date""",
+                (instrument_id, provider, start_date.isoformat(), end_date.isoformat()),
+            ).fetchall()
+        covered_through = start_date - timedelta(days=1)
+        for row in rows:
+            window_start = date.fromisoformat(str(row["start_date"]))
+            window_end = date.fromisoformat(str(row["end_date"]))
+            if window_start > covered_through + timedelta(days=1):
+                return False
+            covered_through = max(covered_through, window_end)
+            if covered_through >= end_date:
+                return True
+        return False
 
 
     def coverage(

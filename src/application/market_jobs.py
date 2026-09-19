@@ -441,7 +441,7 @@ class KiteMarketJobs:
             raise DomainValidationError("bar fetch range must be at most 365 days")
         instrument = self.repository.instrument(symbol, exchange)
         instrument_id = str(instrument["instrument_id"])
-        if self.repository.has_coverage(instrument_id, start_date, end_date):
+        if self.repository.has_coverage(instrument_id, start_date, end_date, "kite"):
             return {
                 "symbol": symbol,
                 "exchange": exchange,
@@ -455,7 +455,18 @@ class KiteMarketJobs:
             str(instrument["provider_token"]), start_date, end_date
         )
         if not fetched:
-            raise DomainValidationError("Kite returned no bars for the requested range")
+            self.repository.record_fetch_coverage(
+                instrument_id, start_date, end_date, provider="kite", bar_count=0
+            )
+            return {
+                "symbol": symbol,
+                "exchange": exchange,
+                "bar_count": 0,
+                "skipped": False,
+                "reason": "provider returned no bars for the completed range",
+                "first_date": None,
+                "last_date": None,
+            }
         bars = tuple(
             NormalizedBar(
                 instrument_id,
@@ -483,6 +494,9 @@ class KiteMarketJobs:
             provider_version="kiteconnect-v5",
         )
         self.repository.upsert_bars(instrument_id, bars, normalized.artifact_id)
+        self.repository.record_fetch_coverage(
+            instrument_id, start_date, end_date, provider="kite", bar_count=len(bars)
+        )
         return {
             "raw_artifact_id": raw.artifact_id,
             "artifact_id": normalized.artifact_id,
@@ -511,7 +525,9 @@ class KiteMarketJobs:
 
         from src.application.yfinance_provider import fetch_symbol_enrichment
 
-        existing = {str(item["isin"]): item for item in self.repository.universe_members()}
+        existing = {
+            str(item["isin"]): item for item in self.repository.active_universe_members()
+        }
         initial_build = not existing
         bse_scrip_codes: dict[str, str] = {}
         if self.bse_csv_path and self.bse_csv_path.is_file():
@@ -548,6 +564,7 @@ class KiteMarketJobs:
             except Exception:
                 unresolved_count += 1
                 if isin in existing:
+                    members.append(existing[isin])
                     retained_count += 1
                 continue
             market_cap = float(info["market_cap"])
@@ -579,7 +596,15 @@ class KiteMarketJobs:
                     "selected": len(members),
                 }
             )
-        self.repository.upsert_universe_members(members)
+        self.repository.replace_universe_members(
+            members,
+            snapshot_date=snapshot_date,
+            threshold_crore=threshold_crore,
+            source="yfinance",
+            total_tracked=len(tracked),
+            resolved_count=enriched_count,
+            unresolved_count=unresolved_count,
+        )
 
         return {
             "base_sync": sync_result,

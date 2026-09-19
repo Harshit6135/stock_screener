@@ -1,17 +1,16 @@
 # Documentation index
 
-This directory retains the consolidated delivery ledger and a small set of
-historical setup/reference documents. The former planning, migration, gap, and
-future-work documents were retired after consolidation.
+This directory retains one current operating guide, one pending-only backlog,
+and historical setup/reference documents. Completed planning and migration
+ledgers were removed after validation against the current code and tests.
 
 ## Current implementation
 
 - [V4 usage guide](current/V4%20usage%20guide.md) — detailed architecture,
   setup, operating workflows, API conventions, and testing.
 
-- [Consolidated delivery status](current/Consolidated%20pending%20items.md) —
-  the authoritative completed/pending ledger, including V3 provenance and V4
-  release gates.
+- [Remaining implementation work](current/Consolidated%20pending%20items.md) —
+  the authoritative pending-only backlog. Fully implemented items are omitted.
 
 The repository [README](../README.md) is the shortest start/run reference.
 

@@ -652,8 +652,12 @@ class ActionJobs:
             self.publisher.catalog.supersede(str(previous["artifact_id"]), artifact_id)
         return {"artifact_id": artifact_id, "quality": "PARTIAL", "risk_projection_id": artifact_id, **body}
 
-    def create_manual(self, payload: dict[str, Any]) -> dict[str, object]:
+    def create_manual(
+        self, payload: dict[str, Any], *, source: str = "manual"
+    ) -> dict[str, object]:
         """Create a reviewable manual BUY/SELL proposal without trading."""
+        if source not in {"manual", "midweek_stop"}:
+            raise DomainValidationError("manual action source is invalid")
         if set(payload) != {"account_id", "action_date", "entries", "reason"}:
             raise DomainValidationError("manual action requires account, date, entries and reason")
         account_id, reason, entries = payload["account_id"], payload["reason"], payload["entries"]
@@ -709,16 +713,17 @@ class ActionJobs:
         version = int(str(account["version"]))
         fingerprint = hashlib.sha256(json.dumps({
             "account_id": account_id, "action_date": action_date.isoformat(),
-            "entries": decisions, "reason": reason, "version": version,
+            "entries": decisions, "reason": reason, "version": version, "source": source,
         }, sort_keys=True).encode()).hexdigest()
-        proposal_id = str(uuid5(NAMESPACE_URL, f"manual-action-proposal:{fingerprint}"))
+        proposal_id = str(uuid5(NAMESPACE_URL, f"{source}-action-proposal:{fingerprint}"))
         if self.publisher.catalog.has(proposal_id):
             self._recover_projection(proposal_id)
             return self.proposal(proposal_id)
         self.publisher.publish_json(
             "actions/manual-intents", proposal_id,
             {"proposal_id": proposal_id, "account_id": account_id, "action_date": action_date.isoformat(),
-             "reason": reason, "expected_ledger_version": version, "decisions": decisions},
+             "reason": reason, "source": source,
+             "expected_ledger_version": version, "decisions": decisions},
             quality=QualityStatus.PARTIAL,
         )
         timestamp = datetime.now(UTC).isoformat()
@@ -728,8 +733,8 @@ class ActionJobs:
                 """INSERT INTO action_proposals
                    (proposal_id, account_id, strategy_id, action_date, ranking_week_end,
                     expected_ledger_version, status, artifact_id, decision_json, created_at, updated_at)
-                   VALUES (?, ?, 'manual', ?, ?, ?, 'PENDING', ?, ?, ?, ?)""",
-                (proposal_id, account_id, action_date.isoformat(), action_date.isoformat(), version,
+                   VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)""",
+                (proposal_id, account_id, source, action_date.isoformat(), action_date.isoformat(), version,
                  proposal_id, json.dumps(decisions, sort_keys=True), timestamp, timestamp),
             )
             connection.execute(
@@ -767,7 +772,11 @@ class ActionJobs:
                 entries.append({"symbol": identity["symbol"], "exchange": identity["exchange"], "side": "SELL", "units": lot.remaining_units.units, "price": opening[0]["open"]})
         if not entries:
             raise DomainValidationError("no held position breached its stop on the signal date")
-        return self.create_manual({"account_id": account_id, "action_date": action_date.isoformat(), "entries": entries, "reason": str(payload["reason"])})
+        return self.create_manual(
+            {"account_id": account_id, "action_date": action_date.isoformat(),
+             "entries": entries, "reason": str(payload["reason"])},
+            source="midweek_stop",
+        )
 
     def amend(self, proposal_id: str, decisions: object, reason: str) -> dict[str, object]:
         """Publish a replacement proposal; never mutate the approved artifact."""
@@ -920,6 +929,10 @@ class ActionJobs:
             return proposal
         if proposal["status"] != "APPROVED":
             raise DomainValidationError("action proposal is not approved")
+        if proposal["strategy_id"] != "manual":
+            raise DomainValidationError(
+                "strategy and generated stop proposals require confirmed Kite or manual execution"
+            )
         with sqlite_connection(self.database, read_only=True) as connection:
             artifact = connection.execute(
                 "SELECT status FROM catalog_artifacts WHERE artifact_id=?",

@@ -60,7 +60,7 @@ def _payload(account_id="paper"):
     }
 
 
-def test_generate_approve_process_and_idempotent_retry(tmp_path):
+def test_generated_strategy_proposal_cannot_create_synthetic_portfolio_fill(tmp_path):
     services, instrument_id = _services(tmp_path)
     services.ledger.open_account("paper", Money(1000))
     job = services.jobs.submit(
@@ -82,17 +82,42 @@ def test_generate_approve_process_and_idempotent_retry(tmp_path):
     assert client.get(path, headers=headers).status_code == 200
     assert client.post(f"{path}/process", headers=headers).status_code == 409
     assert client.post(f"{path}/approve", headers=headers).json["status"] == "APPROVED"
-    assert client.post(f"{path}/process", headers=headers).json["status"] == "PROCESSED"
-    assert client.post(f"{path}/process", headers=headers).json["status"] == "PROCESSED"
+    blocked = client.post(f"{path}/process", headers=headers)
+    assert blocked.status_code == 409
+    assert "confirmed Kite or manual execution" in blocked.json["error"]
+    assert services.ledger.accounts()[0]["version"] == 0
+    projection = services.ledger.projection("paper")
+    assert projection.open_lots == ()
+    assert projection.cash.amount == Decimal(1000)
+    assert [event["event_type"] for event in services.actions.events(proposal["proposal_id"])] == [
+        "GENERATED",
+        "APPROVED",
+    ]
+
+
+def test_manually_confirmed_transaction_processes_once(tmp_path):
+    services, instrument_id = _services(tmp_path)
+    services.ledger.open_account("paper", Money(1000))
+    proposal = services.actions.create_manual(
+        {
+            "account_id": "paper",
+            "action_date": "2026-09-08",
+            "entries": [
+                {"symbol": "ABC", "exchange": "NSE", "side": "BUY", "units": 2, "price": "100"}
+            ],
+            "reason": "confirmed contract note",
+        }
+    )
+    services.actions.decide(proposal["proposal_id"], "APPROVED")
+
+    first = services.actions.process(proposal["proposal_id"])
+    second = services.actions.process(proposal["proposal_id"])
+
+    assert first["status"] == second["status"] == "PROCESSED"
     assert services.ledger.accounts()[0]["version"] == 1
     projection = services.ledger.projection("paper")
     assert projection.open_lots[0].instrument_id == instrument_id
     assert projection.cash.amount == Decimal(800)
-    assert [event["event_type"] for event in services.actions.events(proposal["proposal_id"])] == [
-        "GENERATED",
-        "APPROVED",
-        "PROCESSED",
-    ]
 
 
 def test_multiple_fifo_lots_and_stale_proposal(tmp_path):
@@ -115,7 +140,16 @@ def test_multiple_fifo_lots_and_stale_proposal(tmp_path):
                 )
             ],
         )
-    proposal = services.actions.generate(_payload())
+    proposal = services.actions.create_manual(
+        {
+            "account_id": "paper",
+            "action_date": "2026-09-08",
+            "entries": [
+                {"symbol": "ABC", "exchange": "NSE", "side": "SELL", "units": 1, "price": "100"}
+            ],
+            "reason": "confirmed contract note",
+        }
+    )
     assert proposal["status"] == "PENDING"
     assert services.actions.generate(_payload())["proposal_id"] == proposal["proposal_id"]
     services.actions.decide(proposal["proposal_id"], "APPROVED")
@@ -161,7 +195,16 @@ def test_recovers_projection_after_published_artifact(tmp_path):
 def test_invalidated_proposal_cannot_process(tmp_path):
     services, _ = _services(tmp_path)
     services.ledger.open_account("paper", Money(1000))
-    proposal = services.actions.generate(_payload())
+    proposal = services.actions.create_manual(
+        {
+            "account_id": "paper",
+            "action_date": "2026-09-08",
+            "entries": [
+                {"symbol": "ABC", "exchange": "NSE", "side": "BUY", "units": 1, "price": "100"}
+            ],
+            "reason": "confirmed contract note",
+        }
+    )
     services.actions.decide(proposal["proposal_id"], "APPROVED")
     services.catalog.set_status(proposal["artifact_id"], "QUALIFIED", "upstream revised")
     with pytest.raises(DomainValidationError, match="artifact is not valid"):

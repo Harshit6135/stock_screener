@@ -113,7 +113,7 @@ def test_refresh_schedules_only_fixed_universe_holdings_and_benchmark(tmp_path):
         TrackedInstrument("benchmark", "INDEX:NIFTY 500", "NIFTY 500", "NSE", "5", observed_on),
     )
     market.upsert_instruments(records)
-    market.upsert_universe_members(
+    market.replace_universe_members(
         (
             {
                 "isin": "IN0000000001",
@@ -128,7 +128,13 @@ def test_refresh_schedules_only_fixed_universe_holdings_and_benchmark(tmp_path):
                 "snapshot_date": observed_on.isoformat(),
                 "last_market_cap": 6_000_000_000,
             },
-        )
+        ),
+        snapshot_date=observed_on.isoformat(),
+        threshold_crore=500,
+        source="yfinance",
+        total_tracked=1,
+        resolved_count=1,
+        unresolved_count=0,
     )
     planner = MarketRefreshPlanner(
         database,
@@ -156,3 +162,34 @@ def test_refresh_refuses_to_download_before_fixed_universe_is_built(tmp_path):
 
     with pytest.raises(DomainValidationError, match="fixed universe is empty"):
         planner.schedule({"start_date": "2025-01-01", "end_date": "2025-12-31"})
+
+
+def test_refresh_refuses_partial_universe_rows_without_completed_build(tmp_path):
+    database = tmp_path / "system.db"
+    market = MarketRepository(database)
+    observed_on = date(2026, 1, 1)
+    market.upsert_instruments(
+        [TrackedInstrument("partial", "IN0000000001", "PARTIAL", "NSE", "1", observed_on)]
+    )
+    market.upsert_universe_members(
+        [
+            {
+                "isin": "IN0000000001",
+                "instrument_id": "partial",
+                "symbol": "PARTIAL",
+                "exchange": "NSE",
+                "membership_type": "BASE",
+                "first_eligible_date": observed_on.isoformat(),
+                "initial_market_cap": 6_000_000_000,
+                "threshold_crore": 500,
+                "source": "yfinance",
+                "snapshot_date": observed_on.isoformat(),
+                "last_market_cap": 6_000_000_000,
+            }
+        ]
+    )
+
+    with pytest.raises(DomainValidationError, match="fixed universe is empty"):
+        MarketRefreshPlanner(database, market, JobStore(database)).schedule(
+            {"start_date": "2025-01-01", "end_date": "2025-12-31"}
+        )

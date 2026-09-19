@@ -106,7 +106,7 @@ class MarketRefreshPlanner:
         # they are outside that screen.
         catalog = self.repository.tracked_instruments()
         reference_by_id = {str(item["instrument_id"]): item for item in catalog}
-        universe = self.repository.universe_members()
+        universe = self.repository.active_universe_members()
         if not universe:
             raise DomainValidationError("fixed universe is empty; build the universe before market refresh")
         held_ids = set(self.held_instrument_ids() if self.held_instrument_ids else ())
