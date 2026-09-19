@@ -27,28 +27,22 @@ class KiteCredentials:
 def load_kite_credentials(
     config: dict[str, object], *, profile: str = "market_data"
 ) -> KiteCredentials | None:
-    """Load one isolated Kite profile without ever mixing profile credentials.
-
-    ``market_data`` accepts the retired KITE_* variables and local_secrets.py
-    solely as a compatibility migration path.  ``portfolio`` intentionally has
-    no fallback: a shared read-only profile must never become an order profile.
-    """
+    """Load one isolated Kite profile without mixing credentials."""
     profiles = {
-        "market_data": ("MARKET_DATA_KITE", True),
-        "portfolio": ("PORTFOLIO_KITE", False),
+        "market_data": "MARKET_DATA_KITE",
+        "portfolio": "PORTFOLIO_KITE",
     }
     try:
-        prefix, allow_legacy_fallback = profiles[profile]
+        prefix = profiles[profile]
     except KeyError as error:
         raise ValueError(f"unknown Kite credential profile: {profile}") from error
     api_key = config.get(f"{prefix}_API_KEY")
     api_secret = config.get(f"{prefix}_API_SECRET")
-    if allow_legacy_fallback and api_key is None and api_secret is None:
-        api_key = config.get("KITE_API_KEY")
-        api_secret = config.get("KITE_API_SECRET")
     if api_key is None and api_secret is None:
-        if not allow_legacy_fallback:
+        if profile != "market_data":
             return None
+        # Local development credentials are kept outside RuntimeConfig so
+        # they are never committed or exposed through the UI.
         try:
             from local_secrets import KITE_API_KEY, KITE_API_SECRET
         except ImportError:

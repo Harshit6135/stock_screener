@@ -142,8 +142,15 @@ class JobStore:
         payload: dict[str, Any] | None = None,
         *,
         max_attempts: int = 3,
+        delay_seconds: int = 0,
     ) -> Job:
-        if not fingerprint.strip() or not kind.strip() or max_attempts < 1:
+        if (
+            not fingerprint.strip()
+            or not kind.strip()
+            or max_attempts < 1
+            or not isinstance(delay_seconds, int)
+            or delay_seconds < 0
+        ):
             raise DomainValidationError("job fingerprint and kind must be non-empty")
         payload, checksum = self._payload(payload)
         with self._connect() as connection:
@@ -158,8 +165,16 @@ class JobStore:
                     )
                 return self._row(row)
             now = self._now()
+            next_attempt_at = (
+                (datetime.now(UTC) + timedelta(seconds=delay_seconds)).isoformat()
+                if delay_seconds
+                else None
+            )
             cursor = connection.execute(
-                "INSERT INTO ops_jobs(fingerprint, kind, payload_json, payload_checksum, status, created_at, updated_at, max_attempts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                """INSERT INTO ops_jobs
+                   (fingerprint, kind, payload_json, payload_checksum, status, created_at,
+                    updated_at, max_attempts, next_attempt_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     fingerprint,
                     kind,
@@ -169,6 +184,7 @@ class JobStore:
                     now,
                     now,
                     max_attempts,
+                    next_attempt_at,
                 ),
             )
             job = Job(
@@ -196,6 +212,33 @@ class JobStore:
             raise DomainValidationError("job does not exist")
         return self._row(row)
 
+    def status_counts(self) -> dict[str, int]:
+        """Return durable job totals and the total number of claims/attempts."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT status, COUNT(*) AS count, COALESCE(SUM(attempts), 0) AS attempts "
+                "FROM ops_jobs GROUP BY status"
+            ).fetchall()
+        result = {"total_jobs": 0, "total_attempts": 0}
+        for row in rows:
+            status = str(row["status"]).lower()
+            result[f"{status}_jobs"] = int(row["count"])
+            result[f"{status}_attempts"] = int(row["attempts"])
+            result["total_jobs"] += int(row["count"])
+            result["total_attempts"] += int(row["attempts"])
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT COUNT(*) AS count, COALESCE(SUM(attempts), 0) AS attempts
+                   FROM ops_jobs
+                   WHERE status = 'FAILED'
+                     AND (last_error LIKE '%no bars%' OR last_error LIKE '%no market bars%')"""
+            ).fetchone()
+        result["data_unavailable_jobs"] = int(row["count"])
+        result["data_unavailable_attempts"] = int(row["attempts"])
+        result["failed_execution_jobs"] = result.get("failed_jobs", 0) - result["data_unavailable_jobs"]
+        result["failed_execution_attempts"] = result.get("failed_attempts", 0) - result["data_unavailable_attempts"]
+        return result
+
     def claim_next(self, worker_id: str, lease_seconds: int = 60) -> Job | None:
         if not worker_id or lease_seconds < 1:
             raise DomainValidationError("worker lease is invalid")
@@ -210,7 +253,10 @@ class JobStore:
                      AND attempts < max_attempts
                      AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
                      AND (status = ? OR (status = ? AND lease_until < ?))
-                   ORDER BY created_at, job_id LIMIT 1""",
+                   ORDER BY CASE WHEN kind = 'market.fetch-kite-index-quotes'
+                                      OR (kind = 'market.fetch-kite-bars' AND payload_json LIKE '%NIFTY 500%')
+                                 THEN 0 ELSE 1 END,
+                            created_at, job_id LIMIT 1""",
                 (
                     now.isoformat(),
                     JobStatus.QUEUED.value,
@@ -333,6 +379,42 @@ class JobStore:
                 raise DomainValidationError("terminal jobs cannot be cancelled")
             self._append(connection, job_id, "cancel_requested", {})
         return self.get(job_id)
+
+    def requeue_expired_running(self) -> list[int]:
+        """Requeue RUNNING jobs whose worker lease has expired.
+
+        This is used after a worker restart to recover rows left by the old
+        short-lease configuration without touching genuinely active jobs.
+        Attempts are reset because the prior attempts were lease duplicates,
+        not completed executions.
+        """
+        now = datetime.now(UTC)
+        requeued: list[int] = []
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                "SELECT job_id, lease_until FROM ops_jobs WHERE status = ?",
+                (JobStatus.RUNNING.value,),
+            ).fetchall()
+            for row in rows:
+                if not row["lease_until"] or datetime.fromisoformat(row["lease_until"]) > now:
+                    continue
+                connection.execute(
+                    """UPDATE ops_jobs SET status = ?, attempts = 0,
+                       lease_until = NULL, lease_owner = NULL, claim_token = NULL,
+                       next_attempt_at = NULL, last_error = ?, updated_at = ?
+                       WHERE job_id = ? AND status = ?""",
+                    (
+                        JobStatus.QUEUED.value,
+                        "requeued after expired worker lease",
+                        self._now(),
+                        row["job_id"],
+                        JobStatus.RUNNING.value,
+                    ),
+                )
+                self._append(connection, row["job_id"], "expired_lease_requeued", {})
+                requeued.append(int(row["job_id"]))
+        return requeued
 
     def retry_failed(self, job_id: int) -> Job:
         """Requeue exactly one terminal failed job for an operator retry.

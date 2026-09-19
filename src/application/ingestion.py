@@ -1,5 +1,7 @@
 """Provider ingestion composition: raw evidence first, then normalized output."""
 
+import hashlib
+import json
 from collections.abc import Iterable
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -36,7 +38,11 @@ def ingest_market_bars(
     retrieved = retrieved_at or datetime.now(UTC)
     if retrieved.tzinfo is None or retrieved.utcoffset() is None:
         raise DomainValidationError("retrieved_at must be timezone-aware")
-    evidence = raw_payload if raw_payload is not None else [asdict(bar) for bar in normalized]
+    normalized_rows = [asdict(bar) for bar in normalized]
+    normalized_checksum = hashlib.sha256(
+        json.dumps(normalized_rows, default=str, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    evidence = raw_payload if raw_payload is not None else None
     raw = publisher.publish_json(
         f"market/raw/{provider}",
         str(raw_id),
@@ -47,6 +53,9 @@ def ingest_market_bars(
             "retrieved_at": retrieved,
             "request": sanitize_sensitive(source_request),
             "response": sanitize_sensitive(evidence),
+            "response_checksum_sha256": normalized_checksum if evidence is None else hashlib.sha256(
+                json.dumps(sanitize_sensitive(evidence), default=str, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest(),
             "capture": "provider_raw" if raw_payload is not None else "normalized_fallback",
             "record_count": len(normalized),
         },
@@ -60,7 +69,10 @@ def ingest_market_bars(
             "snapshot_id": str(normalized_id),
             "provider": provider,
             "raw_snapshot_id": str(raw_id),
-            "bars": [asdict(bar) for bar in normalized],
+            "bars_checksum_sha256": normalized_checksum,
+            "instrument_count": len({bar.instrument_id for bar in normalized}),
+            "first_date": normalized[0].as_of_date.isoformat(),
+            "last_date": normalized[-1].as_of_date.isoformat(),
             "record_count": len(normalized),
         },
         upstream_ids=(raw.artifact_id,),

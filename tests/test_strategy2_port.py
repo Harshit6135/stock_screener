@@ -1,7 +1,10 @@
 import math
 from datetime import date, timedelta
 
-from src.application.research_strategy2 import strategy2_factors, strategy2_indicators
+from src.indicators.custom.relative_strength import (
+    relative_strength_factors,
+    relative_strength_features,
+)
 
 
 def _histories():
@@ -30,12 +33,12 @@ def _histories():
 
 def test_strategy2_requires_current_benchmark_and_labels_legacy_proxies():
     bars, benchmark = _histories()
-    assert strategy2_indicators(bars, benchmark[:-1]) is None
-    inputs = strategy2_indicators(bars, benchmark)
+    assert relative_strength_features(bars, benchmark[:-1]) is None
+    inputs = relative_strength_features(bars, benchmark)
     assert inputs is not None
     assert inputs["quality_z_score_placeholder"] == 0
     assert inputs["relative_volume_proxy"] == inputs["rvol"]
-    factors = strategy2_factors({"A": inputs, "B": dict(inputs)})
+    factors = relative_strength_factors({"A": inputs, "B": dict(inputs)})
     assert len(factors) == 2
     assert all(0 <= value <= 100 for row in factors.values() for value in row.values())
 
@@ -50,7 +53,7 @@ def test_strategy2_hard_excludes_zero_volume_and_flat_ohlc():
         "low": last["close"],
         "volume": 0,
     }
-    inputs = strategy2_indicators(bars, benchmark)
+    inputs = relative_strength_features(bars, benchmark)
     assert inputs is not None
     assert inputs["penalty"] == 0
     assert {"zero_volume", "flat_ohlc"} <= set(inputs["penalty_reasons"])

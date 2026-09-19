@@ -1,5 +1,6 @@
-"""Optional YFinance bridge used for legacy universe and benchmark compatibility."""
+"""Optional YFinance bridge for universe enrichment and benchmark support."""
 
+import time
 from datetime import date
 from typing import Any
 
@@ -33,15 +34,37 @@ def download_daily_bars(symbol: str, start: date, end: date) -> list[dict[str, A
     return rows
 
 
-def fetch_symbol_enrichment(symbol: str, exchange: str = "NSE") -> dict[str, Any]:
+def fetch_symbol_enrichment(
+    symbol: str,
+    exchange: str = "NSE",
+    scrip_code: str | None = None,
+    request_delay_seconds: float = 0.5,
+) -> dict[str, Any]:
     """Fetch metadata and quote info from yfinance for a single stock."""
     try:
         import yfinance as yf  # type: ignore[import-not-found]
     except ImportError as exc:
         raise DomainValidationError("yfinance is not installed") from exc
-    ticker_str = f"{symbol}.NS" if exchange.upper() == "NSE" else f"{symbol}.BO"
-    ticker = yf.Ticker(ticker_str)
-    info = getattr(ticker, "info", None) or {}
+    if request_delay_seconds < 0:
+        raise DomainValidationError("request_delay_seconds must not be negative")
+    candidates = [f"{symbol}.NS"] if exchange.upper() == "NSE" else [f"{symbol}.BO"]
+    if exchange.upper() == "BSE" and scrip_code and str(scrip_code).strip() != str(symbol).strip():
+        candidates.append(f"{str(scrip_code).strip()}.BO")
+    info: dict[str, Any] = {}
+    for index, ticker_str in enumerate(candidates):
+        if index:
+            time.sleep(request_delay_seconds)
+        try:
+            ticker = yf.Ticker(ticker_str)
+            info = getattr(ticker, "info", None) or {}
+        except Exception:
+            info = {}
+        if info.get("marketCap"):
+            break
+    if request_delay_seconds and candidates:
+        time.sleep(request_delay_seconds)
+    if not info.get("marketCap"):
+        raise DomainValidationError(f"yfinance returned no market cap for {symbol} on {exchange}")
     price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose") or 0.0
     market_cap = info.get("marketCap") or 0.0
     return {
@@ -52,6 +75,5 @@ def fetch_symbol_enrichment(symbol: str, exchange: str = "NSE") -> dict[str, Any
         "industry": info.get("industry", "Unknown"),
         "market_cap": float(market_cap),
         "current_price": float(price),
-        "eligible": float(market_cap) >= 5_000_000_000 and float(price) >= 75.0,
+        "eligible": float(market_cap) > 5_000_000_000,
     }
-

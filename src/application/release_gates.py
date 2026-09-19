@@ -84,7 +84,7 @@ def restore_drill(source: str | Path, workspace: str | Path) -> dict[str, object
 
 def dashboard_visual_contract(html: str) -> dict[str, object]:
     """Validate the stable navigation/workflow contract of the dashboard."""
-    required_routes = ("/app", "/actions", "/backtest", "/pipeline", "/configs", "/portfolio")
+    required_routes = ("/app", "/actions", "/backtest", "/pipeline", "/portfolio")
     missing = [route for route in required_routes if route not in html]
     return {
         "parity": not missing,

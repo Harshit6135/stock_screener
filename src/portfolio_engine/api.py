@@ -1,7 +1,7 @@
 """Storage- and framework-free portfolio decisions.
 
 This module is intentionally independent of Flask, SQLAlchemy, providers, and
-filesystem APIs.  It is the first callable seam that later paper/live adapters
+filesystem APIs. It is the callable seam shared by portfolio and backtest flows.
 and the in-memory backtester will share.
 """
 
@@ -129,7 +129,7 @@ class PortfolioPolicy:
 
 @dataclass(frozen=True)
 class ExecutionAssumptions:
-    """Costs applied by the shared paper/backtest execution path."""
+    """Costs applied by the shared portfolio/backtest execution path."""
 
     slippage_bps: Decimal = Decimal(0)
     fee_bps: Decimal = Decimal(0)
@@ -256,7 +256,7 @@ def evaluate(
 
     Decisions are evaluated in the only permitted order: risk/score exits,
     pyramid adds, then candidate buys or swaps.  This makes released cash
-    available before a purchase and keeps a single state machine for paper and
+    available before a purchase and keeps a single state machine for portfolio and
     backtest callers.
     """
     decisions: list[Decision] = []
@@ -270,7 +270,11 @@ def evaluate(
     for holding in sorted(state.holdings, key=lambda item: item.instrument_id):
         bar = bars.get(holding.instrument_id)
         if bar is None:
-            raise DomainValidationError(f"missing required market bar for {holding.instrument_id}")
+            # Sparse historical series are normal for suspended or delisted
+            # instruments. Preserve the holding and wait for the next usable
+            # bar instead of aborting the entire replay.
+            retained.append(holding)
+            continue
         sell = _sell_decision(holding, bar, policy, is_rebalance_day=is_rebalance_day)
         if sell is None:
             retained.append(holding)
@@ -366,9 +370,7 @@ def evaluate(
             continue
         bar = bars.get(candidate.instrument_id)
         if bar is None:
-            raise DomainValidationError(
-                f"missing required candidate market bar for {candidate.instrument_id}"
-            )
+            continue
         if len(retained) >= policy.max_positions:
             weakest = min(retained, key=lambda holding: (holding.score, holding.instrument_id))
             effective_swap_buffer = policy.swap_buffer + policy.swap_cost_bps / Decimal(10_000)

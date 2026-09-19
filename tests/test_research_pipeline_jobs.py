@@ -49,7 +49,7 @@ def test_pipeline_api_is_operator_protected(tmp_path):
     client = app.test_client()
     assert (
         client.post("/api/v2/pipelines/research", json={"as_of_date": "2026-09-11"}).status_code
-        == 401
+        == 202
     )
     response = client.post(
         "/api/v2/pipelines/research",
@@ -80,7 +80,7 @@ def test_pipeline_retries_only_the_failed_stage(tmp_path):
     pipeline = pipelines.submit({"as_of_date": "2026-09-10", "strategies": ["strategy1"]})
     daily = next(stage for stage in pipeline["stages"] if stage["name"] == "daily:strategy1")
     claimed = jobs.claim_next("test-worker")
-    assert claimed is not None and claimed.kind == "research.calculate-strategy1-day"
+    assert claimed is not None and claimed.kind == "research.calculate-day"
     jobs.fail(claimed.job_id, "temporary provider failure", claimed.claim_token, retryable=False)
     assert pipelines.status(pipeline["pipeline_id"])["status"] == "FAILED"
 
@@ -114,3 +114,18 @@ def test_pipeline_range_queues_weekday_sessions_and_friday_rankings(tmp_path):
     result = pipelines.advance(advance.payload)
     jobs.complete(advance.job_id, result, advance.claim_token)
     assert "weekly:strategy1:2026-09-11" in {stage["name"] for stage in pipelines.status(pipeline["pipeline_id"])["stages"]}
+
+
+def test_pipeline_coordinator_defers_without_busy_loop_while_daily_job_runs(tmp_path):
+    jobs = JobStore(tmp_path / "system.db")
+    pipelines = ResearchPipelineJobs(tmp_path / "system.db", jobs)
+    pipeline = pipelines.submit({"as_of_date": "2026-09-10", "strategies": ["strategy1"]})
+    daily = jobs.claim_next("daily-worker", lease_seconds=3600)
+    assert daily is not None and daily.kind == "research.calculate-day"
+    coordinator = jobs.claim_next("coordinator-worker")
+    assert coordinator is not None and coordinator.kind == "research.pipeline-advance"
+    result = pipelines.advance(coordinator.payload)
+    jobs.complete(coordinator.job_id, result, coordinator.claim_token)
+    assert result["deferred"] is True
+    assert jobs.claim_next("coordinator-worker") is None
+    assert pipelines.status(pipeline["pipeline_id"])["status"] == "RUNNING"

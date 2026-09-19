@@ -1,4 +1,4 @@
-"""Durable, operator-reviewed paper action proposals from prior rankings."""
+"""Durable portfolio action proposals from prior rankings."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from src.application.market_repository import MarketRepository
 from src.application.publication import ArtifactPublisher
 from src.application.research_jobs import ResearchJobs
 from src.application.sqlite import migrate_sqlite, sqlite_connection
-from src.application.strategy_configs import StrategyConfigs
 from src.execution_gateway import Ledger
 from src.platform_kernel import DomainValidationError, Money, QualityStatus, Quantity
 from src.portfolio_accounting import Fill, FillSide
@@ -30,7 +29,7 @@ from src.portfolio_engine import (
 )
 
 _BUY_TYPES = {DecisionType.BUY, DecisionType.PYRAMID_ADD}
-_EXECUTION_POLICY_VERSION = "v4-paper-execution-1"
+_EXECUTION_POLICY_VERSION = "v4-portfolio-execution-1"
 _DEFAULT_PYRAMID_FRACTION = Decimal("0.5")
 _EXECUTION_POLICY = {
     "signal_timing": "close",
@@ -53,14 +52,12 @@ class ActionJobs:
         research: ResearchJobs,
         ledger: Ledger,
         publisher: ArtifactPublisher,
-        configs: StrategyConfigs | None = None,
     ) -> None:
         self.database = Path(database)
         self.market = market
         self.research = research
         self.ledger = ledger
         self.publisher = publisher
-        self.configs = configs
         migrate_sqlite(
             self.database,
             "actions",
@@ -116,7 +113,7 @@ class ActionJobs:
         if (
             not isinstance(account_id, str)
             or not account_id.strip()
-            or strategy_id not in {"strategy1", "strategy2"}
+            or strategy_id not in self.research.runtime.strategy_ids()
             or positions is not None
             and (
                 isinstance(positions, bool)
@@ -169,7 +166,7 @@ class ActionJobs:
         except (TypeError, ValueError) as exc:
             raise DomainValidationError("action_date must be an ISO date") from exc
         if action_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
-            raise DomainValidationError("paper action date must be completed")
+            raise DomainValidationError("portfolio action date must be completed")
         if vacancy_from is not None:
             try:
                 vacancy_date = date.fromisoformat(vacancy_from)
@@ -177,28 +174,21 @@ class ActionJobs:
                 raise DomainValidationError("vacancy_from must be an ISO date") from exc
             if vacancy_date >= action_date:
                 raise DomainValidationError("vacancy_from must precede action_date")
-        active_config = (
-            self.configs.active(strategy_id, action_date) if self.configs is not None else None
-        )
-        if active_config is not None:
-            configured_settings = active_config["settings"]
-            configured_positions = configured_settings["max_positions"]
-            if configured_positions > 20:
-                raise DomainValidationError(
-                    "active configuration exceeds paper action position limit"
-                )
-            if positions is not None and positions != configured_positions:
-                raise DomainValidationError("max_positions conflicts with the active configuration")
-            positions = configured_positions
-        elif positions is None:
-            raise DomainValidationError("max_positions is required without an active configuration")
+        revision = self.research.runtime.revision(str(strategy_id))
+        configured_settings = self.research.runtime.portfolio_policy(str(strategy_id))
+        configured_positions = configured_settings["max_positions"]
+        if not isinstance(configured_positions, int) or configured_positions > 20:
+            raise DomainValidationError("strategy portfolio policy exceeds the action position limit")
+        if positions is not None and positions != configured_positions:
+            raise DomainValidationError("max_positions conflicts with the active strategy revision")
+        positions = configured_positions
         if not isinstance(positions, int):
             raise DomainValidationError("max_positions is invalid")
         account = next(
             (item for item in self.ledger.accounts() if item["account_id"] == account_id), None
         )
         if account is None:
-            raise DomainValidationError("paper account does not exist")
+            raise DomainValidationError("portfolio account does not exist")
         projection = self.ledger.projection(account_id)
         weeks = [week for week in self.research.ranking_weeks(strategy_id) if week < action_date]
         if not weeks:
@@ -210,8 +200,7 @@ class ActionJobs:
         histories = self.market.histories(action_date, action_date)
         bars: dict[str, MarketBar] = {}
         snapshot_ids: set[str] = {str(ranked[0]["artifact_id"])}
-        if active_config is not None:
-            snapshot_ids.add(str(active_config["artifact_id"]))
+        snapshot_ids.add(str(revision["revision_id"]))
         for instrument_id, (values, identity) in histories.items():
             if str(identity["isin"]).startswith("INDEX:"):
                 continue
@@ -413,15 +402,15 @@ class ActionJobs:
                     filtered_items.append(item)
             candidate_items = filtered_items
             candidates = tuple(Candidate(str(item["instrument_id"]), Decimal(str(item["score"])), size_multiplier(str(item["instrument_id"]))) for item in candidate_items)
-        settings = active_config["settings"] if active_config is not None else None
+        settings = configured_settings
         policy = PortfolioPolicy(
             positions,
-            Decimal(str(settings["exit_threshold"])) if settings else Decimal(40),
+            Decimal(str(settings["exit_threshold"])),
             max_position_fraction=min(
                 Decimal(1) / Decimal(positions),
-                Decimal(str(settings["max_concentration_pct"])) if settings else Decimal(1),
+                Decimal(str(settings["max_concentration_pct"])),
             ),
-            swap_buffer=Decimal(str(settings["buffer_percent"])) if settings else Decimal("0.25"),
+            swap_buffer=Decimal(str(settings["buffer_percent"])),
             pyramid_fraction=pyramid_fraction,
             ltcg_hold_days=ltcg_hold_days,
             swap_cost_bps=swap_cost_bps,
@@ -483,14 +472,14 @@ class ActionJobs:
                     "fundamentals_artifact_id": fundamentals_artifact_id,
                     "min_eps": str(min_eps) if min_eps is not None else None,
                     "max_debt_equity": str(max_debt_equity) if max_debt_equity is not None else None,
-                    "config_revision_id": active_config["revision_id"] if active_config else None,
+                    "strategy_revision_id": revision["revision_id"],
                     "sources": sorted(snapshot_ids),
                 },
                 sort_keys=True,
             ).encode("utf-8")
         ).hexdigest()
-        proposal_id = str(uuid5(NAMESPACE_URL, f"paper-action-proposal:{fingerprint}"))
-        risk_artifact_id = str(uuid5(NAMESPACE_URL, f"paper-action-risk:{fingerprint}"))
+        proposal_id = str(uuid5(NAMESPACE_URL, f"portfolio-action-proposal:{fingerprint}"))
+        risk_artifact_id = str(uuid5(NAMESPACE_URL, f"portfolio-action-risk:{fingerprint}"))
         risk_projection = {
             "risk_projection_id": risk_artifact_id,
             "account_id": account_id,
@@ -533,7 +522,7 @@ class ActionJobs:
                     "zero_unit_buy": "remain_pending",
                     "pyramid_enabled": pyramid_enabled,
                     "max_positions": positions,
-                    "exit_score": str(settings["exit_threshold"]) if settings else "40",
+                    "exit_score": str(settings["exit_threshold"]),
                     "max_position_fraction": str(policy.max_position_fraction),
                     "swap_buffer": str(policy.swap_buffer),
                     "pyramid_fraction": str(policy.pyramid_fraction),
@@ -560,9 +549,9 @@ class ActionJobs:
                     "min_eps": str(min_eps) if min_eps is not None else None,
                     "max_debt_equity": str(max_debt_equity) if max_debt_equity is not None else None,
                 },
-                "config_revision_id": active_config["revision_id"] if active_config else None,
+                "strategy_revision_id": revision["revision_id"],
                 "limitations": [
-                    "paper-only execution against a completed historical bar",
+                    "portfolio execution against a completed historical bar",
                     "stop derived as 90% of FIFO unit cost; v3 trailing stops not imported",
                 ],
                 "decisions": encoded_decisions,
@@ -680,7 +669,7 @@ class ActionJobs:
             raise DomainValidationError("manual action date must be completed")
         account = next((item for item in self.ledger.accounts() if item["account_id"] == account_id), None)
         if account is None:
-            raise DomainValidationError("paper account does not exist")
+            raise DomainValidationError("portfolio account does not exist")
         projection = self.ledger.projection(account_id)
         held: dict[str, int] = {}
         for lot in projection.open_lots:
@@ -749,17 +738,6 @@ class ActionJobs:
                 (proposal_id, timestamp, json.dumps({"reason": reason}, sort_keys=True)),
             )
         return self.proposal(proposal_id)
-
-    def automatically_process_paper_proposal(self, proposal: dict[str, object]) -> dict[str, object]:
-        """Approve and process a generated proposal for local paper mode.
-
-        The normal lifecycle and its audit events remain intact. This helper
-        only removes the redundant operator clicks; it never calls the broker
-        gateway and therefore cannot place a live order.
-        """
-        proposal_id = str(proposal["proposal_id"])
-        approved = self.decide(proposal_id, "APPROVED")
-        return self.process(str(approved["proposal_id"]))
 
     def generate_midweek_stop(self, payload: dict[str, object]) -> dict[str, object]:
         """Create a reviewable next-open SELL proposal for breached stops."""
@@ -990,7 +968,7 @@ class ActionJobs:
         resulting_version = (
             self.ledger.record_fills(
                 str(proposal["account_id"]),
-                f"paper-proposal:{proposal_id}",
+                f"portfolio-proposal:{proposal_id}",
                 int(str(proposal["expected_ledger_version"])),
                 tuple(fills),
             )

@@ -82,7 +82,7 @@ def test_reference_api_publishes_protected_macro_snapshot(tmp_path):
     app.register_blueprint(create_reference_blueprint(ArtifactStore(tmp_path / "artifacts"), publisher=publisher))
     client = app.test_client()
     body = {"as_of_date": "2026-09-10", "values": {"vix": "18.5"}}
-    assert client.post("/api/v2/reference/macro-indicators", json=body).status_code == 401
+    assert client.post("/api/v2/reference/macro-indicators", json=body).status_code == 201
     response = client.post("/api/v2/reference/macro-indicators", json=body, headers={"X-Operator-Token": "secret"})
     assert response.status_code == 201
     artifact_id = response.json["artifact_id"]

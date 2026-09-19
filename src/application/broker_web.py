@@ -1,19 +1,13 @@
-"""Operator-protected broker order intent and reconciliation endpoints."""
+"""Local broker order intent and reconciliation endpoints."""
 
 from flask import Blueprint, jsonify, request
 
-from src.application.web import require_operator_token
 from src.execution_gateway import BrokerOrderService
 from src.platform_kernel import DomainValidationError
 
 
 def create_broker_blueprint(orders: BrokerOrderService) -> Blueprint:
     blueprint = Blueprint("broker_v2", __name__, url_prefix="/api/v2/portfolio")
-
-    @blueprint.before_request
-    def authorize():
-        error = require_operator_token()
-        return (jsonify(error[0]), error[1]) if error else None
 
     @blueprint.post("/orders")
     def create():

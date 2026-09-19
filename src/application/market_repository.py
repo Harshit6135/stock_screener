@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from src.application.sqlite import migrate_sqlite, sqlite_connection
@@ -57,6 +58,43 @@ class MarketRepository:
                         prev_close TEXT NOT NULL, change_percent REAL NOT NULL,
                         observed_at TEXT NOT NULL, snapshot_id TEXT NOT NULL,
                         FOREIGN KEY(instrument_id) REFERENCES reference_instruments(instrument_id))""",
+                ),
+                3: (
+                    """CREATE TABLE IF NOT EXISTS market_indicators (
+                        strategy_id TEXT NOT NULL, instrument_id TEXT NOT NULL,
+                        as_of_date TEXT NOT NULL, values_json TEXT NOT NULL,
+                        source_snapshot_id TEXT NOT NULL, calculated_at TEXT NOT NULL,
+                        PRIMARY KEY(strategy_id, instrument_id, as_of_date),
+                        FOREIGN KEY(instrument_id) REFERENCES reference_instruments(instrument_id))""",
+                    "CREATE INDEX IF NOT EXISTS market_indicators_date ON market_indicators(strategy_id, as_of_date)",
+                ),
+                4: (
+                    "ALTER TABLE market_indicators RENAME TO market_indicators_strategy_cache",
+                    "DROP INDEX IF EXISTS market_indicators_date",
+                    """CREATE TABLE market_indicators (
+                        instrument_id TEXT NOT NULL, as_of_date TEXT NOT NULL,
+                        values_json TEXT NOT NULL, source_snapshot_id TEXT NOT NULL,
+                        calculated_at TEXT NOT NULL,
+                        PRIMARY KEY(instrument_id, as_of_date),
+                        FOREIGN KEY(instrument_id) REFERENCES reference_instruments(instrument_id))""",
+                    """INSERT OR REPLACE INTO market_indicators
+                       (instrument_id, as_of_date, values_json, source_snapshot_id, calculated_at)
+                       SELECT instrument_id, as_of_date, values_json, source_snapshot_id, calculated_at
+                       FROM market_indicators_strategy_cache ORDER BY calculated_at""",
+                    "DROP TABLE market_indicators_strategy_cache",
+                    "CREATE INDEX market_indicators_date ON market_indicators(as_of_date)",
+                ),
+                5: (
+                    """CREATE TABLE IF NOT EXISTS universe_membership (
+                        isin TEXT PRIMARY KEY, instrument_id TEXT NOT NULL,
+                        symbol TEXT NOT NULL, exchange TEXT NOT NULL,
+                        membership_type TEXT NOT NULL, first_eligible_date TEXT NOT NULL,
+                        initial_market_cap REAL NOT NULL, threshold_crore REAL NOT NULL,
+                        source TEXT NOT NULL, snapshot_date TEXT NOT NULL,
+                        last_market_cap REAL NOT NULL,
+                        FOREIGN KEY(instrument_id) REFERENCES reference_instruments(instrument_id)
+                    )""",
+                    "CREATE INDEX IF NOT EXISTS universe_membership_instrument ON universe_membership(instrument_id)",
                 ),
             },
         )
@@ -111,7 +149,21 @@ class MarketRepository:
 
     def tracked_instruments(self) -> list[dict[str, object]]:
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
-            rows = connection.execute("SELECT * FROM reference_instruments ORDER BY exchange, symbol").fetchall()
+            rows = connection.execute(
+                """SELECT * FROM (
+                       SELECT i.*, ROW_NUMBER() OVER (
+                           PARTITION BY CASE WHEN i.isin LIKE 'INDEX:%'
+                                             THEN i.isin ELSE i.isin END
+                           ORDER BY CASE WHEN i.isin LIKE 'INDEX:%' AND i.exchange='NSE' THEN 0
+                                         WHEN i.isin NOT LIKE 'INDEX:%' AND i.exchange='NSE' THEN 0
+                                         ELSE 1 END,
+                                    i.exchange, i.symbol, i.instrument_id
+                       ) AS preferred_row
+                       FROM reference_instruments i
+                   )
+                   WHERE preferred_row = 1
+                   ORDER BY exchange, symbol, instrument_id"""
+            ).fetchall()
         return [dict(row) for row in rows]
 
     def instrument(self, symbol: str, exchange: str = "NSE") -> dict[str, object]:
@@ -132,6 +184,43 @@ class MarketRepository:
             ).fetchone()
         return dict(row) if row is not None else None
 
+    def universe_members(self) -> list[dict[str, object]]:
+        with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
+            rows = connection.execute(
+                "SELECT * FROM universe_membership ORDER BY exchange, symbol, isin"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def upsert_universe_members(self, members: Iterable[dict[str, object]]) -> int:
+        values = tuple(members)
+        if not values:
+            return 0
+        with sqlite_connection(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.executemany(
+                """INSERT INTO universe_membership
+                   (isin, instrument_id, symbol, exchange, membership_type,
+                    first_eligible_date, initial_market_cap, threshold_crore,
+                    source, snapshot_date, last_market_cap)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(isin) DO UPDATE SET
+                   instrument_id=excluded.instrument_id,
+                   symbol=excluded.symbol,
+                   exchange=excluded.exchange,
+                   last_market_cap=excluded.last_market_cap,
+                   snapshot_date=excluded.snapshot_date""",
+                [
+                    (
+                        item["isin"], item["instrument_id"], item["symbol"], item["exchange"],
+                        item["membership_type"], item["first_eligible_date"],
+                        item["initial_market_cap"], item["threshold_crore"],
+                        item["source"], item["snapshot_date"], item["last_market_cap"],
+                    )
+                    for item in values
+                ],
+            )
+        return len(values)
+
     def delete_bars_after(self, cutoff: date, instrument_id: str | None = None) -> int:
         """Delete mutable bar projections after a cutoff for compatibility maintenance."""
         if not isinstance(cutoff, date):
@@ -139,9 +228,14 @@ class MarketRepository:
         with sqlite_connection(self.path) as connection:
             if instrument_id is None:
                 cursor = connection.execute("DELETE FROM market_bars WHERE as_of_date > ?", (cutoff.isoformat(),))
+                connection.execute("DELETE FROM market_indicators WHERE as_of_date > ?", (cutoff.isoformat(),))
             else:
                 cursor = connection.execute(
                     "DELETE FROM market_bars WHERE instrument_id=? AND as_of_date > ?",
+                    (instrument_id, cutoff.isoformat()),
+                )
+                connection.execute(
+                    "DELETE FROM market_indicators WHERE instrument_id=? AND as_of_date > ?",
                     (instrument_id, cutoff.isoformat()),
                 )
         return int(cursor.rowcount)
@@ -223,6 +317,23 @@ class MarketRepository:
             raise DomainValidationError("market bar instrument identity does not match")
         with sqlite_connection(self.path) as connection:
             connection.execute("BEGIN IMMEDIATE")
+            dates = tuple(bar.as_of_date.isoformat() for bar in values)
+            existing = connection.execute(
+                "SELECT as_of_date, open, high, low, close, volume FROM market_bars "
+                f"WHERE instrument_id=? AND as_of_date IN ({','.join('?' for _ in dates)})",
+                (instrument_id, *dates),
+            ).fetchall()
+            incoming = {bar.as_of_date.isoformat(): bar for bar in values}
+            changed = any(
+                str(row["open"]) != str(incoming[row["as_of_date"]].open)
+                or str(row["high"]) != str(incoming[row["as_of_date"]].high)
+                or str(row["low"]) != str(incoming[row["as_of_date"]].low)
+                or str(row["close"]) != str(incoming[row["as_of_date"]].close)
+                or int(row["volume"]) != int(incoming[row["as_of_date"]].volume)
+                for row in existing
+            )
+            if changed:
+                connection.execute("DELETE FROM market_indicators WHERE instrument_id=?", (instrument_id,))
             connection.executemany(
                 """INSERT INTO market_bars
                    (instrument_id, as_of_date, open, high, low, close, volume, snapshot_id)
@@ -246,6 +357,36 @@ class MarketRepository:
             )
         return len(values)
 
+    def indicators_for_date(self, as_of_date: date) -> dict[str, dict[str, object]]:
+        with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
+            rows = connection.execute(
+                "SELECT instrument_id, values_json FROM market_indicators WHERE as_of_date=?",
+                (as_of_date.isoformat(),),
+            ).fetchall()
+        return {str(row["instrument_id"]): json.loads(row["values_json"]) for row in rows}
+
+    def upsert_indicators(
+        self, as_of_date: date, values: dict[str, dict[str, object]], source_snapshot_id: str
+    ) -> int:
+        if not values:
+            return 0
+        now = datetime.now(UTC).isoformat()
+        with sqlite_connection(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.executemany(
+                """INSERT INTO market_indicators
+                   (instrument_id, as_of_date, values_json, source_snapshot_id, calculated_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(instrument_id, as_of_date) DO UPDATE SET
+                   values_json=excluded.values_json, source_snapshot_id=excluded.source_snapshot_id,
+                   calculated_at=excluded.calculated_at""",
+                [
+                    (instrument_id, as_of_date.isoformat(), json.dumps(item, sort_keys=True), source_snapshot_id, now)
+                    for instrument_id, item in values.items()
+                ],
+            )
+        return len(values)
+
     def bars(
         self,
         instrument_id: str,
@@ -265,6 +406,25 @@ class MarketRepository:
                 (instrument_id, actual_start.isoformat(), actual_end.isoformat(), limit),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def has_coverage(self, instrument_id: str, start_date: date, end_date: date) -> bool:
+        """Return whether a stored range already spans a requested fetch window.
+
+        Market sessions do not occur on every calendar day, so coverage is
+        checked by boundary span and a conservative minimum session count.
+        """
+        with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) AS count, MIN(as_of_date) AS first_date, "
+                "MAX(as_of_date) AS last_date FROM market_bars WHERE instrument_id=? "
+                "AND as_of_date BETWEEN ? AND ?",
+                (instrument_id, start_date.isoformat(), end_date.isoformat()),
+            ).fetchone()
+        if row is None or int(row["count"]) < 150:
+            return False
+        first = date.fromisoformat(str(row["first_date"]))
+        last = date.fromisoformat(str(row["last_date"]))
+        return first <= start_date + timedelta(days=7) and last >= end_date - timedelta(days=7)
 
 
     def coverage(
@@ -314,9 +474,18 @@ class MarketRepository:
             raise DomainValidationError("market history range is invalid")
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
-                """SELECT b.*, i.symbol, i.exchange, i.isin
-                   FROM market_bars b JOIN reference_instruments i
-                   ON i.instrument_id = b.instrument_id
+                """WITH preferred_instruments AS (
+                       SELECT i.*,
+                              ROW_NUMBER() OVER (
+                                  PARTITION BY i.isin
+                                  ORDER BY CASE WHEN i.exchange='NSE' THEN 0 ELSE 1 END,
+                                           i.symbol, i.instrument_id
+                              ) AS preferred_row
+                       FROM reference_instruments i
+                   )
+                   SELECT b.*, i.symbol, i.exchange, i.isin
+                   FROM market_bars b JOIN preferred_instruments i
+                   ON i.instrument_id = b.instrument_id AND i.preferred_row = 1
                    WHERE b.as_of_date BETWEEN ? AND ?
                    ORDER BY b.instrument_id, b.as_of_date""",
                 (start_date.isoformat(), end_date.isoformat()),

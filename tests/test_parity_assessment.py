@@ -6,7 +6,6 @@ from src.application.dashboard_web import create_dashboard_blueprint
 from src.application.jobs import JobStore, JobStatus
 from src.application.pipeline_jobs import ResearchPipelineJobs
 from src.application.worker import BackgroundWorker, JobWorker
-from src.application.strategy_configs import StrategyConfigs
 from src.portfolio_engine import Candidate, MarketBar, PortfolioPolicy, PortfolioState, evaluate
 from src.platform_kernel import DomainValidationError, Money
 
@@ -147,35 +146,14 @@ def test_portfolio_policy_backtest_options():
     assert decisions[0].type.value == "BUY"
 
 
-def test_strategy_configs_externalized_factor_weights(tmp_path):
-    from src.application.publication import ArtifactPublisher
-    from src.platform_kernel import ArtifactStore
-    from src.application.catalog import ArtifactCatalog
-
-    publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(tmp_path / "system.db"))
-    configs = StrategyConfigs(tmp_path / "system.db", publisher)
-
-    settings = configs.defaults()
-    settings["factor_weights"] = {
-        "trend": "0.35",
-        "momentum": "0.25",
-        "efficiency": "0.15",
-        "volume": "0.15",
-        "structure": "0.10",
-    }
-    rev = configs.create("strategy1", settings)
-    assert rev["strategy_id"] == "strategy1"
-    assert rev["settings"]["factor_weights"]["trend"] == "0.35"
-
-
 def test_dashboard_web_routes_render():
     app = Flask(__name__)
     app.register_blueprint(create_dashboard_blueprint())
     client = app.test_client()
 
-    for path in ["/app", "/actions", "/backtest", "/portfolio", "/configs", "/pipeline"]:
+    for path in ["/app", "/actions", "/backtest", "/portfolio", "/pipeline"]:
         res = client.get(path)
         assert res.status_code == 200, f"failed for {path}"
         html = res.get_data(as_text=True)
         assert 'class="navbar"' in html
-        assert 'Operator Token:' in html
+        assert 'Operator Token:' not in html

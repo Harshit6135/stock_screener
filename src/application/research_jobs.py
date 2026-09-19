@@ -1,11 +1,10 @@
-"""Daily two-strategy research and weekly ranking jobs over persisted v4 bars."""
+"""Generic daily research and weekly ranking jobs over active strategy revisions."""
 
 from __future__ import annotations
 
 import json
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
-from math import isfinite
 from pathlib import Path
 from statistics import mean, pstdev
 from typing import Any, cast
@@ -13,27 +12,24 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.application.market_repository import MarketRepository
 from src.application.publication import ArtifactPublisher
-from src.application.research_strategy1 import FACTOR_WEIGHTS, FORMULA_REVISION, strategy1_factors
-from src.application.research_strategy2 import (
-    FACTOR_WEIGHTS as STRATEGY2_FACTOR_WEIGHTS,
-    FORMULA_REVISION as STRATEGY2_FORMULA_REVISION,
-)
-from src.application.research_strategy2 import strategy2_factors, strategy2_indicators
 from src.application.sqlite import migrate_sqlite, sqlite_connection
-from src.application.strategy_configs import StrategyConfigs
-from src.application.yfinance_provider import download_daily_bars
+from src.application.strategy_definitions import StrategyDefinitions
+from src.application.strategy_runtime import StrategyRuntime
+from src.indicators.registry import PandasTaAdapter
 from src.platform_kernel import DomainValidationError, QualityStatus
 
 
 class ResearchJobs:
     def __init__(
         self, database: str | Path, market: MarketRepository, publisher: ArtifactPublisher,
-        configs: StrategyConfigs | None = None,
+        runtime: StrategyRuntime | None = None,
     ):
         self.database = Path(database)
         self.market = market
         self.publisher = publisher
-        self.configs = configs
+        self.runtime = runtime or StrategyRuntime(StrategyDefinitions(database, PandasTaAdapter()))
+        if runtime is None:
+            self.runtime.seed(Path(__file__).resolve().parents[2] / "strategies")
         migrate_sqlite(
             self.database,
             "research",
@@ -53,19 +49,34 @@ class ResearchJobs:
                         artifact_id TEXT NOT NULL,
                         PRIMARY KEY(strategy_id, week_end, instrument_id))""",
                     "CREATE INDEX IF NOT EXISTS research_weekly_rankings_date ON research_weekly_rankings(strategy_id, week_end, rank)",
-                )
+                ),
+                2: (
+                    "DROP TABLE IF EXISTS research_daily_scores",
+                    "DROP TABLE IF EXISTS research_weekly_rankings",
+                    """CREATE TABLE research_daily_scores (
+                        strategy_id TEXT NOT NULL, strategy_revision_id TEXT NOT NULL,
+                        as_of_date TEXT NOT NULL, instrument_id TEXT NOT NULL,
+                        symbol TEXT NOT NULL, score REAL NOT NULL, penalty REAL NOT NULL,
+                        artifact_id TEXT NOT NULL,
+                        PRIMARY KEY(strategy_revision_id, as_of_date, instrument_id))""",
+                    "CREATE INDEX research_daily_scores_date ON research_daily_scores(strategy_revision_id, as_of_date)",
+                    """CREATE TABLE research_weekly_rankings (
+                        strategy_id TEXT NOT NULL, strategy_revision_id TEXT NOT NULL,
+                        week_end TEXT NOT NULL, instrument_id TEXT NOT NULL,
+                        symbol TEXT NOT NULL, score REAL NOT NULL, rank INTEGER NOT NULL,
+                        artifact_id TEXT NOT NULL,
+                        PRIMARY KEY(strategy_revision_id, week_end, instrument_id))""",
+                    "CREATE INDEX research_weekly_rankings_date ON research_weekly_rankings(strategy_revision_id, week_end, rank)",
+                ),
             },
         )
 
-    def calculate_strategy1_day(self, payload: dict[str, Any]) -> dict[str, object]:
-        return self._calculate_day(payload, "strategy1")
-
-    def calculate_strategy2_day(self, payload: dict[str, Any]) -> dict[str, object]:
-        return self._calculate_day(payload, "strategy2")
+    def calculate_day(self, payload: dict[str, Any]) -> dict[str, object]:
+        return self._calculate_day(payload)
 
     def sector_normalize(self, payload: dict[str, Any]) -> dict[str, object]:
         required = {"as_of_date", "strategy_id", "feature_artifact_id", "sector_artifact_id"}
-        if not isinstance(payload, dict) or set(payload) != required or payload["strategy_id"] not in {"strategy1", "strategy2"}:
+        if not isinstance(payload, dict) or set(payload) != required or payload["strategy_id"] not in self.runtime.strategy_ids():
             raise DomainValidationError("sector ranking command is incomplete")
         try:
             as_of = date.fromisoformat(str(payload["as_of_date"]))
@@ -87,7 +98,8 @@ class ResearchJobs:
         ]
         if not instruments:
             raise DomainValidationError("no sector-classified factor values are available")
-        factors = tuple(FACTOR_WEIGHTS)
+        weights = self.runtime.factor_weights(str(payload["strategy_id"]))
+        factors = tuple(weights)
         by_sector: dict[str, list[dict[str, float]]] = defaultdict(list)
         for _, item, sector in instruments:
             by_sector[sector].append({factor: float(item["factors"].get(factor, 0)) for factor in factors})
@@ -101,7 +113,7 @@ class ResearchJobs:
                 variance = sum((peer[factor] - average) ** 2 for peer in peers) / len(peers)
                 deviation = variance ** 0.5
                 normalized[factor] = (factor_values[factor] - average) / deviation if deviation else 0.0
-            members.append({"instrument_id": instrument_id, "symbol": item.get("symbol"), "sector": sector, "factor_zscores": normalized, "composite_score": sum(normalized[factor] * FACTOR_WEIGHTS[factor] for factor in factors)})
+            members.append({"instrument_id": instrument_id, "symbol": item.get("symbol"), "sector": sector, "factor_zscores": normalized, "composite_score": sum(normalized[factor] * weights[factor] for factor in factors)})
         members.sort(key=lambda item: (-float(item["composite_score"]), str(item["instrument_id"])))
         for rank, item in enumerate(members, 1):
             item["rank"] = rank
@@ -247,31 +259,10 @@ class ResearchJobs:
             )
         return {"artifact_id": artifact_id, **report}
 
-    @staticmethod
-    def _configured_factor_weights(
-        strategy_id: str, active_config: dict[str, object] | None
-    ) -> dict[str, float]:
-        """Resolve the approved revision's factor mix for one strategy."""
-        defaults = FACTOR_WEIGHTS if strategy_id == "strategy1" else STRATEGY2_FACTOR_WEIGHTS
-        raw = active_config["settings"].get("factor_weights") if active_config else None
-        if raw is None:
-            return dict(defaults)
-        if not isinstance(raw, dict) or set(raw) != set(defaults):
-            raise DomainValidationError("factor_weights must name every supported factor exactly once")
-        try:
-            parsed = {name: float(value) for name, value in raw.items()}
-        except (TypeError, ValueError) as exc:
-            raise DomainValidationError("factor_weights must be numeric") from exc
-        if any(not isfinite(value) or value < 0 for value in parsed.values()):
-            raise DomainValidationError("factor_weights must be finite and non-negative")
-        total = sum(parsed.values())
-        if total <= 0:
-            raise DomainValidationError("factor_weights must sum to a positive value")
-        return {name: value / total for name, value in parsed.items()}
-
-    def _calculate_day(self, payload: dict[str, Any], strategy_id: str) -> dict[str, object]:
-        if set(payload) - {"as_of_date", "symbols"} or "as_of_date" not in payload or not isinstance(payload.get("as_of_date"), str):
-            raise DomainValidationError("daily calculation requires as_of_date")
+    def _calculate_day(self, payload: dict[str, Any]) -> dict[str, object]:
+        if set(payload) - {"as_of_date", "strategy_id", "symbols"} or not {"as_of_date", "strategy_id"}.issubset(payload) or not isinstance(payload.get("as_of_date"), str) or payload.get("strategy_id") not in self.runtime.strategy_ids():
+            raise DomainValidationError("daily calculation requires as_of_date and an active strategy_id")
+        strategy_id = str(payload["strategy_id"])
         requested_symbols = payload.get("symbols")
         if requested_symbols is not None and (
             not isinstance(requested_symbols, list)
@@ -285,24 +276,21 @@ class ResearchJobs:
             as_of_date = date.fromisoformat(payload["as_of_date"])
         except ValueError as exc:
             raise DomainValidationError("as_of_date must be an ISO date") from exc
-        active_config = self.configs.active(strategy_id, as_of_date) if self.configs else None
-        config_artifact_id = str(active_config["artifact_id"]) if active_config else None
-        factor_weights = self._configured_factor_weights(strategy_id, active_config)
-        histories = self.market.histories(as_of_date - timedelta(days=420), as_of_date)
+        revision = self.runtime.revision(strategy_id)
+        factor_weights = self.runtime.factor_weights(strategy_id)
+        # EMA-200 needs a long seed. Use up to 900 calendar days, while still
+        # allowing instruments with shorter histories to use all available data.
+        histories = self.market.histories(as_of_date - timedelta(days=900), as_of_date)
         benchmark: list[dict[str, object]] = []
-        if strategy_id == "strategy2":
+        benchmark_name = self.runtime.benchmark(strategy_id)
+        if benchmark_name:
             try:
-                benchmark_id = str(self.market.instrument("NIFTY 500")["instrument_id"])
+                benchmark_id = str(self.market.instrument(benchmark_name)["instrument_id"])
                 benchmark = histories[benchmark_id][0]
             except (DomainValidationError, KeyError) as exc:
-                # Preserve the v3 Kite→YFinance fallback for migrations where
-                # the benchmark has not yet been imported into the v4 store.
-                try:
-                    benchmark = download_daily_bars("^CNX500", as_of_date - timedelta(days=420), as_of_date)
-                except DomainValidationError:
-                    raise DomainValidationError("NIFTY 500 benchmark history is required") from exc
+                raise DomainValidationError(f"{benchmark_name} benchmark history is required") from exc
             if benchmark[-1]["as_of_date"] != as_of_date.isoformat():
-                raise DomainValidationError("NIFTY 500 benchmark is stale for requested date")
+                raise DomainValidationError(f"{benchmark_name} benchmark is stale for requested date")
         results: dict[str, dict[str, object]] = {}
         symbols: dict[str, str] = {}
         upstream_ids: set[str] = set()
@@ -313,25 +301,29 @@ class ResearchJobs:
                 "INDEX:"
             ):
                 continue
-            computed = (
-                strategy1_factors(bars)
-                if strategy_id == "strategy1"
-                else strategy2_indicators(bars, benchmark)
-            )
+            computed = self.runtime.compute(strategy_id, bars, benchmark)
             if computed is None:
                 continue
             results[instrument_id] = computed
             symbols[instrument_id] = str(identity["symbol"])
             upstream_ids.update(str(bar["snapshot_id"]) for bar in bars)
         if not results:
-            raise DomainValidationError(
-                "no instruments have a completed bar and 200-session warm-up"
-            )
-        if strategy_id == "strategy2":
+            # A newly listed instrument only becomes scoreable after the
+            # strategy warm-up. This is normal during a full historical
+            # rebuild and must not make the pipeline fail.
+            return {
+                "as_of_date": as_of_date.isoformat(),
+                "strategy_id": strategy_id,
+                "scored_count": 0,
+                "eligible_count": 0,
+                "skipped": True,
+                "reason": "no instruments have a completed bar and required warm-up",
+            }
+        cross_section = self.runtime.cross_section(strategy_id, results)
+        if cross_section is not None:
             upstream_ids.update(str(bar["snapshot_id"]) for bar in benchmark)
-            factors = strategy2_factors(results)
             for instrument_id, values in results.items():
-                values["factors"] = factors[instrument_id]
+                values["factors"] = cross_section[instrument_id]
         factor_values = {
             instrument_id: cast(dict[str, float], values["factors"])
             for instrument_id, values in results.items()
@@ -344,26 +336,16 @@ class ResearchJobs:
                 "snapshot_id": feature_id,
                 "as_of_date": as_of_date.isoformat(),
                 "strategy_id": strategy_id,
-                "config_revision_id": active_config["revision_id"] if active_config else None,
+                "strategy_revision_id": revision["revision_id"],
                 "factor_weights": factor_weights,
-                "formula_revision": FORMULA_REVISION
-                if strategy_id == "strategy1"
-                else STRATEGY2_FORMULA_REVISION,
-                "inherited_limitations": [
-                    "quality_z_score is an unpopulated constant-zero placeholder",
-                    "scaled_turnover is relative volume, not float turnover",
-                ]
-                if strategy_id == "strategy2"
-                else [],
+                "definition_hash": revision["definition_hash"],
                 "values": {
                     instrument_id: {"symbol": symbols[instrument_id], **value}
                     for instrument_id, value in sorted(results.items())
                 },
             },
-            upstream_ids=tuple(sorted(upstream_ids | ({config_artifact_id} if config_artifact_id else set()))),
-            quality=QualityStatus.PARTIAL
-            if strategy_id == "strategy2" or len(results) < len(histories)
-            else QualityStatus.COMPLETE,
+            upstream_ids=tuple(sorted(upstream_ids | {str(revision["revision_id"])})),
+            quality=QualityStatus.PARTIAL if len(results) < len(histories) else QualityStatus.COMPLETE,
         )
         percentiles: dict[str, dict[str, float]] = {key: {} for key in results}
         for factor in factor_weights:
@@ -388,7 +370,7 @@ class ResearchJobs:
                 "snapshot_id": percentile_id,
                 "as_of_date": as_of_date.isoformat(),
                 "strategy_id": strategy_id,
-                "config_revision_id": active_config["revision_id"] if active_config else None,
+                "strategy_revision_id": revision["revision_id"],
                 "factor_weights": factor_weights,
                 "feature_snapshot_id": feature_id,
                 "values": percentiles,
@@ -397,14 +379,10 @@ class ResearchJobs:
         )
         scores: dict[str, dict[str, object]] = {}
         for instrument_id, values in results.items():
-            adx_multiplier = 1.0
-            if strategy_id == "strategy2":
-                adx = float(cast(Any, values["adx_14"]))
-                adx_multiplier = 0.5 if adx < 20 else 0.9 if adx > 30 else 1.0
             initial = sum(
                 percentiles[instrument_id][factor]
                 * weight
-                * (adx_multiplier if factor in {"trend", "momentum"} else 1)
+                * self.runtime.factor_multiplier(strategy_id, factor, values)
                 for factor, weight in factor_weights.items()
             )
             penalty = float(cast(Any, values["penalty"]))
@@ -415,7 +393,6 @@ class ResearchJobs:
                 "penalty_reasons": values["penalty_reasons"],
                 "composite_score": initial * penalty,
                 "eligible": penalty > 0,
-                "adx_multiplier": adx_multiplier if strategy_id == "strategy2" else None,
             }
         score_id = str(uuid4())
         self.publisher.publish_json(
@@ -425,14 +402,12 @@ class ResearchJobs:
                 "snapshot_id": score_id,
                 "as_of_date": as_of_date.isoformat(),
                 "strategy_id": strategy_id,
-                "config_revision_id": active_config["revision_id"] if active_config else None,
+                "strategy_revision_id": revision["revision_id"],
                 "factor_weights": factor_weights,
                 "percentile_snapshot_id": percentile_id,
                 "values": scores,
             },
-            upstream_ids=tuple(
-                item for item in (percentile_id, config_artifact_id) if item is not None
-            ),
+            upstream_ids=(percentile_id, str(revision["revision_id"])),
         )
         with sqlite_connection(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -441,23 +416,24 @@ class ResearchJobs:
             # scores and later leak into weekly rankings.
             if requested_symbols is None:
                 connection.execute(
-                    "DELETE FROM research_daily_scores WHERE strategy_id=? AND as_of_date=?",
-                    (strategy_id, as_of_date.isoformat()),
+                    "DELETE FROM research_daily_scores WHERE strategy_revision_id=? AND as_of_date=?",
+                    (revision["revision_id"], as_of_date.isoformat()),
                 )
             else:
                 connection.executemany(
-                    "DELETE FROM research_daily_scores WHERE strategy_id=? AND as_of_date=? AND (instrument_id=? OR symbol=?)",
-                    [(strategy_id, as_of_date.isoformat(), symbol, symbol) for symbol in requested_symbols],
+                    "DELETE FROM research_daily_scores WHERE strategy_revision_id=? AND as_of_date=? AND (instrument_id=? OR symbol=?)",
+                    [(revision["revision_id"], as_of_date.isoformat(), symbol, symbol) for symbol in requested_symbols],
                 )
             connection.executemany(
                 """INSERT INTO research_daily_scores
-                   (strategy_id, as_of_date, instrument_id, symbol, score, penalty, artifact_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(strategy_id, as_of_date, instrument_id) DO UPDATE SET
+                   (strategy_id, strategy_revision_id, as_of_date, instrument_id, symbol, score, penalty, artifact_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(strategy_revision_id, as_of_date, instrument_id) DO UPDATE SET
                    score=excluded.score, penalty=excluded.penalty, artifact_id=excluded.artifact_id""",
                 [
                     (
                         strategy_id,
+                        revision["revision_id"],
                         as_of_date.isoformat(),
                         key,
                         symbols[key],
@@ -479,29 +455,30 @@ class ResearchJobs:
         }
 
     def rank_week(self, payload: dict[str, Any]) -> dict[str, object]:
-        return self._rank_week(payload, "strategy1")
-
-    def rank_strategy2_week(self, payload: dict[str, Any]) -> dict[str, object]:
-        return self._rank_week(payload, "strategy2")
-
-    def _rank_week(self, payload: dict[str, Any], strategy_id: str) -> dict[str, object]:
-        if set(payload) != {"week_end"} or not isinstance(payload.get("week_end"), str):
-            raise DomainValidationError("weekly ranking requires week_end")
+        if set(payload) != {"week_end", "strategy_id"} or not isinstance(payload.get("week_end"), str) or payload.get("strategy_id") not in self.runtime.strategy_ids():
+            raise DomainValidationError("weekly ranking requires week_end and an active strategy_id")
+        strategy_id = str(payload["strategy_id"])
         try:
             week_end = date.fromisoformat(payload["week_end"])
         except ValueError as exc:
             raise DomainValidationError("week_end must be an ISO date") from exc
-        if week_end.weekday() != 4 or week_end >= datetime.now(UTC).date():
-            raise DomainValidationError("week_end must be a completed Friday")
+        if week_end >= datetime.now(UTC).date():
+            raise DomainValidationError("week_end must be a completed trading session")
         week_start = week_end - timedelta(days=4)
         with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
-                """SELECT * FROM research_daily_scores WHERE strategy_id=?
+                """SELECT * FROM research_daily_scores WHERE strategy_revision_id=?
                    AND as_of_date BETWEEN ? AND ? ORDER BY as_of_date""",
-                (strategy_id, week_start.isoformat(), week_end.isoformat()),
+                (self.runtime.revision(strategy_id)["revision_id"], week_start.isoformat(), week_end.isoformat()),
             ).fetchall()
         if not rows:
-            raise DomainValidationError("weekly ranking has no daily scores")
+            return {
+                "week_end": week_end.isoformat(),
+                "strategy_id": strategy_id,
+                "ranked_count": 0,
+                "skipped": True,
+                "reason": "no daily scores are available for this trading week",
+            }
         grouped: dict[str, list[float]] = defaultdict(list)
         symbols: dict[str, str] = {}
         upstream_ids: set[str] = set()
@@ -528,7 +505,7 @@ class ResearchJobs:
                 "snapshot_id": artifact_id,
                 "strategy_id": strategy_id,
                 "week_end": week_end.isoformat(),
-                "formula_revision": FORMULA_REVISION if strategy_id == "strategy1" else STRATEGY2_FORMULA_REVISION,
+                "strategy_revision_id": self.runtime.revision(strategy_id)["revision_id"],
                 "tie_policy": "composite_score_desc_symbol_asc",
                 "members": members,
             },
@@ -537,18 +514,19 @@ class ResearchJobs:
         with sqlite_connection(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
-                "DELETE FROM research_weekly_rankings WHERE strategy_id=? AND week_end=?",
-                (strategy_id, week_end.isoformat()),
+                "DELETE FROM research_weekly_rankings WHERE strategy_revision_id=? AND week_end=?",
+                (self.runtime.revision(strategy_id)["revision_id"], week_end.isoformat()),
             )
             connection.executemany(
                 """INSERT INTO research_weekly_rankings
-                   (strategy_id, week_end, instrument_id, symbol, score, rank, artifact_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(strategy_id, week_end, instrument_id) DO UPDATE SET
+                   (strategy_id, strategy_revision_id, week_end, instrument_id, symbol, score, rank, artifact_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(strategy_revision_id, week_end, instrument_id) DO UPDATE SET
                    score=excluded.score, rank=excluded.rank, artifact_id=excluded.artifact_id""",
                 [
                     (
                         strategy_id,
+                        self.runtime.revision(strategy_id)["revision_id"],
                         week_end.isoformat(),
                         item["instrument_id"],
                         item["symbol"],
@@ -567,28 +545,40 @@ class ResearchJobs:
         }
 
     def top_rankings(
-        self, week_end: date, limit: int = 20, strategy_id: str = "strategy1"
+        self, week_end: date, limit: int, strategy_id: str
     ) -> list[dict[str, object]]:
         if not 1 <= limit <= 500:
             raise DomainValidationError("ranking limit must be between 1 and 500")
-        if strategy_id not in {"strategy1", "strategy2"}:
+        if strategy_id not in self.runtime.strategy_ids():
             raise DomainValidationError("strategy_id is invalid")
         with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
-                """SELECT * FROM research_weekly_rankings WHERE strategy_id=?
+                """SELECT * FROM research_weekly_rankings WHERE strategy_revision_id=?
                    AND week_end=? ORDER BY rank LIMIT ?""",
-                (strategy_id, week_end.isoformat(), limit),
+                (self.runtime.revision(strategy_id)["revision_id"], week_end.isoformat(), limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def all_rankings(self, week_end: date, strategy_id: str) -> list[dict[str, object]]:
+        """Return the complete published ranking for backtest universe construction."""
+        if strategy_id not in self.runtime.strategy_ids():
+            raise DomainValidationError("strategy_id is invalid")
+        with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
+            rows = connection.execute(
+                """SELECT * FROM research_weekly_rankings WHERE strategy_revision_id=?
+                   AND week_end=? ORDER BY rank""",
+                (self.runtime.revision(strategy_id)["revision_id"], week_end.isoformat()),
             ).fetchall()
         return [dict(row) for row in rows]
 
     def ranking_weeks(self, strategy_id: str) -> tuple[date, ...]:
-        if strategy_id not in {"strategy1", "strategy2"}:
+        if strategy_id not in self.runtime.strategy_ids():
             raise DomainValidationError("strategy_id is invalid")
         with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
                 """SELECT DISTINCT week_end FROM research_weekly_rankings
-                   WHERE strategy_id=? ORDER BY week_end""",
-                (strategy_id,),
+                   WHERE strategy_revision_id=? ORDER BY week_end""",
+                (self.runtime.revision(strategy_id)["revision_id"],),
             ).fetchall()
         return tuple(date.fromisoformat(row["week_end"]) for row in rows)
 
@@ -611,7 +601,7 @@ class ResearchJobs:
             "rankings": "research/rankings",
         }
         category = categories.get(kind)
-        if category is None or strategy_id not in {"strategy1", "strategy2"}:
+        if category is None or strategy_id not in self.runtime.strategy_ids():
             raise DomainValidationError("research snapshot query is invalid")
         candidates: list[tuple[str, dict[str, object]]] = []
         for manifest in self.publisher.store.manifests():
@@ -621,7 +611,9 @@ class ResearchJobs:
                 _, payload = self.publisher.store.read_json(category, manifest.artifact_id)
             except DomainValidationError:
                 continue
-            if payload.get("strategy_id") != strategy_id:
+            if payload.get("strategy_id") != strategy_id or payload.get(
+                "strategy_revision_id"
+            ) != self.runtime.revision(strategy_id)["revision_id"]:
                 continue
             snapshot_date = payload.get("as_of_date", payload.get("week_end"))
             if as_of_date is not None and snapshot_date != as_of_date.isoformat():
@@ -645,170 +637,3 @@ class ResearchJobs:
             return None
         _, payload = max(candidates, key=lambda item: item[0])
         return payload
-
-    def compare_strategy2_parity(self, payload: dict[str, Any]) -> dict[str, object]:
-        """Publish a deterministic comparison against a frozen v3 factor baseline."""
-        required = {"as_of_date", "strategy_id", "feature_artifact_id", "legacy_factors"}
-        if (
-            not isinstance(payload, dict)
-            or set(payload) != required
-            or payload["strategy_id"] != "strategy2"
-        ):
-            raise DomainValidationError("parity command is incomplete")
-        try:
-            as_of = date.fromisoformat(str(payload["as_of_date"]))
-        except ValueError as exc:
-            raise DomainValidationError("parity date must be ISO date") from exc
-        legacy = payload["legacy_factors"]
-        if not isinstance(legacy, dict) or not 1 <= len(legacy) <= 500:
-            raise DomainValidationError("legacy_factors must contain 1..500 instruments")
-        try:
-            _, features = self.publisher.store.read_json(
-                f"features/{payload['strategy_id']}", str(payload["feature_artifact_id"])
-            )
-        except DomainValidationError as exc:
-            raise DomainValidationError("feature artifact was not found") from exc
-        if features.get("as_of_date") != as_of.isoformat() or features.get("strategy_id") != payload["strategy_id"]:
-            raise DomainValidationError("feature artifact does not match the parity request")
-        values = features.get("values")
-        if not isinstance(values, dict):
-            raise DomainValidationError("feature artifact is malformed")
-        factors = tuple(FACTOR_WEIGHTS)
-        normalized_legacy: dict[str, dict[str, float]] = {}
-        deltas: dict[str, dict[str, float]] = {}
-        for instrument_id, baseline in legacy.items():
-            current = values.get(str(instrument_id))
-            if not isinstance(baseline, dict) or not isinstance(current, dict):
-                raise DomainValidationError("parity instrument factors are malformed")
-            current_factors = current.get("factors")
-            if not isinstance(current_factors, dict):
-                raise DomainValidationError("feature artifact has no factor values")
-            normalized: dict[str, float] = {}
-            difference: dict[str, float] = {}
-            for factor in factors:
-                raw = baseline.get(factor, baseline.get(f"factor_{factor}"))
-                if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
-                    raise DomainValidationError("legacy factor values must be numeric")
-                try:
-                    legacy_value = float(raw)
-                    current_value = float(current_factors[factor])
-                except (KeyError, TypeError, ValueError) as exc:
-                    raise DomainValidationError("legacy factor values must be numeric") from exc
-                if not isfinite(legacy_value) or not isfinite(current_value):
-                    raise DomainValidationError("legacy factor values must be finite")
-                normalized[factor] = legacy_value
-                difference[factor] = current_value - legacy_value
-            normalized_legacy[str(instrument_id)] = normalized
-            deltas[str(instrument_id)] = difference
-        report = {
-            "as_of_date": as_of.isoformat(),
-            "strategy_id": payload["strategy_id"],
-            "feature_artifact_id": str(payload["feature_artifact_id"]),
-            "v4_formula_revision": features.get("formula_revision"),
-            "v3_formula_revision": "v3-archived-factors-service-v2",
-            "tie_policy": "score_desc_symbol_asc",
-            "legacy_factors": normalized_legacy,
-            "v4_feature_values": {
-                key: values[key] for key in sorted(normalized_legacy)
-            },
-            "factor_deltas": deltas,
-        }
-        artifact_id = str(uuid5(NAMESPACE_URL, "research-parity:" + json.dumps(report, sort_keys=True)))
-        if not self.publisher.catalog.has(artifact_id):
-            self.publisher.publish_json(
-                "research/parity", artifact_id,
-                {"snapshot_id": artifact_id, **report},
-                upstream_ids=(str(payload["feature_artifact_id"]),),
-            )
-        return {"artifact_id": artifact_id, "as_of_date": as_of.isoformat(), "strategy_id": payload["strategy_id"], "compared_count": len(normalized_legacy)}
-
-    def compare_strategy2_candidates(self, payload: dict[str, Any]) -> dict[str, object]:
-        """Publish a deterministic v3/v4 candidate-set and rank comparison."""
-        required = {"week_end", "ranking_artifact_id", "legacy_candidates"}
-        if not isinstance(payload, dict) or set(payload) != required:
-            raise DomainValidationError("candidate parity command is incomplete")
-        try:
-            week_end = date.fromisoformat(str(payload["week_end"]))
-        except ValueError as exc:
-            raise DomainValidationError("candidate parity date must be ISO date") from exc
-        legacy_rows = payload["legacy_candidates"]
-        if not isinstance(legacy_rows, list) or not 1 <= len(legacy_rows) <= 500:
-            raise DomainValidationError("legacy_candidates must contain 1..500 rows")
-        try:
-            _, ranking = self.publisher.store.read_json(
-                "research/rankings", str(payload["ranking_artifact_id"])
-            )
-        except DomainValidationError as exc:
-            raise DomainValidationError("ranking artifact was not found") from exc
-        if ranking.get("strategy_id") != "strategy2" or ranking.get("week_end") != week_end.isoformat():
-            raise DomainValidationError("ranking artifact does not match candidate parity")
-        current_rows = ranking.get("members")
-        if not isinstance(current_rows, list) or len(current_rows) > 500:
-            raise DomainValidationError("ranking artifact members are malformed")
-
-        def normalize(rows: list[object], label: str) -> dict[str, dict[str, object]]:
-            result: dict[str, dict[str, object]] = {}
-            for index, row in enumerate(rows, 1):
-                if isinstance(row, str):
-                    identity, symbol, rank = row, row, index
-                elif isinstance(row, dict):
-                    identity = row.get("instrument_id", row.get("symbol"))
-                    symbol = row.get("symbol", identity)
-                    rank = row.get("rank", index)
-                else:
-                    raise DomainValidationError(f"{label} rows are malformed")
-                if not isinstance(identity, str) or not identity.strip() or not isinstance(symbol, str):
-                    raise DomainValidationError(f"{label} rows are malformed")
-                if isinstance(rank, bool) or not isinstance(rank, int) or rank < 1:
-                    raise DomainValidationError(f"{label} ranks are invalid")
-                if identity in result:
-                    raise DomainValidationError(f"{label} contains duplicate instruments")
-                result[identity] = {"instrument_id": identity, "symbol": symbol, "rank": rank}
-            return result
-
-        legacy = normalize(legacy_rows, "legacy candidate")
-        current = normalize(current_rows, "v4 candidate")
-        all_ids = sorted(set(legacy) | set(current))
-        comparisons = []
-        for instrument_id in all_ids:
-            old = legacy.get(instrument_id)
-            new = current.get(instrument_id)
-            comparisons.append({
-                "instrument_id": instrument_id,
-                "symbol": (new or old)["symbol"],
-                "v3_rank": old["rank"] if old else None,
-                "v4_rank": new["rank"] if new else None,
-                "rank_delta": new["rank"] - old["rank"] if old and new else None,
-                "status": "UNCHANGED" if old and new else "ADDED" if new else "REMOVED",
-            })
-        report = {
-            "snapshot_id": "",
-            "week_end": week_end.isoformat(),
-            "strategy_id": "strategy2",
-            "ranking_artifact_id": str(payload["ranking_artifact_id"]),
-            "v3_formula_revision": "v3-archived-score-service",
-            "v4_formula_revision": ranking.get("formula_revision"),
-            "tie_policy": ranking.get("tie_policy"),
-            "v3_candidates": legacy,
-            "v4_candidates": current,
-            "comparisons": comparisons,
-            "added": sorted(set(current) - set(legacy)),
-            "removed": sorted(set(legacy) - set(current)),
-        }
-        artifact_id = str(
-            uuid5(NAMESPACE_URL, "research-candidate-parity:" + json.dumps(report, sort_keys=True))
-        )
-        report["snapshot_id"] = artifact_id
-        if not self.publisher.catalog.has(artifact_id):
-            self.publisher.publish_json(
-                "research/candidate-parity", artifact_id, report,
-                upstream_ids=(str(payload["ranking_artifact_id"]),),
-            )
-        return {
-            "artifact_id": artifact_id,
-            "week_end": week_end.isoformat(),
-            "strategy_id": "strategy2",
-            "compared_count": len(comparisons),
-            "added_count": len(report["added"]),
-            "removed_count": len(report["removed"]),
-        }

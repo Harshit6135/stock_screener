@@ -5,7 +5,7 @@ import pytest
 
 from src.application import JobStatus, JobStore
 from src.backtesting import BacktestStep, run
-from src.execution_gateway import Ledger, PaperBroker
+from src.execution_gateway import Ledger
 from src.platform_kernel import DomainValidationError, Money, Quantity
 from src.portfolio_accounting import Fill, FillSide
 from src.portfolio_engine import Candidate, MarketBar, PortfolioPolicy, PortfolioState
@@ -36,8 +36,6 @@ def test_ledger_is_idempotent_versioned_and_rebuilds_projection(tmp_path):
     assert ledger.projection("paper").cash == Money("800")
     with pytest.raises(DomainValidationError, match="stale"):
         ledger.record_fills("paper", "command-2", 0, [fill])
-    with pytest.raises(DomainValidationError, match="disabled"):
-        PaperBroker().submit(fill, allow_live=True)
 
 
 def test_ledger_rejects_invalid_fills_before_appending_events(tmp_path):

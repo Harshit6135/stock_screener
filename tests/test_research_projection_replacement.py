@@ -40,13 +40,17 @@ def test_recomputation_removes_stale_daily_and_weekly_members(tmp_path, monkeypa
             "penalty_reasons": [],
         }
 
-    monkeypatch.setattr("src.application.research_jobs.strategy1_factors", factors)
+    monkeypatch.setitem(
+            __import__("src.indicators.custom", fromlist=["INSTRUMENT_IMPLEMENTATIONS"]).INSTRUMENT_IMPLEMENTATIONS,
+        "custom.momentum_quality_features",
+        factors,
+    )
     day = date(2026, 9, 4)
-    research.calculate_strategy1_day({"as_of_date": day.isoformat()})
-    research.rank_week({"week_end": day.isoformat()})
-    assert len(research.top_rankings(day)) == 2
+    research.calculate_day({"as_of_date": day.isoformat(), "strategy_id": "strategy1"})
+    research.rank_week({"week_end": day.isoformat(), "strategy_id": "strategy1"})
+    assert len(research.top_rankings(day, 20, "strategy1")) == 2
 
     include_b = False
-    research.calculate_strategy1_day({"as_of_date": day.isoformat()})
-    research.rank_week({"week_end": day.isoformat()})
-    assert [row["symbol"] for row in research.top_rankings(day)] == ["A"]
+    research.calculate_day({"as_of_date": day.isoformat(), "strategy_id": "strategy1"})
+    research.rank_week({"week_end": day.isoformat(), "strategy_id": "strategy1"})
+    assert [row["symbol"] for row in research.top_rankings(day, 20, "strategy1")] == ["A"]

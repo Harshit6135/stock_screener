@@ -52,8 +52,6 @@ def main() -> int:
             {
                 "MARKET_DATA_KITE_API_KEY": RuntimeConfig.MARKET_DATA_KITE_API_KEY,
                 "MARKET_DATA_KITE_API_SECRET": RuntimeConfig.MARKET_DATA_KITE_API_SECRET,
-                "KITE_API_KEY": RuntimeConfig.KITE_API_KEY,
-                "KITE_API_SECRET": RuntimeConfig.KITE_API_SECRET,
             },
             profile="market_data",
         )
@@ -63,7 +61,6 @@ def main() -> int:
             market_data_kite_token_path=RuntimeConfig.MARKET_DATA_KITE_ACCESS_TOKEN_PATH,
             nse_csv_path=Path.cwd() / "data" / "imports" / "NSE.csv",
             bse_csv_path=Path.cwd() / "data" / "imports" / "BSE.csv",
-            legacy_market_path=Path.cwd() / "instance" / "market_data.db",
         ).worker.run_once()
         print("idle" if job is None else f"{job.job_id}:{job.status.value}")
         return 0

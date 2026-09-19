@@ -12,7 +12,6 @@ from src.application.intraday_alerts import IntradayStopAlerts
 from src.application.intraday_stream import IntradayStreamLease
 from src.application.market_refresh import MarketRefreshPlanner
 from src.application.market_repository import MarketRepository
-from src.application.web import require_operator_token
 from src.platform_kernel import DomainValidationError
 
 
@@ -76,9 +75,6 @@ def create_market_blueprint(
     def ingest_intraday_alerts():
         if intraday_alerts is None:
             return jsonify({"error": "intraday alert service unavailable"}), 503
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         try:
             return jsonify(intraday_alerts.ingest(request.get_json(silent=True) or {})), 201
         except DomainValidationError as exc:
@@ -105,9 +101,6 @@ def create_market_blueprint(
     def intraday_stream_command():
         if stream is None:
             return jsonify({"error": "intraday stream supervision unavailable"}), 503
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         body = request.get_json(silent=True)
         if not isinstance(body, dict) or body.get("action") not in {"start", "stop", "connected", "error", "heartbeat"}:
             return jsonify({"error": "stream action must be start, stop, connected, error or heartbeat"}), 400
@@ -152,9 +145,6 @@ def create_market_blueprint(
     def refresh_market():
         if refresh is None:
             return jsonify({"error": "market refresh planner unavailable"}), 503
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "market refresh payload must be an object"}), 400
@@ -165,9 +155,6 @@ def create_market_blueprint(
 
     @blueprint.post("/reconcile")
     def reconcile():
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         if refresh is None:
             return jsonify({"error": "market refresh service is unavailable"}), 503
         try:
@@ -179,9 +166,6 @@ def create_market_blueprint(
     def poller_command():
         if poller is None:
             return jsonify({"error": "index poller unavailable"}), 503
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         body = request.get_json(silent=True) or {}
         if not isinstance(body, dict) or body.get("action") not in {"start", "stop", "tick", "reconcile"}:
             return jsonify({"error": "action must be start, stop, tick or reconcile"}), 400
@@ -232,9 +216,6 @@ def create_market_blueprint(
     def record_action():
         if actions is None:
             return jsonify({"error": "corporate-action service unavailable"}), 503
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         body = request.get_json(silent=True)
         try:
             return jsonify(actions.record(body)), 201
@@ -245,9 +226,6 @@ def create_market_blueprint(
     def liquidation_plan():
         if actions is None:
             return jsonify({"error": "corporate-action service unavailable"}), 503
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         body = request.get_json(silent=True) or {}
         if not isinstance(body, dict) or set(body) != {"account_id", "as_of_date"}:
             return jsonify({"error": "account_id and as_of_date are required"}), 400

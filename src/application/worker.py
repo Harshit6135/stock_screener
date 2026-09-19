@@ -14,13 +14,18 @@ JobHandler = Callable[..., dict[str, Any]]
 
 
 class JobWorker:
+    # Research calculations over the full universe can exceed one minute.
+    # A short lease causes the same job to be reclaimed while its original
+    # handler is still running, producing duplicate work and stale RUNNING rows.
+    LEASE_SECONDS = 3600
+
     def __init__(self, jobs: JobStore, worker_id: str, handlers: Mapping[str, JobHandler]):
         if not worker_id:
             raise DomainValidationError("worker id must be non-empty")
         self.jobs, self.worker_id, self.handlers = jobs, worker_id, dict(handlers)
 
     def run_once(self) -> Job | None:
-        job = self.jobs.claim_next(self.worker_id)
+        job = self.jobs.claim_next(self.worker_id, lease_seconds=self.LEASE_SECONDS)
         if job is None:
             return None
         handler = self.handlers.get(job.kind)
@@ -36,7 +41,7 @@ class JobWorker:
             # Keep the original one-argument handler contract while allowing
             # new handlers to opt into cooperative lease/cancel controls.
             if len(inspect.signature(handler).parameters) >= 2:
-                result = handler(payload, JobExecutionContext(self.jobs, job))
+                result = handler(payload, JobExecutionContext(self.jobs, job, self.LEASE_SECONDS))
             else:
                 result = handler(payload)
             return self.jobs.complete(job.job_id, result, job.claim_token)
@@ -47,17 +52,26 @@ class JobWorker:
             current = self.jobs.get(job.job_id)
             if current.status.value == "CANCELLED":
                 return current
-            return self.jobs.fail(job.job_id, sanitize_error(exc), job.claim_token)
+            return self.jobs.fail(
+                job.job_id,
+                sanitize_error(exc),
+                job.claim_token,
+                retryable=not isinstance(exc, DomainValidationError),
+            )
 
 
 class BackgroundWorker:
     """Continuous thread-based worker for processing queued jobs in the background."""
 
-    def __init__(self, worker: JobWorker, poll_interval: float = 1.0) -> None:
+    def __init__(self, worker: JobWorker, poll_interval: float = 1.0, concurrency: int = 1) -> None:
+        if concurrency < 1:
+            raise DomainValidationError("worker concurrency must be positive")
         self.worker = worker
         self.poll_interval = poll_interval
+        self.concurrency = concurrency
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._threads: list[threading.Thread] = []
         self._processed_count: int = 0
         self._failed_count: int = 0
         self._last_active_at: str | None = None
@@ -66,29 +80,46 @@ class BackgroundWorker:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop_event.clear()
-        self._thread = threading.Thread(
-            target=self._run_loop,
-            name=f"BackgroundWorker-{self.worker.worker_id}",
-            daemon=True,
-        )
-        self._thread.start()
+        self._threads = [
+            threading.Thread(
+                target=self._run_loop,
+                name=f"BackgroundWorker-{self.worker.worker_id}-{index + 1}",
+                daemon=True,
+            )
+            for index in range(self.concurrency)
+        ]
+        self._thread = self._threads[0]
+        for thread in self._threads:
+            thread.start()
 
     def stop(self, timeout: float = 5.0) -> None:
         self._stop_event.set()
-        if self._thread is not None:
-            self._thread.join(timeout=timeout)
+        for thread in self._threads:
+            thread.join(timeout=timeout)
 
     @property
     def is_alive(self) -> bool:
-        return self._thread is not None and self._thread.is_alive()
+        return any(thread.is_alive() for thread in self._threads)
 
     def status(self) -> dict[str, object]:
+        durable = self.worker.jobs.status_counts()
         return {
             "worker_id": self.worker.worker_id,
             "running": self.is_alive,
             "processed_count": self._processed_count,
+            "processed_attempts": self._processed_count,
             "failed_count": self._failed_count,
             "last_active_at": self._last_active_at,
+            "total_jobs": durable.get("total_jobs", 0),
+            "total_attempts": durable.get("total_attempts", 0),
+            "succeeded_jobs": durable.get("succeeded_jobs", 0),
+            "failed_jobs": durable.get("failed_jobs", 0),
+            "failed_execution_jobs": durable.get("failed_execution_jobs", 0),
+            "data_unavailable_jobs": durable.get("data_unavailable_jobs", 0),
+            "data_unavailable_attempts": durable.get("data_unavailable_attempts", 0),
+            "queued_jobs": durable.get("queued_jobs", 0),
+            "running_jobs": durable.get("running_jobs", 0),
+            "cancelled_jobs": durable.get("cancelled_jobs", 0),
         }
 
     def _run_loop(self) -> None:
@@ -105,4 +136,3 @@ class BackgroundWorker:
             except Exception:  # noqa: BLE001
                 self._failed_count += 1
                 self._stop_event.wait(self.poll_interval)
-

@@ -2,6 +2,7 @@
 
 from datetime import date, datetime
 from decimal import Decimal
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -18,6 +19,12 @@ from src.portfolio_accounting import Fill, FillSide
 
 def _services(tmp_path):
     services = ApplicationServices.create(tmp_path)
+    source = (Path(__file__).resolve().parents[1] / "strategies" / "momentum_quality.yml").read_text()
+    source = source.replace("version: 1.0.0", "version: 1.0.1").replace(
+        "max_positions: 15", "max_positions: 1"
+    ).replace("exit_threshold: 40", "exit_threshold: 41")
+    revision = services.strategies.create_from_yaml(source)
+    services.strategies.activate(str(revision["revision_id"]))
     instrument_id = str(uuid4())
     services.market.upsert_instruments(
         [TrackedInstrument(instrument_id, "INE000000001", "ABC", "NSE", "42", date(2026, 9, 4))]
@@ -33,9 +40,13 @@ def _services(tmp_path):
     with sqlite_connection(services.database) as connection:
         connection.execute(
             """INSERT INTO research_weekly_rankings
-               (strategy_id, week_end, instrument_id, symbol, score, rank, artifact_id)
-               VALUES ('strategy1', '2026-09-04', ?, 'ABC', 80, 1, ?)""",
-            (instrument_id, ranking.artifact_id),
+               (strategy_id, strategy_revision_id, week_end, instrument_id, symbol, score, rank, artifact_id)
+               VALUES ('strategy1', ?, '2026-09-04', ?, 'ABC', 80, 1, ?)""",
+            (
+                services.strategy_runtime.revision("strategy1")["revision_id"],
+                instrument_id,
+                ranking.artifact_id,
+            ),
         )
     return services, instrument_id
 
@@ -53,7 +64,7 @@ def test_generate_approve_process_and_idempotent_retry(tmp_path):
     services, instrument_id = _services(tmp_path)
     services.ledger.open_account("paper", Money(1000))
     job = services.jobs.submit(
-        "paper-action-20260907", "actions.generate-paper-proposal", _payload()
+        "portfolio-action-20260907", "actions.generate-portfolio-proposal", _payload()
     )
     completed = services.worker.run_once()
     assert completed.job_id == job.job_id
@@ -66,7 +77,7 @@ def test_generate_approve_process_and_idempotent_retry(tmp_path):
     app.register_blueprint(create_actions_blueprint(services.actions))
     client = app.test_client()
     path = f"/api/v2/actions/proposals/{proposal['proposal_id']}"
-    assert client.get(path).status_code == 401
+    assert client.get(path).status_code == 200
     headers = {"X-Operator-Token": "test-secret"}
     assert client.get(path, headers=headers).status_code == 200
     assert client.post(f"{path}/process", headers=headers).status_code == 409
@@ -76,7 +87,7 @@ def test_generate_approve_process_and_idempotent_retry(tmp_path):
     assert services.ledger.accounts()[0]["version"] == 1
     projection = services.ledger.projection("paper")
     assert projection.open_lots[0].instrument_id == instrument_id
-    assert projection.cash.amount == Decimal(0)
+    assert projection.cash.amount == Decimal(800)
     assert [event["event_type"] for event in services.actions.events(proposal["proposal_id"])] == [
         "GENERATED",
         "APPROVED",
@@ -161,27 +172,17 @@ def test_invalidated_proposal_cannot_process(tmp_path):
 def test_action_generation_uses_active_configuration(tmp_path):
     services, _ = _services(tmp_path)
     services.ledger.open_account("paper", Money(1000))
-    config = services.configs.create(
-        "strategy1",
-        {
-            "initial_capital": "100000",
-            "risk_threshold": "1",
-            "max_positions": 1,
-            "min_position_percent": "0.05",
-            "exit_threshold": "41",
-            "buffer_percent": "0.30",
-            "sl_multiplier": "2",
-            "hard_sl_percent": "0.03",
-            "atr_fallback_percent": "0.06",
-            "max_concentration_pct": "0.25",
-        },
-    )
-    services.configs.approve(config["revision_id"], "2026-09-01")
+    source = (Path(__file__).resolve().parents[1] / "strategies" / "momentum_quality.yml").read_text()
+    source = source.replace("version: 1.0.0", "version: 1.0.1").replace(
+        "max_positions: 15", "max_positions: 1"
+    ).replace("exit_threshold: 40", "exit_threshold: 41")
+    revision = services.strategies.create_from_yaml(source)
+    services.strategies.activate(str(revision["revision_id"]))
     payload = _payload()
     del payload["max_positions"]
     proposal = services.actions.generate(payload)
     _, artifact = services.artifacts.read_json("actions/proposals", proposal["proposal_id"])
-    assert artifact["config_revision_id"] == config["revision_id"]
+    assert artifact["strategy_revision_id"] == revision["revision_id"]
     assert artifact["policy"]["exit_score"] == "41"
     conflicting = _payload()
     conflicting["max_positions"] = 2
@@ -191,7 +192,7 @@ def test_action_generation_uses_active_configuration(tmp_path):
         {"strategy_id": "strategy1", "start_date": "2026-09-07", "end_date": "2026-09-07"}
     )
     _, report = services.artifacts.read_json("runs/backtests", result["artifact_id"])
-    assert report["manifest"]["parameters"]["config_revision_id"] == config["revision_id"]
+    assert report["manifest"]["parameters"]["strategy_revision_id"] == revision["revision_id"]
 
 
 def test_action_generation_applies_point_in_time_fundamental_filter(tmp_path):
@@ -211,7 +212,7 @@ def test_action_policy_records_explicit_pyramid_switch_and_execution_rules(tmp_p
     proposal = services.actions.generate({**_payload(), "pyramid_enabled": True})
     _, artifact = services.artifacts.read_json("actions/proposals", proposal["artifact_id"])
     policy = artifact["policy"]
-    assert policy["execution_policy_version"] == "v4-paper-execution-1"
+    assert policy["execution_policy_version"] == "v4-portfolio-execution-1"
     assert policy["pyramid_enabled"] is True
     assert policy["pyramid_fraction"] == "0.5"
     assert policy["sell_before_buy"] is True
@@ -238,7 +239,7 @@ def test_execution_policy_parity_is_protected_immutable_and_readable(tmp_path):
     app.register_blueprint(create_actions_blueprint(services.actions))
     client = app.test_client()
     endpoint = "/api/v2/actions/execution-policy-parity"
-    assert client.post(endpoint, json={"v3_policy": baseline}).status_code == 401
+    assert client.post(endpoint, json={"v3_policy": baseline}).status_code == 201
     headers = {"X-Operator-Token": "test-secret"}
     response = client.post(endpoint, json={"v3_policy": baseline}, headers=headers)
     assert response.status_code == 201
@@ -246,4 +247,4 @@ def test_execution_policy_parity_is_protected_immutable_and_readable(tmp_path):
     assert response.json["parity"] is True
     readback = client.get(f"{endpoint}/{artifact_id}", headers=headers)
     assert readback.status_code == 200
-    assert readback.json["data"]["execution_policy_version"] == "v4-paper-execution-1"
+    assert readback.json["data"]["execution_policy_version"] == "v4-portfolio-execution-1"

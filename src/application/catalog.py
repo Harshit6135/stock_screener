@@ -61,33 +61,50 @@ class ArtifactCatalog:
     def _connect(self):
         return sqlite_connection(self.path, row_factory=True)
 
-    def register(self, manifest: ArtifactManifest) -> None:
+    def register(self, manifest: ArtifactManifest, *, replace_missing: bool = False) -> None:
         with self._connect() as connection:
+            existing = connection.execute(
+                "SELECT status FROM catalog_artifacts WHERE artifact_id = ?",
+                (manifest.artifact_id,),
+            ).fetchone()
             try:
-                connection.execute(
-                    "INSERT INTO catalog_artifacts(artifact_id, category, checksum_sha256, quality, schema_version, created_at, artifact_uri, manifest_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        manifest.artifact_id,
-                        manifest.category,
-                        manifest.checksum_sha256,
-                        manifest.quality.value,
-                        manifest.schema_version,
-                        manifest.created_at,
-                        f"{manifest.category}/{manifest.artifact_id}",
-                        json.dumps(
-                            {
-                                "artifact_id": manifest.artifact_id,
-                                "category": manifest.category,
-                                "schema_version": manifest.schema_version,
-                                "created_at": manifest.created_at,
-                                "checksum_sha256": manifest.checksum_sha256,
-                                "upstream_ids": manifest.upstream_ids,
-                                "quality": manifest.quality.value,
-                            },
-                            sort_keys=True,
-                        ),
+                values = (
+                    manifest.category,
+                    manifest.checksum_sha256,
+                    manifest.quality.value,
+                    manifest.schema_version,
+                    manifest.created_at,
+                    f"{manifest.category}/{manifest.artifact_id}",
+                    json.dumps(
+                        {
+                            "artifact_id": manifest.artifact_id,
+                            "category": manifest.category,
+                            "schema_version": manifest.schema_version,
+                            "created_at": manifest.created_at,
+                            "checksum_sha256": manifest.checksum_sha256,
+                            "upstream_ids": manifest.upstream_ids,
+                            "quality": manifest.quality.value,
+                        },
+                        sort_keys=True,
                     ),
                 )
+                if existing is None:
+                    connection.execute(
+                        "INSERT INTO catalog_artifacts(artifact_id, category, checksum_sha256, quality, schema_version, created_at, artifact_uri, manifest_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (manifest.artifact_id, *values),
+                    )
+                elif replace_missing and existing["status"] == "MISSING":
+                    connection.execute(
+                        """UPDATE catalog_artifacts SET category=?, checksum_sha256=?, quality=?,
+                           schema_version=?, created_at=?, artifact_uri=?, manifest_json=?,
+                           status='VALID', status_reason=NULL WHERE artifact_id=?""",
+                        (*values, manifest.artifact_id),
+                    )
+                    connection.execute(
+                        "DELETE FROM catalog_lineage WHERE artifact_id=?", (manifest.artifact_id,)
+                    )
+                else:
+                    raise DomainValidationError("artifact is already cataloged")
             except sqlite3.IntegrityError as exc:
                 raise DomainValidationError("artifact is already cataloged") from exc
             connection.executemany(
@@ -121,6 +138,13 @@ class ArtifactCatalog:
                 ).fetchone()
                 is not None
             )
+
+    def is_missing(self, artifact_id: str) -> bool:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT status FROM catalog_artifacts WHERE artifact_id = ?", (artifact_id,)
+            ).fetchone()
+        return row is not None and row["status"] == "MISSING"
 
     def summaries(self, artifact_ids: tuple[str, ...]) -> dict[str, dict[str, str]]:
         """Read quality and validity for a bounded set of source artifacts."""

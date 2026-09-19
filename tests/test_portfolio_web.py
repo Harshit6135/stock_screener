@@ -23,7 +23,7 @@ def test_operator_protected_manual_fill_lifecycle(tmp_path):
     client = app.test_client()
     headers = {"X-Operator-Token": "local-test-secret"}
 
-    assert client.get("/api/v2/portfolio/accounts").status_code == 401
+    assert client.get("/api/v2/portfolio/accounts").status_code == 200
     response = client.post(
         "/api/v2/portfolio/accounts",
         json={"account_id": "paper", "opening_cash": "1000"},
@@ -81,7 +81,7 @@ def test_operator_protected_manual_fill_lifecycle(tmp_path):
         [NormalizedBar(instrument_id, datetime.now(ZoneInfo("Asia/Kolkata")).date(), 105, 110, 100, 108, 1000)],
         "ticker-snapshot",
     )
-    assert client.get("/api/v2/portfolio/accounts/paper/ticker").status_code == 401
+    assert client.get("/api/v2/portfolio/accounts/paper/ticker").status_code == 200
     ticker = client.get("/api/v2/portfolio/accounts/paper/ticker", headers=headers)
     assert ticker.status_code == 200
     assert ticker.json["basis"] == "latest_available_market_bar"

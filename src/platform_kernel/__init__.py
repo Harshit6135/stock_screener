@@ -7,6 +7,7 @@ provider SDKs, or application adapters.
 from .api import (
     ArtifactManifest,
     ArtifactStore,
+    SqliteArtifactStore,
     Broker,
     CommandMetadata,
     DomainValidationError,
@@ -24,6 +25,7 @@ from .api import (
 __all__ = [
     "ArtifactManifest",
     "ArtifactStore",
+    "SqliteArtifactStore",
     "Broker",
     "CommandMetadata",
     "DomainValidationError",

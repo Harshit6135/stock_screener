@@ -9,7 +9,6 @@ from flask import Blueprint, jsonify, request
 
 from src.application.market_repository import MarketRepository
 from src.application.publication import ArtifactPublisher
-from src.application.web import require_operator_token
 from src.platform_kernel import ArtifactStore, DomainValidationError
 
 
@@ -98,9 +97,6 @@ def create_reference_blueprint(
 
     @blueprint.post("/sectors")
     def publish_sectors():
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         if publisher is None:
             return jsonify({"error": "reference publisher is unavailable"}), 503
         body = request.get_json(silent=True)
@@ -120,9 +116,6 @@ def create_reference_blueprint(
 
     @blueprint.post("/macro-indicators")
     def publish_macro_indicators():
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         if publisher is None:
             return jsonify({"error": "reference publisher is unavailable"}), 503
         body = request.get_json(silent=True)
@@ -147,9 +140,6 @@ def create_reference_blueprint(
 
     @blueprint.post("/market-capitalization")
     def publish_market_capitalization():
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         if publisher is None:
             return jsonify({"error": "reference publisher is unavailable"}), 503
         body = request.get_json(silent=True)
@@ -185,9 +175,6 @@ def create_reference_blueprint(
 
     @blueprint.post("/fundamentals")
     def publish_fundamentals():
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         if publisher is None:
             return jsonify({"error": "reference publisher is unavailable"}), 503
         body = request.get_json(silent=True)

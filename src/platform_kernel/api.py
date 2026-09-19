@@ -1,6 +1,6 @@
 """Public platform-kernel contracts for domain packages and adapters."""
 
-from .artifacts import ArtifactManifest, ArtifactStore, QualityStatus
+from .artifacts import ArtifactManifest, ArtifactStore, QualityStatus, SqliteArtifactStore
 from .contracts import (
     CommandMetadata,
     FrozenDict,
@@ -15,6 +15,7 @@ from .ports import Broker, HistoricalBarsProvider, InstrumentProvider, LiveQuote
 __all__ = [
     "ArtifactManifest",
     "ArtifactStore",
+    "SqliteArtifactStore",
     "Broker",
     "CommandMetadata",
     "DomainValidationError",

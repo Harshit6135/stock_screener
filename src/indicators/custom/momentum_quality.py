@@ -1,4 +1,4 @@
-"""Reviewed Strategy 1 indicator and factor port from v3 commit dabff59.
+"""Custom momentum/quality feature implementation unavailable as standard TA indicators.
 
 The formulas retain v3's units, including its fractional EMA distance and
 momentum values. This module avoids a runtime dependency on pandas_ta; parity
@@ -12,15 +12,6 @@ from collections.abc import Sequence
 from typing import Any, cast
 
 import pandas as pd
-
-FACTOR_WEIGHTS = {
-    "trend": 0.30,
-    "momentum": 0.25,
-    "efficiency": 0.20,
-    "volume": 0.15,
-    "structure": 0.10,
-}
-FORMULA_REVISION = "strategy1-v4-port-2"
 
 
 def _goldilocks(distance: float) -> float:
@@ -62,7 +53,7 @@ def _value(row: pd.Series, name: int, default: float) -> float:
     return float(raw) if pd.notna(raw) and math.isfinite(float(raw)) else default
 
 
-def strategy1_factors(bars: Sequence[dict[str, Any]]) -> dict[str, object] | None:
+def momentum_quality_features(bars: Sequence[dict[str, Any]]) -> dict[str, object] | None:
     """Compute v3 Strategy 1 factor inputs for the final completed session."""
     if len(bars) < 200:
         return None

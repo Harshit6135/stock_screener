@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
+import pytest
 from flask import Flask
 
 from src.application.catalog import ArtifactCatalog
@@ -11,7 +12,7 @@ from src.application.market_repository import MarketRepository, TrackedInstrumen
 from src.application.market_web import create_market_blueprint
 from src.application.publication import ArtifactPublisher
 from src.market_data import NormalizedBar
-from src.platform_kernel import ArtifactStore, QualityStatus
+from src.platform_kernel import ArtifactStore, DomainValidationError, QualityStatus
 
 
 def test_coverage_api_paginates_and_reports_latest_cataloged_source(tmp_path):
@@ -97,3 +98,61 @@ def test_reconciliation_reports_symbol_level_exclusions_and_unmatched_sources(tm
         ("MISSING", "missing_provider_token"),
     }
     assert publisher.store.read_json("reference/reconciliations", report["artifact_id"])[1]["unmatched_source_symbols"] == ["UNKNOWN"]
+
+
+def test_refresh_schedules_only_fixed_universe_holdings_and_benchmark(tmp_path):
+    database = tmp_path / "system.db"
+    market = MarketRepository(database)
+    jobs = JobStore(database)
+    observed_on = date(2026, 1, 1)
+    records = (
+        TrackedInstrument("member", "IN0000000001", "MEMBER", "NSE", "1", observed_on),
+        TrackedInstrument("outside", "IN0000000002", "OUTSIDE", "NSE", "2", observed_on),
+        TrackedInstrument("holding", "IN0000000003", "HOLDING", "BSE", "3", observed_on),
+        TrackedInstrument("blocked", "IN0000000004", "BLOCKED", "NSE", "", observed_on),
+        TrackedInstrument("benchmark", "INDEX:NIFTY 500", "NIFTY 500", "NSE", "5", observed_on),
+    )
+    market.upsert_instruments(records)
+    market.upsert_universe_members(
+        (
+            {
+                "isin": "IN0000000001",
+                "instrument_id": "member",
+                "symbol": "MEMBER",
+                "exchange": "NSE",
+                "membership_type": "BASE",
+                "first_eligible_date": observed_on.isoformat(),
+                "initial_market_cap": 6_000_000_000,
+                "threshold_crore": 500,
+                "source": "yfinance",
+                "snapshot_date": observed_on.isoformat(),
+                "last_market_cap": 6_000_000_000,
+            },
+        )
+    )
+    planner = MarketRefreshPlanner(
+        database,
+        market,
+        jobs,
+        held_instrument_ids=lambda: {"holding", "blocked", "unknown-holding"},
+    )
+
+    result = planner.schedule({"start_date": "2025-01-01", "end_date": "2025-12-31"})
+
+    assert result["scheduled_count"] == 3
+    queued = {jobs.get(job_id).payload["symbol"] for job_id in result["job_ids"]}
+    assert queued == {"MEMBER", "HOLDING", "NIFTY 500"}
+    assert "OUTSIDE" not in queued
+    assert result["blocked_held_positions"] == [
+        {"instrument_id": "blocked", "reason": "missing_provider_token"},
+        {"instrument_id": "unknown-holding", "reason": "held_position_not_in_reference_catalog"},
+    ]
+
+
+def test_refresh_refuses_to_download_before_fixed_universe_is_built(tmp_path):
+    database = tmp_path / "system.db"
+    market = MarketRepository(database)
+    planner = MarketRefreshPlanner(database, market, JobStore(database))
+
+    with pytest.raises(DomainValidationError, match="fixed universe is empty"):
+        planner.schedule({"start_date": "2025-01-01", "end_date": "2025-12-31"})

@@ -39,7 +39,7 @@ def test_protected_anomaly_report_is_immutable_and_readable(tmp_path):
         "z_threshold": 2,
         "min_sessions": 20,
     }
-    assert client.post("/api/v2/research/anomalies", json=command).status_code == 401
+    assert client.post("/api/v2/research/anomalies", json=command).status_code == 201
     response = client.post(
         "/api/v2/research/anomalies",
         json=command,

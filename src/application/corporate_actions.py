@@ -101,7 +101,7 @@ class CorporateActions:
                 "liquidation_required": bool(delisting and end_date >= date.fromisoformat(str(delisting["effective_date"]))),}
 
     def liquidation_plan(self, account_id: str, as_of_date: date) -> dict[str, object]:
-        """Create a reviewable paper liquidation plan for delisted open lots."""
+        """Create a reviewable portfolio liquidation plan for delisted open lots."""
         if self.ledger is None:
             raise DomainValidationError("ledger is unavailable for liquidation planning")
         projection = self.ledger.projection_at(account_id, as_of_date)
@@ -121,5 +121,5 @@ class CorporateActions:
             if not bars:
                 continue
             close = str(bars[-1]["close"])
-            entries.append({"instrument_id": lot.instrument_id, "units": lot.remaining_units.units, "price": close, "effective_date": fact["effective_date"], "source_action_id": fact["action_id"], "execution": "PAPER_REVIEW_REQUIRED"})
+            entries.append({"instrument_id": lot.instrument_id, "units": lot.remaining_units.units, "price": close, "effective_date": fact["effective_date"], "source_action_id": fact["action_id"], "execution": "REVIEW_REQUIRED"})
         return {"account_id": account_id, "as_of_date": as_of_date.isoformat(), "entries": entries, "fills_created": 0, "requires_operator_review": bool(entries)}

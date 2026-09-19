@@ -20,7 +20,6 @@ from src.application.kite_auth import KiteCredentials
 from src.application.market_repository import MarketRepository, TrackedInstrument
 from src.application.providers import KiteHistoricalBarsProvider
 from src.application.publication import ArtifactPublisher
-from src.application.sqlite import sqlite_connection
 from src.market_data import NormalizedBar
 from src.platform_kernel import DomainValidationError
 
@@ -39,7 +38,6 @@ class KiteMarketJobs:
         token_path: str | Path,
         nse_csv_path: str | Path,
         bse_csv_path: str | Path | None = None,
-        legacy_market_path: str | Path | None = None,
         intraday_alerts: IntradayStopAlerts | None = None,
     ) -> None:
         self.repository = repository
@@ -48,7 +46,6 @@ class KiteMarketJobs:
         self.token_path = Path(token_path)
         self.nse_csv_path = Path(nse_csv_path)
         self.bse_csv_path = Path(bse_csv_path) if bse_csv_path else None
-        self.legacy_market_path = Path(legacy_market_path) if legacy_market_path else None
         self.intraday_alerts = intraday_alerts
 
     def _client(self) -> KiteConnect:
@@ -398,7 +395,9 @@ class KiteMarketJobs:
         holdings = [lot.instrument_id for lot in projection.open_lots if not requested_ids or lot.instrument_id in requested_ids]
         if not holdings:
             raise DomainValidationError("account has no requested open holdings")
-        instruments = {instrument["instrument_id"]: instrument for instrument in self.repository.instruments(limit=500)}
+        # Holdings are portfolio state, not a paginated strategy result. Use
+        # the complete retained reference catalog for quote polling.
+        instruments = {instrument["instrument_id"]: instrument for instrument in self.repository.tracked_instruments()}
         keys = []
         for instrument_id in holdings:
             identity = instruments.get(instrument_id)
@@ -442,6 +441,16 @@ class KiteMarketJobs:
             raise DomainValidationError("bar fetch range must be at most 365 days")
         instrument = self.repository.instrument(symbol, exchange)
         instrument_id = str(instrument["instrument_id"])
+        if self.repository.has_coverage(instrument_id, start_date, end_date):
+            return {
+                "symbol": symbol,
+                "exchange": exchange,
+                "bar_count": 0,
+                "skipped": True,
+                "reason": "stored coverage already spans requested range",
+                "first_date": start_date.isoformat(),
+                "last_date": end_date.isoformat(),
+            }
         fetched = KiteHistoricalBarsProvider(self._client()).get_bars(
             str(instrument["provider_token"]), start_date, end_date
         )
@@ -484,104 +493,103 @@ class KiteMarketJobs:
             "last_date": bars[-1].as_of_date.isoformat(),
         }
 
-    def import_v3_bars(self, payload: dict[str, Any]) -> dict[str, object]:
-        """Import one symbol's legacy OHLCV as immutable evidence without writing v3."""
-        symbol = payload.get("symbol")
-        if (
-            not isinstance(symbol, str)
-            or not symbol
-            or set(payload) != {"symbol", "start_date", "end_date"}
-        ):
-            raise DomainValidationError("v3 bar import requires symbol, start_date and end_date")
-        try:
-            start_date = date.fromisoformat(payload["start_date"])
-            end_date = date.fromisoformat(payload["end_date"])
-        except (TypeError, ValueError, KeyError) as exc:
-            raise DomainValidationError("v3 bar import dates must be ISO dates") from exc
-        if start_date > end_date or end_date - start_date > timedelta(days=365):
-            raise DomainValidationError("v3 bar import range must be at most 365 days")
-        if self.legacy_market_path is None or not self.legacy_market_path.is_file():
-            raise DomainValidationError("v3 market database is unavailable")
-        instrument = self.repository.instrument(symbol)
-        with sqlite_connection(
-            self.legacy_market_path, read_only=True, row_factory=True
-        ) as connection:
-            identity_rows = connection.execute(
-                "SELECT DISTINCT isin FROM master_stocks WHERE nse_symbol = ?",
-                (symbol,),
-            ).fetchall()
-            if len(identity_rows) != 1 or identity_rows[0]["isin"] != instrument["isin"]:
-                raise DomainValidationError("v3 and current NSE instrument ISIN do not match")
-            rows = connection.execute(
-                """SELECT date, open, high, low, close, volume FROM market_data
-                   WHERE tradingsymbol = ? AND date BETWEEN ? AND ? ORDER BY date""",
-                (symbol, start_date.isoformat(), end_date.isoformat()),
-            ).fetchall()
-        bars = tuple(
-            NormalizedBar(
-                str(instrument["instrument_id"]),
-                date.fromisoformat(row["date"]),
-                row["open"],
-                row["high"],
-                row["low"],
-                row["close"],
-                int(row["volume"]),
-            )
-            for row in rows
-        )
-        if not bars:
-            raise DomainValidationError("v3 market database has no bars in requested range")
-        raw, normalized = ingest_market_bars(
-            self.publisher,
-            "v3-sqlite",
-            bars,
-            source_request={
-                "source_database": "legacy market_data.db",
-                "symbol": symbol,
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-            },
-            provider_version="v3-dabff59",
-        )
-        self.repository.upsert_bars(str(instrument["instrument_id"]), bars, normalized.artifact_id)
-        return {
-            "raw_artifact_id": raw.artifact_id,
-            "artifact_id": normalized.artifact_id,
-            "symbol": symbol,
-            "bar_count": len(bars),
-            "first_date": bars[0].as_of_date.isoformat(),
-            "last_date": bars[-1].as_of_date.isoformat(),
-        }
-
-    def enrich_and_sync_universe(self, payload: dict[str, Any] | None = None) -> dict[str, object]:
-        """Day-0 master universe build: sync instruments, optionally enrich via YFinance and filter."""
+    def enrich_and_sync_universe(
+        self, payload: dict[str, Any] | None = None, context: Any | None = None
+    ) -> dict[str, object]:
+        """Build the frozen investable universe from a current YFinance cap snapshot."""
         payload = payload or {}
-        min_mcap = float(payload.get("min_market_cap_cr", 500)) * 10_000_000
-        min_price = float(payload.get("min_price", 75))
-        enrich_yfinance = bool(payload.get("enrich_yfinance", False))
+        if set(payload) - {"min_market_cap_cr"}:
+            raise DomainValidationError("universe enrichment only accepts min_market_cap_cr")
+        threshold_crore = float(payload.get("min_market_cap_cr", 500))
+        if threshold_crore <= 0:
+            raise DomainValidationError("min_market_cap_cr must be positive")
+        min_mcap = threshold_crore * 10_000_000
 
-        # First sync base NSE instruments
         sync_result = self.sync_instruments({})
+        bse_result = self.sync_bse_instruments({}) if self.bse_csv_path else None
         tracked = self.repository.tracked_instruments()
-        
+
+        from src.application.yfinance_provider import fetch_symbol_enrichment
+
+        existing = {str(item["isin"]): item for item in self.repository.universe_members()}
+        initial_build = not existing
+        bse_scrip_codes: dict[str, str] = {}
+        if self.bse_csv_path and self.bse_csv_path.is_file():
+            with self.bse_csv_path.open(newline="", encoding="utf-8-sig") as source:
+                for row in csv.DictReader(source):
+                    symbol = str(row.get("Security Id", "")).strip()
+                    code = str(row.get("Security Code", "")).strip()
+                    if symbol and code:
+                        bse_scrip_codes[symbol] = code
+        snapshot_date = datetime.now(UTC).date().isoformat()
         enriched_count = 0
-        eligible_count = 0
-        if enrich_yfinance:
-            from src.application.yfinance_provider import fetch_symbol_enrichment
-            for item in tracked[:payload.get("limit", len(tracked))]:
-                try:
-                    info = fetch_symbol_enrichment(item.symbol, item.exchange)
-                    enriched_count += 1
-                    if info["market_cap"] >= min_mcap and info["current_price"] >= min_price:
-                        eligible_count += 1
-                except Exception:
-                    continue
+        added_count = 0
+        retained_count = 0
+        unresolved_count = 0
+        members: list[dict[str, object]] = []
+        for index, item in enumerate(tracked, start=1):
+            if context is not None and (index == 1 or index % 25 == 0):
+                context.checkpoint(
+                    progress={
+                        "processed": index - 1,
+                        "total": len(tracked),
+                        "resolved": enriched_count,
+                        "selected": len(members),
+                    }
+                )
+            isin = str(item["isin"])
+            try:
+                info = fetch_symbol_enrichment(
+                    str(item["symbol"]),
+                    str(item["exchange"]),
+                    bse_scrip_codes.get(str(item["symbol"])),
+                )
+                enriched_count += 1
+            except Exception:
+                unresolved_count += 1
+                if isin in existing:
+                    retained_count += 1
+                continue
+            market_cap = float(info["market_cap"])
+            if isin in existing:
+                current = existing[isin]
+                members.append({**current, "last_market_cap": market_cap, "snapshot_date": snapshot_date})
+                retained_count += 1
+            elif market_cap > min_mcap:
+                members.append({
+                    "isin": isin,
+                    "instrument_id": item["instrument_id"],
+                    "symbol": item["symbol"],
+                    "exchange": item["exchange"],
+                    "membership_type": "BASE" if initial_build else "ADDED_LATER",
+                    "first_eligible_date": snapshot_date,
+                    "initial_market_cap": market_cap,
+                    "threshold_crore": threshold_crore,
+                    "source": "yfinance",
+                    "snapshot_date": snapshot_date,
+                    "last_market_cap": market_cap,
+                })
+                added_count += 1
+        if context is not None:
+            context.checkpoint(
+                progress={
+                    "processed": len(tracked),
+                    "total": len(tracked),
+                    "resolved": enriched_count,
+                    "selected": len(members),
+                }
+            )
+        self.repository.upsert_universe_members(members)
 
         return {
             "base_sync": sync_result,
+            "bse_sync": bse_result,
             "total_tracked": len(tracked),
             "enriched_count": enriched_count,
-            "eligible_count": eligible_count,
-            "enrichment_applied": enrich_yfinance,
+            "added_count": added_count,
+            "retained_count": retained_count,
+            "unresolved_count": unresolved_count,
+            "universe_count": len(self.repository.universe_members()),
+            "threshold_crore": threshold_crore,
+            "source": "yfinance",
         }
-

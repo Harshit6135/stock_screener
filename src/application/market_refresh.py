@@ -4,6 +4,7 @@ import hashlib
 import json
 from datetime import UTC, date, datetime
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from src.application.jobs import JobStore
@@ -13,8 +14,16 @@ from src.platform_kernel import DomainValidationError
 
 
 class MarketRefreshPlanner:
-    def __init__(self, database: str | Path, repository: MarketRepository, jobs: JobStore, publisher: ArtifactPublisher | None = None):
+    def __init__(
+        self,
+        database: str | Path,
+        repository: MarketRepository,
+        jobs: JobStore,
+        publisher: ArtifactPublisher | None = None,
+        held_instrument_ids: Callable[[], set[str]] | None = None,
+    ):
         self.database, self.repository, self.jobs, self.publisher = Path(database), repository, jobs, publisher
+        self.held_instrument_ids = held_instrument_ids
 
     def reconcile(self, payload: dict[str, Any]) -> dict[str, object]:
         """Publish a deterministic daily reference/bar coverage reconciliation."""
@@ -92,24 +101,40 @@ class MarketRefreshPlanner:
             raise DomainValidationError("market refresh exchange is invalid")
         if start > end or (end - start).days > 365:
             raise DomainValidationError("market refresh range must be at most 365 days")
-        instruments = []
-        offset = 0
-        while True:
-            page = self.repository.instruments(limit=500, offset=offset)
-            instruments.extend(page)
-            if len(page) < 500:
-                break
-            offset += len(page)
+        # The fixed investable universe is the normal download set. Portfolio
+        # holdings and the strategy benchmark are always retained even when
+        # they are outside that screen.
+        catalog = self.repository.tracked_instruments()
+        reference_by_id = {str(item["instrument_id"]): item for item in catalog}
+        universe = self.repository.universe_members()
+        if not universe:
+            raise DomainValidationError("fixed universe is empty; build the universe before market refresh")
+        held_ids = set(self.held_instrument_ids() if self.held_instrument_ids else ())
+        selected_ids = {str(item["instrument_id"]) for item in universe} | held_ids
+        selected_ids.update(
+            str(item["instrument_id"])
+            for item in catalog
+            if str(item["symbol"]) == "NIFTY 500" and str(item["exchange"]) == "NSE"
+        )
+        instruments = [reference_by_id[item] for item in sorted(selected_ids) if item in reference_by_id]
         jobs: list[int] = []
         excluded: list[dict[str, str]] = []
+        blocked: list[dict[str, str]] = []
+        known_ids = set(reference_by_id)
+        blocked.extend(
+            {"instrument_id": instrument_id, "reason": "held_position_not_in_reference_catalog"}
+            for instrument_id in sorted(held_ids - known_ids)
+        )
         for item in instruments:
             if exchange is not None and item["exchange"] != exchange:
                 continue
-            if str(item["isin"]).startswith("INDEX:"):
+            is_held = str(item["instrument_id"]) in held_ids
+            if str(item["isin"]).startswith("INDEX:") and str(item["symbol"]) != "NIFTY 500" and not is_held:
                 excluded.append({"instrument_id": str(item["instrument_id"]), "reason": "index_identity"})
                 continue
             if not str(item["provider_token"]).strip():
-                excluded.append({"instrument_id": str(item["instrument_id"]), "reason": "missing_provider_token"})
+                row = {"instrument_id": str(item["instrument_id"]), "reason": "missing_provider_token"}
+                (blocked if is_held else excluded).append(row)
                 continue
             fingerprint = f"market-bars:{item['instrument_id']}:{start.isoformat()}:{end.isoformat()}"
             job = self.jobs.submit(
@@ -122,4 +147,5 @@ class MarketRefreshPlanner:
         return {
             "start_date": start.isoformat(), "end_date": end.isoformat(),
             "scheduled_count": len(jobs), "job_ids": jobs, "excluded": excluded,
+            "blocked_held_positions": sorted(blocked, key=lambda item: item["instrument_id"]),
         }

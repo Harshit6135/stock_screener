@@ -8,7 +8,6 @@ from flask import Blueprint, jsonify, request
 
 from src.application.jobs import JobStore
 from src.application.research_jobs import ResearchJobs
-from src.application.web import require_operator_token
 from src.platform_kernel import ArtifactStore, DomainValidationError
 
 
@@ -23,8 +22,8 @@ def create_research_blueprint(store: ArtifactStore, research: ResearchJobs, jobs
 
     @blueprint.get("/<kind>/<artifact_id>")
     def artifact(kind: str, artifact_id: str):
-        strategy_id = request.args.get("strategy_id", "strategy1")
-        if strategy_id not in {"strategy1", "strategy2"}:
+        strategy_id = request.args.get("strategy_id", research.runtime.strategy_ids()[0])
+        if strategy_id not in research.runtime.strategy_ids():
             return jsonify({"error": "strategy_id is invalid"}), 400
         category = f"features/{strategy_id}" if kind == "features" else categories.get(kind)
         if category is None:
@@ -50,7 +49,7 @@ def create_research_blueprint(store: ArtifactStore, research: ResearchJobs, jobs
         try:
             week_end = date.fromisoformat(request.args["week_end"])
             limit = int(request.args.get("limit", "20"))
-            strategy_id = request.args.get("strategy_id", "strategy1")
+            strategy_id = request.args.get("strategy_id", research.runtime.strategy_ids()[0])
             return jsonify(
                 {
                     "week_end": week_end.isoformat(),
@@ -63,16 +62,13 @@ def create_research_blueprint(store: ArtifactStore, research: ResearchJobs, jobs
 
     @blueprint.post("/recalculate")
     def recalculate():
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         if jobs is None:
             return jsonify({"error": "research job service is unavailable"}), 503
         body = request.get_json(silent=True)
         if not isinstance(body, dict) or set(body) != {"as_of_date", "strategy_id", "symbols"}:
             return jsonify({"error": "as_of_date, strategy_id and symbols are required"}), 400
         strategy_id = body["strategy_id"]
-        if strategy_id not in {"strategy1", "strategy2"}:
+        if strategy_id not in research.runtime.strategy_ids():
             return jsonify({"error": "strategy_id is invalid"}), 400
         try:
             day = date.fromisoformat(str(body["as_of_date"]))
@@ -89,9 +85,6 @@ def create_research_blueprint(store: ArtifactStore, research: ResearchJobs, jobs
 
     @blueprint.post("/sector-rankings")
     def sector_rankings():
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "sector ranking payload must be an object"}), 400
@@ -102,9 +95,6 @@ def create_research_blueprint(store: ArtifactStore, research: ResearchJobs, jobs
 
     @blueprint.post("/correlations")
     def correlations():
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "correlation payload must be an object"}), 400
@@ -115,9 +105,6 @@ def create_research_blueprint(store: ArtifactStore, research: ResearchJobs, jobs
 
     @blueprint.post("/anomalies")
     def anomalies():
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify({"error": "anomaly payload must be an object"}), 400
@@ -142,69 +129,11 @@ def create_research_blueprint(store: ArtifactStore, research: ResearchJobs, jobs
             "data": payload,
         })
 
-    @blueprint.post("/parity")
-    def parity():
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
-        body = request.get_json(silent=True)
-        if not isinstance(body, dict):
-            return jsonify({"error": "parity payload must be an object"}), 400
-        try:
-            return jsonify(research.compare_strategy2_parity(body)), 201
-        except DomainValidationError as exc:
-            return jsonify({"error": str(exc)}), 400
-
-    @blueprint.get("/parity/<artifact_id>")
-    def parity_readback(artifact_id: str):
-        try:
-            manifest, payload = store.read_json("research/parity", artifact_id)
-        except DomainValidationError:
-            return jsonify({"error": "parity artifact not found"}), 404
-        return jsonify({
-            "artifact": {
-                "artifact_id": manifest.artifact_id,
-                "category": manifest.category,
-                "quality": manifest.quality.value,
-                "upstream_ids": manifest.upstream_ids,
-            },
-            "data": payload,
-        })
-
-    @blueprint.post("/candidate-parity")
-    def candidate_parity():
-        error = require_operator_token()
-        if error:
-            return jsonify(error[0]), error[1]
-        body = request.get_json(silent=True)
-        if not isinstance(body, dict):
-            return jsonify({"error": "candidate parity payload must be an object"}), 400
-        try:
-            return jsonify(research.compare_strategy2_candidates(body)), 201
-        except DomainValidationError as exc:
-            return jsonify({"error": str(exc)}), 400
-
-    @blueprint.get("/candidate-parity/<artifact_id>")
-    def candidate_parity_readback(artifact_id: str):
-        try:
-            manifest, payload = store.read_json("research/candidate-parity", artifact_id)
-        except DomainValidationError:
-            return jsonify({"error": "candidate parity artifact not found"}), 404
-        return jsonify({
-            "artifact": {
-                "artifact_id": manifest.artifact_id,
-                "category": manifest.category,
-                "quality": manifest.quality.value,
-                "upstream_ids": manifest.upstream_ids,
-            },
-            "data": payload,
-        })
-
     @blueprint.get("/<kind>")
     def read_snapshot(kind: str):
         if kind not in {"features", "percentiles", "scores", "rankings"}:
             return jsonify({"error": "research artifact category not found"}), 404
-        strategy_id = request.args.get("strategy_id", "strategy1")
+        strategy_id = request.args.get("strategy_id", research.runtime.strategy_ids()[0])
         symbol = request.args.get("symbol")
         date_text = request.args.get("as_of_date", request.args.get("week_end"))
         try:
@@ -238,7 +167,7 @@ def create_research_blueprint(store: ArtifactStore, research: ResearchJobs, jobs
 
     @blueprint.get("/ranking-weeks")
     def ranking_weeks():
-        strategy_id = request.args.get("strategy_id", "strategy1")
+        strategy_id = request.args.get("strategy_id", research.runtime.strategy_ids()[0])
         try:
             return jsonify(
                 {

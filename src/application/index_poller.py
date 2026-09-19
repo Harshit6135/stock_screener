@@ -1,7 +1,9 @@
 """Durable intent and interval lease for the local index quote poller."""
 
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from src.application.jobs import JobStore
 from src.application.sqlite import migrate_sqlite, sqlite_connection
@@ -70,3 +72,42 @@ class IndexQuotePoller:
                 with sqlite_connection(self.database) as connection:
                     connection.execute("UPDATE index_poller_leases SET last_error=? WHERE poller_name=?", (job.last_error or "quote job failed", self.poller_name))
         return self.state()
+
+
+def market_is_open(now: datetime | None = None) -> bool:
+    """Return whether the NSE cash session is open in Asia/Kolkata time."""
+    local = (now or datetime.now(UTC)).astimezone(ZoneInfo("Asia/Kolkata"))
+    return local.weekday() < 5 and (local.hour, local.minute, local.second) >= (9, 15, 0) and (local.hour, local.minute, local.second) < (15, 30, 0)
+
+
+class BackgroundIndexPoller:
+    """Runs the durable index quote scheduler while the market is live."""
+
+    def __init__(self, poller: IndexQuotePoller, interval_seconds: int = 15):
+        self.poller = poller
+        self.interval_seconds = interval_seconds
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        self.poller.set_interval(self.interval_seconds)
+        self.poller.set_enabled(True)
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, name="index-quote-poller", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            try:
+                if market_is_open():
+                    self.poller.tick(datetime.now(UTC))
+                    self.poller.reconcile()
+            except Exception:
+                # The durable poller state and worker remain available if one tick fails.
+                pass
+            self._stop.wait(1)

@@ -124,7 +124,7 @@ class Ledger:
                 self._event_fill(json.loads(row["event_json"])) for row in previous_rows
             )
             # Validate against the complete position/cash history *inside*
-            # the same write transaction. A bad manual or paper fill must
+            # the same write transaction. A malformed transaction must
             # never be committed and corrupt the account projection.
             project(Money(account["opening_cash"], account["currency"]), previous_fills + fills)
             version = current
@@ -132,7 +132,7 @@ class Ledger:
                 occurred_at = min(self._execution_time(fill) for fill in fills).isoformat()
                 order_event = {
                     "order_id": order_id,
-                    "origin": "PAPER",
+                    "origin": "MANUAL",
                     "idempotency_key": idempotency_key,
                 }
                 for event_type in ("ORDER_PROPOSED", "ORDER_APPROVED", "ORDER_SUBMITTED"):
@@ -239,6 +239,14 @@ class Ledger:
 
     def projection(self, account_id: str):
         return self.projection_at(account_id, None)
+
+    def open_instrument_ids(self) -> set[str]:
+        """Return instruments with non-zero positions across all accounts."""
+        held: set[str] = set()
+        for account in self.accounts():
+            projection = self.projection(str(account["account_id"]))
+            held.update(str(lot.instrument_id) for lot in projection.open_lots)
+        return held
 
     def projection_at(self, account_id: str, as_of: date | None):
         with self._connect() as connection:

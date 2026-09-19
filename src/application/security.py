@@ -3,6 +3,8 @@
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from src.platform_kernel import DomainValidationError
+
 _SENSITIVE_KEYS = frozenset(
     {
         "api_key",
@@ -38,4 +40,6 @@ def sanitize_sensitive(value: Any) -> Any:
 
 def sanitize_error(error: BaseException) -> str:
     """Persist an error class without potentially credential-bearing details."""
+    if isinstance(error, DomainValidationError):
+        return str(error)
     return type(error).__name__

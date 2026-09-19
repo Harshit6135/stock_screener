@@ -1,24 +1,15 @@
-"""Operator-protected review and processing of paper action proposals."""
+"""Reviewable portfolio action proposals and manually confirmed transactions."""
 
 from datetime import date
 
 from flask import Blueprint, jsonify, request
 
 from src.application.action_jobs import ActionJobs
-from src.application.web import require_operator_token
 from src.platform_kernel import DomainValidationError
 
 
-def create_actions_blueprint(actions: ActionJobs, automatic_paper_mode: bool = False) -> Blueprint:
+def create_actions_blueprint(actions: ActionJobs) -> Blueprint:
     blueprint = Blueprint("actions_v2", __name__, url_prefix="/api/v2/actions")
-
-    @blueprint.before_request
-    def authorize():
-        error = require_operator_token()
-        if error:
-            body, status = error
-            return jsonify(body), status
-        return None
 
     @blueprint.get("/proposals")
     def proposals():
@@ -67,10 +58,7 @@ def create_actions_blueprint(actions: ActionJobs, automatic_paper_mode: bool = F
         if not isinstance(body, dict):
             return jsonify({"error": "manual action payload must be an object"}), 400
         try:
-            proposal = actions.create_manual(body)
-            if automatic_paper_mode:
-                proposal = actions.automatically_process_paper_proposal(proposal)
-            return jsonify(proposal), 201
+            return jsonify(actions.create_manual(body)), 201
         except DomainValidationError as exc:
             return jsonify({"error": str(exc)}), 400
 

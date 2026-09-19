@@ -5,28 +5,18 @@ from pathlib import Path
 
 
 class RuntimeConfig:
-    """Configuration deliberately independent from the retired legacy config package."""
+    """Runtime configuration for the local application."""
 
     SECRET_KEY = os.environ.get("SCREENER_SECRET_KEY", "local-development-only")
     DATA_DIRECTORY = Path(os.environ.get("SCREENER_DATA_DIRECTORY", "instance"))
-    OPERATOR_TOKEN = os.environ.get("SCREENER_OPERATOR_TOKEN")
-    # Local paper-only convenience mode. It removes approval clicks but never
-    # enables broker order submission.
-    AUTOMATIC_PAPER_MODE = os.environ.get("SCREENER_AUTOMATIC_PAPER_MODE", "false").lower() == "true"
-    # Market-data access is a shared, read-only operational profile.  The
-    # legacy KITE_* names remain a migration fallback only.
+    # Market-data access is a shared, read-only operational profile.
     MARKET_DATA_KITE_API_KEY = os.environ.get("MARKET_DATA_KITE_API_KEY")
     MARKET_DATA_KITE_API_SECRET = os.environ.get("MARKET_DATA_KITE_API_SECRET")
     MARKET_DATA_KITE_ACCESS_TOKEN_PATH = Path(
         os.environ.get(
             "SCREENER_MARKET_DATA_KITE_ACCESS_TOKEN_PATH",
-            os.environ.get("SCREENER_KITE_ACCESS_TOKEN_PATH", "access_token.txt"),
+            "access_token.txt",
         )
-    )
-    KITE_API_KEY = os.environ.get("KITE_API_KEY")
-    KITE_API_SECRET = os.environ.get("KITE_API_SECRET")
-    KITE_ACCESS_TOKEN_PATH = Path(
-        os.environ.get("SCREENER_KITE_ACCESS_TOKEN_PATH", "access_token.txt")
     )
     # Never fall back to the shared market-data profile for portfolio access.
     # These are process/deployment-local credentials until V4 has user identity

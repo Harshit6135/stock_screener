@@ -1,5 +1,6 @@
 """Single-process composition for the local modular monolith."""
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,6 @@ from src.application.intraday_alerts import IntradayStopAlerts
 from src.application.intraday_stream import IntradayStreamLease
 from src.application.jobs import JobStore
 from src.application.kite_auth import KiteCredentials
-from src.application.legacy_portfolio import LegacyPortfolioImporter
 from src.application.liquidity import publish_liquidity_universe
 from src.application.market_jobs import KiteMarketJobs
 from src.application.market_refresh import MarketRefreshPlanner
@@ -21,10 +21,12 @@ from src.application.market_repository import MarketRepository
 from src.application.pipeline_jobs import ResearchPipelineJobs
 from src.application.publication import ArtifactPublisher
 from src.application.research_jobs import ResearchJobs
-from src.application.strategy_configs import StrategyConfigs
+from src.application.strategy_definitions import StrategyDefinitions
+from src.application.strategy_runtime import StrategyRuntime
 from src.application.worker import BackgroundWorker, JobWorker
 from src.execution_gateway import BrokerOrderService, KiteExecutionGateway, Ledger
-from src.platform_kernel import ArtifactStore
+from src.indicators.registry import PandasTaAdapter
+from src.platform_kernel import ArtifactStore, SqliteArtifactStore
 
 
 @dataclass(frozen=True)
@@ -35,10 +37,10 @@ class ApplicationServices:
     jobs: JobStore
     market: MarketRepository
     research: ResearchJobs
-    configs: StrategyConfigs
+    strategies: StrategyDefinitions
+    strategy_runtime: StrategyRuntime
     backtests: BacktestJobs
     actions: ActionJobs
-    legacy_portfolio: LegacyPortfolioImporter
     pipelines: ResearchPipelineJobs
     publisher: ArtifactPublisher
     ledger: Ledger
@@ -62,15 +64,13 @@ class ApplicationServices:
         market_data_kite_token_path: str | Path = "access_token.txt",
         nse_csv_path: str | Path = "data/imports/NSE.csv",
         bse_csv_path: str | Path = "data/imports/BSE.csv",
-        legacy_market_path: str | Path | None = None,
         portfolio_kite_credentials: KiteCredentials | None = None,
         portfolio_kite_token_path: str | Path = "portfolio_access_token.txt",
         portfolio_live_execution: bool = False,
-        automatic_paper_mode: bool = False,
     ) -> "ApplicationServices":
         root = Path(data_directory)
         database = root / "system.db"
-        artifacts = ArtifactStore(root / "artifacts")
+        artifacts = SqliteArtifactStore(database)
         catalog = ArtifactCatalog(database)
         jobs = JobStore(database)
         index_poller = IndexQuotePoller(database, jobs)
@@ -79,20 +79,40 @@ class ApplicationServices:
         ledger = Ledger(database)
         intraday_alerts = IntradayStopAlerts(database, ledger, publisher)
         intraday_stream = IntradayStreamLease(database)
-        market_refresh = MarketRefreshPlanner(database, market, jobs, publisher)
+        market_refresh = MarketRefreshPlanner(
+            database, market, jobs, publisher, held_instrument_ids=ledger.open_instrument_ids
+        )
         corporate_actions = CorporateActions(database, market, publisher, ledger)
         broker_orders = BrokerOrderService(
             database, ledger, KiteExecutionGateway(
                 portfolio_kite_credentials, portfolio_kite_token_path, enabled=portfolio_live_execution
             ),
         )
-        configs = StrategyConfigs(database, publisher)
-        research = ResearchJobs(database, market, publisher, configs)
-        backtests = BacktestJobs(database, market, research, publisher, configs, corporate_actions)
-        publisher.recover()
-        actions = ActionJobs(database, market, research, ledger, publisher, configs)
-        legacy_portfolio = LegacyPortfolioImporter(database, market, ledger, publisher)
-        pipelines = ResearchPipelineJobs(database, jobs)
+        strategies = StrategyDefinitions(database, PandasTaAdapter())
+        strategy_runtime = StrategyRuntime(strategies)
+        strategy_runtime.seed(Path(__file__).resolve().parents[2] / "strategies")
+        research = ResearchJobs(database, market, publisher, strategy_runtime)
+        backtests = BacktestJobs(database, market, research, publisher, corporate_actions)
+        # Full artifact verification is expensive with a large research history.
+        # A populated catalog already represents validated immutable artifacts;
+        # clean interrupted staging work at startup and reserve a full scan for
+        # an explicit SCREENER_FULL_STARTUP_RECOVERY=true setting.
+        catalog_entries = catalog.artifacts()
+        legacy_catalog_without_payloads = (
+            bool(catalog_entries)
+            and not artifacts.artifact_locations()
+            and any(item["status"] != "MISSING" for item in catalog_entries)
+        )
+        if (
+            os.environ.get("SCREENER_FULL_STARTUP_RECOVERY", "false").lower() == "true"
+            or not catalog_entries
+            or legacy_catalog_without_payloads
+        ):
+            publisher.recover()
+        else:
+            publisher.store.recover_staging()
+        actions = ActionJobs(database, market, research, ledger, publisher)
+        pipelines = ResearchPipelineJobs(database, jobs, strategy_runtime)
         market_jobs = KiteMarketJobs(
             market,
             publisher,
@@ -100,7 +120,6 @@ class ApplicationServices:
             market_data_kite_token_path,
             nse_csv_path,
             bse_csv_path,
-            legacy_market_path,
             intraday_alerts,
         )
 
@@ -112,11 +131,9 @@ class ApplicationServices:
                 "quality": manifest.quality.value,
             }
 
-        def generate_paper_proposal(payload: dict[str, Any]) -> dict[str, object]:
-            proposal = actions.generate(payload)
-            if portfolio_live_execution is False and automatic_paper_mode:
-                return actions.automatically_process_paper_proposal(proposal)
-            return proposal
+        def generate_portfolio_proposal(payload: dict[str, Any]) -> dict[str, object]:
+            """Generate a proposal only; a proposal is never an execution."""
+            return actions.generate(payload)
 
         worker = JobWorker(
             jobs,
@@ -132,16 +149,13 @@ class ApplicationServices:
                 "market.fetch-intraday-stop-alerts": market_jobs.fetch_intraday_stop_alerts,
                 "market.schedule-all-symbol-refresh": market_refresh.schedule,
                 "reference.reconcile-market": market_refresh.reconcile,
-                "market.import-v3-bars": market_jobs.import_v3_bars,
-                "research.calculate-strategy1-day": research.calculate_strategy1_day,
-                "research.rank-strategy1-week": research.rank_week,
-                "research.calculate-strategy2-day": research.calculate_strategy2_day,
-                "research.rank-strategy2-week": research.rank_strategy2_week,
+                "research.calculate-day": research.calculate_day,
+                "research.rank-week": research.rank_week,
                 "backtest.run": backtests.execute,
                 "backtest.stress": backtests.stress,
                 "backtest.walk-forward": backtests.walk_forward,
                 "backtest.attribute": backtests.attribute,
-                "actions.generate-paper-proposal": generate_paper_proposal,
+                "actions.generate-portfolio-proposal": generate_portfolio_proposal,
                 "research.pipeline-advance": pipelines.advance,
                 "reference.enrich-day0-universe": market_jobs.enrich_and_sync_universe,
             },
@@ -153,10 +167,10 @@ class ApplicationServices:
             jobs,
             market,
             research,
-            configs,
+            strategies,
+            strategy_runtime,
             backtests,
             actions,
-            legacy_portfolio,
             pipelines,
             publisher,
             ledger,

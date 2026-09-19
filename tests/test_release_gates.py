@@ -64,5 +64,5 @@ def test_restore_drill_proves_backup_and_restored_readiness(tmp_path):
 
 
 def test_dashboard_contract_covers_all_v4_workflows():
-    html = "/app /actions /backtest /pipeline /configs /portfolio"
+    html = "/app /actions /backtest /pipeline /portfolio"
     assert dashboard_visual_contract(html)["parity"] is True

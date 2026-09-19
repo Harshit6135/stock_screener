@@ -1,7 +1,8 @@
-"""Interactive browser shell for research, pipeline, backtest, actions, portfolio, and configs."""
+"""Interactive browser shell for research, pipeline, backtest, actions, and portfolio."""
 
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
 from flask import Blueprint, Response
 
 NAV_LINKS = """
@@ -9,17 +10,11 @@ NAV_LINKS = """
   <div class="nav-links">
     <span style="font-weight:700;font-size:1.1rem;margin-right:0.5rem;color:#60a5fa;">StockScreener</span>
     <a href="/app" class="__ACTIVE_APP__">Overview</a>
-    <a href="/dashboard" class="__ACTIVE_DASHBOARD__">Dashboard</a>
     <a href="/pipeline" class="__ACTIVE_PIPELINE__">Pipeline</a>
     <a href="/backtest" class="__ACTIVE_BACKTEST__">Backtest</a>
     <a href="/actions" class="__ACTIVE_ACTIONS__">Actions</a>
     <a href="/portfolio" class="__ACTIVE_PORTFOLIO__">Portfolio</a>
-    <a href="/configs" class="__ACTIVE_CONFIGS__">Configs</a>
     <a href="/integrations/kite" class="__ACTIVE_KITE__">Kite Auth</a>
-  </div>
-  <div class="token-bar">
-    <label for="op-token">Operator Token:</label>
-    <input id="op-token" type="password" placeholder="SCREENER_OPERATOR_TOKEN" class="token-input" autocomplete="off">
   </div>
 </div>
 """
@@ -38,8 +33,6 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-
 .nav-links a { color: #94a3b8; text-decoration: none; padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.9rem; font-weight: 500; transition: all 0.15s; }
 .nav-links a:hover, .nav-links a.active { color: #fff; background: #334155; }
 .nav-links a.active { background: #2563eb; }
-.token-bar { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: #94a3b8; }
-.token-input { background: #1e293b; border: 1px solid #475569; color: #fff; border-radius: 4px; padding: 0.3rem 0.5rem; font-size: 0.85rem; width: 170px; }
 .card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; }
 .card-header { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
@@ -78,21 +71,19 @@ pre { background: #0f172a; border: 1px solid #334155; border-radius: 6px; paddin
 progress { width: 100%; height: 1.1rem; border-radius: 6px; }
 </style>
 <script>
-function getToken() {
-  let t = document.getElementById('op-token')?.value;
-  if (!t) t = localStorage.getItem('operator_token') || '';
-  if (!t) {
-    t = prompt('Local operator token:') || '';
-    if (t) { localStorage.setItem('operator_token', t); const el = document.getElementById('op-token'); if (el) el.value = t; }
-  }
-  return t;
-}
-function saveToken(v) { localStorage.setItem('operator_token', v); }
-window.addEventListener('DOMContentLoaded', () => {
-  const el = document.getElementById('op-token');
-  if (el) {
-    el.value = localStorage.getItem('operator_token') || '';
-    el.addEventListener('input', (e) => saveToken(e.target.value));
+window.addEventListener('DOMContentLoaded', async () => {
+  const selects = document.querySelectorAll('[data-strategy-select]');
+  if (!selects.length) return;
+  const response = await fetch('/api/v2/strategies/active');
+  if (!response.ok) return;
+  const strategies = (await response.json()).strategies || [];
+  for (const select of selects) {
+    select.replaceChildren(...strategies.map(item => {
+      const option = document.createElement('option');
+      option.value = item.strategy_id;
+      option.textContent = item.definition.strategy.name;
+      return option;
+    }));
   }
 });
 </script>
@@ -100,7 +91,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
 def _render_nav(active_page: str) -> str:
     nav = NAV_LINKS
-    for key in ("APP", "DASHBOARD", "PIPELINE", "BACKTEST", "ACTIONS", "PORTFOLIO", "CONFIGS", "KITE"):
+    for key in ("APP", "PIPELINE", "BACKTEST", "ACTIONS", "PORTFOLIO", "KITE"):
         nav = nav.replace(f"__{key}__", "active" if key.lower() == active_page.lower() else "")
     return nav
 
@@ -126,7 +117,7 @@ def create_dashboard_blueprint() -> Blueprint:
     <div class="card-header">Weekly rankings</div>
     <div class="form-row">
       <div class="form-group"><label>Week Ending</label><input id="week" type="date" value="{last_friday.isoformat()}"></div>
-      <div class="form-group"><label>Strategy</label><select id="strategy"><option value="strategy1">Strategy 1</option><option value="strategy2">Strategy 2 (provisional)</option></select></div>
+      <div class="form-group"><label>Strategy</label><select id="strategy" data-strategy-select></select></div>
       <div class="form-group" style="justify-content:flex-end;"><button id="load-rankings">Load Rankings</button></div>
     </div>
     <p id="ranking-status" role="status" class="muted"></p>
@@ -167,19 +158,19 @@ def create_dashboard_blueprint() -> Blueprint:
 
 <div class="grid-2">
   <div class="card">
-    <div class="card-header">Paper account</div>
+    <div class="card-header">Portfolio account</div>
     <div class="form-row">
-      <div class="form-group"><label>Account ID</label><input id="account-id" value="paper" placeholder="e.g. paper"></div>
+      <div class="form-group"><label>Account ID</label><input id="account-id" placeholder="Portfolio account ID"></div>
       <div class="form-group" style="justify-content:flex-end;"><button id="load-account">Look up</button></div>
     </div>
-    <pre id="account-result">Look up paper account balance and valuation.</pre>
+    <pre id="account-result">Look up portfolio balance and valuation.</pre>
   </div>
 
   <div class="card">
-    <div class="card-header">Paper action proposals</div>
-    <p class="muted" style="font-size:0.85rem;">Review and process paper proposals. See full management in <a href="/actions" style="color:#60a5fa;">Actions</a>.</p>
+    <div class="card-header">Portfolio action proposals</div>
+    <p class="muted" style="font-size:0.85rem;">Review and process portfolio proposals. See full management in <a href="/actions" style="color:#60a5fa;">Actions</a>.</p>
     <div class="form-row">
-      <div class="form-group"><label>Account ID</label><input id="action-account-id" value="paper"></div>
+      <div class="form-group"><label>Account ID</label><input id="action-account-id" placeholder="Portfolio account ID"></div>
       <div class="form-group" style="justify-content:flex-end;"><button id="load-actions">Load proposals</button></div>
     </div>
     <p id="action-status" role="status" class="muted"></p>
@@ -246,11 +237,9 @@ async function checkWorker() {{
 }}
 async function controlWorker(action) {{
   const out = document.getElementById('worker-result');
-  const token = getToken();
   try {{
     const res = await fetch('/api/v2/operations/worker/' + action, {{
       method: 'POST',
-      headers: {{ 'X-Operator-Token': token }}
     }});
     out.textContent = JSON.stringify(await res.json(), null, 2);
   }} catch (e) {{ out.textContent = e.message; }}
@@ -263,6 +252,7 @@ document.getElementById('worker-start-btn').addEventListener('click', () => cont
 document.getElementById('worker-stop-btn').addEventListener('click', () => controlWorker('stop'));
 document.getElementById('worker-step-btn').addEventListener('click', () => controlWorker('work-once'));
 loadRankings(); loadQuotes(); checkWorker();
+setInterval(loadQuotes, 15000);
 </script></body></html>"""
         return Response(page, mimetype="text/html")
 
@@ -271,16 +261,16 @@ loadRankings(); loadQuotes(); checkWorker();
         today = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
         page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Paper Actions — Stock Screener</title>{BASE_STYLE}</head><body>
+<title>Portfolio Actions — Stock Screener</title>{BASE_STYLE}</head><body>
 {_render_nav("actions")}
-<h1>Paper Action Proposals & Intents</h1>
-<p class="muted">Review, approve, reject, or process paper rebalance proposals. Manual batch intents can also be generated.</p>
+<h1>Portfolio Action Proposals & Intents</h1>
+<p class="muted">Review, approve, reject, or process portfolio rebalance proposals. Manual batch intents can also be generated.</p>
 
 <div class="card">
   <div class="card-header">
     <span>Review Proposals</span>
     <div class="form-row" style="margin:0;">
-      <input id="acc-id" value="paper" placeholder="Account ID" style="width:120px;">
+      <input id="acc-id" placeholder="Account ID" style="width:160px;">
       <button id="btn-load-proposals">Load Proposals</button>
     </div>
   </div>
@@ -304,9 +294,9 @@ loadRankings(); loadQuotes(); checkWorker();
 
 <div class="card">
   <div class="card-header">Manual Intent Builder</div>
-  <p class="muted" style="font-size:0.85rem;">Construct and dispatch manual paper entries without entering raw JSON.</p>
+  <p class="muted" style="font-size:0.85rem;">Construct and dispatch manual portfolio entries without entering raw JSON.</p>
   <div class="form-row">
-    <div class="form-group"><label>Account ID</label><input id="man-acc" value="paper" style="width:120px;"></div>
+    <div class="form-group"><label>Account ID</label><input id="man-acc" placeholder="Account ID" style="width:160px;"></div>
     <div class="form-group"><label>Action Date</label><input id="man-date" type="date" value="{today}"></div>
     <div class="form-group" style="flex:1;"><label>Reason</label><input id="man-reason" value="manual position adjustment" placeholder="Rationale"></div>
   </div>
@@ -336,11 +326,9 @@ async function loadProposals() {{
   const acc = document.getElementById('acc-id').value;
   const statusEl = document.getElementById('prop-status');
   const tbody = document.getElementById('proposals-body');
-  const token = getToken();
   statusEl.textContent = 'Loading proposals...';
   try {{
     const res = await fetch('/api/v2/actions/proposals?account_id=' + encodeURIComponent(acc), {{
-      headers: {{ 'X-Operator-Token': token }}
     }});
     const data = await res.json();
     if (!res.ok) throw Error(data.error || 'Failed to load proposals');
@@ -391,11 +379,9 @@ function viewProposal(pid) {{
 
 async function mutateProposal(pid, action) {{
   if (!confirm('Are you sure you want to ' + action + ' proposal ' + pid + '?')) return;
-  const token = getToken();
   try {{
     const res = await fetch('/api/v2/actions/proposals/' + encodeURIComponent(pid) + '/' + action, {{
       method: 'POST',
-      headers: {{ 'X-Operator-Token': token }}
     }});
     const data = await res.json();
     if (!res.ok) alert(data.error || 'Action failed');
@@ -432,13 +418,12 @@ async function submitManualIntent() {{
   }}
   if (entries.length === 0) return alert('Add at least one valid entry with symbol.');
   const payload = {{ account_id: acc, action_date: date, reason: reason, entries: entries }};
-  const token = getToken();
   const statusEl = document.getElementById('intent-status');
   statusEl.textContent = 'Submitting intent...';
   try {{
     const res = await fetch('/api/v2/actions/manual', {{
       method: 'POST',
-      headers: {{ 'Content-Type': 'application/json', 'X-Operator-Token': token }},
+      headers: {{ 'Content-Type': 'application/json' }},
       body: JSON.stringify(payload)
     }});
     const data = await res.json();
@@ -470,7 +455,7 @@ addIntentRow('BUY', 'TCS', 10, '3800.00');
 <div class="card">
   <div class="card-header">Replay Parameters</div>
   <div class="grid-4">
-    <div class="form-group"><label>Strategy</label><select id="bt-strategy"><option value="strategy1">Strategy 1</option><option value="strategy2">Strategy 2</option></select></div>
+    <div class="form-group"><label>Strategy</label><select id="bt-strategy" data-strategy-select></select></div>
     <div class="form-group"><label>Start Date</label><input id="bt-start" type="date" value="{start}"></div>
     <div class="form-group"><label>End Date</label><input id="bt-end" type="date" value="{end}"></div>
     <div class="form-group"><label>Starting Cash</label><input id="bt-cash" type="number" value="100000"></div>
@@ -514,6 +499,7 @@ addIntentRow('BUY', 'TCS', 10, '3800.00');
     <div class="stat-card"><div class="stat-label">Sharpe Ratio</div><div id="stat-sharpe" class="stat-value">0.00</div></div>
     <div class="stat-card"><div class="stat-label">Trades / Fills</div><div id="stat-trades" class="stat-value">0</div></div>
   </div>
+  <div id="report-extra" class="muted" style="margin-bottom:1rem;"></div>
   <h3>Simulated Fills</h3>
   <table>
     <thead><tr><th>Date</th><th>Type</th><th>Instrument</th><th>Units</th><th>Price</th><th>Direction</th><th>Fee</th></tr></thead>
@@ -533,7 +519,6 @@ addIntentRow('BUY', 'TCS', 10, '3800.00');
 async function submitReplay() {{
   const statusEl = document.getElementById('bt-status');
   statusEl.textContent = 'Submitting backtest job...';
-  const token = getToken();
   const payload = {{
     strategy_id: document.getElementById('bt-strategy').value,
     start_date: document.getElementById('bt-start').value,
@@ -554,7 +539,7 @@ async function submitReplay() {{
     const fingerprint = 'backtest:' + btoa(JSON.stringify(payload));
     const res = await fetch('/api/v2/operations/jobs', {{
       method: 'POST',
-      headers: {{ 'Content-Type': 'application/json', 'X-Operator-Token': token }},
+      headers: {{ 'Content-Type': 'application/json' }},
       body: JSON.stringify({{ fingerprint: fingerprint, kind: 'backtest.run', payload: payload }})
     }});
     const data = await res.json();
@@ -587,7 +572,6 @@ async function loadReports() {{
         '<td>' + (r.created_at || '').slice(0, 19).replace('T', ' ') + '</td>' +
         '<td><div style="display:flex;gap:0.35rem;">' +
         '<button class="secondary small" onclick="viewRunReport(\\'' + r.run_id + '\\')">View</button>' +
-        '<button class="danger small" onclick="deleteRun(\\'' + r.run_id + '\\')">Delete</button>' +
         '</div></td>';
       tbody.appendChild(tr);
     }}
@@ -601,18 +585,36 @@ async function viewRunReport(runId) {{
     if (!res.ok) throw Error(data.error || 'Failed to fetch report');
     document.getElementById('bt-report-card').style.display = 'block';
     document.getElementById('report-title').textContent = 'Backtest Run: ' + runId;
-    const m = data.metrics || {{}};
+    const report = data.run || {{}};
+    const m = report.metrics || {{}};
     const ret = Number(m.total_return ?? 0);
     const dd = Number(m.max_drawdown ?? 0);
     document.getElementById('stat-return').textContent = (ret >= 0 ? '+' : '') + (ret * 100).toFixed(2) + '%';
     document.getElementById('stat-return').className = 'stat-value ' + (ret >= 0 ? 'positive' : 'negative');
     document.getElementById('stat-drawdown').textContent = '-' + (dd * 100).toFixed(2) + '%';
-    document.getElementById('stat-sharpe').textContent = Number(m.sharpe_ratio ?? 0).toFixed(2);
-    document.getElementById('stat-trades').textContent = data.fills ? data.fills.length : 0;
+    document.getElementById('stat-sharpe').textContent = Number(m.sharpe ?? 0).toFixed(2);
+    document.getElementById('stat-trades').textContent = report.fills ? report.fills.length : 0;
+    const counts = report.trade_counts || {{}};
+    const annual = Object.entries(report.annual_returns || {{}})
+      .map(([year, value]) => year + ': ' + (Number(value) * 100).toFixed(2) + '%')
+      .join(' · ');
+    document.getElementById('report-extra').textContent =
+      'CAGR: ' + (Number(m.cagr ?? 0) * 100).toFixed(2) + '% · ' +
+      'XIRR: ' + (Number(m.xirr ?? 0) * 100).toFixed(2) + '% · ' +
+      'Win rate: ' + (Number(m.win_rate ?? 0) * 100).toFixed(2) + '% · ' +
+      'Profit factor: ' + (Number(m.profit_factor ?? 0)).toFixed(2) + ' · ' +
+      'Buys: ' + (counts.buy ?? 0) + ' · Sells: ' + (counts.sell ?? 0) +
+      ' · Pyramids: ' + (counts.pyramid ?? 0) + ' · Avg hold: ' +
+      (Number(m.average_holding_days ?? 0)).toFixed(1) + ' days · Expectancy: ' +
+      (Number(m.expectancy ?? 0)).toFixed(2) + ' · Final cash: ' +
+      (Number(report.final_cash?.amount ?? report.final_cash ?? 0)).toFixed(2) +
+      ' · Open positions: ' + (report.open_positions || []).length +
+      (annual ? ' · Annual: ' + annual : '') +
+      (report.sanity_flags?.length ? ' · Flags: ' + report.sanity_flags.join(', ') : '');
 
     const tbody = document.getElementById('report-fills');
     tbody.replaceChildren();
-    for (const f of (data.fills || [])) {{
+    for (const f of (report.fills || [])) {{
       const tr = document.createElement('tr');
       tr.innerHTML = '<td>' + f.as_of_date + '</td>' +
         '<td>' + f.decision_type + '</td>' +
@@ -623,22 +625,6 @@ async function viewRunReport(runId) {{
         '<td>' + Number(f.fee || 0).toFixed(2) + '</td>';
       tbody.appendChild(tr);
     }}
-  }} catch (e) {{ alert(e.message); }}
-}}
-
-async function deleteRun(runId) {{
-  if (!confirm('Delete backtest run ' + runId + '?')) return;
-  const token = getToken();
-  try {{
-    const res = await fetch('/api/v1/backtest/history/' + encodeURIComponent(runId), {{
-      method: 'DELETE',
-      headers: {{ 'X-Operator-Token': token }}
-    }});
-    if (!res.ok) {{
-      const err = await res.json();
-      throw Error(err.error || 'Delete failed');
-    }}
-    loadReports();
   }} catch (e) {{ alert(e.message); }}
 }}
 
@@ -655,13 +641,13 @@ loadReports();
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Portfolio & Ledger — Stock Screener</title>{BASE_STYLE}</head><body>
 {_render_nav("portfolio")}
-<h1>Paper Portfolio Valuation & Ledger</h1>
+<h1>Portfolio Valuation & Ledger</h1>
 <p class="muted">Real-time ledger accounting, open positions, capital adjustments, and transaction journal.</p>
 
 <div class="card">
   <div class="card-header">Account Controls</div>
   <div class="form-row">
-    <div class="form-group"><label>Account ID</label><input id="pt-acc" value="paper" style="width:120px;"></div>
+    <div class="form-group"><label>Account ID</label><input id="pt-acc" placeholder="Account ID" style="width:160px;"></div>
     <div class="form-group"><label>As of Date</label><input id="pt-date" type="date" value="{today}"></div>
     <div class="form-group" style="justify-content:flex-end;">
       <button id="btn-load-valuation" class="primary">Load Valuation</button>
@@ -688,13 +674,12 @@ loadReports();
 <div class="grid-2">
   <div class="card">
     <div class="card-header">Deposit / Withdraw Cash</div>
-    <p class="muted" style="font-size:0.85rem;">Adjust ledger cash balance via paper capital events.</p>
+    <p class="muted" style="font-size:0.85rem;">Adjust ledger cash balance via portfolio capital events.</p>
     <div class="form-row">
       <div class="form-group"><label>Type</label><select id="cash-type"><option value="DEPOSIT">Deposit</option><option value="WITHDRAW">Withdraw</option></select></div>
       <div class="form-group"><label>Amount (INR)</label><input id="cash-amt" type="number" step="100" value="50000"></div>
     </div>
     <div class="form-row">
-      <div class="form-group" style="flex:1;"><label>Note / Reference</label><input id="cash-note" value="Initial paper funding" placeholder="Description"></div>
       <button id="btn-submit-cash" class="success" style="margin-top:1.25rem;">Execute Transfer</button>
     </div>
     <p id="cash-status" class="muted"></p>
@@ -715,10 +700,8 @@ loadReports();
 async function loadValuation() {{
   const acc = document.getElementById('pt-acc').value;
   const date = document.getElementById('pt-date').value;
-  const token = getToken();
   try {{
     const res = await fetch('/api/v2/portfolio/accounts/' + encodeURIComponent(acc) + '/valuation?as_of_date=' + encodeURIComponent(date), {{
-      headers: {{ 'X-Operator-Token': token }}
     }});
     const data = await res.json();
     if (!res.ok) throw Error(data.error || 'Failed to load valuation');
@@ -744,14 +727,13 @@ async function loadValuation() {{
         tbody.appendChild(tr);
       }}
     }}
-    loadJournal(acc, token);
+    loadJournal(acc);
   }} catch (e) {{ alert(e.message); }}
 }}
 
-async function loadJournal(acc, token) {{
+async function loadJournal(acc) {{
   try {{
     const res = await fetch('/api/v2/portfolio/accounts/' + encodeURIComponent(acc) + '/journal', {{
-      headers: {{ 'X-Operator-Token': token }}
     }});
     const data = await res.json();
     if (!res.ok) return;
@@ -777,10 +759,8 @@ async function loadJournal(acc, token) {{
 
 async function loadTicker() {{
   const acc = document.getElementById('pt-acc').value;
-  const token = getToken();
   try {{
     const res = await fetch('/api/v2/portfolio/accounts/' + encodeURIComponent(acc) + '/ticker', {{
-      headers: {{ 'X-Operator-Token': token }}
     }});
     const data = await res.json();
     if (!res.ok) throw Error(data.error || 'Failed to load ticker');
@@ -793,15 +773,22 @@ async function submitCashTransfer() {{
   const acc = document.getElementById('pt-acc').value;
   const type = document.getElementById('cash-type').value;
   const amt = parseFloat(document.getElementById('cash-amt').value);
-  const note = document.getElementById('cash-note').value;
   const statusEl = document.getElementById('cash-status');
-  const token = getToken();
   statusEl.textContent = 'Processing transfer...';
   try {{
-    const res = await fetch('/api/v1/investment/cash', {{
+    const accountRes = await fetch('/api/v2/portfolio/accounts/' + encodeURIComponent(acc), {{
+    }});
+    const account = await accountRes.json();
+    if (!accountRes.ok) throw Error(account.error || 'Failed to load account');
+    const res = await fetch('/api/v2/portfolio/accounts/' + encodeURIComponent(acc) + '/cash-transfers', {{
       method: 'POST',
-      headers: {{ 'Content-Type': 'application/json', 'X-Operator-Token': token }},
-      body: JSON.stringify({{ account_id: acc, type: type, amount: amt, note: note }})
+      headers: {{ 'Content-Type': 'application/json' }},
+      body: JSON.stringify({{
+        idempotency_key: crypto.randomUUID(),
+        expected_version: account.version,
+        direction: type,
+        amount: amt
+      }})
     }});
     const data = await res.json();
     if (!res.ok) throw Error(data.error || 'Transfer failed');
@@ -814,180 +801,6 @@ document.getElementById('btn-load-valuation').addEventListener('click', loadValu
 document.getElementById('btn-load-ticker').addEventListener('click', loadTicker);
 document.getElementById('btn-submit-cash').addEventListener('click', submitCashTransfer);
 loadValuation();
-</script></body></html>"""
-        return Response(page, mimetype="text/html")
-
-    @blueprint.get("/configs")
-    def configs_page() -> Response:
-        today = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
-        page = f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Strategy Configurations — Stock Screener</title>{BASE_STYLE}</head><body>
-{_render_nav("configs")}
-<h1>Approved Strategy Configurations</h1>
-<p class="muted">Inspect, create, approve, and activate immutable revisions of strategy sizing, risk limits, and factor weights.</p>
-
-<div class="card">
-  <div class="card-header">Active Configuration Lookup</div>
-  <div class="form-row">
-    <div class="form-group"><label>Strategy</label><select id="cfg-strat"><option value="strategy1">strategy1</option><option value="strategy2">strategy2</option></select></div>
-    <div class="form-group"><label>As of Date</label><input id="cfg-date" type="date" value="{today}"></div>
-    <div class="form-group" style="justify-content:flex-end;"><button id="btn-load-active" class="primary">Load Active Config</button></div>
-  </div>
-</div>
-
-<div class="grid-2">
-  <div class="card">
-    <div class="card-header">
-      <span>Active Settings</span>
-      <span id="cfg-active-badge" class="badge badge-green">ACTIVE</span>
-    </div>
-    <p id="cfg-meta" class="muted" style="font-size:0.85rem;margin-bottom:1rem;">Click Load to inspect active parameters.</p>
-    <table>
-      <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
-      <tbody id="cfg-active-tbody"><tr><td colspan="2" class="muted">No configuration loaded.</td></tr></tbody>
-    </table>
-  </div>
-
-  <div class="card">
-    <div class="card-header">Create New Revision</div>
-    <p class="muted" style="font-size:0.85rem;">Submit a draft configuration revision. Approving makes it candidate for activation.</p>
-    <div class="grid-2">
-      <div class="form-group"><label>Initial Capital</label><input id="edit-cap" value="100000"></div>
-      <div class="form-group"><label>Risk Threshold</label><input id="edit-risk" value="1"></div>
-      <div class="form-group"><label>Max Positions</label><input id="edit-pos" type="number" value="15" min="1" max="50"></div>
-      <div class="form-group"><label>Min Position %</label><input id="edit-min-pos" value="0.05"></div>
-      <div class="form-group"><label>Max Concentration %</label><input id="edit-max-conc" value="0.25"></div>
-      <div class="form-group"><label>Exit Threshold</label><input id="edit-exit" value="40"></div>
-      <div class="form-group"><label>Buffer %</label><input id="edit-buffer" value="0.25"></div>
-      <div class="form-group"><label>SL Multiplier</label><input id="edit-sl-mult" value="2"></div>
-      <div class="form-group"><label>Hard SL %</label><input id="edit-hard-sl" value="0.03"></div>
-      <div class="form-group"><label>ATR Fallback %</label><input id="edit-atr" value="0.06"></div>
-      <div class="form-group" style="grid-column:span 2;"><label>Factor weights (JSON)</label><textarea id="edit-factor-weights" rows="3" placeholder='{{"trend": 0.30, "momentum": 0.25, "efficiency": 0.20, "volume": 0.15, "structure": 0.10}}'></textarea></div>
-    </div>
-    <div class="form-row" style="margin-top:1rem;">
-      <button id="btn-create-rev" class="success">Save Draft Revision</button>
-      <span id="rev-status" class="muted"></span>
-    </div>
-  </div>
-</div>
-
-<div class="card">
-  <div class="card-header">Configuration Revisions</div>
-  <table>
-    <thead><tr><th>Revision ID</th><th>Strategy</th><th>Effective From</th><th>Status</th><th>Actions</th></tr></thead>
-    <tbody id="revisions-tbody"><tr><td colspan="5" class="muted">Revisions will be loaded here.</td></tr></tbody>
-  </table>
-</div>
-
-<script>
-async function loadActiveConfig() {{
-  const s = document.getElementById('cfg-strat').value;
-  const d = document.getElementById('cfg-date').value;
-  const tbody = document.getElementById('cfg-active-tbody');
-  const meta = document.getElementById('cfg-meta');
-  try {{
-    const res = await fetch('/api/v2/configs/' + encodeURIComponent(s) + '/active?as_of_date=' + encodeURIComponent(d));
-    const data = await res.json();
-    if (!res.ok) throw Error(data.error || 'Failed to load configuration');
-    const revision = data.revision;
-    if (!revision) throw Error('No approved configuration is effective on this date');
-    meta.textContent = 'Revision: ' + revision.revision_id + ' | Artifact: ' + (revision.artifact_id || '').slice(0, 16) + '...';
-    tbody.replaceChildren();
-    const settings = revision.settings || {{}};
-    for (const [k, v] of Object.entries(settings)) {{
-      if (k === 'factor_weights') continue;
-      const tr = document.createElement('tr');
-      tr.innerHTML = '<td><b>' + k + '</b></td><td>' + v + '</td>';
-      tbody.appendChild(tr);
-    }}
-    if (settings.factor_weights) {{
-      const tr = document.createElement('tr');
-      tr.innerHTML = '<td><b>factor_weights</b></td><td><code>' + JSON.stringify(settings.factor_weights) + '</code></td>';
-      tbody.appendChild(tr);
-    }}
-    // Populate editor fields
-    if (settings.initial_capital) document.getElementById('edit-cap').value = settings.initial_capital;
-    if (settings.risk_threshold) document.getElementById('edit-risk').value = settings.risk_threshold;
-    if (settings.max_positions) document.getElementById('edit-pos').value = settings.max_positions;
-    if (settings.min_position_percent) document.getElementById('edit-min-pos').value = settings.min_position_percent;
-    if (settings.max_concentration_pct) document.getElementById('edit-max-conc').value = settings.max_concentration_pct;
-    if (settings.exit_threshold) document.getElementById('edit-exit').value = settings.exit_threshold;
-    if (settings.buffer_percent) document.getElementById('edit-buffer').value = settings.buffer_percent;
-    if (settings.sl_multiplier) document.getElementById('edit-sl-mult').value = settings.sl_multiplier;
-    if (settings.hard_sl_percent) document.getElementById('edit-hard-sl').value = settings.hard_sl_percent;
-    if (settings.atr_fallback_percent) document.getElementById('edit-atr').value = settings.atr_fallback_percent;
-    document.getElementById('edit-factor-weights').value = settings.factor_weights ? JSON.stringify(settings.factor_weights) : '';
-  }} catch (e) {{ alert(e.message); }}
-}}
-
-async function createRevision() {{
-  const s = document.getElementById('cfg-strat').value;
-  const statusEl = document.getElementById('rev-status');
-  statusEl.textContent = 'Saving revision...';
-  const token = getToken();
-  const settings = {{
-    initial_capital: document.getElementById('edit-cap').value,
-    risk_threshold: document.getElementById('edit-risk').value,
-    max_positions: parseInt(document.getElementById('edit-pos').value, 10),
-    min_position_percent: document.getElementById('edit-min-pos').value,
-    max_concentration_pct: document.getElementById('edit-max-conc').value,
-    exit_threshold: document.getElementById('edit-exit').value,
-    buffer_percent: document.getElementById('edit-buffer').value,
-    sl_multiplier: document.getElementById('edit-sl-mult').value,
-    hard_sl_percent: document.getElementById('edit-hard-sl').value,
-    atr_fallback_percent: document.getElementById('edit-atr').value
-  }};
-  const rawWeights = document.getElementById('edit-factor-weights').value.trim();
-  if (rawWeights) {{
-    try {{ settings.factor_weights = JSON.parse(rawWeights); }}
-    catch (e) {{ statusEl.textContent = 'Factor weights must be valid JSON.'; return; }}
-  }}
-  try {{
-    const res = await fetch('/api/v2/configs/' + encodeURIComponent(s) + '/revisions', {{
-      method: 'POST',
-      headers: {{ 'Content-Type': 'application/json', 'X-Operator-Token': token }},
-      body: JSON.stringify(settings)
-    }});
-    const data = await res.json();
-    if (!res.ok) throw Error(data.error || 'Failed to create revision');
-    statusEl.textContent = 'Draft created: ' + data.revision_id;
-    addRevisionRow(data);
-  }} catch (e) {{ statusEl.textContent = e.message; }}
-}}
-
-function addRevisionRow(r) {{
-  const tbody = document.getElementById('revisions-tbody');
-  const tr = document.createElement('tr');
-  tr.innerHTML = '<td><code>' + r.revision_id + '</code></td>' +
-    '<td>' + r.strategy_id + '</td>' +
-    '<td>' + (r.effective_from || 'None') + '</td>' +
-    '<td><span class="badge badge-amber">' + r.status + '</span></td>' +
-    '<td><div style="display:flex;gap:0.35rem;">' +
-    '<button class="success small" onclick="approveRevision(\\'' + r.revision_id + '\\')">Approve</button>' +
-    '</div></td>';
-  tbody.prepend(tr);
-}}
-
-async function approveRevision(revId) {{
-  const token = getToken();
-  const effectiveFrom = prompt('Effective from ISO date (e.g. 2026-01-01):', '{today}');
-  if (!effectiveFrom) return;
-  try {{
-    const res = await fetch('/api/v2/configs/revisions/' + encodeURIComponent(revId) + '/approve', {{
-      method: 'POST',
-      headers: {{ 'Content-Type': 'application/json', 'X-Operator-Token': token }},
-      body: JSON.stringify({{ effective_from: effectiveFrom }})
-    }});
-    const data = await res.json();
-    if (!res.ok) throw Error(data.error || 'Approval failed');
-    alert('Revision ' + revId + ' approved!');
-  }} catch (e) {{ alert(e.message); }}
-}}
-
-document.getElementById('btn-load-active').addEventListener('click', loadActiveConfig);
-document.getElementById('btn-create-rev').addEventListener('click', createRevision);
-loadActiveConfig();
 </script></body></html>"""
         return Response(page, mimetype="text/html")
 
@@ -1076,10 +889,7 @@ function render(data) {{
 }}
 
 async function request(url, options = {{}}) {{
-  const response = await fetch(url, {{
-    ...options,
-    headers: {{ ...(options.headers || {{}}), 'X-Operator-Token': getToken() }}
-  }});
+  const response = await fetch(url, options);
   const data = await response.json();
   if (!response.ok) throw Error(data.error || 'Pipeline request failed');
   return data;

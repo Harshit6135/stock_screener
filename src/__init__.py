@@ -1,5 +1,5 @@
 """Stock screener modular-monolith packages.
 
 No import-path mutation or data-library configuration belongs here. Framework
-and legacy adapters are composed explicitly at the application edge.
+and external adapters are composed explicitly at the application edge.
 """

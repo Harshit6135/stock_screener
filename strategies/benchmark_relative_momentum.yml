@@ -1,0 +1,43 @@
+schema_version: 1
+strategy:
+  id: strategy2
+  name: Benchmark Relative Momentum
+  version: 1.0.0
+  description: Cross-sectional momentum strategy measured against the NIFTY 500 benchmark.
+
+data_dependencies:
+  benchmark: NIFTY 500
+
+calculation:
+  instrument_implementation: custom.relative_strength_features
+  cross_section_implementation: custom.relative_strength_factors
+  required_sessions: 253
+
+factors:
+  trend: 0.30
+  momentum: 0.25
+  efficiency: 0.20
+  volume: 0.15
+  structure: 0.10
+
+score:
+  factor_modifiers:
+    - factors: [trend, momentum]
+      input: adx_14
+      rules:
+        - {operator: less_than, value: 20, multiplier: 0.5}
+        - {operator: greater_than, value: 30, multiplier: 0.9}
+      default: 1.0
+
+portfolio_policy:
+  initial_capital: 100000
+  max_positions: 15
+  exit_threshold: 40
+  buffer_percent: 0.25
+  max_concentration_pct: 0.25
+
+ranking:
+  frequency: weekly
+  session: last_trading_session
+  aggregation: weekly_mean
+  tie_policy: score_desc_symbol_asc

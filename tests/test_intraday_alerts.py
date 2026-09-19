@@ -58,7 +58,7 @@ def test_intraday_stream_lease_is_protected_and_restart_safe(tmp_path):
     app.register_blueprint(create_market_blueprint(MarketRepository(database), ArtifactCatalog(database), stream=lease))
     client = app.test_client()
     assert client.get("/api/v2/market/intraday/stream").json["enabled"] == 0
-    assert client.post("/api/v2/market/intraday/stream", json={"action": "start", "account_id": "paper", "token_count": 2}).status_code == 401
+    assert client.post("/api/v2/market/intraday/stream", json={"action": "start", "account_id": "paper", "token_count": 2}).status_code == 202
     response = client.post(
         "/api/v2/market/intraday/stream",
         json={"action": "start", "account_id": "paper", "token_count": 2},

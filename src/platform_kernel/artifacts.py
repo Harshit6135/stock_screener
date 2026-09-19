@@ -3,7 +3,10 @@
 import hashlib
 import json
 import os
+import sqlite3
 import shutil
+import zlib
+from contextlib import closing
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from enum import Enum
@@ -175,6 +178,149 @@ class ArtifactStore:
         )
         os.replace(source, destination)
         return destination.name
+
+    def is_published(self, category: str, artifact_id: str) -> bool:
+        try:
+            self.read_json(category, artifact_id)
+        except DomainValidationError:
+            return False
+        return True
+
+
+class SqliteArtifactStore(ArtifactStore):
+    """Immutable compressed JSON artifacts stored inside the application database."""
+
+    def __init__(self, database: str | Path):
+        self.database = Path(database)
+        self.root = self.database
+        self.database.parent.mkdir(parents=True, exist_ok=True)
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS artifact_payloads (
+                    artifact_id TEXT PRIMARY KEY,
+                    category TEXT NOT NULL,
+                    schema_version TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    checksum_sha256 TEXT NOT NULL,
+                    upstream_ids_json TEXT NOT NULL,
+                    quality TEXT NOT NULL,
+                    payload_zlib BLOB NOT NULL,
+                    quarantined INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE(category, artifact_id)
+                )"""
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS artifact_payloads_category ON artifact_payloads(category, quarantined)"
+            )
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.database)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA busy_timeout=5000")
+        return connection
+
+    def publish_json(
+        self,
+        category: str,
+        artifact_id: str,
+        payload: dict[str, Any],
+        upstream_ids: tuple[str, ...] = (),
+        quality: QualityStatus = QualityStatus.COMPLETE,
+        schema_version: str = "1",
+    ) -> ArtifactManifest:
+        self._parts(category, "category")
+        self._parts(artifact_id, "artifact_id")
+        payload_bytes = self._encode(payload)
+        manifest = ArtifactManifest(
+            artifact_id=artifact_id,
+            category=category,
+            schema_version=schema_version,
+            created_at=datetime.now(UTC).isoformat(),
+            checksum_sha256=hashlib.sha256(payload_bytes).hexdigest(),
+            upstream_ids=tuple(upstream_ids),
+            quality=quality,
+        )
+        try:
+            with closing(self._connect()) as connection, connection:
+                connection.execute(
+                    """INSERT INTO artifact_payloads
+                       (artifact_id, category, schema_version, created_at, checksum_sha256,
+                        upstream_ids_json, quality, payload_zlib)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        artifact_id,
+                        category,
+                        schema_version,
+                        manifest.created_at,
+                        manifest.checksum_sha256,
+                        json.dumps(upstream_ids),
+                        quality.value,
+                        zlib.compress(payload_bytes),
+                    ),
+                )
+        except sqlite3.IntegrityError as exc:
+            raise DomainValidationError(f"artifact already exists: {category}/{artifact_id}") from exc
+        return manifest
+
+    def read_json(self, category: str, artifact_id: str) -> tuple[ArtifactManifest, dict[str, Any]]:
+        self._parts(category, "category")
+        self._parts(artifact_id, "artifact_id")
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """SELECT * FROM artifact_payloads
+                   WHERE category=? AND artifact_id=? AND quarantined=0""",
+                (category, artifact_id),
+            ).fetchone()
+        if row is None:
+            raise DomainValidationError("artifact is missing or malformed")
+        try:
+            payload = json.loads(zlib.decompress(row["payload_zlib"]).decode("utf-8"))
+            upstream_ids = tuple(json.loads(row["upstream_ids_json"]))
+            quality = QualityStatus(row["quality"])
+        except (TypeError, ValueError, json.JSONDecodeError, zlib.error) as exc:
+            raise DomainValidationError("artifact is missing or malformed") from exc
+        if not isinstance(payload, dict):
+            raise DomainValidationError("artifact payload must contain a JSON object")
+        checksum = hashlib.sha256(self._encode(payload)).hexdigest()
+        if checksum != row["checksum_sha256"]:
+            raise DomainValidationError("artifact checksum does not match manifest")
+        return (
+            ArtifactManifest(
+                artifact_id=row["artifact_id"],
+                category=row["category"],
+                schema_version=row["schema_version"],
+                created_at=row["created_at"],
+                checksum_sha256=row["checksum_sha256"],
+                upstream_ids=upstream_ids,
+                quality=quality,
+            ),
+            payload,
+        )
+
+    def recover_staging(self) -> tuple[str, ...]:
+        return ()
+
+    def manifests(self) -> tuple[ArtifactManifest, ...]:
+        return tuple(self.read_json(category, artifact_id)[0] for category, artifact_id in self.artifact_locations())
+
+    def artifact_locations(self) -> tuple[tuple[str, str], ...]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT category, artifact_id FROM artifact_payloads WHERE quarantined=0 ORDER BY category, artifact_id"
+            ).fetchall()
+        return tuple((str(row["category"]), str(row["artifact_id"])) for row in rows)
+
+    def quarantine(self, category: str, artifact_id: str) -> str:
+        name = f"{artifact_id}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}"
+        with closing(self._connect()) as connection, connection:
+            cursor = connection.execute(
+                "UPDATE artifact_payloads SET quarantined=1 WHERE category=? AND artifact_id=?",
+                (category, artifact_id),
+            )
+        if cursor.rowcount != 1:
+            raise DomainValidationError("artifact is missing or malformed")
+        return name
 
     def is_published(self, category: str, artifact_id: str) -> bool:
         try:

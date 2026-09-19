@@ -26,7 +26,10 @@ class ArtifactPublisher:
         quality: QualityStatus = QualityStatus.COMPLETE,
         schema_version: str = "1",
     ) -> ArtifactManifest:
-        if self.catalog.has(artifact_id):
+        restore_missing = self.catalog.is_missing(artifact_id) and not self.store.is_published(
+            category, artifact_id
+        )
+        if self.catalog.has(artifact_id) and not restore_missing:
             raise DomainValidationError("artifact is already cataloged")
         self.catalog.set_publication_state(artifact_id, "STAGED")
         try:
@@ -34,18 +37,19 @@ class ArtifactPublisher:
                 category, artifact_id, payload, upstream_ids, quality, schema_version
             )
             self.catalog.set_publication_state(artifact_id, "FILES_PUBLISHED")
-            self.catalog.register(manifest)
+            self.catalog.register(manifest, replace_missing=restore_missing)
             return manifest
         except Exception as exc:
             self.catalog.set_publication_state(artifact_id, "FAILED", type(exc).__name__)
             raise
 
     def recover(self) -> dict[str, tuple[str, ...]]:
-        """Reconcile completed files after a crash and flag catalog entries whose files vanished."""
+        """Reconcile stored payloads after a crash and flag missing catalog entries."""
         removed = self.store.recover_staging()
         registered: list[str] = []
         missing: list[str] = []
         quarantined: list[str] = []
+        published_locations: set[tuple[str, str]] = set()
         for category, artifact_id in self.store.artifact_locations():
             try:
                 manifest, _ = self.store.read_json(category, artifact_id)
@@ -56,15 +60,16 @@ class ArtifactPublisher:
                     self.catalog.mark_missing(artifact_id, "artifact failed recovery validation")
                 quarantined.append(artifact_id)
                 continue
+            published_locations.add((category, artifact_id))
             if not self.catalog.has(manifest.artifact_id):
                 self.catalog.register(manifest)
                 registered.append(manifest.artifact_id)
         for artifact in self.catalog.artifacts():
-            if artifact["status"] != "MISSING" and not self.store.is_published(
+            if artifact["status"] != "MISSING" and (
                 artifact["category"], artifact["artifact_id"]
-            ):
+            ) not in published_locations:
                 self.catalog.mark_missing(
-                    artifact["artifact_id"], "artifact files are absent during recovery"
+                    artifact["artifact_id"], "artifact payload is absent during recovery"
                 )
                 missing.append(artifact["artifact_id"])
         return {

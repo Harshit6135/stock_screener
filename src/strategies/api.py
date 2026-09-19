@@ -19,7 +19,6 @@ class RevisionStatus(str, Enum):
     DRAFT = "DRAFT"
     VALIDATED = "VALIDATED"
     BACKTESTED = "BACKTESTED"
-    PAPER = "PAPER"
     APPROVED = "APPROVED"
     ACTIVE = "ACTIVE"
     RETIRED = "RETIRED"

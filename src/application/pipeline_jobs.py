@@ -12,14 +12,20 @@ from zoneinfo import ZoneInfo
 
 from src.application.jobs import JobStatus, JobStore
 from src.application.sqlite import migrate_sqlite, sqlite_connection
+from src.application.strategy_definitions import StrategyDefinitions
+from src.application.strategy_runtime import StrategyRuntime
+from src.indicators.registry import PandasTaAdapter
 from src.platform_kernel import DomainValidationError
 
-_STRATEGIES = {"strategy1", "strategy2"}
+_CALCULATION_REVISION = "historical-universe-v2"
 
 
 class ResearchPipelineJobs:
-    def __init__(self, database: str | Path, jobs: JobStore) -> None:
+    def __init__(self, database: str | Path, jobs: JobStore, runtime: StrategyRuntime | None = None) -> None:
         self.database, self.jobs = Path(database), jobs
+        self.runtime = runtime or StrategyRuntime(StrategyDefinitions(database, PandasTaAdapter()))
+        if runtime is None:
+            self.runtime.seed(Path(__file__).resolve().parents[2] / "strategies")
         migrate_sqlite(
             self.database,
             "research_pipeline",
@@ -41,8 +47,7 @@ class ResearchPipelineJobs:
             },
         )
 
-    @staticmethod
-    def _request(payload: dict[str, Any]) -> tuple[date, date, tuple[str, ...], tuple[date, ...]]:
+    def _request(self, payload: dict[str, Any]) -> tuple[date, date, tuple[str, ...], tuple[date, ...]]:
         if (
             not isinstance(payload, dict)
             or set(payload) - {"as_of_date", "start_date", "end_date", "strategies", "orchestrate_data", "trading_dates"}
@@ -61,14 +66,14 @@ class ResearchPipelineJobs:
             raise DomainValidationError("pipeline date range must be at most 365 days")
         if end_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
             raise DomainValidationError("research pipeline requires completed dates")
-        strategies_value = payload.get("strategies", ["strategy1", "strategy2"])
+        strategies_value = payload.get("strategies", list(self.runtime.strategy_ids()))
         if not isinstance(payload.get("orchestrate_data", False), bool):
             raise DomainValidationError("orchestrate_data must be boolean")
         if (
             not isinstance(strategies_value, list)
             or not strategies_value
             or len(strategies_value) != len(set(strategies_value))
-            or any(strategy not in _STRATEGIES for strategy in strategies_value)
+            or any(strategy not in self.runtime.strategy_ids() for strategy in strategies_value)
         ):
             raise DomainValidationError("strategies must be a unique non-empty strategy list")
         trading_dates = payload.get("trading_dates")
@@ -91,6 +96,7 @@ class ResearchPipelineJobs:
             "start_date": start_date.isoformat(), "end_date": end_date.isoformat(),
             "strategies": strategies, "orchestrate_data": bool(payload.get("orchestrate_data", False)),
             "trading_dates": tuple(item.isoformat() for item in trading_dates),
+            "calculation_revision": _CALCULATION_REVISION,
         }
         fingerprint = hashlib.sha256(json.dumps(normalized, sort_keys=True).encode()).hexdigest()
         pipeline_id = str(uuid5(NAMESPACE_URL, f"research-pipeline:{fingerprint}"))
@@ -123,11 +129,11 @@ class ResearchPipelineJobs:
             )
             for strategy_id in strategies:
                 for session in dates:
-                    kind = f"research.calculate-{strategy_id}-day"
+                    kind = "research.calculate-day"
                     name = f"daily:{strategy_id}" if start_date == end_date else f"daily:{strategy_id}:{session.isoformat()}"
                     child_jobs.append((name, self.jobs.submit(
-                        f"research-pipeline:{fingerprint}:{kind}:{session.isoformat()}", kind,
-                        {"as_of_date": session.isoformat()},
+                        f"research-pipeline:{fingerprint}:{kind}:{strategy_id}:{session.isoformat()}", kind,
+                        {"as_of_date": session.isoformat(), "strategy_id": strategy_id},
                     )))
         coordinator = self.jobs.submit(
             f"research-pipeline:{fingerprint}:advance",
@@ -169,6 +175,7 @@ class ResearchPipelineJobs:
             f"research-pipeline:{fingerprint}:advance:{uuid5(NAMESPACE_URL, str(datetime.now(UTC).timestamp()))}",
             "research.pipeline-advance",
             {"pipeline_id": pipeline_id},
+            delay_seconds=30,
         )
         with sqlite_connection(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -217,11 +224,11 @@ class ResearchPipelineJobs:
             daily_jobs = []
             for strategy_id in strategies:
                 for session in trading_dates:
-                    kind = f"research.calculate-{strategy_id}-day"
+                    kind = "research.calculate-day"
                     name = f"daily:{strategy_id}" if start_date == end_date else f"daily:{strategy_id}:{session.isoformat()}"
                     job = self.jobs.submit(
-                        f"research-pipeline:{pipeline['fingerprint']}:{kind}:{session.isoformat()}", kind,
-                        {"as_of_date": session.isoformat()},
+                        f"research-pipeline:{pipeline['fingerprint']}:{kind}:{strategy_id}:{session.isoformat()}", kind,
+                        {"as_of_date": session.isoformat(), "strategy_id": strategy_id},
                     )
                     daily_jobs.append((name, job.job_id))
             with sqlite_connection(self.database) as connection:
@@ -238,17 +245,26 @@ class ResearchPipelineJobs:
         if not all(status == JobStatus.SUCCEEDED for status in statuses):
             return self._defer_advance(pipeline_id, str(pipeline["fingerprint"]))
 
-        fridays = tuple(start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1) if (start_date + timedelta(days=offset)).weekday() == 4)
-        if not fridays:
+        sessions = sorted(
+            {
+                date.fromisoformat(str(self.jobs.get(int(stage["job_id"])).payload["as_of_date"]))
+                for stage in daily
+            }
+        )
+        week_ends = tuple(
+            max(day for day in sessions if day.isocalendar()[:2] == week)
+            for week in sorted({day.isocalendar()[:2] for day in sessions})
+        )
+        if not week_ends:
             return self.status(pipeline_id)
         weekly_jobs = []
         for strategy_id in strategies:
-            for friday in fridays:
-                name = f"weekly:{strategy_id}" if len(fridays) == 1 and start_date == end_date else f"weekly:{strategy_id}:{friday.isoformat()}"
+            for week_end in week_ends:
+                name = f"weekly:{strategy_id}" if len(week_ends) == 1 and start_date == end_date else f"weekly:{strategy_id}:{week_end.isoformat()}"
                 if any(stage["stage_name"] == name for stage in stages):
                     continue
-                kind = f"research.rank-{strategy_id}-week"
-                job = self.jobs.submit(f"research-pipeline:{pipeline['fingerprint']}:{kind}:{friday.isoformat()}", kind, {"week_end": friday.isoformat()})
+                kind = "research.rank-week"
+                job = self.jobs.submit(f"research-pipeline:{pipeline['fingerprint']}:{kind}:{strategy_id}:{week_end.isoformat()}", kind, {"week_end": week_end.isoformat(), "strategy_id": strategy_id})
                 weekly_jobs.append((name, job.job_id))
         with sqlite_connection(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")

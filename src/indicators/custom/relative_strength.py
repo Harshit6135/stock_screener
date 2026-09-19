@@ -1,4 +1,4 @@
-"""Strategy 2 raw indicators and cross-sectional factors from v3 formulas.
+"""Custom benchmark-relative and cross-sectional feature calculations.
 
 The inherited quality input is a constant-zero placeholder, not a fundamental
 quality measure. The inherited scaled-turnover input is relative volume, not
@@ -13,15 +13,6 @@ from typing import Any, cast
 
 import pandas as pd
 
-FORMULA_REVISION = "strategy2-v4-port-1"
-FACTOR_WEIGHTS = {
-    "trend": 0.30,
-    "momentum": 0.25,
-    "efficiency": 0.20,
-    "volume": 0.15,
-    "structure": 0.10,
-}
-
 
 def _finite(value: object, default: float = 0.0) -> float:
     try:
@@ -35,7 +26,7 @@ def _clip(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-def strategy2_indicators(
+def relative_strength_features(
     bars: Sequence[dict[str, Any]], benchmark: Sequence[dict[str, Any]]
 ) -> dict[str, object] | None:
     """Compute latest v3-style S2 inputs; require a same-day Kite benchmark."""
@@ -155,7 +146,7 @@ def strategy2_indicators(
     }
 
 
-def strategy2_factors(
+def relative_strength_factors(
     inputs: dict[str, dict[str, object]],
 ) -> dict[str, dict[str, float]]:
     """Apply v3 cross-sectional normalizations and per-stock factor weights."""

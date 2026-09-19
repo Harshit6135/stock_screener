@@ -63,8 +63,7 @@ The default data directory is `instance/`:
 
 ```text
 instance/
-  system.db       durable SQLite stores and migration state
-  artifacts/      immutable JSON publications and manifests
+  system.db       all durable data, compressed artifacts, and migration state
   access tokens    ignored deployment-local files, if configured
 ```
 
@@ -72,6 +71,8 @@ instance/
 catalog, market data, research, strategy configuration, portfolio ledger,
 actions, backtests, imports, and pipeline state. The application runs reviewed
 SQLite migrations; it does not call a global ORM `create_all` on startup.
+Artifact payloads are compressed in the same database, so a normal deployment
+does not create one directory and multiple JSON files per research result.
 
 Published outputs are content-addressed/cataloged artifacts. A manifest records
 the category, checksum, quality, effective/as-of date, input identifiers and
@@ -510,13 +511,12 @@ schemas above.
 4. For a failed stage, fix the input/provider issue and retry that pipeline
    stage. A retry creates a new attempt while preserving the pipeline history.
 5. If the process stopped during publication, submit `artifacts.recover` or
-   restart the application; startup calls publisher recovery before serving.
+   restart the application; recovery reconciles the artifact catalog with the
+   compressed payloads in `system.db`.
 6. Before migrations or bulk maintenance, make a verified SQLite backup.
 
 Common interpretations:
 
-- `503` on a mutation means `SCREENER_OPERATOR_TOKEN` is not configured;
-  `401` means the header is absent or incorrect.
 - `202` means queued/accepted, not successful. Poll the job or pipeline.
 - `/health/live` can be healthy while Kite is unavailable; provider checks are
   intentionally outside liveness/readiness.

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
 import time
 import logging
 from html import escape
@@ -29,11 +28,7 @@ def create_kite_auth_blueprint(
     def home() -> ResponseReturnValue:
         if "request_token" in request.args or "status" in request.args:
             return _callback("market-data", market_data_service)
-        if (
-            current_app.config.get("AUTOMATIC_PAPER_MODE", False)
-            and market_data_service is not None
-            and not market_data_service.token_exists
-        ):
+        if market_data_service is not None and not market_data_service.token_exists:
             return redirect(url_for("kite_auth.authorization_page"))
         return redirect(url_for("dashboard_v2.dashboard"))
 
@@ -51,8 +46,7 @@ def create_kite_auth_blueprint(
         disabled = "" if configured else "disabled"
         profile_label = "Shared market-data" if profile == "market-data" else "Portfolio"
         credential_message = (
-            "Set MARKET_DATA_KITE_API_KEY and MARKET_DATA_KITE_API_SECRET. "
-            "The retired KITE_* variables remain a temporary market-data fallback."
+            "Set MARKET_DATA_KITE_API_KEY and MARKET_DATA_KITE_API_SECRET, or configure local_secrets.py."
             if profile == "market-data"
             else "Set PORTFOLIO_KITE_API_KEY and PORTFOLIO_KITE_API_SECRET. "
             "This profile never falls back to shared market-data credentials."
@@ -64,11 +58,10 @@ def create_kite_auth_blueprint(
         )
         portfolio_note = (
             "<p>Portfolio authorization is isolated for a future broker gateway. "
-            "V4 currently remains paper-execution only and will not place Kite orders.</p>"
+            "Broker-confirmed Kite activity and manually recorded transactions are both reflected in the portfolio.</p>"
             if profile == "portfolio"
             else "<p>This shared profile is used only by market-data jobs.</p>"
         )
-        automatic = "true" if current_app.config.get("AUTOMATIC_PAPER_MODE", False) else "false"
         return Response(
             f"""<!doctype html><title>{escape(profile_label)} Kite authorization</title>
 <main><h1>{escape(profile_label)} Kite authorization</h1><p>{escape(message)}</p>
@@ -78,14 +71,8 @@ def create_kite_auth_blueprint(
 <button id=authorize {disabled}>Authorize Kite for today</button><p id=status></p></main>
 <script>
 document.getElementById('authorize').addEventListener('click', async () => {{
-  const headers = {{}};
-  if (!{automatic}) {{
-    const token = window.prompt('Enter the local operator token');
-    if (!token) return;
-    headers['X-Operator-Token'] = token;
-  }}
   const response = await fetch('/api/v2/integrations/kite/{profile}/authorize', {{
-    method: 'POST', headers: headers
+    method: 'POST'
   }});
   if (!response.ok) {{ document.getElementById('status').textContent = 'Authorization could not start.'; return; }}
   window.location.assign((await response.json()).authorization_url);
@@ -106,15 +93,7 @@ document.getElementById('authorize').addEventListener('click', async () => {{
     def _start_authorization(service: KiteAuthService | None, profile: str) -> ResponseReturnValue:
         if service is None:
             return jsonify({"error": f"Kite {profile} credentials are not configured"}), 503
-        configured_operator_token = current_app.config.get("OPERATOR_TOKEN")
-        supplied_operator_token = request.headers.get("X-Operator-Token", "")
         session[f"{_SESSION_STARTED_AT}:{profile}"] = time.time()
-        if current_app.config.get("AUTOMATIC_PAPER_MODE", False):
-            return jsonify({"authorization_url": service.login_url()})
-        if not isinstance(configured_operator_token, str) or not configured_operator_token:
-            return jsonify({"error": "operator token is not configured"}), 503
-        if not secrets.compare_digest(supplied_operator_token, configured_operator_token):
-            return jsonify({"error": "operator token is required"}), 401
         return jsonify({"authorization_url": service.login_url()})
 
     @blueprint.get("/integrations/kite/callback")
@@ -136,10 +115,8 @@ document.getElementById('authorize').addEventListener('click', async () => {{
         if service is None:
             return Response("Kite credentials are not configured.", status=503)
         started_at = session.pop(f"{_SESSION_STARTED_AT}:{profile}", None)
-        automatic = bool(current_app.config.get("AUTOMATIC_PAPER_MODE", False))
         if (
-            not automatic
-            and (not isinstance(started_at, float) or time.time() - started_at > _SESSION_TTL_SECONDS)
+            not isinstance(started_at, float) or time.time() - started_at > _SESSION_TTL_SECONDS
         ):
             return Response("Start Kite authorization from this app, then try again.", status=400)
         if request.args.get("status") != "success":
@@ -149,13 +126,18 @@ document.getElementById('authorize').addEventListener('click', async () => {{
         except (KiteException, OSError, RuntimeError, ValueError) as exc:
             _LOGGER.warning("Kite token exchange failed (%s): %s", type(exc).__name__, str(exc))
             detail = " ".join(str(exc).split()) or "no diagnostic message"
+            network_denied = "forbidden by its access permissions" in detail.lower()
+            guidance = (
+                "Outbound HTTPS from the Python application is blocked. Allow Python to connect to "
+                "api.kite.trade:443, then start authorization again."
+                if network_denied
+                else "Start authorization again."
+            )
             return Response(
                 f"Kite token refresh failed ({type(exc).__name__}): {escape(detail)} "
-                "Start authorization again.",
+                f"{escape(guidance)}",
                 status=502,
             )
-        if current_app.config.get("AUTOMATIC_PAPER_MODE", False) and profile == "market-data":
-            return redirect(url_for("dashboard_v2.dashboard"))
         return Response(
             "<!doctype html><title>Kite authorized</title><main><h1>Kite authorized</h1>"
             "<p>The local access token has been refreshed. You can close this tab.</p></main>",

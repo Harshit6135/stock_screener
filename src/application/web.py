@@ -1,15 +1,13 @@
 """Small, additive HTTP adapter for durable local operation jobs.
 
-This is deliberately separate from the legacy v1 blueprints.  A submitted job
-is durable and observable here; a worker is responsible for claiming and
-executing its domain-specific work.
+Submitted jobs are durable and observable here; a worker is responsible for
+claiming and executing its domain-specific work.
 """
 
-import secrets
 from collections.abc import Collection
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
 from src.application.jobs import Job, JobStore
 from src.application.worker import BackgroundWorker, JobWorker
@@ -27,19 +25,6 @@ def _job_response(job: Job) -> dict[str, object]:
     }
 
 
-def require_operator_token() -> tuple[dict[str, str], int] | None:
-    """Require an explicit local operator secret for every state change."""
-    configured = current_app.config.get("OPERATOR_TOKEN")
-    if not configured:
-        return {
-            "error": "mutating operations are disabled until SCREENER_OPERATOR_TOKEN is configured"
-        }, 503
-    supplied = request.headers.get("X-Operator-Token", "")
-    if not secrets.compare_digest(supplied, configured):
-        return {"error": "operator token is required"}, 401
-    return None
-
-
 def create_operations_blueprint(
     job_database: str | Path | JobStore,
     allowed_job_kinds: Collection[str] | None = None,
@@ -52,10 +37,6 @@ def create_operations_blueprint(
 
     @blueprint.post("/jobs")
     def submit_job():
-        authorization_error = require_operator_token()
-        if authorization_error:
-            body, status = authorization_error
-            return jsonify(body), status
         payload = request.get_json(silent=True)
         if not isinstance(payload, dict) or not isinstance(payload.get("fingerprint"), str):
             return jsonify({"error": "fingerprint must be a non-empty string"}), 400
@@ -101,10 +82,6 @@ def create_operations_blueprint(
 
     @blueprint.post("/jobs/<int:job_id>/cancel")
     def cancel_job(job_id: int):
-        authorization_error = require_operator_token()
-        if authorization_error:
-            body, status = authorization_error
-            return jsonify(body), status
         try:
             return jsonify(_job_response(jobs.request_cancel(job_id))), 202
         except DomainValidationError as error:
@@ -119,10 +96,6 @@ def create_operations_blueprint(
 
     @blueprint.post("/worker/start")
     def start_worker():
-        authorization_error = require_operator_token()
-        if authorization_error:
-            body, status = authorization_error
-            return jsonify(body), status
         if background_worker is None:
             return jsonify({"error": "background worker is not configured"}), 503
         background_worker.start()
@@ -130,10 +103,6 @@ def create_operations_blueprint(
 
     @blueprint.post("/worker/stop")
     def stop_worker():
-        authorization_error = require_operator_token()
-        if authorization_error:
-            body, status = authorization_error
-            return jsonify(body), status
         if background_worker is None:
             return jsonify({"error": "background worker is not configured"}), 503
         background_worker.stop()
@@ -141,10 +110,6 @@ def create_operations_blueprint(
 
     @blueprint.post("/worker/work-once")
     def work_once():
-        authorization_error = require_operator_token()
-        if authorization_error:
-            body, status = authorization_error
-            return jsonify(body), status
         target_worker = worker or (background_worker.worker if background_worker else None)
         if target_worker is None:
             return jsonify({"error": "worker is not configured"}), 503

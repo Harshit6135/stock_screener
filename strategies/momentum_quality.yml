@@ -1,0 +1,33 @@
+schema_version: 1
+strategy:
+  id: strategy1
+  name: Momentum Quality
+  version: 1.0.0
+  description: Multi-factor momentum strategy using instrument-level technical features.
+
+calculation:
+  instrument_implementation: custom.momentum_quality_features
+  required_sessions: 200
+
+factors:
+  trend: 0.30
+  momentum: 0.25
+  efficiency: 0.20
+  volume: 0.15
+  structure: 0.10
+
+score:
+  factor_modifiers: []
+
+portfolio_policy:
+  initial_capital: 100000
+  max_positions: 15
+  exit_threshold: 40
+  buffer_percent: 0.25
+  max_concentration_pct: 0.25
+
+ranking:
+  frequency: weekly
+  session: last_trading_session
+  aggregation: weekly_mean
+  tie_policy: score_desc_symbol_asc

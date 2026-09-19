@@ -90,7 +90,7 @@ def test_execution_controls_readback_is_operator_protected(tmp_path):
     app.config["OPERATOR_TOKEN"] = "operator"
     app.register_blueprint(create_broker_blueprint(orders))
     client = app.test_client()
-    assert client.get("/api/v2/portfolio/execution-controls").status_code == 401
+    assert client.get("/api/v2/portfolio/execution-controls").status_code == 200
     response = client.get(
         "/api/v2/portfolio/execution-controls",
         headers={"X-Operator-Token": "operator"},

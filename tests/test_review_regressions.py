@@ -16,7 +16,7 @@ from src.backtesting import (
     FillModelRevision,
     run,
 )
-from src.execution_gateway import Ledger, PaperBroker
+from src.execution_gateway import Ledger
 from src.indicators import IndicatorConfiguration, IndicatorRevision
 from src.market_data import NormalizedBar
 from src.platform_kernel import ArtifactStore, DomainValidationError, Money, Quantity
@@ -85,7 +85,7 @@ def test_expired_claim_cannot_commit_before_reclaim(tmp_path):
         jobs.heartbeat(claimed.job_id, claimed.claim_token)
 
 
-def test_ledger_rejects_conflicting_idempotency_and_paper_writes_ledger(tmp_path):
+def test_ledger_rejects_conflicting_idempotency_and_records_manual_fills(tmp_path):
     ledger = Ledger(tmp_path / "system.db")
     ledger.open_account("paper", Money("1000"))
     first = Fill("ABC", date(2026, 1, 2), FillSide.BUY, Quantity(1), Money("100"))
@@ -94,12 +94,12 @@ def test_ledger_rejects_conflicting_idempotency_and_paper_writes_ledger(tmp_path
     with pytest.raises(DomainValidationError, match="different ledger command"):
         ledger.record_fills("paper", "same", 0, (conflicting,))
 
-    report = PaperBroker(ledger, "paper").submit(
-        Fill("XYZ", date(2026, 1, 3), FillSide.BUY, Quantity(1), Money("50")),
-        idempotency_key="paper-order-2",
-        expected_version=1,
-    )
-    assert report.ledger_version == 5
+    assert ledger.record_fills(
+        "paper",
+        "manual-order-2",
+        1,
+        (Fill("XYZ", date(2026, 1, 3), FillSide.BUY, Quantity(1), Money("50")),),
+    ) == 2
     assert ledger.projection("paper").cash == Money("850")
 
 

@@ -354,6 +354,7 @@ def run(
     all_decisions: list[Decision] = []
     fills: list[SimulatedFill] = []
     equity_curve: list[tuple[date, Decimal]] = []
+    last_close: dict[str, Decimal] = {}
     first_rebalance_day = dates[0] if dates else None
     rebalance_months: set[tuple[int, int]] = set()
     starting_equity = initial_state.cash.amount
@@ -366,6 +367,9 @@ def run(
                 )
             starting_equity += bar.open * holding.units.units
     for step in steps:
+        last_close.update(
+            {instrument_id: bar.close for instrument_id, bar in step.bars.items()}
+        )
         rebalance = (
             policy.rebalance_frequency == "DAILY"
             or first_rebalance_day is not None
@@ -407,9 +411,10 @@ def run(
         value = state.cash.amount
         for holding in state.holdings:
             bar = step.bars.get(holding.instrument_id)
-            if bar is None:
+            close = bar.close if bar is not None else last_close.get(holding.instrument_id)
+            if close is None:
                 raise DomainValidationError(f"missing valuation bar for {holding.instrument_id}")
-            value += bar.close * holding.units.units
+            value += close * holding.units.units
         equity_curve.append((step.as_of_date, value))
     return BacktestResult(
         manifest.run_id if manifest else uuid4(),

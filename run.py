@@ -8,12 +8,11 @@ from src.application.actions_web import create_actions_blueprint
 from src.application.backtest_web import create_backtest_blueprint
 from src.application.broker_web import create_broker_blueprint
 from src.application.composition import ApplicationServices
-from src.application.compatibility_web import create_compatibility_blueprint
-from src.application.configs_web import create_configs_blueprint
 from src.application.dashboard_web import create_dashboard_blueprint
+from src.application.index_poller import BackgroundIndexPoller
+from src.application.indicators_web import create_indicators_blueprint
 from src.application.kite_auth import KiteAuthService, load_kite_credentials
 from src.application.kite_web import create_kite_auth_blueprint
-from src.application.legacy_portfolio_web import create_legacy_portfolio_blueprint
 from src.application.market_web import create_market_blueprint
 from src.application.operations import sqlite_ready
 from src.application.pipeline_web import create_pipeline_blueprint
@@ -21,7 +20,9 @@ from src.application.portfolio_web import create_portfolio_blueprint
 from src.application.reference_web import create_reference_blueprint
 from src.application.research_web import create_research_blueprint
 from src.application.runtime import RuntimeConfig
+from src.application.strategies_web import create_strategies_blueprint
 from src.application.web import create_operations_blueprint
+from src.indicators.registry import PandasTaAdapter
 
 
 def create_app(config_class=RuntimeConfig):
@@ -58,10 +59,8 @@ def create_app(config_class=RuntimeConfig):
         portfolio_kite_credentials=portfolio_credentials,
         portfolio_kite_token_path=portfolio_token_path,
         portfolio_live_execution=bool(app.config.get("PORTFOLIO_KITE_LIVE_EXECUTION", False)),
-        automatic_paper_mode=bool(app.config.get("AUTOMATIC_PAPER_MODE", False)),
         nse_csv_path=Path.cwd() / "data" / "imports" / "NSE.csv",
         bse_csv_path=Path.cwd() / "data" / "imports" / "BSE.csv",
-        legacy_market_path=Path.cwd() / "instance" / "market_data.db",
     )
     app.extensions["screener_services"] = services
     app.register_blueprint(create_dashboard_blueprint())
@@ -77,38 +76,20 @@ def create_app(config_class=RuntimeConfig):
     app.register_blueprint(create_market_blueprint(services.market, services.catalog, services.index_poller, services.market_refresh, services.corporate_actions, services.intraday_alerts, services.intraday_stream))
     app.register_blueprint(create_research_blueprint(services.artifacts, services.research, services.jobs))
     app.register_blueprint(create_pipeline_blueprint(services.pipelines))
-    app.register_blueprint(
-        create_configs_blueprint(
-            services.configs,
-            automatic_paper_mode=bool(app.config.get("AUTOMATIC_PAPER_MODE", False)),
-        )
-    )
+    app.register_blueprint(create_indicators_blueprint(PandasTaAdapter()))
+    app.register_blueprint(create_strategies_blueprint(services.strategies))
     app.register_blueprint(create_portfolio_blueprint(services.ledger, services.market))
     app.register_blueprint(create_broker_blueprint(services.broker_orders))
-    app.register_blueprint(create_legacy_portfolio_blueprint(services.legacy_portfolio))
     app.register_blueprint(create_backtest_blueprint(services.backtests, services.artifacts))
     app.register_blueprint(
-        create_actions_blueprint(
-            services.actions,
-            automatic_paper_mode=bool(app.config.get("AUTOMATIC_PAPER_MODE", False)),
-        )
+        create_actions_blueprint(services.actions)
     )
-    app.register_blueprint(create_compatibility_blueprint(services))
 
     @app.get("/")
-    def legacy_dashboard_root():
-        if (
-            app.config.get("AUTOMATIC_PAPER_MODE", False)
-            and services.market_jobs.credentials is not None
-            and not services.market_jobs.token_path.exists()
-        ):
+    def dashboard_root():
+        if services.market_jobs.credentials is not None and not services.market_jobs.token_path.exists():
             return redirect("/integrations/kite")
         return redirect("/app")
-
-    @app.get("/dashboard")
-    def legacy_dashboard():
-        from flask import render_template
-        return render_template("dashboard.html")
 
     app.register_blueprint(
         create_kite_auth_blueprint(
@@ -137,10 +118,9 @@ def create_app(config_class=RuntimeConfig):
                 "ledger",
                 "market",
                 "research",
-                "strategy_configs",
+                "strategy_definitions",
                 "backtest",
                 "actions",
-                "legacy_portfolio_import",
                 "research_pipeline",
             ),
         ):
@@ -174,7 +154,15 @@ def main() -> None:
         and services is not None
         and services.background_worker is not None
     ):
+        worker_concurrency = max(1, int(os.environ.get("SCREENER_WORKER_CONCURRENCY", "2")))
+        services.background_worker.concurrency = worker_concurrency
         services.background_worker.start()
+
+    # Keep index quotes current during the NSE session without requiring a UI action.
+    index_poller = None
+    if services.market_jobs.credentials is not None:
+        index_poller = BackgroundIndexPoller(services.index_poller)
+        index_poller.start()
 
     print(f"Serving Waitress on http://{host}:5000 ...", flush=True)
     serve(

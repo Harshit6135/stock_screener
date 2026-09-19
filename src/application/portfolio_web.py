@@ -1,4 +1,4 @@
-"""Operator-protected manual paper-account commands and read models."""
+"""Local manual portfolio commands and read models."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from zoneinfo import ZoneInfo
 from flask import Blueprint, Response, jsonify, request
 
 from src.application.market_repository import MarketRepository
-from src.application.web import require_operator_token
 from src.execution_gateway import Ledger
 from src.platform_kernel import DomainValidationError, Money, Quantity
 from src.portfolio_accounting import Fill, FillSide
@@ -47,14 +46,6 @@ def _xirr(flows: list[tuple[date, Decimal]]) -> Decimal | None:
 
 def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository) -> Blueprint:
     blueprint = Blueprint("portfolio_v2", __name__, url_prefix="/api/v2/portfolio")
-
-    @blueprint.before_request
-    def authorize():
-        error = require_operator_token()
-        if error:
-            body, status = error
-            return jsonify(body), status
-        return None
 
     @blueprint.get("/accounts")
     def accounts():
