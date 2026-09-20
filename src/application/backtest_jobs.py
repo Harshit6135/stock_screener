@@ -136,12 +136,12 @@ class BacktestJobs:
         enable_pyramiding = payload.get("enable_pyramiding", False)
         if not isinstance(enable_pyramiding, bool):
             raise DomainValidationError("enable_pyramiding must be boolean")
-        if "pyramid_fraction" in payload:
-            pyramid_fraction = _decimal(payload["pyramid_fraction"], "pyramid_fraction")
-        else:
-            pyramid_fraction = Decimal("0.5") if enable_pyramiding else Decimal(0)
-        if not Decimal(0) <= pyramid_fraction <= Decimal(1):
+        requested_pyramid_fraction = _decimal(
+            payload.get("pyramid_fraction", "0.5"), "pyramid_fraction"
+        )
+        if not Decimal(0) <= requested_pyramid_fraction <= Decimal(1):
             raise DomainValidationError("pyramid_fraction must be in [0, 1]")
+        pyramid_fraction = requested_pyramid_fraction if enable_pyramiding else Decimal(0)
         regime_schedule = payload.get("regime_schedule", [])
         if not isinstance(regime_schedule, list):
             raise DomainValidationError("regime_schedule must be a list")

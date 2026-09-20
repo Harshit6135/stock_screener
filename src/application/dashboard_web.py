@@ -637,6 +637,8 @@ async function viewRunReport(runId) {{
       (Number(m.expectancy ?? 0)).toFixed(2) + ' · Final cash: ' +
       (Number(report.final_cash?.amount ?? report.final_cash ?? 0)).toFixed(2) +
       ' · Open positions: ' + (report.open_positions || []).length +
+      ' · Open-position value: ' + Number(report.open_position_value ?? 0).toFixed(2) +
+      ' · Ending equity: ' + Number(report.ending_equity ?? 0).toFixed(2) +
       (annual ? ' · Annual: ' + annual : '') +
       (report.sanity_flags?.length ? ' · Flags: ' + report.sanity_flags.join(', ') : '');
 

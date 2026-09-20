@@ -1,10 +1,12 @@
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 
 from src.application import JobStatus, JobStore
-from src.backtesting import BacktestStep, run
+from src.backtesting import BacktestRunManifest, BacktestStep, run
 from src.execution_gateway import Ledger
 from src.platform_kernel import DomainValidationError, Money, Quantity
 from src.portfolio_accounting import Fill, FillSide
@@ -78,3 +80,21 @@ def test_in_memory_backtest_uses_pure_engine_and_publishes_no_shared_database():
     )
     assert result.final_state.holdings[0].instrument_id == "ABC"
     assert result.equity_curve[0][1] == Decimal(1050)
+    assert result.final_prices == {"ABC": Decimal(105)}
+    manifest = BacktestRunManifest(
+        uuid4(),
+        ("market-snapshot",),
+        uuid4(),
+        uuid4(),
+        uuid4(),
+        "engine",
+        date(2026, 1, 2),
+        date(2026, 1, 2),
+        {},
+        "code",
+    )
+    payload = replace(result, manifest=manifest).to_payload()
+    assert payload["ending_equity"] == Decimal(1050)
+    assert payload["open_position_value"] == Decimal(1050)
+    assert payload["open_positions"][0]["last_price"] == Decimal(105)
+    assert payload["open_positions"][0]["market_value"] == Decimal(1050)
