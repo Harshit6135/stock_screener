@@ -1,20 +1,23 @@
 # Pending items
 
-Last reviewed: 2026-09-19
+Last reviewed: 2026-09-20
 
 This document contains only incomplete work. Completed plans and historical V3
 notes are intentionally not retained as active documentation.
 
 ## Data rebuild and validation
 
-- Run the atomic day-zero universe build to replace the inactive 1,744-row
-  interrupted membership currently present in the local database.
+- Validate the completed fixed-universe build and retain its membership snapshot
+  as the documented day-zero survivor-biased baseline.
 - Complete and validate Kite market history from `2015-01-01` through the
   latest completed session.
 - Validate coverage gaps, benchmark coverage, IPO/pre-listing ranges, delisted
   and held instruments, token changes, duplicate ISINs, and NSE preference.
-- Recalculate indicators, daily scores, and weekly rankings for both active
-  strategies from the rebuilt data.
+- Run the staged bulk indicator, percentile, score, and ranking rebuild for
+  both active strategies from the validated market data.
+- Record stage timings and peak memory for representative one-year ranges;
+  investigate any regression that reintroduces per-date history loading or
+  rolling-window recalculation.
 - Validate representative numerical samples and ranking counts before treating
   backtests as strategy evidence.
 

@@ -80,14 +80,16 @@ calculation.
 
 | Table | Key | Role |
 |---|---|---|
-| `research_daily_scores` | strategy revision/date/instrument | Daily factor payload, final score, and artifact identity |
+| `research_daily_scores` | strategy revision/date/instrument | Final score, penalty, symbol, and range-artifact identity |
 | `research_weekly_rankings` | strategy revision/week/instrument | Weekly score, deterministic rank, symbol, and artifact identity |
-| `research_pipelines` | `pipeline_id` | Fingerprinted research request, strategies, and date range |
+| `research_pipelines` | `pipeline_id` | Fingerprinted research request, strategies, range, and selected trading sessions |
 | `research_pipeline_stages` | pipeline/stage | Child job assigned to each pipeline stage |
 
-Daily calculations first publish strategy-specific feature/score artifacts and
-then replace the projection for the same strategy revision and date. Weekly
-rankings aggregate available daily scores and use deterministic score-desc,
+A bulk range calculation loads shared history once, computes indicator series,
+daily percentiles, and scores in ordered in-memory stages, then replaces the
+complete score projection for that strategy revision/range in one transaction.
+One compact immutable range artifact records the calculation summary. Weekly
+rankings aggregate the persisted daily scores and use deterministic score-desc,
 symbol-asc ordering.
 
 ## Backtests

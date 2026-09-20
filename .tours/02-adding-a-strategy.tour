@@ -35,8 +35,8 @@
     },
     {
       "file": "src/application/strategy_runtime.py",
-      "line": 54,
-      "description": "The runtime currently dispatches to the registered instrument implementation and optional benchmark/cross-sectional implementation named by the active revision." 
+      "line": 68,
+      "description": "Bulk research calls `compute_series`, which dispatches to the registered vectorized instrument implementation and computes all requested sessions once per stock." 
     },
     {
       "file": "src/application/strategies_web.py",
@@ -45,8 +45,8 @@
     },
     {
       "file": "src/application/research_jobs.py",
-      "line": 262,
-      "description": "Daily research loads the active revision, history, and benchmark, executes the strategy, publishes lineage-aware results, and updates the revision-specific score projection." 
+      "line": 82,
+      "description": "The bulk range handler runs indicators, cross-sectional percentiles, scores, and rankings in order. A new custom strategy calculation therefore needs both single-date and series implementations with parity tests." 
     },
     {
       "file": "tests/test_strategy_definitions.py",

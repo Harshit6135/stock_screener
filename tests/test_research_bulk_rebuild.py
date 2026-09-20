@@ -68,6 +68,14 @@ class _Context:
             self.progress.append(progress)
 
 
+class _UnwarmedRuntime(_Runtime):
+    def compute_series(self, _strategy_id, _bars, _benchmark):
+        return {}
+
+    def cross_section(self, _strategy_id, _values):
+        raise AssertionError("empty features must not enter cross-sectional calculation")
+
+
 def test_bulk_rebuild_calculates_each_stage_and_persists_range(tmp_path):
     database = tmp_path / "system.db"
     publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
@@ -99,4 +107,30 @@ def test_bulk_rebuild_calculates_each_stage_and_persists_range(tmp_path):
         assert connection.execute("SELECT COUNT(*) FROM research_daily_scores").fetchone()[0] == 10
         assert (
             connection.execute("SELECT COUNT(*) FROM research_weekly_rankings").fetchone()[0] == 2
+        )
+
+
+def test_bulk_rebuild_accepts_a_range_before_strategy_warmup(tmp_path):
+    database = tmp_path / "system.db"
+    publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
+    research = ResearchJobs(database, _Market(), publisher, _UnwarmedRuntime())
+    context = _Context()
+    sessions = [f"2025-01-{day:02d}" for day in range(6, 11)]
+
+    result = research.rebuild_range(
+        {
+            "start_date": sessions[0],
+            "end_date": sessions[-1],
+            "strategies": ["strategy1"],
+            "trading_dates": sessions,
+        },
+        context,
+    )
+
+    assert result["strategies"]["strategy1"]["scored_rows"] == 0
+    assert result["weekly_rankings"] == 1
+    with sqlite_connection(database, read_only=True) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM research_daily_scores").fetchone()[0] == 0
+        assert (
+            connection.execute("SELECT COUNT(*) FROM research_weekly_rankings").fetchone()[0] == 0
         )

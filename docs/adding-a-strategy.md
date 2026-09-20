@@ -8,8 +8,9 @@ factor weights, benchmark dependency, score modifiers, and ranking policy are
 configuration.
 
 Complete calculation is not yet generic. Each strategy currently names a
-registered Python instrument implementation and may name a registered
-cross-sectional implementation. Therefore:
+registered Python instrument implementation, its matching vectorized series
+implementation, and optionally a registered cross-sectional implementation.
+Therefore:
 
 - a revision that only changes weights, modifiers, portfolio policy, or other
   supported configuration needs only YAML;
@@ -128,23 +129,34 @@ Use this path when no registered implementation produces the required
 features.
 
 1. Decide whether the calculation is instrument-local or cross-sectional.
-2. Add a focused implementation under `src/indicators/custom/`. It should
-   accept normalized histories and return finite, JSON-serializable values.
-3. Register it in `INSTRUMENT_IMPLEMENTATIONS`,
-   `CROSS_SECTION_IMPLEMENTATIONS`, and `CUSTOM_IMPLEMENTATIONS` as applicable.
-4. Give it a stable name such as `custom.example_features`.
-5. Reference that name in YAML.
-6. Add unit tests for warm-up, missing data, constant data, non-finite values,
+2. Add a focused series implementation under `src/indicators/custom/`. It
+   should accept normalized histories, calculate rolling values once, and
+   return date-keyed finite, JSON-serializable values.
+3. Keep a thin single-date wrapper that returns the final value from that same
+   series implementation. Do not maintain a separate formula path.
+4. Register the stable implementation key in both
+   `INSTRUMENT_IMPLEMENTATIONS` and `INSTRUMENT_SERIES_IMPLEMENTATIONS`.
+   Register cross-sectional behavior in `CROSS_SECTION_IMPLEMENTATIONS` when
+   required, and include YAML-visible implementations in
+   `CUSTOM_IMPLEMENTATIONS`.
+5. Give it a stable name such as `custom.example_features` and reference that
+   name in YAML.
+6. Add a parity test proving the final bulk-series value equals the single-date
+   wrapper result.
+7. Add unit tests for warm-up, missing data, constant data, non-finite values,
    append/truncation behavior, and deterministic output.
-7. Add no-look-ahead tests: calculating an earlier date with and without later
+8. Add no-look-ahead tests: calculating an earlier date with and without later
    bars must produce the same earlier output.
-8. Add research integration tests proving scores and rankings reference the
+9. Add bulk research integration tests proving scores and rankings reference the
    correct strategy revision and upstream snapshots.
-9. Add a multi-year parity or acceptance backtest with pyramiding both off and
+10. Add a representative performance test to detect accidental per-date history
+    reloads or rolling-indicator recalculation.
+11. Add a multi-year parity or acceptance backtest with pyramiding both off and
    on when the strategy uses it.
 
 Do not create a complete new research job kind for each strategy. The generic
-daily and weekly job kinds accept active strategy IDs.
+`research.rebuild-range` job accepts one or more active strategy IDs and runs
+the ordered indicator, percentile, score, and ranking stages.
 
 ## Indicator node schema
 
@@ -178,7 +190,8 @@ definition but do not replace `instrument_implementation`.
 - Required history and benchmark data are present.
 - Feature output is deterministic and finite.
 - No-look-ahead tests pass.
-- Daily score and weekly ranking artifacts include revision lineage.
+- Bulk score and weekly ranking artifacts include revision lineage.
+- Bulk-series and single-date outputs have exact parity.
 - Ranking ties are deterministic.
 - Backtests report total return, CAGR, annual returns, fills, and risk metrics.
 - Pyramiding-on and pyramiding-off behavior is explicitly tested.

@@ -1,4 +1,4 @@
-"""Durable coordinator for ordered daily research child jobs."""
+"""Durable coordinator for prerequisite data and staged bulk research."""
 
 from __future__ import annotations
 

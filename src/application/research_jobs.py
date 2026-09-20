@@ -1,4 +1,4 @@
-"""Generic daily research and weekly ranking jobs over active strategy revisions."""
+"""Staged bulk research and ranking over active strategy revisions."""
 
 from __future__ import annotations
 
@@ -178,29 +178,30 @@ class ResearchJobs:
             for index, session in enumerate(sessions, start=1):
                 day = session.isoformat()
                 values = features_by_date[day]
-                cross_section = self.runtime.cross_section(strategy_id, values)
-                if cross_section is not None:
-                    for instrument_id, factors in cross_section.items():
-                        values[instrument_id]["factors"] = factors
                 percentiles = {instrument_id: {} for instrument_id in values}
-                for factor in factor_weights:
-                    ordered = sorted(
-                        values,
-                        key=lambda key: (float(values[key]["factors"][factor]), key),
-                    )
-                    position = 0
-                    while position < len(ordered):
-                        tied_end = position + 1
-                        while (
-                            tied_end < len(ordered)
-                            and values[ordered[tied_end]]["factors"][factor]
-                            == values[ordered[position]]["factors"][factor]
-                        ):
-                            tied_end += 1
-                        percentile = ((position + 1 + tied_end) / 2) / len(ordered) * 100
-                        for instrument_id in ordered[position:tied_end]:
-                            percentiles[instrument_id][factor] = percentile
-                        position = tied_end
+                if values:
+                    cross_section = self.runtime.cross_section(strategy_id, values)
+                    if cross_section is not None:
+                        for instrument_id, factors in cross_section.items():
+                            values[instrument_id]["factors"] = factors
+                    for factor in factor_weights:
+                        ordered = sorted(
+                            values,
+                            key=lambda key: (float(values[key]["factors"][factor]), key),
+                        )
+                        position = 0
+                        while position < len(ordered):
+                            tied_end = position + 1
+                            while (
+                                tied_end < len(ordered)
+                                and values[ordered[tied_end]]["factors"][factor]
+                                == values[ordered[position]]["factors"][factor]
+                            ):
+                                tied_end += 1
+                            percentile = ((position + 1 + tied_end) / 2) / len(ordered) * 100
+                            for instrument_id in ordered[position:tied_end]:
+                                percentiles[instrument_id][factor] = percentile
+                            position = tied_end
                 percentiles_by_date[day] = percentiles
                 if index % 10 == 0 or index == len(sessions):
                     context.checkpoint(

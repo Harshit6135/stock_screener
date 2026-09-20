@@ -1,7 +1,7 @@
 {
   "$schema": "https://aka.ms/codetour-schema",
   "title": "Research journey",
-  "description": "Trace a research request through pipeline stages, daily factors, weekly rankings, artifacts, and backtesting.",
+  "description": "Trace one bulk research request through shared history loading, indicator series, percentiles, scores, rankings, and backtesting.",
   "steps": [
     {
       "file": "src/application/pipeline_web.py",
@@ -10,38 +10,48 @@
     },
     {
       "file": "src/application/pipeline_jobs.py",
-      "line": 50,
-      "description": "Pipeline input is normalized here. It validates completed dates, active unique strategies, the current 365-day bound, and optional explicit trading sessions." 
+      "line": 56,
+      "description": "Pipeline input is normalized here. It validates completed dates, active strategies, the 365-day bound, and uses explicit sessions or dates actually present in market bars." 
     },
     {
       "file": "src/application/pipeline_jobs.py",
-      "line": 93,
-      "description": "Submission fingerprints all material inputs and creates either data orchestration stages or per-strategy daily jobs, plus a durable coordinator." 
+      "line": 127,
+      "description": "Submission fingerprints all material inputs. It either queues one `research.rebuild-range` job immediately or queues prerequisite data stages plus a coordinator." 
     },
     {
       "file": "src/application/pipeline_jobs.py",
-      "line": 188,
-      "description": "The coordinator waits for data jobs and spawned bar jobs, then daily jobs, then queues one ranking job for each week's last submitted session." 
+      "line": 253,
+      "description": "For orchestrated runs, the coordinator waits for reference, refresh, reconciliation, and every spawned bar job, refreshes actual market sessions, then submits one bulk research job." 
     },
     {
       "file": "src/application/research_jobs.py",
-      "line": 262,
-      "description": "Daily calculation loads point-in-time histories, active strategy revision, factor weights, and optional benchmark before invoking the strategy runtime." 
+      "line": 82,
+      "description": "The bulk handler loads the shared 900-day warm-up once. It then runs indicators, percentiles, score writes, and weekly rankings while emitting inspectable progress events." 
     },
     {
       "file": "src/indicators/custom/momentum_quality.py",
-      "line": 1,
-      "description": "Strategy 1's current custom implementation computes instrument-local momentum-quality features. It must remain deterministic and free of future data." 
+      "line": 56,
+      "description": "Strategy 1 computes every completed momentum-quality session in one vectorized pass; the single-date API wraps the same series result to preserve parity." 
     },
     {
       "file": "src/indicators/custom/relative_strength.py",
-      "line": 1,
-      "description": "Strategy 2 computes benchmark-relative features and cross-sectional factors using the same dated universe histories." 
+      "line": 29,
+      "description": "Strategy 2 computes benchmark-relative indicator series once per stock, including historical dates for stocks whose latest bar predates the benchmark's latest bar." 
+    },
+    {
+      "file": "src/application/strategy_runtime.py",
+      "line": 68,
+      "description": "The strategy runtime dispatches bulk calculation through the explicit series implementation registry; adding a custom calculation requires a registered, tested series implementation." 
     },
     {
       "file": "src/application/research_jobs.py",
-      "line": 457,
-      "description": "Weekly ranking aggregates daily scores, applies deterministic ordering, publishes an immutable ranking artifact, and updates the revision-aware projection." 
+      "line": 846,
+      "description": "Weekly ranking aggregates persisted daily scores, applies deterministic ordering, publishes an immutable ranking artifact, and updates the revision-aware projection." 
+    },
+    {
+      "file": "src/application/dashboard_web.py",
+      "line": 237,
+      "description": "Worker status shows the currently running bulk job and latest stage; selecting it loads the complete progress event history into Job Inspection." 
     },
     {
       "file": "src/application/research_web.py",
@@ -50,7 +60,7 @@
     },
     {
       "file": "src/application/backtest_jobs.py",
-      "line": 91,
+      "line": 88,
       "description": "Backtesting consumes historical rankings and bars for the selected revision, replays the portfolio, and publishes metrics and simulated fills without touching the real ledger." 
     }
   ]

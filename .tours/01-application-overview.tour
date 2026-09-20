@@ -20,13 +20,13 @@
     },
     {
       "file": "src/application/composition.py",
-      "line": 121,
-      "description": "This handler map is the allowlist of durable work. Web requests submit named jobs; workers invoke only handlers registered here."
+      "line": 138,
+      "description": "This handler map is the allowlist of durable work. Research exposes one bulk range handler; the retired per-day handlers are not registered."
     },
     {
       "file": "src/application/jobs.py",
       "line": 70,
-      "description": "`JobStore` provides fingerprints, leases, claim tokens, retries, progress events, and cancellation. Long-running provider and research work survives a browser refresh or process restart."
+      "description": "`JobStore` provides fingerprints, leases, claim tokens, retries, progress events, and cancellation. Its claim query also ensures only one bulk research range runs across processes."
     },
     {
       "file": "src/application/sqlite.py",
@@ -45,13 +45,13 @@
     },
     {
       "file": "src/application/dashboard_web.py",
-      "line": 1,
-      "description": "The dashboard blueprint serves the local UI. Area-specific APIs live in neighboring `*_web.py` adapters and delegate business behavior to composed services."
+      "line": 237,
+      "description": "The dashboard polls worker status, lists the current running job and live stage, and loads full payload, lease, error, result, and event detail into Job Inspection."
     },
     {
       "file": "run.py",
-      "line": 105,
-      "description": "`main` starts the background worker, optional market-hours index poller, and loopback Waitress server. Network binding requires a separate explicit override and security boundary."
+      "line": 148,
+      "description": "`main` starts one background worker thread, the optional market-hours index poller, and loopback Waitress. Network binding requires a separate explicit override and security boundary."
     }
   ]
 }

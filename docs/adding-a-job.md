@@ -84,6 +84,32 @@ precondition. Let transient network/provider errors propagate so the worker can
 apply its retry policy. Do not catch broad `Exception` and label a coding error
 as an unresolved item.
 
+For a long staged job, progress payloads should use the fields rendered by Job
+Inspection:
+
+```python
+context.checkpoint(
+    progress={
+        "stage": "calculating",
+        "stage_number": 2,
+        "stage_count": 4,
+        "processed_items": index,
+        "total_items": len(work_items),
+        "completed_percent": round(index / len(work_items) * 100, 1),
+        "detail": "Calculating normalized values for the complete batch.",
+    }
+)
+```
+
+Use stable, human-readable stage names and include domain-specific counts. The
+latest event appears in worker status; the complete event sequence appears in
+Job Inspection.
+
+The local worker is intentionally single-threaded. Do not fan CPU-bound work
+out into thousands of per-date or per-symbol jobs. Load shared inputs once,
+process ordered stages in bounded batches, batch database writes, and use child
+jobs only when they are independently retryable provider requests.
+
 ## 3. Make retries safe
 
 Jobs can be submitted twice, retried after an outage, or reclaimed after a
@@ -172,6 +198,7 @@ kind from the browser.
 Observe jobs through:
 
 ```text
+GET /api/v2/operations/worker/status
 GET /api/v2/operations/jobs/<job-id>
 GET /api/v2/operations/jobs/<job-id>/events
 POST /api/v2/operations/jobs/<job-id>/cancel
