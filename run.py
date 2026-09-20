@@ -72,22 +72,37 @@ def create_app(config_class=RuntimeConfig):
             background_worker=services.background_worker,
         )
     )
-    app.register_blueprint(create_reference_blueprint(services.artifacts, services.market, services.publisher))
-    app.register_blueprint(create_market_blueprint(services.market, services.catalog, services.index_poller, services.market_refresh, services.corporate_actions, services.intraday_alerts, services.intraday_stream))
-    app.register_blueprint(create_research_blueprint(services.artifacts, services.research, services.jobs))
+    app.register_blueprint(
+        create_reference_blueprint(services.artifacts, services.market, services.publisher)
+    )
+    app.register_blueprint(
+        create_market_blueprint(
+            services.market,
+            services.catalog,
+            services.index_poller,
+            services.market_refresh,
+            services.corporate_actions,
+            services.intraday_alerts,
+            services.intraday_stream,
+        )
+    )
+    app.register_blueprint(
+        create_research_blueprint(services.artifacts, services.research, services.jobs)
+    )
     app.register_blueprint(create_pipeline_blueprint(services.pipelines))
     app.register_blueprint(create_indicators_blueprint(PandasTaAdapter()))
     app.register_blueprint(create_strategies_blueprint(services.strategies))
     app.register_blueprint(create_portfolio_blueprint(services.ledger, services.market))
     app.register_blueprint(create_broker_blueprint(services.broker_orders))
     app.register_blueprint(create_backtest_blueprint(services.backtests, services.artifacts))
-    app.register_blueprint(
-        create_actions_blueprint(services.actions)
-    )
+    app.register_blueprint(create_actions_blueprint(services.actions))
 
     @app.get("/")
     def dashboard_root():
-        if services.market_jobs.credentials is not None and not services.market_jobs.token_path.exists():
+        if (
+            services.market_jobs.credentials is not None
+            and not services.market_jobs.token_path.exists()
+        ):
             return redirect("/integrations/kite")
         return redirect("/app")
 
@@ -154,8 +169,9 @@ def main() -> None:
         and services is not None
         and services.background_worker is not None
     ):
-        worker_concurrency = max(1, int(os.environ.get("SCREENER_WORKER_CONCURRENCY", "2")))
-        services.background_worker.concurrency = worker_concurrency
+        # A research range job already performs vectorized bulk work. Multiple
+        # local workers only add SQLite contention and duplicate memory use.
+        services.background_worker.concurrency = 1
         services.background_worker.start()
 
     # Keep index quotes current during the NSE session without requiring a UI action.

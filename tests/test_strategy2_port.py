@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from src.indicators.custom.relative_strength import (
     relative_strength_factors,
+    relative_strength_feature_series,
     relative_strength_features,
 )
 
@@ -57,3 +58,11 @@ def test_strategy2_hard_excludes_zero_volume_and_flat_ohlc():
     assert inputs is not None
     assert inputs["penalty"] == 0
     assert {"zero_volume", "flat_ohlc"} <= set(inputs["penalty_reasons"])
+
+
+def test_strategy2_bulk_series_matches_single_date_calculation():
+    bars, benchmark = _histories()
+    series = relative_strength_feature_series(bars, benchmark)
+
+    assert series[bars[-1]["as_of_date"]] == relative_strength_features(bars, benchmark)
+    assert bars[-2]["as_of_date"] in relative_strength_feature_series(bars, benchmark[:-1])

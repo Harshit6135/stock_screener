@@ -17,11 +17,13 @@ class _Market:
         start = date(2026, 3, 1)
         for offset in range(24):
             day = start + timedelta(days=offset)
-            bars.append({
-                "as_of_date": day.isoformat(),
-                "close": close,
-                "snapshot_id": f"bar-{offset}",
-            })
+            bars.append(
+                {
+                    "as_of_date": day.isoformat(),
+                    "close": close,
+                    "snapshot_id": f"bar-{offset}",
+                }
+            )
             close *= 1.01 if offset < 21 else 1.20
         return {"instrument-1": (bars, {"isin": "INE000000001", "symbol": "ABC"})}
 
@@ -77,9 +79,12 @@ def test_targeted_recalculation_submits_the_registered_generic_job(tmp_path):
 
     assert response.status_code == 202
     job = jobs.get(response.json["job_id"])
-    assert job.kind == "research.calculate-day"
+    assert job.kind == "research.rebuild-range"
     assert job.payload == {
-        "as_of_date": "2026-03-24",
-        "strategy_id": "strategy1",
-        "symbols": ["ABC"],
+        "start_date": "2026-03-24",
+        "end_date": "2026-03-24",
+        "strategies": ["strategy1"],
+        "trading_dates": ["2026-03-24"],
     }
+    assert response.json["requested_symbols"] == ["ABC"]
+    assert response.json["execution_scope"] == "full-universe cross-section"

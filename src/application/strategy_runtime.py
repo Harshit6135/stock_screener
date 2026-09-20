@@ -10,6 +10,7 @@ from src.application.strategy_definitions import StrategyDefinitions
 from src.indicators.custom import (
     CROSS_SECTION_IMPLEMENTATIONS,
     INSTRUMENT_IMPLEMENTATIONS,
+    INSTRUMENT_SERIES_IMPLEMENTATIONS,
     BenchmarkImplementation,
     InstrumentImplementation,
 )
@@ -63,6 +64,20 @@ class StrategyRuntime:
         if self.benchmark(strategy_id):
             return cast(BenchmarkImplementation, implementation)(bars, benchmark)
         return cast(InstrumentImplementation, implementation)(bars)
+
+    def compute_series(
+        self,
+        strategy_id: str,
+        bars: Sequence[dict[str, Any]],
+        benchmark: Sequence[dict[str, Any]],
+    ) -> dict[str, dict[str, object]]:
+        """Compute all available sessions without recalculating rolling windows per date."""
+        definition = cast(dict[str, Any], self.revision(strategy_id)["definition"])
+        key = str(definition["calculation"]["instrument_implementation"])
+        implementation = INSTRUMENT_SERIES_IMPLEMENTATIONS[key]
+        if self.benchmark(strategy_id):
+            return cast(Any, implementation)(bars, benchmark)
+        return cast(Any, implementation)(bars)
 
     def cross_section(
         self, strategy_id: str, values: dict[str, dict[str, object]]

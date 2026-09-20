@@ -18,9 +18,15 @@ def _job_response(job: Job) -> dict[str, object]:
     return {
         "job_id": job.job_id,
         "fingerprint": job.fingerprint,
+        "kind": job.kind,
         "status": job.status.value,
         "attempts": job.attempts,
+        "max_attempts": job.max_attempts,
+        "payload": job.payload,
+        "lease_owner": job.lease_owner,
+        "lease_until": job.lease_until,
         "cancel_requested": job.cancel_requested,
+        "last_error": job.last_error,
         "result": job.result,
     }
 
@@ -62,7 +68,19 @@ def create_operations_blueprint(
     @blueprint.get("/jobs/<int:job_id>")
     def get_job(job_id: int):
         try:
-            return jsonify(_job_response(jobs.get(job_id)))
+            job = jobs.get(job_id)
+            events = jobs.events_after(job_id)
+            progress = next(
+                (item for item in reversed(events) if item["event_type"] == "progress"),
+                None,
+            )
+            return jsonify(
+                {
+                    **_job_response(job),
+                    "current_progress": progress["payload"] if progress else None,
+                    "events": events,
+                }
+            )
         except DomainValidationError:
             return jsonify({"error": "job not found"}), 404
 
@@ -91,7 +109,13 @@ def create_operations_blueprint(
     @blueprint.get("/worker/status")
     def worker_status():
         if background_worker is not None:
-            return jsonify(background_worker.status()), 200
+            return jsonify(
+                {
+                    **background_worker.status(),
+                    "active_jobs": [_job_response(job) for job in jobs.active()],
+                    "queued_by_kind": jobs.queued_by_kind(),
+                }
+            ), 200
         return jsonify({"worker_id": worker.worker_id if worker else None, "running": False}), 200
 
     @blueprint.post("/worker/start")
@@ -114,6 +138,8 @@ def create_operations_blueprint(
         if target_worker is None:
             return jsonify({"error": "worker is not configured"}), 503
         job = target_worker.run_once()
-        return jsonify({"executed": job is not None, "job": _job_response(job) if job else None}), 200
+        return jsonify(
+            {"executed": job is not None, "job": _job_response(job) if job else None}
+        ), 200
 
     return blueprint

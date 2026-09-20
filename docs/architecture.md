@@ -9,8 +9,8 @@ The application is a local modular monolith for four related concerns:
 3. isolated historical backtesting; and
 4. accounting for one or more real portfolios.
 
-The default deployment is one Waitress process bound to loopback, one or more
-background worker threads, and one SQLite database. Kite is the authoritative
+The default deployment is one Waitress process bound to loopback, one
+background worker thread, and one SQLite database. Kite is the authoritative
 provider for instruments, historical bars, quotes, and optional broker
 execution. YFinance is used only for the current market-cap enrichment needed
 to create and extend the investable universe.
@@ -95,11 +95,16 @@ Long operations are submitted to `JobStore` with a unique fingerprint. A job
 has a bounded retry policy, a lease owner, a claim token, progress events,
 cancellation state, and an optional result. The worker claims one job at a
 time per worker loop and invokes only handlers registered in the composition
-root.
+root. Bulk research claims are additionally serialized in `JobStore`, so a
+second process cannot run another research range concurrently against the same
+database.
 
-Research pipelines are coordinators over ordinary durable jobs. They do not
-perform market or research work directly; they submit stages, wait for their
-terminal state, and then submit dependent stages.
+Research pipelines coordinate ordinary durable jobs. Without data
+orchestration they submit one `research.rebuild-range` job immediately. With
+data orchestration they wait for reference, market refresh, reconciliation,
+and spawned bar jobs before submitting that same bulk range job. The handler
+loads history once and reports indicator, percentile, score, and ranking
+progress through durable job events.
 
 ## Immutable artifacts and projections
 

@@ -79,17 +79,24 @@ def create_research_blueprint(store: ArtifactStore, research: ResearchJobs, jobs
             return jsonify({"error": "symbols must contain 1..500 names"}), 400
         normalized = {"as_of_date": day.isoformat(), "strategy_id": strategy_id, "symbols": sorted(set(symbols))}
         fingerprint = "research-patch:" + hashlib.sha256(json.dumps(normalized, sort_keys=True).encode()).hexdigest()
-        kind = "research.calculate-day"
+        kind = "research.rebuild-range"
         job = jobs.submit(
             fingerprint,
             kind,
             {
-                "as_of_date": day.isoformat(),
-                "strategy_id": strategy_id,
-                "symbols": normalized["symbols"],
+                "start_date": day.isoformat(),
+                "end_date": day.isoformat(),
+                "strategies": [strategy_id],
+                "trading_dates": [day.isoformat()],
             },
         )
-        return jsonify({"job_id": job.job_id, "fingerprint": job.fingerprint, "status": job.status.value, "patch": normalized}), 202
+        return jsonify({
+            "job_id": job.job_id,
+            "fingerprint": job.fingerprint,
+            "status": job.status.value,
+            "requested_symbols": normalized["symbols"],
+            "execution_scope": "full-universe cross-section",
+        }), 202
 
     @blueprint.post("/sector-rankings")
     def sector_rankings():

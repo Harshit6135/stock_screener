@@ -26,16 +26,14 @@ def _clip(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-def relative_strength_features(
+def relative_strength_feature_series(
     bars: Sequence[dict[str, Any]], benchmark: Sequence[dict[str, Any]]
-) -> dict[str, object] | None:
-    """Compute latest v3-style S2 inputs; require a same-day Kite benchmark."""
+) -> dict[str, dict[str, object]]:
+    """Compute every completed v3-style S2 session in one vectorized pass."""
     if len(bars) < 253 or len(benchmark) < 200:
-        return None
+        return {}
     frame = pd.DataFrame(bars).sort_values("as_of_date").reset_index(drop=True)
     benchmark_frame = pd.DataFrame(benchmark).sort_values("as_of_date")
-    if frame.iloc[-1]["as_of_date"] != benchmark_frame.iloc[-1]["as_of_date"]:
-        return None
     for column in ("open", "high", "low", "close", "volume"):
         frame[column] = pd.to_numeric(frame[column], errors="raise")
     close = frame["close"]
@@ -48,9 +46,6 @@ def relative_strength_features(
     )
     aligned_benchmark = benchmark_by_date.reindex(frame["as_of_date"], method="ffill")
     aligned_benchmark.index = frame.index
-    if aligned_benchmark.isna().any():
-        return None
-
     ema50 = close.ewm(span=50, adjust=False, min_periods=50).mean()
     ema200 = close.ewm(span=200, adjust=False, min_periods=200).mean()
     ema_slope = ema50 / ema50.shift(5) - 1
@@ -109,41 +104,57 @@ def relative_strength_features(
     dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, float("nan"))
     adx = dx.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
     turnover_ema20 = (close * volume).ewm(span=20, adjust=False, min_periods=20).mean()
-    latest = frame.iloc[-1]
-    i = len(frame) - 1
-    required = (norm_momentum, sortino, ema200, adx, turnover_ema20)
-    if any(not math.isfinite(_finite(series.iloc[i], float("nan"))) for series in required):
+    required = (aligned_benchmark, norm_momentum, sortino, ema200, adx, turnover_ema20)
+    output: dict[str, dict[str, object]] = {}
+    benchmark_dates = set(benchmark_frame["as_of_date"].astype(str))
+    for i in range(252, len(frame)):
+        latest = frame.iloc[i]
+        day = str(latest["as_of_date"])
+        if day not in benchmark_dates or any(
+            not math.isfinite(_finite(series.iloc[i], float("nan"))) for series in required
+        ):
+            continue
+        reasons: list[str] = []
+        if _finite(ema50.iloc[i]) < 50:
+            reasons.append("penny_stock")
+        if _finite(turnover_ema20.iloc[i]) < 500_000_000:
+            reasons.append("low_turnover")
+        if int(latest["volume"]) == 0:
+            reasons.append("zero_volume")
+        if len({float(latest[field]) for field in ("open", "high", "low", "close")}) == 1:
+            reasons.append("flat_ohlc")
+        output[day] = {
+            "distance_from_ema_200": _finite(ema_distance.iloc[i]),
+            "ema_50_slope": _finite(ema_slope.iloc[i]),
+            "mansfield_rs": _finite(mansfield.iloc[i]),
+            "nse_norm_momentum": _finite(norm_momentum.iloc[i]),
+            "ppo_12_26_9": _finite(ppo.iloc[i]),
+            "momentum_6m": _finite(momentum_6m.iloc[i]),
+            "sortino_ratio": _finite(sortino.iloc[i]),
+            "atr_spike": _finite(atr_spike.iloc[i], 1),
+            "rvol": _finite(rvol.iloc[i], 1),
+            "relative_volume_proxy": _finite(relative_volume_proxy.iloc[i], 0.5),
+            "scaled_turnover": _finite(relative_volume_proxy.iloc[i], 0.5),
+            "log_price_vol_corr": _finite(log_price_volume_corr.iloc[i]),
+            "bandwidth_change_5d": _finite(bandwidth_change.iloc[i]),
+            "rsi_14": _finite(rsi.iloc[i], 50),
+            "adx_14": _finite(adx.iloc[i], 25),
+            "avg_turnover_ema_20": _finite(turnover_ema20.iloc[i]),
+            "quality_z_score_placeholder": 0.0,
+            "penalty": 0.0 if reasons else 1.0,
+            "penalty_reasons": reasons,
+        }
+    return output
+
+
+def relative_strength_features(
+    bars: Sequence[dict[str, Any]], benchmark: Sequence[dict[str, Any]]
+) -> dict[str, object] | None:
+    """Compute S2 inputs for the final completed session."""
+    if not bars or not benchmark or bars[-1]["as_of_date"] != benchmark[-1]["as_of_date"]:
         return None
-    reasons: list[str] = []
-    if _finite(ema50.iloc[i]) < 50:
-        reasons.append("penny_stock")
-    if _finite(turnover_ema20.iloc[i]) < 500_000_000:
-        reasons.append("low_turnover")
-    if int(latest["volume"]) == 0:
-        reasons.append("zero_volume")
-    if len({float(latest[field]) for field in ("open", "high", "low", "close")}) == 1:
-        reasons.append("flat_ohlc")
-    return {
-        "distance_from_ema_200": _finite(ema_distance.iloc[i]),
-        "ema_50_slope": _finite(ema_slope.iloc[i]),
-        "mansfield_rs": _finite(mansfield.iloc[i]),
-        "nse_norm_momentum": _finite(norm_momentum.iloc[i]),
-        "ppo_12_26_9": _finite(ppo.iloc[i]),
-        "momentum_6m": _finite(momentum_6m.iloc[i]),
-        "sortino_ratio": _finite(sortino.iloc[i]),
-        "atr_spike": _finite(atr_spike.iloc[i], 1),
-        "rvol": _finite(rvol.iloc[i], 1),
-        "relative_volume_proxy": _finite(relative_volume_proxy.iloc[i], 0.5),
-        "scaled_turnover": _finite(relative_volume_proxy.iloc[i], 0.5),
-        "log_price_vol_corr": _finite(log_price_volume_corr.iloc[i]),
-        "bandwidth_change_5d": _finite(bandwidth_change.iloc[i]),
-        "rsi_14": _finite(rsi.iloc[i], 50),
-        "adx_14": _finite(adx.iloc[i], 25),
-        "avg_turnover_ema_20": _finite(turnover_ema20.iloc[i]),
-        "quality_z_score_placeholder": 0.0,
-        "penalty": 0.0 if reasons else 1.0,
-        "penalty_reasons": reasons,
-    }
+    values = relative_strength_feature_series(bars, benchmark)
+    return next(reversed(values.values())) if values else None
 
 
 def relative_strength_factors(
@@ -192,3 +203,18 @@ def relative_strength_factors(
             + 0.20 * _clip(rsi, 0, 100),
         }
     return results
+
+
+def relative_strength_factor_series(
+    inputs: dict[str, dict[str, dict[str, object]]],
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Apply cross-sectional factor normalization once for each session."""
+    dates = sorted({day for values in inputs.values() for day in values})
+    output: dict[str, dict[str, dict[str, float]]] = {}
+    for day in dates:
+        cross_section = {
+            instrument_id: values[day] for instrument_id, values in inputs.items() if day in values
+        }
+        if cross_section:
+            output[day] = relative_strength_factors(cross_section)
+    return output

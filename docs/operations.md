@@ -12,9 +12,11 @@ Process one job manually:
 poetry run screener-ops work-once instance
 ```
 
-The worker concurrency defaults to two. SQLite still serializes writes, so
-increasing worker count is useful mainly for provider latency and should be
-tested before raising it substantially.
+The application uses one worker thread. Bulk research rebuilds are also
+serialized at the database claim boundary, so accidentally starting a second
+application process cannot run two memory-heavy research ranges concurrently.
+Provider jobs remain durable, but research no longer creates one queued job
+per strategy per day.
 
 ### Waitress task queue warning
 
@@ -32,8 +34,10 @@ too few request threads and should be investigated.
 
 ## Job operations
 
-A `202 Accepted` response means a job was queued, not that it completed. Use
-the Operations UI or `/api/v2/operations` to inspect status and events.
+A `202 Accepted` response means a job was queued, not that it completed. The
+Operations UI shows each currently running job, its live stage/progress, full
+payload, lease, errors, result, and event history. The same detail is available
+from `/api/v2/operations/jobs/<job_id>`.
 
 Statuses are `QUEUED`, `RUNNING`, `SUCCEEDED`, `FAILED`, and `CANCELLED`.
 Running jobs hold a lease and claim token. A worker heartbeat extends the
@@ -154,8 +158,8 @@ and tokens. Never include `local_secrets.py`, `.env`, `access_token.txt`, or
 
 ```powershell
 poetry run python -m pytest -q
-poetry run ruff check src tests scripts run.py
-poetry run python -m compileall -q src tests scripts run.py
+poetry run ruff check src tests run.py
+poetry run python -m compileall -q src tests run.py
 ```
 
 The mypy baseline is not yet clean and is tracked explicitly in

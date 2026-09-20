@@ -16,7 +16,6 @@ src/portfolio_engine/     portfolio decision rules
 src/execution_gateway/    real ledger and Kite order boundary
 strategies/               seed YAML strategy definitions
 templates/, static/       local browser UI
-scripts/                  operational and smoke utilities
 tests/                    unit, integration, recovery, and regression tests
 .tours/                   interactive source walkthroughs
 docs/                     maintained documentation
@@ -52,6 +51,9 @@ No route should add a local authentication token. The current application is
 loopback-only; network deployment security is a separate pending capability.
 
 ## Adding a durable job
+
+For the complete agent-ready contract and checklist, read
+[Adding a durable job](adding-a-job.md). This section is the short overview.
 
 Use a job when work is provider-bound, potentially long-running, retryable, or
 has dependent stages.
@@ -123,14 +125,14 @@ Important categories are:
 - artifact checksum and lineage tests;
 - strategy parity and no-look-ahead regressions;
 - provider adapter tests using fakes;
-- smoke scripts for isolated end-to-end flows.
+- service-level integration tests using isolated temporary databases.
 
 Run:
 
 ```powershell
 poetry run python -m pytest -q
-poetry run ruff check src tests scripts run.py
-poetry run python -m compileall -q src tests scripts run.py
+poetry run ruff check src tests run.py
+poetry run python -m compileall -q src tests run.py
 ```
 
 Mypy is configured but does not yet pass; see [pending items](pending-items.md).

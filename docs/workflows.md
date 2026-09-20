@@ -90,28 +90,27 @@ improvement.
 ## Research journey
 
 `POST /api/v2/pipelines/research` creates a fingerprinted pipeline. With
-`orchestrate_data=false`, daily jobs are queued immediately. With
+`orchestrate_data=false`, one staged bulk rebuild is queued immediately. With
 `orchestrate_data=true`, reference sync, market refresh, and reconciliation
-must complete before daily research starts.
+must complete before bulk research starts.
 
-For each strategy and session, `ResearchJobs.calculate_day()`:
+`ResearchJobs.rebuild_range()` processes each bounded date range in four
+explicit stages:
 
-1. loads the active immutable strategy revision;
-2. reads up to 900 calendar days of histories;
-3. separates benchmark history when required;
-4. executes the registered instrument feature implementation;
-5. optionally performs cross-sectional calculation;
-6. applies configured factor weights and modifiers;
-7. publishes revision-aware output artifacts; and
-8. replaces the daily score projection for that revision/date.
+1. load the shared warm-up history once;
+2. calculate every instrument's rolling indicators in one vectorized pass;
+3. calculate daily cross-sectional factors and percentiles;
+4. apply weights and penalties, batch-write scores, then generate weekly rankings.
 
-After all daily stages succeed, the coordinator finds each week's last
-submitted session and queues `research.rank-week`. Ranking uses available
-daily scores, aggregates according to the strategy definition, and stores a
-deterministic ranking artifact and relational projection.
+Trading sessions come from dates actually present in `market_bars` when
+available, so exchange holidays are not treated as empty sessions. The range
+handler loads the 900-calendar-day warm-up once, not once per strategy/date.
+Score replacement uses one transaction per strategy/range. Ranking uses the
+last submitted session in each week and stores a deterministic artifact and
+relational projection.
 
-If a stage fails, the pipeline is failed and that stage can be retried without
-discarding completed siblings. Cancellation requests propagate to child jobs.
+The bulk job emits detailed progress for indicator, percentile, score, and
+ranking stages. It can be cancelled or retried as one coherent unit.
 
 ## Strategy revision journey
 

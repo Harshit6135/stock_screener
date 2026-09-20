@@ -15,12 +15,14 @@ def test_pipeline_enforces_market_data_and_child_bar_jobs(tmp_path):
     jobs = JobStore(tmp_path / "system.db")
     pipelines = ResearchPipelineJobs(tmp_path / "system.db", jobs)
 
-    pipeline = pipelines.submit({
-        "start_date": "2026-09-07",
-        "end_date": "2026-09-11",
-        "strategies": ["strategy1"],
-        "orchestrate_data": True,
-    })
+    pipeline = pipelines.submit(
+        {
+            "start_date": "2026-09-07",
+            "end_date": "2026-09-11",
+            "strategies": ["strategy1"],
+            "orchestrate_data": True,
+        }
+    )
 
     # Only data jobs should be queued initially when orchestrate_data is True
     stage_names = {s["name"] for s in pipeline["stages"]}
@@ -40,9 +42,15 @@ def test_pipeline_enforces_market_data_and_child_bar_jobs(tmp_path):
     jobs.complete(claimed_sync.job_id, {"synced": 10}, claimed_sync.claim_token)
 
     # Market refresh schedules child bar jobs
-    child_bar_job = jobs.submit("bar:INFY:2026-09-07:2026-09-11", "market.fetch-kite-bars", {"symbol": "INFY"})
+    child_bar_job = jobs.submit(
+        "bar:INFY:2026-09-07:2026-09-11", "market.fetch-kite-bars", {"symbol": "INFY"}
+    )
     claimed_mkt = jobs.claim_next("worker-1")
-    jobs.complete(claimed_mkt.job_id, {"job_ids": [child_bar_job.job_id], "scheduled_count": 1}, claimed_mkt.claim_token)
+    jobs.complete(
+        claimed_mkt.job_id,
+        {"job_ids": [child_bar_job.job_id], "scheduled_count": 1},
+        claimed_mkt.claim_token,
+    )
 
     next(s for s in pipeline["stages"] if s["name"] == "reference:reconcile")
     claimed_rec = jobs.claim_next("worker-1")
@@ -60,10 +68,13 @@ def test_pipeline_enforces_market_data_and_child_bar_jobs(tmp_path):
         if claimed.job_id == child_bar_job.job_id:
             break
 
-    # Now advance should succeed and queue daily stages!
+    # Now advance should queue exactly one staged bulk research rebuild.
     advanced = pipelines.advance({"pipeline_id": pipeline["pipeline_id"]})
-    daily_stages = [s for s in advanced["stages"] if s["name"].startswith("daily:")]
-    assert len(daily_stages) == 5  # 5 trading days in the range
+    research_stages = [s for s in advanced["stages"] if s["name"] == "research:bulk"]
+    assert len(research_stages) == 1
+    bulk = jobs.get(research_stages[0]["job_id"])
+    assert bulk.kind == "research.rebuild-range"
+    assert len(bulk.payload["trading_dates"]) == 5
     assert advanced["market_data"]["succeeded"] == 1
     assert advanced["market_data"]["failed"] == 0
 
@@ -89,9 +100,13 @@ def test_background_worker_lifecycle_and_status(tmp_path):
     assert bg.is_alive
 
     import time
+
     # Wait for background thread to process job
     for _ in range(50):
-        if jobs.get(job.job_id).status == JobStatus.SUCCEEDED and bg.status()["processed_count"] == 1:
+        if (
+            jobs.get(job.job_id).status == JobStatus.SUCCEEDED
+            and bg.status()["processed_count"] == 1
+        ):
             break
         time.sleep(0.05)
 
@@ -122,7 +137,9 @@ def test_portfolio_policy_backtest_options():
     # In evaluate:
     # When is_rebalance_day is False and mid_week_buy is False, candidates should not be bought
     state = PortfolioState(Money(Decimal(100000)))
-    bar = MarketBar("INFY", date(2026, 9, 8), Decimal(100), Decimal(105), Decimal(95), Decimal(102), 1000)
+    bar = MarketBar(
+        "INFY", date(2026, 9, 8), Decimal(100), Decimal(105), Decimal(95), Decimal(102), 1000
+    )
     candidate = Candidate("INFY", Decimal(80))
 
     decisions, next_state = evaluate(

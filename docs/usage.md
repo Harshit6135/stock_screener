@@ -37,7 +37,6 @@ Runtime:
 ```text
 SCREENER_DATA_DIRECTORY=instance
 SCREENER_RUN_WORKER=true
-SCREENER_WORKER_CONCURRENCY=2
 SCREENER_WAITRESS_THREADS=8
 SCREENER_HOST=127.0.0.1
 SCREENER_FULL_STARTUP_RECOVERY=false
@@ -105,7 +104,7 @@ Inspect:
 GET /api/v2/market/coverage
 GET /api/v2/market/bars/<symbol>?exchange=NSE
 GET /api/v2/market/indices/quotes
-GET /api/v2/operations/jobs
+GET /api/v2/operations/jobs/<job-id>
 ```
 
 ## Run research
@@ -125,9 +124,23 @@ POST /api/v2/pipelines/research
 }
 ```
 
-By default the pipeline expands weekdays. Supply `trading_dates` when an
-authoritative exchange-session set is available. The generic exchange calendar
-planner remains pending.
+When bars exist, the pipeline derives sessions from distinct dates actually
+stored in `market_bars`; this excludes weekends and exchange holidays. An
+explicit `trading_dates` list may still be supplied. If no bars exist yet, the
+request falls back to weekdays, so use `orchestrate_data=true` when market data
+must be fetched before research.
+
+The request creates one `research.rebuild-range` job for the complete bounded
+range—not one job per strategy/date. Inside that job the work is ordered as:
+
+1. load the shared 900-calendar-day warm-up once;
+2. calculate all indicator series once per instrument;
+3. calculate daily cross-sectional factors and percentiles;
+4. calculate and batch-write scores; and
+5. generate weekly rankings.
+
+Only one bulk research range may run at once, including when two application
+processes accidentally point at the same database.
 
 Monitor and control:
 
@@ -135,6 +148,18 @@ Monitor and control:
 GET  /api/v2/pipelines/research/<pipeline-id>
 POST /api/v2/pipelines/research/<pipeline-id>/stages/<stage-name>/retry
 POST /api/v2/pipelines/research/<pipeline-id>/cancel
+```
+
+The dashboard Operations card lists the current job, kind, stage, percentage,
+and queue breakdown. Select a running row, or enter its ID in Job Inspection,
+to see the complete payload, lease owner/expiry, latest progress, event history,
+result, and error. The equivalent endpoints are:
+
+```text
+GET  /api/v2/operations/worker/status
+GET  /api/v2/operations/jobs/<job-id>
+GET  /api/v2/operations/jobs/<job-id>/events
+POST /api/v2/operations/jobs/<job-id>/cancel
 ```
 
 Read rankings:

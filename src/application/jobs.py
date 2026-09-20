@@ -3,6 +3,7 @@
 import hashlib
 import json
 import sqlite3
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -235,9 +236,85 @@ class JobStore:
             ).fetchone()
         result["data_unavailable_jobs"] = int(row["count"])
         result["data_unavailable_attempts"] = int(row["attempts"])
-        result["failed_execution_jobs"] = result.get("failed_jobs", 0) - result["data_unavailable_jobs"]
-        result["failed_execution_attempts"] = result.get("failed_attempts", 0) - result["data_unavailable_attempts"]
+        result["failed_execution_jobs"] = (
+            result.get("failed_jobs", 0) - result["data_unavailable_jobs"]
+        )
+        result["failed_execution_attempts"] = (
+            result.get("failed_attempts", 0) - result["data_unavailable_attempts"]
+        )
         return result
+
+    def active(self, limit: int = 20) -> list[Job]:
+        """Return currently claimed jobs for operational status displays."""
+        if not 1 <= limit <= 100:
+            raise DomainValidationError("active job limit must be between 1 and 100")
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM ops_jobs WHERE status=? ORDER BY updated_at, job_id LIMIT ?",
+                (JobStatus.RUNNING.value, limit),
+            ).fetchall()
+        return [self._row(row) for row in rows]
+
+    def queued_by_kind(self) -> dict[str, int]:
+        """Return a compact queue breakdown without exposing thousands of rows."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT kind, COUNT(*) AS count FROM ops_jobs WHERE status=? GROUP BY kind ORDER BY kind",
+                (JobStatus.QUEUED.value,),
+            ).fetchall()
+        return {str(row["kind"]): int(row["count"]) for row in rows}
+
+    def cancel_kinds(
+        self, kinds: Collection[str], *, force_running: bool = False
+    ) -> dict[str, int]:
+        """Cancel queued jobs and cooperatively stop running jobs of retired kinds."""
+        normalized = tuple(sorted(set(kinds)))
+        if not normalized or any(not isinstance(kind, str) or not kind for kind in normalized):
+            raise DomainValidationError("job kinds must be non-empty strings")
+        placeholders = ",".join("?" for _ in normalized)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                f"""SELECT job_id, status FROM ops_jobs
+                    WHERE kind IN ({placeholders}) AND status IN (?, ?)""",
+                (*normalized, JobStatus.QUEUED.value, JobStatus.RUNNING.value),
+            ).fetchall()
+            queued = [int(row["job_id"]) for row in rows if row["status"] == JobStatus.QUEUED]
+            running = [int(row["job_id"]) for row in rows if row["status"] == JobStatus.RUNNING]
+            if queued:
+                connection.executemany(
+                    """UPDATE ops_jobs SET status=?, cancel_requested=1, updated_at=?
+                       WHERE job_id=?""",
+                    [(JobStatus.CANCELLED.value, self._now(), job_id) for job_id in queued],
+                )
+            if running:
+                if force_running:
+                    connection.executemany(
+                        """UPDATE ops_jobs SET status=?, cancel_requested=1,
+                           lease_until=NULL, lease_owner=NULL, claim_token=NULL, updated_at=?
+                           WHERE job_id=?""",
+                        [
+                            (JobStatus.CANCELLED.value, self._now(), job_id)
+                            for job_id in running
+                        ],
+                    )
+                else:
+                    connection.executemany(
+                        "UPDATE ops_jobs SET cancel_requested=1, updated_at=? WHERE job_id=?",
+                        [(self._now(), job_id) for job_id in running],
+                    )
+            for job_id in queued + running:
+                self._append(
+                    connection,
+                    job_id,
+                    "cancel_requested",
+                    {"reason": "job kind retired"},
+                )
+        return {
+            "cancelled_queued": len(queued),
+            "cancelled_running": len(running) if force_running else 0,
+            "stop_requested_running": 0 if force_running else len(running),
+        }
 
     def claim_next(self, worker_id: str, lease_seconds: int = 60) -> Job | None:
         if not worker_id or lease_seconds < 1:
@@ -253,6 +330,12 @@ class JobStore:
                      AND attempts < max_attempts
                      AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
                      AND (status = ? OR (status = ? AND lease_until < ?))
+                     AND (kind != 'research.rebuild-range' OR NOT EXISTS (
+                         SELECT 1 FROM ops_jobs AS active_research
+                         WHERE active_research.status = ?
+                           AND active_research.kind = 'research.rebuild-range'
+                           AND active_research.lease_until >= ?
+                     ))
                    ORDER BY CASE WHEN kind = 'market.fetch-kite-index-quotes'
                                       OR (kind = 'market.fetch-kite-bars' AND payload_json LIKE '%NIFTY 500%')
                                  THEN 0 ELSE 1 END,
@@ -260,6 +343,8 @@ class JobStore:
                 (
                     now.isoformat(),
                     JobStatus.QUEUED.value,
+                    JobStatus.RUNNING.value,
+                    now.isoformat(),
                     JobStatus.RUNNING.value,
                     now.isoformat(),
                 ),

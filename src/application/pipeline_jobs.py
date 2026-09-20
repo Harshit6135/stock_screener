@@ -17,11 +17,13 @@ from src.application.strategy_runtime import StrategyRuntime
 from src.indicators.registry import PandasTaAdapter
 from src.platform_kernel import DomainValidationError
 
-_CALCULATION_REVISION = "historical-universe-v2"
+_CALCULATION_REVISION = "bulk-staged-vectorized-v1"
 
 
 class ResearchPipelineJobs:
-    def __init__(self, database: str | Path, jobs: JobStore, runtime: StrategyRuntime | None = None) -> None:
+    def __init__(
+        self, database: str | Path, jobs: JobStore, runtime: StrategyRuntime | None = None
+    ) -> None:
         self.database, self.jobs = Path(database), jobs
         self.runtime = runtime or StrategyRuntime(StrategyDefinitions(database, PandasTaAdapter()))
         if runtime is None:
@@ -39,18 +41,31 @@ class ResearchPipelineJobs:
                         pipeline_id TEXT NOT NULL, stage_name TEXT NOT NULL,
                         job_id INTEGER NOT NULL, PRIMARY KEY(pipeline_id, stage_name),
                         FOREIGN KEY(pipeline_id) REFERENCES research_pipelines(pipeline_id))""",
-                )
-                ,2: (
+                ),
+                2: (
                     "ALTER TABLE research_pipelines ADD COLUMN start_date TEXT",
                     "ALTER TABLE research_pipelines ADD COLUMN end_date TEXT",
-                )
+                ),
+                3: (
+                    "ALTER TABLE research_pipelines ADD COLUMN trading_dates_json TEXT NOT NULL DEFAULT '[]'",
+                ),
             },
         )
 
-    def _request(self, payload: dict[str, Any]) -> tuple[date, date, tuple[str, ...], tuple[date, ...]]:
+    def _request(
+        self, payload: dict[str, Any]
+    ) -> tuple[date, date, tuple[str, ...], tuple[date, ...]]:
         if (
             not isinstance(payload, dict)
-            or set(payload) - {"as_of_date", "start_date", "end_date", "strategies", "orchestrate_data", "trading_dates"}
+            or set(payload)
+            - {
+                "as_of_date",
+                "start_date",
+                "end_date",
+                "strategies",
+                "orchestrate_data",
+                "trading_dates",
+            }
             or ("as_of_date" not in payload and not {"start_date", "end_date"}.issubset(payload))
         ):
             raise DomainValidationError("research pipeline requires a date or start/end range")
@@ -87,14 +102,35 @@ class ResearchPipelineJobs:
             if any(item < start_date or item > end_date for item in sessions):
                 raise DomainValidationError("trading_dates must be within the pipeline range")
         else:
-            sessions = ()
+            sessions = self._market_sessions(start_date, end_date) or tuple(
+                start_date + timedelta(days=offset)
+                for offset in range((end_date - start_date).days + 1)
+                if (start_date + timedelta(days=offset)).weekday() < 5
+            )
         return start_date, end_date, tuple(sorted(strategies_value)), sessions
+
+    def _market_sessions(self, start_date: date, end_date: date) -> tuple[date, ...]:
+        """Use dates actually present in market data, excluding empty holidays."""
+        with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
+            table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='market_bars'"
+            ).fetchone()
+            if table is None:
+                return ()
+            rows = connection.execute(
+                """SELECT DISTINCT as_of_date FROM market_bars
+                   WHERE as_of_date BETWEEN ? AND ? ORDER BY as_of_date""",
+                (start_date.isoformat(), end_date.isoformat()),
+            ).fetchall()
+        return tuple(date.fromisoformat(str(row["as_of_date"])) for row in rows)
 
     def submit(self, payload: dict[str, Any]) -> dict[str, object]:
         start_date, end_date, strategies, trading_dates = self._request(payload)
         normalized = {
-            "start_date": start_date.isoformat(), "end_date": end_date.isoformat(),
-            "strategies": strategies, "orchestrate_data": bool(payload.get("orchestrate_data", False)),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "strategies": strategies,
+            "orchestrate_data": bool(payload.get("orchestrate_data", False)),
             "trading_dates": tuple(item.isoformat() for item in trading_dates),
             "calculation_revision": _CALCULATION_REVISION,
         }
@@ -108,44 +144,72 @@ class ResearchPipelineJobs:
             return self.status(pipeline_id)
         child_jobs = []
         if normalized["orchestrate_data"]:
-            child_jobs.extend([
-                ("reference:sync", self.jobs.submit(
-                    f"research-pipeline:{fingerprint}:reference-sync", "reference.sync-kite-instruments", {},
-                )),
-                ("market:refresh", self.jobs.submit(
-                    f"research-pipeline:{fingerprint}:market-refresh", "market.schedule-all-symbol-refresh",
-                    {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()},
-                )),
-                ("reference:reconcile", self.jobs.submit(
-                    f"research-pipeline:{fingerprint}:reference-reconcile", "reference.reconcile-market",
-                    {"as_of_date": end_date.isoformat()},
-                )),
-            ])
-        else:
-            dates = trading_dates or tuple(
-                start_date + timedelta(days=offset)
-                for offset in range((end_date - start_date).days + 1)
-                if (start_date + timedelta(days=offset)).weekday() < 5
+            child_jobs.extend(
+                [
+                    (
+                        "reference:sync",
+                        self.jobs.submit(
+                            f"research-pipeline:{fingerprint}:reference-sync",
+                            "reference.sync-kite-instruments",
+                            {},
+                        ),
+                    ),
+                    (
+                        "market:refresh",
+                        self.jobs.submit(
+                            f"research-pipeline:{fingerprint}:market-refresh",
+                            "market.schedule-all-symbol-refresh",
+                            {
+                                "start_date": start_date.isoformat(),
+                                "end_date": end_date.isoformat(),
+                            },
+                        ),
+                    ),
+                    (
+                        "reference:reconcile",
+                        self.jobs.submit(
+                            f"research-pipeline:{fingerprint}:reference-reconcile",
+                            "reference.reconcile-market",
+                            {"as_of_date": end_date.isoformat()},
+                        ),
+                    ),
+                ]
             )
-            for strategy_id in strategies:
-                for session in dates:
-                    kind = "research.calculate-day"
-                    name = f"daily:{strategy_id}" if start_date == end_date else f"daily:{strategy_id}:{session.isoformat()}"
-                    child_jobs.append((name, self.jobs.submit(
-                        f"research-pipeline:{fingerprint}:{kind}:{strategy_id}:{session.isoformat()}", kind,
-                        {"as_of_date": session.isoformat(), "strategy_id": strategy_id},
-                    )))
-        coordinator = self.jobs.submit(
-            f"research-pipeline:{fingerprint}:advance",
-            "research.pipeline-advance",
-            {"pipeline_id": pipeline_id},
+        else:
+            if not trading_dates:
+                raise DomainValidationError("bulk research requires explicit trading_dates")
+            child_jobs.append(
+                (
+                    "research:bulk",
+                    self.jobs.submit(
+                        f"research-pipeline:{fingerprint}:bulk",
+                        "research.rebuild-range",
+                        {
+                            "start_date": start_date.isoformat(),
+                            "end_date": end_date.isoformat(),
+                            "strategies": list(strategies),
+                            "trading_dates": [item.isoformat() for item in trading_dates],
+                        },
+                        max_attempts=2,
+                    ),
+                )
+            )
+        coordinator = (
+            self.jobs.submit(
+                f"research-pipeline:{fingerprint}:advance",
+                "research.pipeline-advance",
+                {"pipeline_id": pipeline_id},
+            )
+            if normalized["orchestrate_data"]
+            else None
         )
         with sqlite_connection(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 """INSERT INTO research_pipelines
-                   (pipeline_id, fingerprint, as_of_date, strategies_json, created_at, start_date, end_date)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (pipeline_id, fingerprint, as_of_date, strategies_json, created_at,
+                    start_date, end_date, trading_dates_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     pipeline_id,
                     fingerprint,
@@ -154,12 +218,13 @@ class ResearchPipelineJobs:
                     datetime.now(UTC).isoformat(),
                     start_date.isoformat(),
                     end_date.isoformat(),
+                    json.dumps([item.isoformat() for item in trading_dates]),
                 ),
             )
             connection.executemany(
                 "INSERT INTO research_pipeline_stages(pipeline_id, stage_name, job_id) VALUES (?, ?, ?)",
                 [(pipeline_id, name, job.job_id) for name, job in child_jobs]
-                + [(pipeline_id, "advance", coordinator.job_id)],
+                + ([(pipeline_id, "advance", coordinator.job_id)] if coordinator else []),
             )
         return self.status(pipeline_id)
 
@@ -191,7 +256,11 @@ class ResearchPipelineJobs:
         pipeline_id = payload["pipeline_id"]
         pipeline = self._pipeline(pipeline_id)
         stages = self._stages(pipeline_id)
-        data_stages = [stage for stage in stages if str(stage["stage_name"]).startswith(("reference:", "market:"))]
+        data_stages = [
+            stage
+            for stage in stages
+            if str(stage["stage_name"]).startswith(("reference:", "market:"))
+        ]
         data_statuses = [self.jobs.get(int(stage["job_id"])).status for stage in data_stages]
         if any(status in {JobStatus.FAILED, JobStatus.CANCELLED} for status in data_statuses):
             raise DomainValidationError("research pipeline has a failed data stage")
@@ -199,78 +268,53 @@ class ResearchPipelineJobs:
             return self._defer_advance(pipeline_id, str(pipeline["fingerprint"]))
 
         # Check any spawned child bar jobs from market:refresh
-        market_stage = next((stage for stage in data_stages if stage["stage_name"] == "market:refresh"), None)
+        market_stage = next(
+            (stage for stage in data_stages if stage["stage_name"] == "market:refresh"), None
+        )
         if market_stage is not None:
             market_job = self.jobs.get(int(market_stage["job_id"]))
             if market_job.result and isinstance(market_job.result.get("job_ids"), list):
                 child_bar_jobs = [self.jobs.get(int(jid)) for jid in market_job.result["job_ids"]]
-                if any(job.status in {JobStatus.FAILED, JobStatus.CANCELLED} for job in child_bar_jobs):
+                if any(
+                    job.status in {JobStatus.FAILED, JobStatus.CANCELLED} for job in child_bar_jobs
+                ):
                     raise DomainValidationError("research pipeline has a failed data stage")
                 if not all(job.status == JobStatus.SUCCEEDED for job in child_bar_jobs):
                     return self._defer_advance(pipeline_id, str(pipeline["fingerprint"]))
 
-        daily = [stage for stage in stages if stage["stage_name"].startswith("daily:")]
         start_date = date.fromisoformat(str(pipeline["start_date"] or pipeline["as_of_date"]))
         end_date = date.fromisoformat(str(pipeline["end_date"] or pipeline["as_of_date"]))
         strategies = tuple(json.loads(str(pipeline["strategies_json"])))
-
-        # If data stages completed and daily stages haven't been queued yet, queue daily stages now
-        if not daily:
-            trading_dates = tuple(
-                start_date + timedelta(days=offset)
-                for offset in range((end_date - start_date).days + 1)
-                if (start_date + timedelta(days=offset)).weekday() < 5
-            )
-            daily_jobs = []
-            for strategy_id in strategies:
-                for session in trading_dates:
-                    kind = "research.calculate-day"
-                    name = f"daily:{strategy_id}" if start_date == end_date else f"daily:{strategy_id}:{session.isoformat()}"
-                    job = self.jobs.submit(
-                        f"research-pipeline:{pipeline['fingerprint']}:{kind}:{strategy_id}:{session.isoformat()}", kind,
-                        {"as_of_date": session.isoformat(), "strategy_id": strategy_id},
-                    )
-                    daily_jobs.append((name, job.job_id))
-            with sqlite_connection(self.database) as connection:
-                connection.execute("BEGIN IMMEDIATE")
-                connection.executemany(
-                    "INSERT OR IGNORE INTO research_pipeline_stages(pipeline_id, stage_name, job_id) VALUES (?, ?, ?)",
-                    [(pipeline_id, name, job_id) for name, job_id in daily_jobs],
-                )
-            return self._defer_advance(pipeline_id, str(pipeline["fingerprint"]))
-
-        statuses = [self.jobs.get(int(stage["job_id"])).status for stage in daily]
-        if any(status in {JobStatus.FAILED, JobStatus.CANCELLED} for status in statuses):
-            raise DomainValidationError("research pipeline has a failed daily stage")
-        if not all(status == JobStatus.SUCCEEDED for status in statuses):
-            return self._defer_advance(pipeline_id, str(pipeline["fingerprint"]))
-
-        sessions = sorted(
-            {
-                date.fromisoformat(str(self.jobs.get(int(stage["job_id"])).payload["as_of_date"]))
-                for stage in daily
-            }
-        )
-        week_ends = tuple(
-            max(day for day in sessions if day.isocalendar()[:2] == week)
-            for week in sorted({day.isocalendar()[:2] for day in sessions})
-        )
-        if not week_ends:
+        if any(stage["stage_name"] == "research:bulk" for stage in stages):
             return self.status(pipeline_id)
-        weekly_jobs = []
-        for strategy_id in strategies:
-            for week_end in week_ends:
-                name = f"weekly:{strategy_id}" if len(week_ends) == 1 and start_date == end_date else f"weekly:{strategy_id}:{week_end.isoformat()}"
-                if any(stage["stage_name"] == name for stage in stages):
-                    continue
-                kind = "research.rank-week"
-                job = self.jobs.submit(f"research-pipeline:{pipeline['fingerprint']}:{kind}:{strategy_id}:{week_end.isoformat()}", kind, {"week_end": week_end.isoformat(), "strategy_id": strategy_id})
-                weekly_jobs.append((name, job.job_id))
+        sessions = [item.isoformat() for item in self._market_sessions(start_date, end_date)]
+        if sessions:
+            with sqlite_connection(self.database) as connection:
+                connection.execute(
+                    "UPDATE research_pipelines SET trading_dates_json=? WHERE pipeline_id=?",
+                    (json.dumps(sessions), pipeline_id),
+                )
+        else:
+            sessions = json.loads(str(pipeline["trading_dates_json"]))
+        if not sessions:
+            raise DomainValidationError("research pipeline has no explicit trading sessions")
+        job = self.jobs.submit(
+            f"research-pipeline:{pipeline['fingerprint']}:bulk",
+            "research.rebuild-range",
+            {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "strategies": list(strategies),
+                "trading_dates": sessions,
+            },
+            max_attempts=2,
+        )
         with sqlite_connection(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")
-            connection.executemany(
-                "INSERT OR IGNORE INTO research_pipeline_stages(pipeline_id, stage_name, job_id) VALUES (?, ?, ?)",
-                [(pipeline_id, name, job_id) for name, job_id in weekly_jobs],
+            connection.execute(
+                "INSERT OR IGNORE INTO research_pipeline_stages"
+                "(pipeline_id, stage_name, job_id) VALUES (?, 'research:bulk', ?)",
+                (pipeline_id, job.job_id),
             )
         return self.status(pipeline_id)
 
@@ -284,7 +328,10 @@ class ResearchPipelineJobs:
         if stage is None:
             raise DomainValidationError("pipeline stage was not found")
         job = self.jobs.retry_failed(int(stage["job_id"]))
-        return self.status(str(pipeline["pipeline_id"])) | {"retried_stage": stage_name, "job": job.job_id}
+        return self.status(str(pipeline["pipeline_id"])) | {
+            "retried_stage": stage_name,
+            "job": job.job_id,
+        }
 
     def cancel(self, pipeline_id: str) -> dict[str, object]:
         """Request cancellation for all non-terminal child jobs."""
@@ -295,10 +342,18 @@ class ResearchPipelineJobs:
             if job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED}:
                 self.jobs.request_cancel(job.job_id)
                 cancelled.append(str(stage["stage_name"]))
-            if stage["stage_name"] == "market:refresh" and job.result and isinstance(job.result.get("job_ids"), list):
+            if (
+                stage["stage_name"] == "market:refresh"
+                and job.result
+                and isinstance(job.result.get("job_ids"), list)
+            ):
                 for jid in job.result["job_ids"]:
                     child_job = self.jobs.get(int(jid))
-                    if child_job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED}:
+                    if child_job.status not in {
+                        JobStatus.SUCCEEDED,
+                        JobStatus.FAILED,
+                        JobStatus.CANCELLED,
+                    }:
                         self.jobs.request_cancel(child_job.job_id)
         return self.status(str(pipeline["pipeline_id"])) | {"cancelled_stages": cancelled}
 
@@ -320,7 +375,14 @@ class ResearchPipelineJobs:
             if any(item["status"] not in terminal for item in stages)
             else "QUEUED"
         )
-        market_stage = next((stage for stage in self._stages(pipeline_id) if stage["stage_name"] == "market:refresh"), None)
+        market_stage = next(
+            (
+                stage
+                for stage in self._stages(pipeline_id)
+                if stage["stage_name"] == "market:refresh"
+            ),
+            None,
+        )
         market_data_summary = None
         if market_stage is not None:
             market_job = self.jobs.get(int(market_stage["job_id"]))
@@ -328,7 +390,9 @@ class ResearchPipelineJobs:
                 child_bar_jobs = [self.jobs.get(int(jid)) for jid in market_job.result["job_ids"]]
                 bar_total = len(child_bar_jobs)
                 bar_succeeded = sum(1 for j in child_bar_jobs if j.status == JobStatus.SUCCEEDED)
-                bar_failed = sum(1 for j in child_bar_jobs if j.status in {JobStatus.FAILED, JobStatus.CANCELLED})
+                bar_failed = sum(
+                    1 for j in child_bar_jobs if j.status in {JobStatus.FAILED, JobStatus.CANCELLED}
+                )
                 bar_pending = bar_total - bar_succeeded - bar_failed
                 market_data_summary = {
                     "total_bars": bar_total,

@@ -89,6 +89,7 @@ window.addEventListener('DOMContentLoaded', async () => {
 </script>
 """
 
+
 def _render_nav(active_page: str) -> str:
     nav = NAV_LINKS
     for key in ("APP", "PIPELINE", "BACKTEST", "ACTIONS", "PORTFOLIO", "KITE"):
@@ -153,6 +154,10 @@ def create_dashboard_blueprint() -> Blueprint:
       <button id="worker-step-btn">Work Once</button>
     </div>
     <pre id="worker-result">Worker status will appear here.</pre>
+    <table>
+      <thead><tr><th>Running Job</th><th>Kind</th><th>Stage</th><th>Progress</th></tr></thead>
+      <tbody id="active-jobs"><tr><td colspan="4" class="muted">No status loaded.</td></tr></tbody>
+    </table>
   </div>
 </div>
 
@@ -229,10 +234,32 @@ async function loadJob() {{
   }} catch (e) {{ out.textContent = e.message; }}
 }}
 async function checkWorker() {{
-  const out = document.getElementById('worker-result');
+  const out = document.getElementById('worker-result'), body = document.getElementById('active-jobs');
   try {{
     const res = await fetch('/api/v2/operations/worker/status');
-    out.textContent = JSON.stringify(await res.json(), null, 2);
+    const data = await res.json();
+    out.textContent = JSON.stringify(data, null, 2);
+    body.replaceChildren();
+    if (!data.active_jobs || !data.active_jobs.length) {{
+      const row = document.createElement('tr');
+      const empty = document.createElement('td');
+      empty.colSpan = 4; empty.className = 'muted'; empty.textContent = 'No job is currently running.';
+      row.appendChild(empty); body.appendChild(row);
+    }} else {{
+      for (const job of data.active_jobs) {{
+        const detail = await fetch('/api/v2/operations/jobs/' + job.job_id).then(r => r.json());
+        const progress = detail.current_progress || {{}};
+        const row = document.createElement('tr');
+        cell(row, job.job_id); cell(row, job.kind); cell(row, progress.stage || 'starting');
+        cell(row, progress.completed_percent == null ? '—' : progress.completed_percent + '%');
+        row.style.cursor = 'pointer';
+        row.addEventListener('click', () => {{
+          document.getElementById('job-id').value = job.job_id;
+          document.getElementById('job-result').textContent = JSON.stringify(detail, null, 2);
+        }});
+        body.appendChild(row);
+      }}
+    }}
   }} catch (e) {{ out.textContent = e.message; }}
 }}
 async function controlWorker(action) {{
@@ -253,6 +280,7 @@ document.getElementById('worker-stop-btn').addEventListener('click', () => contr
 document.getElementById('worker-step-btn').addEventListener('click', () => controlWorker('work-once'));
 loadRankings(); loadQuotes(); checkWorker();
 setInterval(loadQuotes, 15000);
+setInterval(checkWorker, 5000);
 </script></body></html>"""
         return Response(page, mimetype="text/html")
 

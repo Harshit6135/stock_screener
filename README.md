@@ -26,6 +26,7 @@ Open `http://127.0.0.1:5000/app`. The default database is
 - [Architecture](docs/architecture.md)
 - [Design principles](docs/design.md)
 - [Implementation guide](docs/implementation.md)
+- [Adding a durable job](docs/adding-a-job.md)
 - [Data model](docs/data-model.md)
 - [System workflows](docs/workflows.md)
 - [Adding a strategy](docs/adding-a-strategy.md)
@@ -53,8 +54,8 @@ strategy creation, market-data flow, research flow, and portfolio flow.
 
 ```powershell
 poetry run python -m pytest -q
-poetry run ruff check src tests scripts run.py
-poetry run python -m compileall -q src tests scripts run.py
+poetry run ruff check src tests run.py
+poetry run python -m compileall -q src tests run.py
 ```
 
 The static type-checking backlog and other incomplete work are recorded in
