@@ -48,10 +48,9 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 4.3: Retire only removed strategy runtime
 
-> Current audit finding: **INCOMPLETE**. Runtime wiring is retired, but the retained
-> Strategy 3 source, tools and historical unit tests have not been deleted. Those
-> tests are explicitly skipped pending an approved source-removal change; they do
-> not constitute completion evidence for this task.
+> Completion evidence: removed Strategy 2/3 source, tools, custom indicator and
+> historical unit modules. Active positional-trend paths use only named runtime
+> strategies and snapshot/database universes.
 
 **Files:** strategies/benchmark_relative_momentum.yml; strategies/early_momentum.yml; src/application/early_momentum.py; src/application/early_momentum_rules.py; src/application/early_momentum_web.py; src/application/composition.py; run.py.
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import hashlib
 import json
 from datetime import date, datetime
@@ -22,8 +21,6 @@ class PositionalTrendJobs:
 
     def __init__(self, market, publisher, runtime, universe_csv_path: str | Path | None = None):
         self.market, self.publisher, self.runtime = market, publisher, runtime
-        self.universe_csv_path = (Path(universe_csv_path) if universe_csv_path else
-                                  Path(__file__).parents[2] / "ind_nifty500list.csv")
 
     def _members(self, universe: str) -> tuple[set[str], str, dict[str, object]]:
         if universe == "APPLICATION_MCAP500":
@@ -51,37 +48,13 @@ class PositionalTrendJobs:
             return members, digest, {"source": universe, "snapshot_id": snapshot_id,
                                      "snapshot_date": str(snapshot["snapshot_date"]),
                                      "member_count": len(rows)}
-        if universe not in {"NIFTY500", "NIFTY_TOTAL_MARKET"}:
-            raise DomainValidationError("Strategy 4 universe is invalid")
-        csv_path = self.universe_csv_path if universe == "NIFTY500" else self.universe_csv_path.with_name("ind_niftytotalmarket_list.csv")
-        if not csv_path.is_file():
-            raise DomainValidationError(f"Strategy 4 universe CSV is missing: {csv_path}")
-        raw = csv_path.read_bytes()
-        try:
-            rows = list(csv.DictReader(raw.decode("utf-8-sig").splitlines()))
-        except (UnicodeDecodeError, csv.Error) as exc:
-            raise DomainValidationError("Strategy 4 universe CSV is invalid") from exc
-        if not rows or not {"ISIN Code", "Series"} <= set(rows[0]):
-            raise DomainValidationError("Strategy 4 universe CSV requires ISIN Code and Series")
-        accepted = {"EQ", "BE"} if universe == "NIFTY_TOTAL_MARKET" else {"EQ"}
-        members = {str(row["ISIN Code"]).strip() for row in rows
-                   if row.get("Series", "").strip() in accepted and row.get("ISIN Code", "").strip()}
-        if not members:
-            raise DomainValidationError("Strategy 4 universe has no eligible members")
-        return members, hashlib.sha256(raw).hexdigest(), {
-            "source": universe, "csv": csv_path.name, "member_count": len(members),
-            "included_series": sorted(accepted),
-            "bse_fallback_isins": sorted(str(row["ISIN Code"]).strip() for row in rows
-                                         if row.get("Series", "").strip() == "BE" and "BE" in accepted),
-        }
+        raise DomainValidationError("Strategy 4 universe must be SNAPSHOT_NIFTY500 or APPLICATION_MCAP500")
 
     def _histories(self, as_of: date, members: set[str], metadata: dict[str, object]):
         histories = self.market.histories(date(2021, 1, 1), as_of, isins=members)
         if metadata["source"] == "APPLICATION_MCAP500":
             return histories
-        fallback = set(metadata.get("bse_fallback_isins", []))
-        return {key: value for key, value in histories.items()
-                if value[1]["exchange"] == "NSE" or value[1]["isin"] in fallback}
+        return {key: value for key, value in histories.items() if value[1]["exchange"] == "NSE"}
 
     def _input_fingerprint(self, as_of: date, universe: str, universe_hash: str,
                            histories: dict) -> str:
@@ -107,7 +80,7 @@ class PositionalTrendJobs:
         if not isinstance(payload, dict) or set(payload) - {"as_of_date", "universe"} or "as_of_date" not in payload:
             raise DomainValidationError("Strategy 4 signal job requires as_of_date and optional universe")
         universe = str(payload.get("universe", "SNAPSHOT_NIFTY500"))
-        if universe not in {"NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500", "SNAPSHOT_NIFTY500"}:
+        if universe not in {"APPLICATION_MCAP500", "SNAPSHOT_NIFTY500"}:
             raise DomainValidationError("Strategy 4 universe is invalid")
         try:
             as_of = date.fromisoformat(str(payload["as_of_date"]))

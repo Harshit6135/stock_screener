@@ -400,10 +400,10 @@ class BacktestJobs:
         if "include_be" in payload and not isinstance(payload["include_be"], bool):
             raise DomainValidationError("include_be must be boolean")
         universe = payload.get("universe", "SNAPSHOT_NIFTY500")
-        if not isinstance(universe, str) or universe not in {"SNAPSHOT_NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500"}:
+        if not isinstance(universe, str) or universe not in {"SNAPSHOT_NIFTY500", "APPLICATION_MCAP500"}:
             raise DomainValidationError("Strategy 4 universe is invalid")
-        if payload.get("include_be", False) and universe != "NIFTY_TOTAL_MARKET":
-            raise DomainValidationError("BE rows can be enabled only for NIFTY_TOTAL_MARKET")
+        if payload.get("include_be", False):
+            raise DomainValidationError("BE rows are unavailable for snapshot and market-cap universes")
         try:
             start, end = date.fromisoformat(str(payload["start_date"])), date.fromisoformat(str(payload["end_date"]))
         except (TypeError, ValueError) as exc:
@@ -413,11 +413,9 @@ class BacktestJobs:
         if self.positional_trend is None:
             raise DomainValidationError("Strategy 4 service is unavailable")
         settings = self.research.runtime.portfolio_policy("strategy4")
-        root = Path(__file__).resolve().parents[2]
         from src.application.positional_trend_backtest import Policy as Strategy4Policy
         from src.application.positional_trend_backtest import (
             benchmark_price_return,
-            load_data,
             load_market_cap_universe,
             load_snapshot_universe,
             simulate,
@@ -440,12 +438,6 @@ class BacktestJobs:
                 histories, sessions, coverage = load_market_cap_universe(self.database, end_date=end.isoformat())
             elif universe == "SNAPSHOT_NIFTY500":
                 histories, sessions, coverage = load_snapshot_universe(self.database, end_date=end.isoformat())
-            else:
-                universe_csv = root / ("ind_niftytotalmarket_list.csv" if universe == "NIFTY_TOTAL_MARKET" else "ind_nifty500list.csv")
-                histories, sessions, coverage = load_data(
-                    self.database, universe_csv, end_date=end.isoformat(),
-                    include_be=bool(payload.get("include_be", False)),
-                )
             instrument_ids = tuple(histories)
             if not instrument_ids:
                 raise DomainValidationError("Strategy 4 universe has no matched market history")

@@ -21,7 +21,7 @@ def create_positional_trend_blueprint(strategy4: PositionalTrendJobs, jobs: JobS
         try:
             day = date.fromisoformat(str(body["as_of_date"]))
             universe = body.get("universe", "SNAPSHOT_NIFTY500")
-            if universe not in {"SNAPSHOT_NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500"}:
+            if universe not in {"SNAPSHOT_NIFTY500", "APPLICATION_MCAP500"}:
                 raise DomainValidationError("universe is invalid")
             payload = {"as_of_date": day.isoformat(), "universe": universe}
             fingerprint = "positional-trend-signals:" + strategy4.input_fingerprint(day, universe)
@@ -38,7 +38,7 @@ def create_positional_trend_blueprint(strategy4: PositionalTrendJobs, jobs: JobS
         except (KeyError, ValueError):
             return jsonify({"error": "as_of_date must be an ISO date"}), 400
         universe = request.args.get("universe", "SNAPSHOT_NIFTY500")
-        if universe not in {"SNAPSHOT_NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500"}:
+        if universe not in {"SNAPSHOT_NIFTY500", "APPLICATION_MCAP500"}:
             return jsonify({"error": "universe is invalid"}), 400
         try:
             found = strategy4.read_signals(day, universe)

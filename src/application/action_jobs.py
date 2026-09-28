@@ -115,7 +115,7 @@ class ActionJobs:
             raise DomainValidationError("Strategy 4 action date requires a prior and current stored session")
         signal_date = date.fromisoformat(prior_sessions[-1])
         universe = payload.get("universe", "SNAPSHOT_NIFTY500")
-        if not isinstance(universe, str) or universe not in {"SNAPSHOT_NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500"}:
+        if not isinstance(universe, str) or universe not in {"SNAPSHOT_NIFTY500", "APPLICATION_MCAP500"}:
             raise DomainValidationError("Strategy 4 universe is invalid")
         signal_entry = self.positional_trend.read_signals(signal_date, str(universe))
         if signal_entry is None:
