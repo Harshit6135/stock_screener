@@ -8,6 +8,9 @@ from src.platform_kernel import ArtifactStore
 
 
 class _Runtime:
+    def strategy_kind(self, _strategy_id):
+        return "factor_score"
+
     def strategy_ids(self):
         return ("strategy1",)
 

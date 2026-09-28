@@ -9,6 +9,7 @@ from src.application.backtest_web import create_backtest_blueprint
 from src.application.broker_web import create_broker_blueprint
 from src.application.composition import ApplicationServices
 from src.application.dashboard_web import create_dashboard_blueprint
+from src.application.early_momentum_web import create_early_momentum_blueprint
 from src.application.index_poller import BackgroundIndexPoller
 from src.application.indicators_web import create_indicators_blueprint
 from src.application.kite_auth import KiteAuthService, load_kite_credentials
@@ -17,6 +18,7 @@ from src.application.market_web import create_market_blueprint
 from src.application.operations import sqlite_ready
 from src.application.pipeline_web import create_pipeline_blueprint
 from src.application.portfolio_web import create_portfolio_blueprint
+from src.application.positional_trend_web import create_positional_trend_blueprint
 from src.application.reference_web import create_reference_blueprint
 from src.application.research_web import create_research_blueprint
 from src.application.runtime import RuntimeConfig
@@ -90,9 +92,11 @@ def create_app(config_class=RuntimeConfig):
         create_research_blueprint(services.artifacts, services.research, services.jobs)
     )
     app.register_blueprint(create_pipeline_blueprint(services.pipelines))
+    app.register_blueprint(create_positional_trend_blueprint(services.positional_trend, services.jobs))
+    app.register_blueprint(create_early_momentum_blueprint(services.artifacts))
     app.register_blueprint(create_indicators_blueprint(PandasTaAdapter()))
     app.register_blueprint(create_strategies_blueprint(services.strategies))
-    app.register_blueprint(create_portfolio_blueprint(services.ledger, services.market))
+    app.register_blueprint(create_portfolio_blueprint(services.ledger, services.market, services.actions.risk_projection))
     app.register_blueprint(create_broker_blueprint(services.broker_orders))
     app.register_blueprint(create_backtest_blueprint(services.backtests, services.artifacts))
     app.register_blueprint(create_actions_blueprint(services.actions))

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "residual_top_fraction": 0.2,
+  "volume_minimum": 1.5,
+  "extension_maximum": 2.5,
+  "squeeze_threshold": 0.25,
+  "squeeze_mode": "current",
+  "trigger": "bb_cross",
+  "close_location_minimum": null,
+  "max_daily_move_atr": null,
+  "ranking_factor": "residual_score",
+  "benchmark_regime_required": false
+}

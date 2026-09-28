@@ -146,7 +146,7 @@ def test_refresh_schedules_only_fixed_universe_holdings_and_benchmark(tmp_path):
     result = planner.schedule({"start_date": "2025-01-01", "end_date": "2025-12-31"})
 
     assert result["scheduled_count"] == 3
-    queued = {jobs.get(job_id).payload["symbol"] for job_id in result["job_ids"]}
+    queued = {item["symbol"] for job_id in result["job_ids"] for item in jobs.get(job_id).payload["items"]}
     assert queued == {"MEMBER", "HOLDING", "NIFTY 500"}
     assert "OUTSIDE" not in queued
     assert result["blocked_held_positions"] == [

@@ -81,7 +81,8 @@ class ResearchPipelineJobs:
             raise DomainValidationError("pipeline date range must be at most 365 days")
         if end_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
             raise DomainValidationError("research pipeline requires completed dates")
-        strategies_value = payload.get("strategies", list(self.runtime.strategy_ids()))
+        # Event strategies must never enter the weekly score/ranking pipeline.
+        strategies_value = payload.get("strategies", ["strategy1", "strategy2"])
         if not isinstance(payload.get("orchestrate_data", False), bool):
             raise DomainValidationError("orchestrate_data must be boolean")
         if (
@@ -89,8 +90,11 @@ class ResearchPipelineJobs:
             or not strategies_value
             or len(strategies_value) != len(set(strategies_value))
             or any(strategy not in self.runtime.strategy_ids() for strategy in strategies_value)
+            or any(self.runtime.strategy_kind(strategy) == "event_signal" for strategy in strategies_value)
         ):
-            raise DomainValidationError("strategies must be a unique non-empty strategy list")
+            raise DomainValidationError(
+                "factor strategies only; event strategies use their dedicated signal jobs"
+            )
         trading_dates = payload.get("trading_dates")
         if trading_dates is not None:
             if not isinstance(trading_dates, list):
@@ -111,18 +115,15 @@ class ResearchPipelineJobs:
 
     def _market_sessions(self, start_date: date, end_date: date) -> tuple[date, ...]:
         """Use dates actually present in market data, excluding empty holidays."""
-        with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
+        from src.application.exchange_calendar import TradingCalendar
+        with sqlite_connection(self.database, read_only=True) as connection:
             table = connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='table' AND name='market_bars'"
             ).fetchone()
             if table is None:
                 return ()
-            rows = connection.execute(
-                """SELECT DISTINCT as_of_date FROM market_bars
-                   WHERE as_of_date BETWEEN ? AND ? ORDER BY as_of_date""",
-                (start_date.isoformat(), end_date.isoformat()),
-            ).fetchall()
-        return tuple(date.fromisoformat(str(row["as_of_date"])) for row in rows)
+        calendar = TradingCalendar(self.database)
+        return tuple(calendar.sessions(start_date, end_date))
 
     def submit(self, payload: dict[str, Any]) -> dict[str, object]:
         start_date, end_date, strategies, trading_dates = self._request(payload)

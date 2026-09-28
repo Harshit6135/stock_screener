@@ -17,6 +17,11 @@ from src.application.publication import ArtifactPublisher
 from src.application.sqlite import migrate_sqlite, sqlite_connection
 from src.application.strategy_definitions import StrategyDefinitions
 from src.application.strategy_runtime import StrategyRuntime
+from src.indicators.custom import (
+    momentum_quality_from_indicators,
+    momentum_quality_indicator_series,
+    relative_strength_feature_series,
+)
 from src.indicators.registry import PandasTaAdapter
 from src.platform_kernel import DomainValidationError, QualityStatus
 
@@ -28,11 +33,13 @@ class ResearchJobs:
         market: MarketRepository,
         publisher: ArtifactPublisher,
         runtime: StrategyRuntime | None = None,
+        node_cache: Any = None,  # IndicatorNodeCache
     ):
         self.database = Path(database)
         self.market = market
         self.publisher = publisher
         self.runtime = runtime or StrategyRuntime(StrategyDefinitions(database, PandasTaAdapter()))
+        self.node_cache = node_cache
         if runtime is None:
             self.runtime.seed(Path(__file__).resolve().parents[2] / "strategies")
         migrate_sqlite(
@@ -76,56 +83,190 @@ class ResearchJobs:
             },
         )
 
+    @staticmethod
+    def _indicator_set(strategy_id: str, benchmark_name: str | None) -> str:
+        """Stable raw-input namespace; weights and score rules never belong here."""
+        if strategy_id == "strategy1":
+            return "strategy1:momentum-quality-v2"
+        if strategy_id == "strategy2" and benchmark_name:
+            return f"strategy2:relative-strength-v1:{benchmark_name.lower().replace(' ', '-') }"
+        raise DomainValidationError(f"strategy '{strategy_id}' has no raw-indicator cache definition")
+
     def calculate_day(self, payload: dict[str, Any]) -> dict[str, object]:
         return self._calculate_day(payload)
+
+    def rebuild_indicators(
+        self, payload: dict[str, Any], context: JobExecutionContext
+    ) -> dict[str, object]:
+        """Build reusable raw strategy inputs independently of factors and scores."""
+        from src.application.payloads import RebuildIndicatorsPayload
+        parsed = RebuildIndicatorsPayload.from_dict(
+            payload, default_strategies=tuple(
+                strategy_id for strategy_id in self.runtime.strategy_ids()
+                if self.runtime.strategy_kind(strategy_id) != "event_signal"
+            )
+        )
+        start, end, requested = parsed.start_date, parsed.end_date, parsed.strategies
+        histories = self.market.histories(start - timedelta(days=900), end)
+        eligible = [item for item in histories.items() if not str(item[1][1]["isin"]).startswith("INDEX:")]
+        results: dict[str, dict[str, object]] = {}
+        for strategy_id in requested:
+            if self.runtime.strategy_kind(strategy_id) == "event_signal":
+                raise DomainValidationError(
+                    f"{strategy_id} is a daily event strategy; use its dedicated signal job"
+                )
+            revision = self.runtime.revision(strategy_id)
+            compiled_dag = revision["definition"].get("_compiled_dag")
+            
+            benchmark: list[dict[str, object]] = []
+            benchmark_name = self.runtime.benchmark(strategy_id)
+            if benchmark_name:
+                benchmark_id = str(self.market.instrument(benchmark_name)["instrument_id"])
+                benchmark = histories[benchmark_id][0]
+                
+            if compiled_dag is not None and getattr(self, "node_cache", None) is not None:
+                import pandas as pd
+
+                from src.indicators.dag import DagExecutor, DagGraph
+                
+                graph = DagGraph.from_dict(compiled_dag)
+                executor = DagExecutor(self.runtime._adapter)
+                node_hashes = {node.content_hash for node in graph.execution_order()}
+                # Pull existing cache across all instruments
+                cached = self.node_cache.get_bulk(node_hashes, start, end)
+                
+                bench_df = pd.DataFrame(benchmark) if benchmark else None
+                written = 0
+                for index, (instrument_id, (bars, _identity)) in enumerate(eligible, start=1):
+                    if not bars:
+                        continue
+                        
+                    ohlcv = pd.DataFrame(bars)
+                    ohlcv["as_of_date"] = pd.to_datetime(ohlcv["as_of_date"]).dt.date
+                    mask = (ohlcv["as_of_date"] >= start) & (ohlcv["as_of_date"] <= end)
+                    
+                    # Fetch precomputed series from our cache
+                    precomputed: dict[str, pd.Series] = {}
+                    for node in graph.execution_order():
+                        if node.content_hash in cached and instrument_id in cached[node.content_hash]:
+                            # Map date string to float values
+                            date_vals = cached[node.content_hash][instrument_id]
+                            # Create a Series aligned to the OHLCV index
+                            series_idx = []
+                            series_vals = []
+                            for i, d in enumerate(ohlcv["as_of_date"]):
+                                d_str = str(d)
+                                if d_str in date_vals:
+                                    series_idx.append(i)
+                                    series_vals.append(date_vals[d_str])
+                            if series_idx:
+                                precomputed[node.node_id] = pd.Series(series_vals, index=series_idx).reindex(ohlcv.index)
+                                
+                    node_results = executor.execute(graph, ohlcv, bench_df, precomputed=precomputed)
+                    
+                    # Put back computed nodes into cache
+                    for node in graph.execution_order():
+                        if node.node_id in node_results and node.node_id not in precomputed:
+                            res_series = node_results[node.node_id]
+                            # Filter to requested date range
+                            res_series = res_series[mask]
+                            if not res_series.empty:
+                                to_cache = {}
+                                dates = ohlcv.loc[res_series.index, "as_of_date"]
+                                for d, val in zip(dates, res_series):
+                                    if pd.notna(val):
+                                        to_cache[str(d)] = float(val)
+                                if to_cache:
+                                    written += self.node_cache.put_bulk(
+                                        node.content_hash,
+                                        {instrument_id: to_cache},
+                                        f"job:rebuild-indicators:{strategy_id}"
+                                    )
+                                    
+                    if index % 25 == 0 or index == len(eligible):
+                        context.checkpoint(progress={"stage": "indicator_cache (DAG)", "strategy": strategy_id,
+                                                     "processed_instruments": index, "total_instruments": len(eligible)})
+                                                     
+                results[strategy_id] = {"indicator_set": "dag-cache", "rows": written}
+
+            else:
+                # Legacy Python Dispatch Fallback
+                by_date: dict[date, dict[str, dict[str, object]]] = defaultdict(dict)
+                for index, (instrument_id, (bars, _identity)) in enumerate(eligible, start=1):
+                    series = (
+                        momentum_quality_indicator_series(bars)
+                        if strategy_id == "strategy1"
+                        else relative_strength_feature_series(bars, benchmark)
+                    )
+                    for day, values in series.items():
+                        parsed_date = date.fromisoformat(day)
+                        if start <= parsed_date <= end:
+                            by_date[parsed_date][instrument_id] = values
+                    if index % 25 == 0 or index == len(eligible):
+                        context.checkpoint(progress={"stage": "indicator_cache", "strategy": strategy_id,
+                                                     "processed_instruments": index, "total_instruments": len(eligible)})
+                indicator_set = self._indicator_set(strategy_id, benchmark_name)
+                written = sum(
+                    self.market.upsert_indicators(indicator_set, day, values, f"indicator-cache:{indicator_set}:{day.isoformat()}")
+                    for day, values in sorted(by_date.items())
+                )
+                results[strategy_id] = {"indicator_set": indicator_set, "rows": written}
+        return {"strategies": results, "start_date": start.isoformat(), "end_date": end.isoformat()}
 
     def rebuild_range(
         self, payload: dict[str, Any], context: JobExecutionContext
     ) -> dict[str, object]:
-        """Rebuild a bounded range in four bulk stages without per-day history reloads."""
-        allowed = {"start_date", "end_date", "strategies", "trading_dates"}
-        if not isinstance(payload, dict) or set(payload) != allowed:
-            raise DomainValidationError("research range rebuild payload is incomplete")
-        try:
-            start = date.fromisoformat(str(payload["start_date"]))
-            end = date.fromisoformat(str(payload["end_date"]))
-            sessions = tuple(date.fromisoformat(str(item)) for item in payload["trading_dates"])
-        except (TypeError, ValueError) as exc:
-            raise DomainValidationError("research range dates must be ISO dates") from exc
-        strategies = tuple(str(item) for item in payload["strategies"])
-        if (
-            start > end
-            or (end - start).days > 365
-            or not sessions
-            or sessions != tuple(sorted(set(sessions)))
-            or any(item < start or item > end for item in sessions)
-            or not strategies
-            or len(strategies) != len(set(strategies))
-            or any(item not in self.runtime.strategy_ids() for item in strategies)
-        ):
-            raise DomainValidationError("research range or strategy selection is invalid")
+        from src.application.payloads import RebuildRangePayload
+        parsed = RebuildRangePayload.from_dict(payload)
+        parsed.validate(tuple(self.runtime.strategy_ids()))
+        start, end = parsed.start_date, parsed.end_date
+        sessions, strategies = parsed.trading_dates, parsed.strategies
 
         started = perf_counter()
         timings: dict[str, float] = {}
+        cache_only_strategy1 = (
+            isinstance(self.runtime, StrategyRuntime) and strategies == ("strategy1",)
+        )
         context.checkpoint(
             progress={
-                "stage": "loading_market_history",
+                "stage": "loading_indicator_cache" if cache_only_strategy1 else "loading_market_history",
                 "stage_number": 1,
                 "stage_count": 4,
                 "start_date": start.isoformat(),
                 "end_date": end.isoformat(),
                 "strategies": list(strategies),
                 "sessions": len(sessions),
-                "detail": "Loading the shared warm-up history once for this range.",
+                "detail": (
+                    "Loading cached Strategy 1 inputs and instrument identities."
+                    if cache_only_strategy1
+                    else "Loading the shared warm-up history once for this range."
+                ),
             }
         )
         stage_started = perf_counter()
-        histories = self.market.histories(start - timedelta(days=900), end)
-        timings["loading_market_history"] = perf_counter() - stage_started
+        histories = (
+            {} if cache_only_strategy1 else self.market.histories(start - timedelta(days=900), end)
+        )
+        identities = (
+            {
+                str(item["instrument_id"]): item
+                for item in self.market.tracked_instruments()
+                if not str(item["isin"]).startswith("INDEX:")
+            }
+            if cache_only_strategy1
+            else {}
+        )
+        timings["loading_indicator_cache" if cache_only_strategy1 else "loading_market_history"] = (
+            perf_counter() - stage_started
+        )
         session_keys = {item.isoformat() for item in sessions}
         completed: dict[str, dict[str, int]] = {}
 
         for strategy_index, strategy_id in enumerate(strategies, start=1):
+            if self.runtime.strategy_kind(strategy_id) == "event_signal":
+                raise DomainValidationError(
+                    f"{strategy_id} is a daily event strategy; use its dedicated signal job"
+                )
             revision = self.runtime.revision(strategy_id)
             revision_id = str(revision["revision_id"])
             factor_weights = self.runtime.factor_weights(strategy_id)
@@ -145,13 +286,46 @@ class ResearchJobs:
                 item.isoformat(): {} for item in sessions
             }
             symbols: dict[str, str] = {}
-            eligible_histories = [
-                (instrument_id, bars, identity)
-                for instrument_id, (bars, identity) in histories.items()
-                if not str(identity["isin"]).startswith("INDEX:")
-            ]
+            use_indicator_cache = strategy_id in {"strategy1", "strategy2"} and isinstance(
+                self.runtime, StrategyRuntime
+            )
+            cached_indicators = (
+                self.market.indicator_series(self._indicator_set(strategy_id, benchmark_name), start, end)
+                if use_indicator_cache
+                else {}
+            )
+            if use_indicator_cache and not cached_indicators:
+                raise DomainValidationError(
+                    f"{strategy_id} indicator cache is missing; run research.rebuild-indicators"
+                )
+            missing_sessions = session_keys - {
+                day for series in cached_indicators.values() for day in series
+            }
+            if use_indicator_cache and missing_sessions:
+                raise DomainValidationError(
+                    f"{strategy_id} indicator cache is incomplete; rebuild missing sessions"
+                )
+            eligible_histories = (
+                [
+                    (instrument_id, (), identity)
+                    for instrument_id, identity in identities.items()
+                    if instrument_id in cached_indicators
+                ]
+                if cache_only_strategy1
+                else [
+                    (instrument_id, bars, identity)
+                    for instrument_id, (bars, identity) in histories.items()
+                    if not str(identity["isin"]).startswith("INDEX:")
+                ]
+            )
             for index, (instrument_id, bars, identity) in enumerate(eligible_histories, start=1):
-                series = self.runtime.compute_series(strategy_id, bars, benchmark)
+                if use_indicator_cache:
+                    raw_series = cached_indicators.get(instrument_id, {})
+                    series = ({day: momentum_quality_from_indicators(values)
+                               for day, values in raw_series.items()}
+                              if strategy_id == "strategy1" else raw_series)
+                else:
+                    series = self.runtime.compute_series(strategy_id, bars, benchmark)
                 symbols[instrument_id] = str(identity["symbol"])
                 for day, values in series.items():
                     if day in session_keys:
@@ -159,7 +333,7 @@ class ResearchJobs:
                 if index % 25 == 0 or index == len(eligible_histories):
                     context.checkpoint(
                         progress={
-                            "stage": "indicators",
+                            "stage": "factors" if use_indicator_cache else "indicators",
                             "stage_number": 1,
                             "stage_count": 4,
                             "strategy": strategy_id,
@@ -168,10 +342,16 @@ class ResearchJobs:
                             "processed_instruments": index,
                             "total_instruments": len(eligible_histories),
                             "completed_percent": round(index / len(eligible_histories) * 100, 1),
-                            "detail": "Computing every session's rolling indicators once per instrument.",
+                            "detail": (
+                                "Deriving strategy factors from cached indicators."
+                                if use_indicator_cache
+                                else "Computing every session's rolling indicators once per instrument."
+                            ),
                         }
                     )
-            timings[f"{strategy_id}:indicators"] = perf_counter() - stage_started
+            timings[f"{strategy_id}:{'factors' if use_indicator_cache else 'indicators'}"] = (
+                perf_counter() - stage_started
+            )
 
             stage_started = perf_counter()
             percentiles_by_date: dict[str, dict[str, dict[str, float]]] = {}
@@ -626,6 +806,8 @@ class ResearchJobs:
         return {"artifact_id": artifact_id, **report}
 
     def _calculate_day(self, payload: dict[str, Any]) -> dict[str, object]:
+        if payload.get("strategy_id") == "strategy3":
+            raise DomainValidationError("Strategy 3 requires its dedicated research jobs")
         if (
             set(payload) - {"as_of_date", "strategy_id", "symbols"}
             or not {"as_of_date", "strategy_id"}.issubset(payload)
@@ -845,6 +1027,8 @@ class ResearchJobs:
         }
 
     def rank_week(self, payload: dict[str, Any]) -> dict[str, object]:
+        if payload.get("strategy_id") == "strategy3":
+            raise DomainValidationError("Strategy 3 uses daily rankings in its dedicated job")
         if (
             set(payload) != {"week_end", "strategy_id"}
             or not isinstance(payload.get("week_end"), str)

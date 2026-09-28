@@ -76,7 +76,7 @@ def test_in_memory_backtest_uses_pure_engine_and_publishes_no_shared_database():
     result = run(
         PortfolioState(Money("1000")),
         PortfolioPolicy(1, Decimal(40), Decimal(1)),
-        (BacktestStep(date(2026, 1, 2), (Candidate("ABC", Decimal(90)),), {"ABC": bar}),),
+        (BacktestStep(date(2026, 1, 2), (Candidate("ABC", Decimal(90), atr=Decimal(5)),), {"ABC": bar}),),
     )
     assert result.final_state.holdings[0].instrument_id == "ABC"
     assert result.equity_curve[0][1] == Decimal(1050)

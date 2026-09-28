@@ -11,6 +11,13 @@ from src.platform_kernel import ArtifactStore, Money, Quantity
 from src.portfolio_accounting import Fill, FillSide
 
 
+def seed_atr_risk(publisher):
+    publisher.publish_json("actions/risk-projections", "atr-risk", {
+        "account_id": "paper", "action_date": "2026-09-04", "stop_model": "ATR",
+        "positions": [{"instrument_id": "ABC", "current_trailing_stop": "95"}],
+    })
+
+
 def test_intraday_stop_alert_is_immutable_and_does_not_create_fill(tmp_path):
     database = tmp_path / "system.db"
     ledger = Ledger(database)
@@ -21,6 +28,7 @@ def test_intraday_stop_alert_is_immutable_and_does_not_create_fill(tmp_path):
     )
     publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
     alerts = IntradayStopAlerts(database, ledger, publisher)
+    seed_atr_risk(publisher)
     payload = {"account_id": "paper", "observations": [{"instrument_id": "ABC", "price": "89", "observed_at": "2026-09-10T10:00:00+00:00"}]}
     first = alerts.ingest(payload)
     second = alerts.ingest(payload)
@@ -39,6 +47,7 @@ def test_intraday_alerts_have_sse_readback(tmp_path):
     ledger.record_fills("paper", "buy-1", 0, [Fill("ABC", datetime(2026, 9, 1, tzinfo=UTC).date(), FillSide.BUY, Quantity(1), Money(100), Money(0), datetime(2026, 9, 1, 9, 15, tzinfo=UTC))])
     publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
     alerts = IntradayStopAlerts(database, ledger, publisher)
+    seed_atr_risk(publisher)
     alerts.ingest({"account_id": "paper", "observations": [{"instrument_id": "ABC", "price": "89", "observed_at": "2026-09-10T10:00:00+00:00"}]})
     app = Flask(__name__)
     app.register_blueprint(create_market_blueprint(MarketRepository(database), ArtifactCatalog(database), intraday_alerts=alerts))

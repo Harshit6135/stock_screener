@@ -3,6 +3,7 @@
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from threading import Lock
 from time import monotonic, sleep
 from typing import Any
 
@@ -17,12 +18,14 @@ class _ProviderThrottle:
         if requests_per_second <= 0:
             raise DomainValidationError("provider rate must be positive")
         self.interval, self.sleeper, self._last_request = 1.0 / requests_per_second, sleeper, 0.0
+        self._lock = Lock()
 
     def wait(self) -> None:
-        delay = self.interval - (monotonic() - self._last_request)
-        if delay > 0:
-            self.sleeper(delay)
-        self._last_request = monotonic()
+        with self._lock:
+            delay = self.interval - (monotonic() - self._last_request)
+            if delay > 0:
+                self.sleeper(delay)
+            self._last_request = monotonic()
 
 
 class KiteHistoricalBarsProvider:

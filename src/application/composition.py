@@ -9,6 +9,7 @@ from src.application.action_jobs import ActionJobs
 from src.application.backtest_jobs import BacktestJobs
 from src.application.catalog import ArtifactCatalog
 from src.application.corporate_actions import CorporateActions
+from src.application.early_momentum import EarlyMomentumJobs
 from src.application.index_poller import IndexQuotePoller
 from src.application.intraday_alerts import IntradayStopAlerts
 from src.application.intraday_stream import IntradayStreamLease
@@ -18,7 +19,9 @@ from src.application.liquidity import publish_liquidity_universe
 from src.application.market_jobs import KiteMarketJobs
 from src.application.market_refresh import MarketRefreshPlanner
 from src.application.market_repository import MarketRepository
+from src.application.node_cache import IndicatorNodeCache
 from src.application.pipeline_jobs import ResearchPipelineJobs
+from src.application.positional_trend_jobs import PositionalTrendJobs
 from src.application.publication import ArtifactPublisher
 from src.application.research_jobs import ResearchJobs
 from src.application.strategy_definitions import StrategyDefinitions
@@ -37,6 +40,7 @@ class ApplicationServices:
     jobs: JobStore
     market: MarketRepository
     research: ResearchJobs
+    positional_trend: PositionalTrendJobs
     strategies: StrategyDefinitions
     strategy_runtime: StrategyRuntime
     backtests: BacktestJobs
@@ -91,27 +95,30 @@ class ApplicationServices:
         strategies = StrategyDefinitions(database, PandasTaAdapter())
         strategy_runtime = StrategyRuntime(strategies)
         strategy_runtime.seed(Path(__file__).resolve().parents[2] / "strategies")
-        research = ResearchJobs(database, market, publisher, strategy_runtime)
-        backtests = BacktestJobs(database, market, research, publisher, corporate_actions)
+        node_cache = IndicatorNodeCache(database)
+        research = ResearchJobs(database, market, publisher, strategy_runtime, node_cache)
+        early_momentum = EarlyMomentumJobs(market, publisher, strategy_runtime)
+        positional_trend = PositionalTrendJobs(market, publisher, strategy_runtime)
+        backtests = BacktestJobs(database, market, research, publisher, corporate_actions, positional_trend)
         # Full artifact verification is expensive with a large research history.
         # A populated catalog already represents validated immutable artifacts;
         # clean interrupted staging work at startup and reserve a full scan for
         # an explicit SCREENER_FULL_STARTUP_RECOVERY=true setting.
-        catalog_entries = catalog.artifacts()
+        catalog_populated, catalog_has_live_entries = catalog.recovery_state()
         legacy_catalog_without_payloads = (
-            bool(catalog_entries)
-            and not artifacts.artifact_locations()
-            and any(item["status"] != "MISSING" for item in catalog_entries)
+            catalog_populated
+            and not artifacts.has_payloads()
+            and catalog_has_live_entries
         )
         if (
             os.environ.get("SCREENER_FULL_STARTUP_RECOVERY", "false").lower() == "true"
-            or not catalog_entries
+            or not catalog_populated
             or legacy_catalog_without_payloads
         ):
             publisher.recover()
         else:
             publisher.store.recover_staging()
-        actions = ActionJobs(database, market, research, ledger, publisher)
+        actions = ActionJobs(database, market, research, ledger, publisher, positional_trend)
         pipelines = ResearchPipelineJobs(database, jobs, strategy_runtime)
         market_jobs = KiteMarketJobs(
             market,
@@ -145,11 +152,17 @@ class ApplicationServices:
                 "reference.sync-kite-instruments": market_jobs.sync_instruments,
                 "reference.sync-bse-instruments": market_jobs.sync_bse_instruments,
                 "market.fetch-kite-bars": market_jobs.fetch_bars,
+                "market.fetch-bulk-kite-bars": market_jobs.fetch_bulk_bars,
                 "market.fetch-kite-index-quotes": market_jobs.fetch_index_quotes,
                 "market.fetch-intraday-stop-alerts": market_jobs.fetch_intraday_stop_alerts,
                 "market.schedule-all-symbol-refresh": market_refresh.schedule,
                 "reference.reconcile-market": market_refresh.reconcile,
                 "research.rebuild-range": research.rebuild_range,
+                "research.rebuild-indicators": research.rebuild_indicators,
+                "research.strategy3-rebuild-indicators": early_momentum.rebuild_indicators,
+                "research.strategy3-rebuild-rankings": early_momentum.rebuild_rankings,
+                "research.strategy3-event-study": early_momentum.event_study,
+                "research.strategy4-build-signals": positional_trend.build_signals,
                 "backtest.run": backtests.execute,
                 "backtest.stress": backtests.stress,
                 "backtest.walk-forward": backtests.walk_forward,
@@ -166,6 +179,7 @@ class ApplicationServices:
             jobs,
             market,
             research,
+            positional_trend,
             strategies,
             strategy_runtime,
             backtests,

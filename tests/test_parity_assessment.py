@@ -140,7 +140,7 @@ def test_portfolio_policy_backtest_options():
     bar = MarketBar(
         "INFY", date(2026, 9, 8), Decimal(100), Decimal(105), Decimal(95), Decimal(102), 1000
     )
-    candidate = Candidate("INFY", Decimal(80))
+    candidate = Candidate("INFY", Decimal(80), atr=Decimal(5))
 
     decisions, next_state = evaluate(
         state,

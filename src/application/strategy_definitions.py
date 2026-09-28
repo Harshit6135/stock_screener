@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +20,7 @@ import yaml
 
 from src.application.sqlite import migrate_sqlite, sqlite_connection
 from src.indicators.custom import CUSTOM_IMPLEMENTATIONS
+from src.indicators.dag import DagGraph
 from src.indicators.registry import PandasTaAdapter
 from src.platform_kernel import DomainValidationError
 
@@ -126,24 +128,32 @@ class StrategyDefinitions:
         return result
 
     def _validate(self, value: object) -> dict[str, Any]:
-        if not isinstance(value, dict) or set(value) - {"schema_version", "strategy", "universe", "data_dependencies", "calculation", "indicators", "factors", "eligibility", "score", "ranking", "portfolio_policy"}:
+        if not isinstance(value, dict) or set(value) - {"schema_version", "strategy", "universe", "data_dependencies", "calculation", "indicators", "operations", "signal_rules", "factors", "eligibility", "score", "ranking", "portfolio_policy"}:
             raise DomainValidationError("strategy definition contains unknown top-level fields")
         if value.get("schema_version") != 1:
             raise DomainValidationError("strategy schema_version must be 1")
         strategy = value.get("strategy")
-        if not isinstance(strategy, dict) or set(strategy) - {"id", "name", "version", "description"} or not isinstance(strategy.get("id"), str) or not strategy["id"].replace("_", "").isalnum() or not isinstance(strategy.get("name"), str) or not isinstance(strategy.get("version"), str) or not _SEMVER.fullmatch(strategy["version"]):
+        if not isinstance(strategy, dict) or set(strategy) - {"id", "name", "version", "description", "kind"} or not isinstance(strategy.get("id"), str) or not strategy["id"].replace("_", "").isalnum() or not isinstance(strategy.get("name"), str) or not isinstance(strategy.get("version"), str) or not _SEMVER.fullmatch(strategy["version"]):
             raise DomainValidationError("strategy id, name and version are required")
+        strategy_kind = strategy.get("kind", "factor_score")
+        if strategy_kind not in {"factor_score", "event_signal"}:
+            raise DomainValidationError("strategy kind is invalid")
+        has_indicators = bool(value.get("indicators"))
         calculation = value.get("calculation")
-        if not isinstance(calculation, dict) or set(calculation) - {"instrument_implementation", "cross_section_implementation", "required_sessions"}:
-            raise DomainValidationError("strategy calculation is required")
-        implementation = calculation.get("instrument_implementation")
-        cross_section = calculation.get("cross_section_implementation")
-        if implementation not in CUSTOM_IMPLEMENTATIONS or (
-            cross_section is not None and cross_section not in CUSTOM_IMPLEMENTATIONS
-        ):
-            raise DomainValidationError("strategy references an unavailable custom implementation")
-        if isinstance(calculation.get("required_sessions"), bool) or not isinstance(calculation.get("required_sessions"), int) or calculation["required_sessions"] < 1:
-            raise DomainValidationError("strategy required_sessions must be a positive integer")
+        # calculation is optional when a complete DAG (indicators section) is present
+        if calculation is not None:
+            if not isinstance(calculation, dict) or set(calculation) - {"instrument_implementation", "cross_section_implementation", "required_sessions"}:
+                raise DomainValidationError("strategy calculation is required")
+            implementation = calculation.get("instrument_implementation")
+            cross_section = calculation.get("cross_section_implementation")
+            if implementation not in CUSTOM_IMPLEMENTATIONS or (
+                cross_section is not None and cross_section not in CUSTOM_IMPLEMENTATIONS
+            ):
+                raise DomainValidationError("strategy references an unavailable custom implementation")
+            if isinstance(calculation.get("required_sessions"), bool) or not isinstance(calculation.get("required_sessions"), int) or calculation["required_sessions"] < 1:
+                raise DomainValidationError("strategy required_sessions must be a positive integer")
+        elif not has_indicators:
+            raise DomainValidationError("strategy requires either a calculation section or an indicators DAG")
         indicators = value.get("indicators", [])
         if not isinstance(indicators, list) or len({item.get("id") for item in indicators if isinstance(item, dict)}) != len(indicators):
             raise DomainValidationError("strategy indicators must have unique ids")
@@ -162,29 +172,73 @@ class StrategyDefinitions:
             if section in value:
                 self._validate_operations(value[section], indicator_ids)
         factors = value.get("factors")
-        if not isinstance(factors, dict) or not factors:
-            raise DomainValidationError("strategy factors are required")
-        try:
-            weights = [float(weight) for weight in factors.values()]
-        except (TypeError, ValueError) as exc:
-            raise DomainValidationError("strategy factor weights must be numeric") from exc
-        if any(weight < 0 for weight in weights) or abs(sum(weights) - 1) > 1e-9:
-            raise DomainValidationError("strategy factor weights must sum to one")
+        if strategy_kind == "event_signal":
+            if factors is not None or not isinstance(value.get("signal_rules"), dict):
+                raise DomainValidationError("event_signal strategies require signal_rules and do not use factor weights")
+            if not isinstance(calculation, dict) or calculation.get("instrument_implementation") is None:
+                raise DomainValidationError("event_signal strategies require a registered instrument implementation")
+        else:
+            if not isinstance(factors, dict) or not factors:
+                raise DomainValidationError("strategy factors are required")
+            try:
+                weights = [float(weight) for weight in factors.values()]
+            except (TypeError, ValueError) as exc:
+                raise DomainValidationError("strategy factor weights must be numeric") from exc
+            if any(not math.isfinite(weight) or weight < 0 for weight in weights) or abs(sum(weights) - 1) > 1e-9:
+                raise DomainValidationError("strategy factor weights must sum to one")
         ranking = value.get("ranking")
         if not isinstance(ranking, dict) or ranking.get("frequency") not in {"daily", "weekly"} or ranking.get("session") not in {"last_trading_session", "each_trading_session"}:
             raise DomainValidationError("ranking frequency and session are invalid")
         policy = value.get("portfolio_policy")
-        required_policy = {"initial_capital", "max_positions", "exit_threshold", "buffer_percent", "max_concentration_pct"}
+        required_policy = ({"initial_capital", "max_positions", "risk_fraction", "max_order_fraction",
+                            "adv_participation_fraction", "round_trip_cost_bps"}
+                           if strategy_kind == "event_signal" else
+                           {"initial_capital", "max_positions", "exit_threshold", "buffer_percent", "max_concentration_pct"})
         if not isinstance(policy, dict) or set(policy) != required_policy:
-            raise DomainValidationError("portfolio_policy must contain the complete supported schema")
+            raise DomainValidationError("portfolio_policy must contain the complete schema for its strategy kind")
         if isinstance(policy["max_positions"], bool) or not isinstance(policy["max_positions"], int) or not 1 <= policy["max_positions"] <= 50:
             raise DomainValidationError("portfolio_policy max_positions must be between 1 and 50")
         try:
             numeric_policy = {key: float(value) for key, value in policy.items() if key != "max_positions"}
         except (TypeError, ValueError) as exc:
             raise DomainValidationError("portfolio_policy values must be numeric") from exc
-        if numeric_policy["initial_capital"] <= 0 or not 0 < numeric_policy["max_concentration_pct"] <= 1 or numeric_policy["exit_threshold"] < 0 or numeric_policy["buffer_percent"] < 0:
+        if any(not math.isfinite(number) for number in numeric_policy.values()) or numeric_policy["initial_capital"] <= 0:
             raise DomainValidationError("portfolio_policy values are outside supported ranges")
+        if strategy_kind == "event_signal":
+            if (not 0 < numeric_policy["risk_fraction"] <= 1
+                    or not 0 < numeric_policy["max_order_fraction"] <= 1
+                    or not 0 < numeric_policy["adv_participation_fraction"] <= 1
+                    or not 0 <= numeric_policy["round_trip_cost_bps"] < 10_000):
+                raise DomainValidationError("event_signal portfolio limits are outside supported ranges")
+            rules = value["signal_rules"]
+            required_rules = {"donchian_entry_period", "donchian_exit_period", "adx_period",
+                              "adx_minimum", "atr_period", "supertrend_multiplier", "adtv_period",
+                              "minimum_adtv"}
+            if set(rules) != required_rules:
+                raise DomainValidationError("event_signal signal_rules are incomplete")
+            if any(isinstance(rules[key], bool) or not isinstance(rules[key], (int, float))
+                   or not math.isfinite(float(rules[key]))
+                   for key in required_rules):
+                raise DomainValidationError("event_signal signal_rules must be numeric")
+            periods = {"donchian_entry_period", "donchian_exit_period", "adx_period", "atr_period", "adtv_period"}
+            if any(not isinstance(rules[key], int) for key in periods):
+                raise DomainValidationError("event_signal indicator periods must be integers")
+            if (rules["donchian_entry_period"] < 2 or rules["donchian_exit_period"] < 2
+                    or rules["adx_period"] < 2 or rules["atr_period"] < 2 or rules["adtv_period"] < 2
+                    or rules["adx_minimum"] < 0 or rules["supertrend_multiplier"] <= 0
+                    or rules["minimum_adtv"] <= 0):
+                raise DomainValidationError("event_signal signal_rules are outside supported ranges")
+        elif (not 0 < numeric_policy["max_concentration_pct"] <= 1
+              or numeric_policy["exit_threshold"] < 0 or numeric_policy["buffer_percent"] < 0):
+            raise DomainValidationError("portfolio_policy values are outside supported ranges")
+        # Compile DAG from indicators + operations when present
+        if has_indicators:
+            dag = DagGraph.from_yaml_sections(
+                value.get("indicators", []),
+                value.get("operations"),
+                self.indicators,
+            )
+            value["_compiled_dag"] = dag.to_dict()
         return value
 
     def _validate_operations(self, value: object, indicator_ids: set[str]) -> None:

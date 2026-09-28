@@ -44,7 +44,7 @@ def _xirr(flows: list[tuple[date, Decimal]]) -> Decimal | None:
     return None
 
 
-def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository) -> Blueprint:
+def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_reader=None) -> Blueprint:
     blueprint = Blueprint("portfolio_v2", __name__, url_prefix="/api/v2/portfolio")
 
     @blueprint.get("/accounts")
@@ -133,6 +133,7 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository) -> Blue
                     "price",
                     "fee",
                     "correlation_id",
+                    "broker_trade_id",
                 }:
                     raise DomainValidationError("fill entry contains invalid fields")
                 symbol = row.get("symbol")
@@ -157,6 +158,9 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository) -> Blue
                         executed_at,
                         str(row["correlation_id"])
                         if row.get("correlation_id") is not None
+                        else None,
+                        str(row["broker_trade_id"])
+                        if row.get("broker_trade_id") is not None
                         else None,
                     )
                 )
@@ -204,14 +208,23 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository) -> Blue
         market_value = Decimal(0)
         invested = Decimal(0)
         stop_risk = Decimal(0)
+        risk_complete = True
+        projections = [item for item in risk_reader(account_id)
+                       if item.get("stop_model") == "ATR" and str(item["action_date"]) <= as_of.isoformat()] if risk_reader else []
+        latest_risk = max(projections, key=lambda item: str(item["action_date"]), default=None)
+        stops = {str(item["instrument_id"]): Decimal(str(item["current_trailing_stop"]))
+                 for item in latest_risk["positions"]} if latest_risk else {}
         for lot in projection.open_lots:
             bars = market.bars(lot.instrument_id, date.min, as_of, limit=1000)
             latest = bars[-1] if bars else None
             value = Decimal(str(latest["close"])) * lot.remaining_units.units if latest else Decimal(0)
             cost = lot.unit_cost.amount * lot.remaining_units.units
-            entry_stop = lot.unit_cost.amount * Decimal("0.9")
-            lot_risk = max(Decimal(0), value - entry_stop * lot.remaining_units.units)
-            stop_risk += lot_risk
+            current_stop = stops.get(lot.instrument_id)
+            lot_risk = max(Decimal(0), value - current_stop * lot.remaining_units.units) if current_stop is not None else None
+            if lot_risk is not None:
+                stop_risk += lot_risk
+            else:
+                risk_complete = False
             market_value += value
             invested += cost
             identity = market.instrument_by_id(lot.instrument_id)
@@ -224,9 +237,10 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository) -> Blue
                 "price_date": latest["as_of_date"] if latest else None,
                 "fresh": bool(latest and latest["as_of_date"] == as_of.isoformat()),
                 "market_value": str(value),
-                "entry_stop": str(entry_stop),
-                "current_trailing_stop": str(entry_stop),
-                "stop_risk": str(lot_risk),
+                "entry_stop": None,
+                "current_trailing_stop": str(current_stop) if current_stop is not None else None,
+                "hard_stop": str(current_stop * Decimal("0.97")) if current_stop is not None else None,
+                "stop_risk": str(lot_risk) if lot_risk is not None else None,
             })
         flows: list[tuple[date, Decimal]] = [(as_of, -Decimal(str(next(
             item["opening_cash"] for item in ledger.accounts() if item["account_id"] == account_id
@@ -252,7 +266,7 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository) -> Blue
             "unrealised_gain": str(market_value - invested),
             "equity": str(projection.cash.amount + market_value),
             "realised_pnl": str(projection.realised_pnl.amount),
-            "stop_based_risk": str(stop_risk),
+            "stop_based_risk": str(stop_risk) if risk_complete else None,
             "xirr": str(_xirr(sorted(flows),)) if _xirr(sorted(flows)) is not None else None,
             "stale_prices": sum(not item["fresh"] for item in holdings),
             "holdings": holdings,

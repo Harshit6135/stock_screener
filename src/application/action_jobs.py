@@ -12,6 +12,7 @@ from uuid import NAMESPACE_URL, uuid5
 from zoneinfo import ZoneInfo
 
 from src.application.market_repository import MarketRepository
+from src.application.positional_trend import valid_bar
 from src.application.publication import ArtifactPublisher
 from src.application.research_jobs import ResearchJobs
 from src.application.sqlite import migrate_sqlite, sqlite_connection
@@ -52,12 +53,14 @@ class ActionJobs:
         research: ResearchJobs,
         ledger: Ledger,
         publisher: ArtifactPublisher,
+        positional_trend=None,
     ) -> None:
         self.database = Path(database)
         self.market = market
         self.research = research
         self.ledger = ledger
         self.publisher = publisher
+        self.positional_trend = positional_trend
         migrate_sqlite(
             self.database,
             "actions",
@@ -80,14 +83,239 @@ class ActionJobs:
             },
         )
 
+    def _generate_strategy4(self, payload: dict[str, Any]) -> dict[str, object]:
+        """Create a reviewable next-open proposal from the prior close's S4 signals."""
+        if self.positional_trend is None:
+            raise DomainValidationError("Strategy 4 daily signal service is unavailable")
+        allowed = {"account_id", "strategy_id", "action_date", "max_positions", "risk_pct",
+                   "max_order_pct", "adv_participation_pct", "round_trip_cost_bps", "universe"}
+        if set(payload) - allowed:
+            raise DomainValidationError(
+                "Strategy 4 action payload contains unsupported fields"
+            )
+        account_id = payload.get("account_id")
+        if not isinstance(account_id, str) or not account_id.strip():
+            raise DomainValidationError("account_id is required")
+        try:
+            action_date = date.fromisoformat(str(payload.get("action_date")))
+        except (TypeError, ValueError) as exc:
+            raise DomainValidationError("action_date must be an ISO date") from exc
+        if action_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
+            raise DomainValidationError("portfolio action date must be completed")
+        sessions = sorted({
+            day
+            for exchange in ("NSE", "BSE")
+            for day in self.market.session_dates(action_date - timedelta(days=14), action_date,
+                                                 exchange=exchange)
+        })
+        prior_sessions = [day for day in sessions if day < action_date.isoformat()]
+        if not prior_sessions or not sessions or sessions[-1] != action_date.isoformat():
+            raise DomainValidationError("Strategy 4 action date requires a prior and current stored session")
+        signal_date = date.fromisoformat(prior_sessions[-1])
+        universe = payload.get("universe", "NIFTY500")
+        if not isinstance(universe, str) or universe not in {"NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500"}:
+            raise DomainValidationError("Strategy 4 universe is invalid")
+        signal_entry = self.positional_trend.read_signals(signal_date, str(universe))
+        if signal_entry is None:
+            self.positional_trend.build_signals({"as_of_date": signal_date.isoformat(), "universe": universe})
+            signal_entry = self.positional_trend.read_signals(signal_date, str(universe))
+        if signal_entry is None:
+            raise DomainValidationError("prior Strategy 4 signal artifact could not be created")
+        signal_artifact_id, signal_payload = signal_entry
+        revision = self.research.runtime.revision("strategy4")
+        settings = self.research.runtime.portfolio_policy("strategy4")
+        positions = payload.get("max_positions", int(settings["max_positions"]))
+        if isinstance(positions, bool) or not isinstance(positions, int) or not 1 <= positions <= 50:
+            raise DomainValidationError("Strategy 4 max_positions must be between 1 and 50")
+        try:
+            risk_fraction = Decimal(str(payload.get("risk_pct", float(settings["risk_fraction"]) * 100))) / 100
+            order_fraction = Decimal(str(payload.get("max_order_pct", float(settings["max_order_fraction"]) * 100))) / 100
+            adv_fraction = Decimal(str(payload.get("adv_participation_pct", float(settings["adv_participation_fraction"]) * 100))) / 100
+            round_trip_cost_bps = Decimal(str(payload.get("round_trip_cost_bps", settings["round_trip_cost_bps"])))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise DomainValidationError("Strategy 4 portfolio limits must be numeric") from exc
+        if (not risk_fraction.is_finite() or not 0 < risk_fraction <= 1
+                or not order_fraction.is_finite() or not 0 < order_fraction <= 1
+                or not adv_fraction.is_finite() or not 0 < adv_fraction <= 1
+                or not round_trip_cost_bps.is_finite() or not 0 <= round_trip_cost_bps < 10_000):
+            raise DomainValidationError("Strategy 4 portfolio limits are outside supported ranges")
+        account = next((item for item in self.ledger.accounts() if item["account_id"] == account_id), None)
+        if account is None:
+            raise DomainValidationError("portfolio account does not exist")
+        projection = self.ledger.projection(account_id)
+        signal_rows = {str(item["instrument_id"]): item for item in signal_payload["signals"]}
+        held: dict[str, int] = {}
+        for lot in projection.open_lots:
+            held[lot.instrument_id] = held.get(lot.instrument_id, 0) + lot.remaining_units.units
+        held_source_ids: set[str] = set()
+        held_last_closes: dict[str, Decimal] = {}
+        opened = {}
+        for lot in projection.open_lots:
+            opened[lot.instrument_id] = min(opened.get(lot.instrument_id, lot.opened_on), lot.opened_on)
+        if held:
+            from src.application.positional_trend import feature_series
+
+            histories = self.market.histories(date(2021, 1, 1), signal_date,
+                                               instrument_ids=set(held))
+            rules = self.research.runtime.signal_rules("strategy4")
+            for instrument_id, (history, identity) in histories.items():
+                if instrument_id not in held:
+                    continue
+                held_source_ids.update(str(bar["snapshot_id"]) for bar in history if bar.get("snapshot_id"))
+                sessions_for_stock = self.market.session_dates(date(2021, 1, 1), signal_date,
+                                                               exchange=str(identity["exchange"]))
+                features = feature_series(history, sessions_for_stock, str(identity["symbol"]), rules)
+                features = [row for row in features if row["signal_date"] <= signal_date.isoformat()]
+                valid_history = [bar for bar in history if valid_bar(bar)]
+                if valid_history:
+                    latest_bar = max(valid_history, key=lambda bar: str(bar["as_of_date"]))
+                    held_last_closes[instrument_id] = Decimal(str(latest_bar["close"]))
+                # Reconstruct any unexecuted exit since this position opened.
+                # This survives a stock holiday, an unavailable open or a missed proposal run.
+                triggered = next((row for row in features
+                                  if row["signal_date"] >= opened[instrument_id].isoformat()
+                                  and row["exit_signal"]), None)
+                if features:
+                    signal_rows[instrument_id] = {
+                        **features[-1], "instrument_id": instrument_id, "exchange": identity["exchange"],
+                        "exit_signal": triggered is not None,
+                        "exit_signal_date": triggered["signal_date"] if triggered else None,
+                    }
+            if set(held) - set(held_last_closes):
+                raise DomainValidationError("held Strategy 4 position lacks a valid valuation price")
+        requested_ids = set(held) | {str(row["instrument_id"]) for row in signal_payload["signals"] if row["filtered"]}
+        bars = {}
+        source_ids = {signal_artifact_id, str(revision["revision_id"])} | held_source_ids
+        for instrument_id in requested_ids:
+            rows = self.market.bars(instrument_id, action_date, action_date, limit=1)
+            if rows and valid_bar(rows[-1]):
+                bars[instrument_id] = rows[-1]
+                source_ids.add(str(rows[-1]["snapshot_id"]))
+        equity = projection.cash.amount + sum(
+            (Decimal(str(bars[instrument_id]["open"])) if instrument_id in bars
+             else held_last_closes[instrument_id]) * units for instrument_id, units in held.items()
+        )
+        if equity <= 0:
+            raise DomainValidationError("Strategy 4 account equity must be positive")
+        cash = projection.cash.amount
+        fee_fraction = round_trip_cost_bps / Decimal(20_000)
+        decisions: list[dict[str, object]] = []
+        skipped: list[dict[str, object]] = []
+        exited_ids: set[str] = set()
+        # Sell exits first using the next-session open; buys use the remaining cash.
+        for instrument_id, units in sorted(held.items()):
+            feature = signal_rows.get(instrument_id)
+            if feature and feature["exit_signal"]:
+                if instrument_id not in bars:
+                    skipped.append({"instrument_id": instrument_id, "reason": "exit_waiting_for_valid_open",
+                                    "signal_date": feature.get("exit_signal_date", signal_date.isoformat())})
+                    continue
+                price = Decimal(str(bars[instrument_id]["open"]))
+                fee = price * units * fee_fraction
+                decisions.append({"type": "SELL", "instrument_id": instrument_id,
+                                  "symbol": feature["symbol"], "units": units,
+                                  "execution_price": str(price), "fee": str(fee),
+                                  "reason": "prior close below Supertrend or Donchian exit band",
+                                  "signal_date": feature.get("exit_signal_date", signal_date.isoformat())})
+                cash += price * units - fee
+                equity -= fee
+                del held[instrument_id]
+                exited_ids.add(instrument_id)
+        slots = positions - len(held)
+        candidates = sorted((row for row in signal_payload["signals"] if row["filtered"]),
+                            key=lambda row: (int(row.get("rank") or 10**9), str(row["symbol"])))
+        for row in candidates:
+            instrument_id = str(row["instrument_id"])
+            bar = bars.get(instrument_id)
+            if instrument_id in exited_ids:
+                skipped.append({"instrument_id": instrument_id, "reason": "exited_this_session"})
+                continue
+            if instrument_id in held:
+                skipped.append({"instrument_id": instrument_id, "reason": "pyramiding_deferred"})
+                continue
+            if slots <= 0:
+                skipped.append({"instrument_id": instrument_id, "reason": "max_positions"})
+                continue
+            if bar is None:
+                skipped.append({"instrument_id": instrument_id, "reason": "missing_action_open"})
+                continue
+            price = Decimal(str(bar["open"]))
+            signal_close = Decimal(str(row["close"]))
+            stop = Decimal(str(row["initial_stop_anchor"]))
+            if price > signal_close * Decimal("1.03") or price <= stop:
+                skipped.append({"instrument_id": instrument_id, "reason": "gap_or_anchor_check"})
+                continue
+            adtv = Decimal(str(row["adv30"] or 0))
+            quantity = min(
+                int((equity * risk_fraction / (price - stop)).to_integral_value(rounding="ROUND_FLOOR")),
+                int((equity * order_fraction / price).to_integral_value(rounding="ROUND_FLOOR")),
+                int((adtv * adv_fraction / price).to_integral_value(rounding="ROUND_FLOOR")),
+                int((cash / (price * (1 + fee_fraction))).to_integral_value(rounding="ROUND_FLOOR")),
+            )
+            if quantity <= 0:
+                skipped.append({"instrument_id": instrument_id, "reason": "zero_size_or_cash"})
+                continue
+            gross, fee = price * quantity, price * quantity * fee_fraction
+            decisions.append({"type": "BUY", "instrument_id": instrument_id,
+                              "symbol": row["symbol"], "units": quantity,
+                              "execution_price": str(price), "fee": str(fee),
+                              "reason": "ranked Strategy 4 breakout; next-open risk-sized entry",
+                              "signal_date": signal_date.isoformat(), "stop_anchor": str(stop),
+                              "nominal_risk": str(quantity * (price - stop))})
+            cash -= gross + fee
+            equity -= fee
+            held[instrument_id] = quantity
+            slots -= 1
+        if not decisions:
+            decisions = [{"type": "NO_ACTION", "instrument_id": None, "symbol": None,
+                          "units": None, "execution_price": None, "fee": "0",
+                          "reason": "no qualifying Strategy 4 action"}]
+        version = int(str(account["version"]))
+        fingerprint_value = {"account_id": account_id, "version": version,
+                             "strategy_revision_id": revision["revision_id"],
+                             "universe": universe,
+                             "signal_artifact_id": signal_artifact_id,
+                             "signal_date": signal_date.isoformat(),
+                             "policy": {"max_positions": positions, "risk_fraction": str(risk_fraction),
+                                        "max_order_fraction": str(order_fraction),
+                                        "adv_participation_fraction": str(adv_fraction),
+                                        "round_trip_cost_bps": str(round_trip_cost_bps)},
+                             "source_ids": sorted(source_ids),
+                             "action_date": action_date.isoformat(), "decisions": decisions,
+                             "skipped": skipped}
+        fingerprint = hashlib.sha256(json.dumps(fingerprint_value, sort_keys=True).encode()).hexdigest()
+        proposal_id = str(uuid5(NAMESPACE_URL, f"strategy4-action-proposal:{fingerprint}"))
+        if not self.publisher.catalog.has(proposal_id):
+            self.publisher.publish_json(
+                "actions/proposals", proposal_id,
+                {"proposal_id": proposal_id, "account_id": account_id, "strategy_id": "strategy4",
+                 "ranking_week_end": signal_date.isoformat(), "signal_date": signal_date.isoformat(),
+                 "action_date": action_date.isoformat(), "expected_ledger_version": version,
+                 "strategy_revision_id": revision["revision_id"], "signal_artifact_id": signal_artifact_id,
+                 "universe": universe,
+                 "execution_assumptions": {"fill": "stored next-session opening price",
+                                           "upper_price_circuit": "not_observable_in_daily_OHLCV",
+                                           "live_order": "proposal generation does not submit an opening order"},
+                 "policy": {"max_positions": positions, "pyramiding": False,
+                            "risk_fraction": str(risk_fraction),
+                            "max_order_fraction": str(order_fraction),
+                            "adv_participation_fraction": str(adv_fraction),
+                            "round_trip_cost_bps": str(round_trip_cost_bps)},
+                 "skipped_candidates": skipped, "decisions": decisions},
+                upstream_ids=tuple(sorted(source_ids)), quality=QualityStatus.PARTIAL)
+        self._recover_projection(proposal_id)
+        return self.proposal(proposal_id)
+
     def generate(self, payload: dict[str, Any]) -> dict[str, object]:
-        allowed_fields = {"account_id", "strategy_id", "action_date", "max_positions", "pyramid_enabled", "pyramid_fraction", "vacancy_from", "stale_buy_threshold", "correlation_artifact_id", "decorrelation_threshold", "ltcg_hold_days", "sector_artifact_id", "max_sector_fraction", "max_drawdown_pause", "macro_artifact_id", "max_vix", "market_cap_artifact_id", "market_cap_sizing", "swap_cost_bps", "fundamentals_artifact_id", "min_eps", "max_debt_equity"}
+        allowed_fields = {"account_id", "strategy_id", "action_date", "max_positions", "risk_pct", "max_order_pct", "adv_participation_pct", "round_trip_cost_bps", "universe", "pyramid_enabled", "pyramid_fraction", "vacancy_from", "stale_buy_threshold", "correlation_artifact_id", "decorrelation_threshold", "ltcg_hold_days", "sector_artifact_id", "max_sector_fraction", "max_drawdown_pause", "macro_artifact_id", "max_vix", "market_cap_artifact_id", "market_cap_sizing", "swap_cost_bps", "fundamentals_artifact_id", "min_eps", "max_debt_equity"}
         if not isinstance(payload, dict) or not {"account_id", "strategy_id", "action_date"}.issubset(payload) or set(payload) - allowed_fields:
             raise DomainValidationError(
                 "action generation requires account, strategy, date and limit"
             )
         account_id = payload["account_id"]
         strategy_id = payload["strategy_id"]
+        if strategy_id == "strategy4":
+            return self._generate_strategy4(payload)
         positions = payload.get("max_positions")
         ltcg_hold_days = payload.get("ltcg_hold_days", 365)
         sector_artifact_id = payload.get("sector_artifact_id")
@@ -194,6 +422,16 @@ class ActionJobs:
         if not weeks:
             raise DomainValidationError("no prior completed ranking is available")
         week_end = weeks[-1]
+        risk_inputs = self.market.indicators_for_date(
+            self.research._indicator_set("strategy1", None), week_end
+        )
+        def risk_candidate(item, multiplier=Decimal(1)):
+            instrument_id = str(item["instrument_id"])
+            risk = risk_inputs.get(instrument_id, {})
+            atr = Decimal(str(risk.get("atrr_14", 0)))
+            close = Decimal(str(risk.get("close", 0)))
+            return Candidate(instrument_id, Decimal(str(item["score"])), multiplier,
+                             atr if atr > 0 else None, close if close > 0 else None)
         ranked = self.research.top_rankings(week_end, 500, strategy_id)
         if not ranked:
             raise DomainValidationError("prior ranking is empty")
@@ -353,7 +591,7 @@ class ActionJobs:
             candidate_items = filtered_items
         if drawdown_paused or macro_paused:
             candidate_items = []
-        candidates = tuple(Candidate(str(item["instrument_id"]), Decimal(str(item["score"])), size_multiplier(str(item["instrument_id"]))) for item in candidate_items)
+        candidates = tuple(risk_candidate(item, size_multiplier(str(item["instrument_id"]))) for item in candidate_items)
         score_by_id = {str(item["instrument_id"]): Decimal(str(item["score"])) for item in ranked}
         lots_by_instrument: dict[str, tuple[int, Decimal]] = {}
         opened_by_instrument: dict[str, date] = {}
@@ -366,12 +604,19 @@ class ActionJobs:
             opened_by_instrument[lot.instrument_id] = min(
                 opened_by_instrument.get(lot.instrument_id, lot.opened_on), lot.opened_on
             )
+        previous_risk = [item for item in self.risk_projection(account_id)
+                         if item.get("stop_model") == "ATR" and str(item["action_date"]) < action_date.isoformat()]
+        previous_stops = {str(item["instrument_id"]): Decimal(str(item["current_trailing_stop"]))
+                          for item in previous_risk[0]["positions"]} if previous_risk else {}
+        for instrument_id in lots_by_instrument:
+            if instrument_id not in previous_stops:
+                raise DomainValidationError("held stock requires a persisted ATR stop before generating actions")
         holdings = tuple(
             Holding(
                 instrument_id,
                 Quantity(units),
                 Money(cost / units),
-                Money(cost / units * Decimal("0.9")),
+                Money(previous_stops[instrument_id]),
                 score_by_id.get(instrument_id, Decimal(0)),
                 opened_by_instrument[instrument_id],
             )
@@ -401,7 +646,7 @@ class ActionJobs:
                 else:
                     filtered_items.append(item)
             candidate_items = filtered_items
-            candidates = tuple(Candidate(str(item["instrument_id"]), Decimal(str(item["score"])), size_multiplier(str(item["instrument_id"]))) for item in candidate_items)
+            candidates = tuple(risk_candidate(item, size_multiplier(str(item["instrument_id"]))) for item in candidate_items)
         settings = configured_settings
         policy = PortfolioPolicy(
             positions,
@@ -415,7 +660,8 @@ class ActionJobs:
             ltcg_hold_days=ltcg_hold_days,
             swap_cost_bps=swap_cost_bps,
         )
-        decisions, resulting_state = evaluate(PortfolioState(projection.cash, holdings), policy, candidates, bars)
+        decisions, resulting_state = evaluate(PortfolioState(projection.cash, holdings), policy, candidates, bars,
+                                             score_candidates=tuple(risk_candidate(item) for item in ranked))
         identities = {
             item.instrument_id: self.market.instrument_by_id(item.instrument_id)
             for item in decisions
@@ -481,6 +727,7 @@ class ActionJobs:
         proposal_id = str(uuid5(NAMESPACE_URL, f"portfolio-action-proposal:{fingerprint}"))
         risk_artifact_id = str(uuid5(NAMESPACE_URL, f"portfolio-action-risk:{fingerprint}"))
         risk_projection = {
+            "stop_model": "ATR",
             "risk_projection_id": risk_artifact_id,
             "account_id": account_id,
             "action_date": action_date.isoformat(),
@@ -489,7 +736,7 @@ class ActionJobs:
                 {
                     "instrument_id": holding.instrument_id,
                     "units": holding.units.units,
-                    "entry_stop": str(holding.average_price.amount * (Decimal(1) - policy.initial_stop_fraction)),
+                    "stop_model": "ATR",
                     "current_trailing_stop": str(holding.current_stop.amount),
                     "score": str(holding.score),
                 }
@@ -610,10 +857,10 @@ class ActionJobs:
 
     def risk_projection(self, account_id: str, action_date: date | None = None) -> list[dict[str, object]]:
         results: list[dict[str, object]] = []
-        for manifest in self.publisher.store.manifests():
-            if manifest.category != "actions/risk-projections":
-                continue
-            _, payload = self.publisher.store.read_json(manifest.category, manifest.artifact_id)
+        with sqlite_connection(self.database, read_only=True) as connection:
+            ids = connection.execute("SELECT artifact_id FROM catalog_artifacts WHERE category='actions/risk-projections' AND status='VALID'").fetchall()
+        for (artifact_id,) in ids:
+            manifest, payload = self.publisher.store.read_json("actions/risk-projections", artifact_id)
             if payload.get("account_id") != account_id or (action_date and payload.get("action_date") != action_date.isoformat()):
                 continue
             results.append({"artifact_id": manifest.artifact_id, "quality": manifest.quality.value, **payload})
@@ -633,19 +880,19 @@ class ActionJobs:
         previous = current[0]
         positions = {str(item["instrument_id"]): dict(item) for item in previous["positions"]}
         for update in payload["updates"]:
-            if not isinstance(update, dict) or set(update) != {"instrument_id", "current_price", "stop_fraction"}:
+            if not isinstance(update, dict) or set(update) != {"instrument_id", "current_price", "atr"}:
                 raise DomainValidationError("risk update entries are invalid")
             try:
                 price = Decimal(str(update["current_price"]))
-                fraction = Decimal(str(update["stop_fraction"]))
+                atr = Decimal(str(update["atr"]))
             except InvalidOperation as exc:
                 raise DomainValidationError("risk update values are invalid") from exc
             instrument_id = str(update["instrument_id"])
-            if instrument_id not in positions or price <= 0 or not 0 < fraction < 1:
+            if instrument_id not in positions or not price.is_finite() or not atr.is_finite() or price <= 0 or atr <= 0:
                 raise DomainValidationError("risk update values are invalid")
-            proposed = price * (Decimal(1) - fraction)
+            proposed = price - Decimal(2) * atr
             positions[instrument_id]["current_trailing_stop"] = str(max(Decimal(str(positions[instrument_id]["current_trailing_stop"])), proposed))
-        body = {"account_id": str(payload["account_id"]), "action_date": as_of.isoformat(), "source_risk_projection": previous["artifact_id"], "positions": list(positions.values())}
+        body = {"stop_model": "ATR", "account_id": str(payload["account_id"]), "action_date": as_of.isoformat(), "source_risk_projection": previous["artifact_id"], "positions": list(positions.values())}
         artifact_id = hashlib.sha256(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()
         if not self.publisher.catalog.has(artifact_id):
             self.publisher.publish_json("actions/risk-projections", artifact_id, {"risk_projection_id": artifact_id, **body}, upstream_ids=(str(previous["artifact_id"]),), quality=QualityStatus.PARTIAL)
@@ -745,37 +992,9 @@ class ActionJobs:
         return self.proposal(proposal_id)
 
     def generate_midweek_stop(self, payload: dict[str, object]) -> dict[str, object]:
-        """Create a reviewable next-open SELL proposal for breached stops."""
-        required = {"account_id", "signal_date", "action_date", "reason"}
-        if not isinstance(payload, dict) or set(payload) != required or not isinstance(payload["reason"], str) or not str(payload["reason"]).strip():
-            raise DomainValidationError("midweek stop requires account, signal date, action date and reason")
-        try:
-            signal_date = date.fromisoformat(str(payload["signal_date"]))
-            action_date = date.fromisoformat(str(payload["action_date"]))
-        except ValueError as exc:
-            raise DomainValidationError("midweek stop dates must be ISO dates") from exc
-        if signal_date >= action_date or action_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
-            raise DomainValidationError("midweek stop requires a later completed action date")
-        account_id = str(payload["account_id"])
-        projection = self.ledger.projection(account_id)
-        entries: list[dict[str, object]] = []
-        for lot in projection.open_lots:
-            signal = self.market.bars(lot.instrument_id, signal_date, signal_date, limit=2)
-            opening = self.market.bars(lot.instrument_id, action_date, action_date, limit=2)
-            if not signal or not opening:
-                continue
-            stop = lot.unit_cost.amount * Decimal("0.9")
-            if Decimal(str(signal[0]["low"])) > stop:
-                continue
-            identity = self.market.instrument_by_id(lot.instrument_id)
-            if identity is not None:
-                entries.append({"symbol": identity["symbol"], "exchange": identity["exchange"], "side": "SELL", "units": lot.remaining_units.units, "price": opening[0]["open"]})
-        if not entries:
-            raise DomainValidationError("no held position breached its stop on the signal date")
-        return self.create_manual(
-            {"account_id": account_id, "action_date": action_date.isoformat(),
-             "entries": entries, "reason": str(payload["reason"])},
-            source="midweek_stop",
+        """The former next-open midweek stop is not a supported exit rule."""
+        raise DomainValidationError(
+            "Midweek next-open stop exits are disabled; use the daily hard stop 3% below the ATR stop"
         )
 
     def amend(self, proposal_id: str, decisions: object, reason: str) -> dict[str, object]:

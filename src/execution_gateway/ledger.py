@@ -123,6 +123,12 @@ class Ledger:
             previous_fills = tuple(
                 self._event_fill(json.loads(row["event_json"])) for row in previous_rows
             )
+            
+            existing_trade_ids = {f.broker_trade_id for f in previous_fills if f.broker_trade_id}
+            for f in fills:
+                if f.broker_trade_id and f.broker_trade_id in existing_trade_ids:
+                    raise DomainValidationError(f"duplicate broker trade ID {f.broker_trade_id}")
+
             # Validate against the complete position/cash history *inside*
             # the same write transaction. A malformed transaction must
             # never be committed and corrupt the account projection.
@@ -401,6 +407,7 @@ class Ledger:
             "currency": fill.price.currency,
             "fee": str(fill.fee.amount),
             "correlation_id": fill.correlation_id,
+            "broker_trade_id": fill.broker_trade_id,
         }
 
     @staticmethod
@@ -416,6 +423,7 @@ class Ledger:
             Money(Decimal(str(event.get("fee", "0"))), currency),
             datetime.fromisoformat(str(executed_at)) if executed_at else None,
             str(event["correlation_id"]) if event.get("correlation_id") else None,
+            str(event["broker_trade_id"]) if event.get("broker_trade_id") else None,
         )
 
     @staticmethod

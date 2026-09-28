@@ -7,8 +7,12 @@ from .api import (
     IndicatorRevision,
     compute_feature,
 )
+from .dag import DagExecutor, DagGraph, DagNode
 
 __all__ = [
+    "DagExecutor",
+    "DagGraph",
+    "DagNode",
     "FeatureSnapshot",
     "FeatureValue",
     "IndicatorConfiguration",

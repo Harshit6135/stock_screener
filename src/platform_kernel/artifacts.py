@@ -311,6 +311,14 @@ class SqliteArtifactStore(ArtifactStore):
             ).fetchall()
         return tuple((str(row["category"]), str(row["artifact_id"])) for row in rows)
 
+    def has_payloads(self) -> bool:
+        """Return whether one non-quarantined payload exists without a full scan."""
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT EXISTS(SELECT 1 FROM artifact_payloads WHERE quarantined=0)"
+            ).fetchone()
+        return bool(row[0])
+
     def quarantine(self, category: str, artifact_id: str) -> str:
         name = f"{artifact_id}-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}"
         with closing(self._connect()) as connection, connection:

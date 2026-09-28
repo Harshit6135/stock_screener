@@ -27,11 +27,14 @@ The pending generic executor is documented in [pending items](pending-items.md).
 |---|---|---|---|
 | `strategy1` | `strategies/momentum_quality.yml` | `custom.momentum_quality_features` | none |
 | `strategy2` | `strategies/benchmark_relative_momentum.yml` | `custom.relative_strength_features` | NIFTY 500 and `custom.relative_strength_factors` |
+| `strategy4` | `strategies/strategy4.yml` | `custom.positional_trend_features` plus the daily `PositionalTrendJobs` signal path | Nifty 500, Nifty Total Market or application market-cap universe; Donchian/ADX/Supertrend event ranking; no factor score |
 
 ## YAML contract
 
-Required top-level fields are `schema_version`, `strategy`, `calculation`,
-`factors`, `ranking`, and `portfolio_policy`. Optional sections are `universe`,
+Factor strategies require `schema_version`, `strategy`, `calculation`,
+`factors`, `ranking`, and `portfolio_policy`. An `event_signal` strategy instead
+declares `signal_rules`, a registered calculation implementation, daily ranking,
+and its event-specific portfolio limits. Optional sections are `universe`,
 `data_dependencies`, `indicators`, `eligibility`, and `score`. Unknown fields
 are rejected.
 

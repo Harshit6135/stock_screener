@@ -201,7 +201,7 @@ def test_fill_model_changes_execution_and_metrics():
     fill_model = FillModelRevision(uuid4(), "1.0.0", slippage_bps=100, fee_bps=100)
     step = BacktestStep(
         date(2026, 1, 2),
-        (Candidate("ABC", 90),),
+        (Candidate("ABC", 90, atr=Decimal(5)),),
         {"ABC": MarketBar("ABC", date(2026, 1, 2), 100, 110, 99, 105)},
     )
     manifest = BacktestRunManifest(
@@ -248,7 +248,7 @@ def test_prior_close_score_exit_executes_at_next_open_not_current_close():
     assert state.cash == Money(90)
 
 
-def test_exit_proceeds_cannot_finance_same_date_open_buy():
+def test_exit_proceeds_can_finance_same_date_open_buy():
     state = PortfolioState(
         Money(20),
         (Holding("OLD", Quantity(1), Money(100), Money(50), Decimal(0)),),
@@ -259,12 +259,14 @@ def test_exit_proceeds_cannot_finance_same_date_open_buy():
     }
 
     decisions, next_state = evaluate(
-        state, PortfolioPolicy(1, 1, 1), (Candidate("NEW", 100),), bars
+        state, PortfolioPolicy(1, 1, 1), (Candidate("NEW", 100, atr=Decimal(10)),), bars
     )
 
-    assert [decision.type for decision in decisions] == [DecisionType.SCORE_EXIT]
-    assert next_state.cash == Money(110)
-    assert not next_state.holdings
+    # Bug-fix 3: released cash is now available for same-day buys.
+    types = [decision.type for decision in decisions]
+    assert DecisionType.SCORE_EXIT in types
+    assert DecisionType.BUY in types
+    assert next_state.holdings[0].instrument_id == "NEW"
 
 
 def test_alias_resolution_is_point_in_time():

@@ -24,6 +24,7 @@ class Fill:
     fee: Money = field(default_factory=lambda: Money(Decimal(0)))
     executed_at: datetime | None = None
     correlation_id: str | None = None
+    broker_trade_id: str | None = None
 
     def __post_init__(self) -> None:
         if not self.instrument_id or self.price.amount <= 0 or self.fee.amount < 0:

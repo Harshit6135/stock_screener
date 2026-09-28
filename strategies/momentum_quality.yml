@@ -2,7 +2,7 @@ schema_version: 1
 strategy:
   id: strategy1
   name: Momentum Quality
-  version: 1.0.0
+  version: 1.2.0
   description: Multi-factor momentum strategy using instrument-level technical features.
 
 calculation:

@@ -78,12 +78,42 @@ window.addEventListener('DOMContentLoaded', async () => {
   if (!response.ok) return;
   const strategies = (await response.json()).strategies || [];
   for (const select of selects) {
-    select.replaceChildren(...strategies.map(item => {
+    const choices = select.id === 'strategy'
+      ? strategies.filter(item => item.definition.strategy.kind !== 'event_signal')
+      : strategies;
+    select.replaceChildren(...choices.map(item => {
       const option = document.createElement('option');
       option.value = item.strategy_id;
       option.textContent = item.definition.strategy.name;
       return option;
     }));
+  }
+  const backtestSelect = document.getElementById('bt-strategy');
+  if (backtestSelect) {
+    const updateBacktestControls = () => {
+      const selected = strategies.find(item => item.strategy_id === backtestSelect.value);
+      if (!selected) return;
+      const eventSignal = selected.definition.strategy.kind === 'event_signal';
+      const policy = selected.definition.portfolio_policy;
+      if (eventSignal) {
+        document.getElementById('bt-cash').value = policy.initial_capital;
+        document.getElementById('bt-positions').value = policy.max_positions;
+      }
+      for (const id of ['bt-frequency-group', 'bt-basis-group', 'bt-slippage-group',
+                        'bt-fee-group', 'bt-tax-group', 'bt-min-cap-group',
+                        'bt-pyramid-group', 'bt-pyramid-toggle-group', 'bt-midweek-group']) {
+        const element = document.getElementById(id);
+        if (element) element.hidden = eventSignal;
+      }
+      document.getElementById('bt-universe-group').hidden = !eventSignal;
+      document.getElementById('bt-include-be-group').hidden =
+        !eventSignal || document.getElementById('bt-universe').value !== 'NIFTY_TOTAL_MARKET';
+      document.getElementById('bt-fill-model-note').hidden = eventSignal;
+      document.getElementById('bt-event-model-note').hidden = !eventSignal;
+    };
+    backtestSelect.addEventListener('change', updateBacktestControls);
+    updateBacktestControls();
+    document.getElementById('bt-universe').addEventListener('change', updateBacktestControls);
   }
 });
 </script>
@@ -478,7 +508,8 @@ addIntentRow('BUY', 'TCS', 10, '3800.00');
 <title>Backtests — Stock Screener</title>{BASE_STYLE}</head><body>
 {_render_nav("backtest")}
 <h1>Backtest Replay & Performance Reports</h1>
-<p class="muted">Run deterministic replays of weekly rankings against historical daily bars with costs and risk options.</p>
+<p class="muted" id="bt-fill-model-note">Run deterministic replays of weekly rankings against historical daily bars with costs and risk options.</p>
+<p class="muted" id="bt-event-model-note" hidden>Run the daily Donchian, ADX and Supertrend event strategy. Pyramiding is deferred.</p>
 
 <div class="card">
   <div class="card-header">Replay Parameters</div>
@@ -487,26 +518,28 @@ addIntentRow('BUY', 'TCS', 10, '3800.00');
     <div class="form-group"><label>Start Date</label><input id="bt-start" type="date" value="{start}"></div>
     <div class="form-group"><label>End Date</label><input id="bt-end" type="date" value="{end}"></div>
     <div class="form-group"><label>Starting Cash</label><input id="bt-cash" type="number" value="100000"></div>
+    <div class="form-group" id="bt-universe-group" hidden><label>Strategy 4 Universe</label><select id="bt-universe"><option value="NIFTY500">Nifty 500</option><option value="NIFTY_TOTAL_MARKET">Nifty Total Market</option><option value="APPLICATION_MCAP500">Application universe ≥ ₹500 cr</option></select></div>
+    <div class="form-group" id="bt-include-be-group" hidden><label><input id="bt-include-be" type="checkbox" checked> Include BE rows</label></div>
   </div>
 
   <div class="grid-4" style="margin-top:0.75rem;">
     <div class="form-group"><label>Max Positions</label><input id="bt-positions" type="number" value="15" min="1" max="50"></div>
-    <div class="form-group"><label>Rebalance Frequency</label><select id="bt-freq"><option value="DAILY">DAILY</option><option value="WEEKLY" selected>WEEKLY</option><option value="BIWEEKLY">BIWEEKLY</option><option value="MONTHLY">MONTHLY</option></select></div>
-    <div class="form-group"><label>Data Basis</label><select id="bt-basis"><option value="UNADJUSTED">UNADJUSTED</option><option value="CORPORATE_ACTION_ADJUSTED">CORPORATE_ACTION_ADJUSTED</option></select></div>
-    <div class="form-group"><label>Slippage (bps)</label><input id="bt-slippage" type="number" value="5"></div>
+    <div class="form-group" id="bt-frequency-group"><label>Rebalance Frequency</label><select id="bt-freq"><option value="DAILY">DAILY</option><option value="WEEKLY" selected>WEEKLY</option><option value="BIWEEKLY">BIWEEKLY</option><option value="MONTHLY">MONTHLY</option></select></div>
+    <div class="form-group" id="bt-basis-group"><label>Data Basis</label><select id="bt-basis"><option value="UNADJUSTED">UNADJUSTED</option><option value="CORPORATE_ACTION_ADJUSTED">CORPORATE_ACTION_ADJUSTED</option></select></div>
+    <div class="form-group" id="bt-slippage-group"><label>Slippage (bps)</label><input id="bt-slippage" type="number" value="5"></div>
   </div>
 
   <div class="grid-4" style="margin-top:0.75rem;">
-    <div class="form-group"><label>Fee (bps)</label><input id="bt-fee" type="number" value="3"></div>
-    <div class="form-group"><label>Tax (bps)</label><input id="bt-tax" type="number" value="10"></div>
-    <div class="form-group"><label>Min Market Cap</label><input id="bt-min-cap" type="number" value="0"></div>
-    <div class="form-group"><label>Pyramid Fraction</label><input id="bt-pyramid-frac" type="number" step="0.1" value="0.5"></div>
+    <div class="form-group" id="bt-fee-group"><label>Fee (bps)</label><input id="bt-fee" type="number" value="3"></div>
+    <div class="form-group" id="bt-tax-group"><label>Tax (bps)</label><input id="bt-tax" type="number" value="10"></div>
+    <div class="form-group" id="bt-min-cap-group"><label>Min Market Cap</label><input id="bt-min-cap" type="number" value="0"></div>
+    <div class="form-group" id="bt-pyramid-group"><label>Pyramid Fraction</label><input id="bt-pyramid-frac" type="number" step="0.1" value="0.5"></div>
   </div>
 
   <div class="form-row" style="margin-top:1rem;">
-    <label style="display:flex;align-items:center;gap:0.4rem;"><input id="bt-daily-sl" type="checkbox" checked> Check Daily Stop Loss</label>
-    <label style="display:flex;align-items:center;gap:0.4rem;"><input id="bt-midweek-buy" type="checkbox" checked> Allow Mid-Week Buys</label>
-    <label style="display:flex;align-items:center;gap:0.4rem;"><input id="bt-pyramid" type="checkbox"> Enable Pyramiding</label>
+    <span>Weekly ATR stop; daily hard stop 3% below it (always active)</span>
+    <label id="bt-midweek-group" style="display:flex;align-items:center;gap:0.4rem;"><input id="bt-midweek-buy" type="checkbox" checked> Allow Mid-Week Buys</label>
+    <label id="bt-pyramid-toggle-group" style="display:flex;align-items:center;gap:0.4rem;"><input id="bt-pyramid" type="checkbox"> Enable Pyramiding</label>
   </div>
 
   <div class="form-row" style="margin-top:1rem;">
@@ -547,8 +580,19 @@ addIntentRow('BUY', 'TCS', 10, '3800.00');
 async function submitReplay() {{
   const statusEl = document.getElementById('bt-status');
   statusEl.textContent = 'Submitting backtest job...';
-  const payload = {{
-    strategy_id: document.getElementById('bt-strategy').value,
+  const strategyId = document.getElementById('bt-strategy').value;
+  const payload = strategyId === 'strategy4' ? {{
+    strategy_id: strategyId,
+    start_date: document.getElementById('bt-start').value,
+    end_date: document.getElementById('bt-end').value,
+    starting_cash: document.getElementById('bt-cash').value,
+    max_positions: parseInt(document.getElementById('bt-positions').value, 10),
+    enable_pyramiding: false,
+    universe: document.getElementById('bt-universe').value,
+    include_be: document.getElementById('bt-universe').value === 'NIFTY_TOTAL_MARKET' &&
+      document.getElementById('bt-include-be').checked
+  }} : {{
+    strategy_id: strategyId,
     start_date: document.getElementById('bt-start').value,
     end_date: document.getElementById('bt-end').value,
     starting_cash: document.getElementById('bt-cash').value,
@@ -558,7 +602,7 @@ async function submitReplay() {{
     slippage_bps: document.getElementById('bt-slippage').value,
     fee_bps: document.getElementById('bt-fee').value,
     tax_bps: document.getElementById('bt-tax').value,
-    check_daily_sl: document.getElementById('bt-daily-sl').checked,
+    check_daily_sl: false,
     mid_week_buy: document.getElementById('bt-midweek-buy').checked,
     enable_pyramiding: document.getElementById('bt-pyramid').checked,
     pyramid_fraction: document.getElementById('bt-pyramid-frac').value
@@ -650,8 +694,8 @@ async function viewRunReport(runId) {{
         '<td>' + f.decision_type + '</td>' +
         '<td>' + f.instrument_id + '</td>' +
         '<td>' + f.units + '</td>' +
-        '<td>' + Number(f.execution_price).toFixed(2) + '</td>' +
-        '<td><span class="badge ' + (f.direction === 'BUY' ? 'badge-green' : 'badge-amber') + '">' + f.direction + '</span></td>' +
+        '<td>' + Number(f.price ?? f.execution_price ?? 0).toFixed(2) + '</td>' +
+        '<td><span class="badge ' + ((f.side || f.direction) === 'BUY' ? 'badge-green' : 'badge-amber') + '">' + (f.side || f.direction || '-') + '</span></td>' +
         '<td>' + Number(f.fee || 0).toFixed(2) + '</td>';
       tbody.appendChild(tr);
     }}

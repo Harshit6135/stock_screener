@@ -284,7 +284,14 @@ class BrokerOrderService:
         account = next(item for item in self.ledger.accounts() if item["account_id"] == order["account_id"])
         self.ledger.record_fills(
             str(order["account_id"]), f"broker-fill:{trade_id}", int(str(account["version"])),
-            [Fill(str(order["instrument_id"]), date.fromisoformat(str(item["fill_date"])), FillSide(str(order["side"])), Quantity(int(str(item["quantity"]))), Money(Decimal(str(item["price"])))),],
+            [Fill(
+                instrument_id=str(order["instrument_id"]), 
+                fill_date=date.fromisoformat(str(item["fill_date"])), 
+                side=FillSide(str(order["side"])), 
+                units=Quantity(int(str(item["quantity"]))), 
+                price=Money(Decimal(str(item["price"]))),
+                broker_trade_id=trade_id
+            )],
             order_id=str(order["order_id"]),
         )
         with sqlite_connection(self.database) as connection:

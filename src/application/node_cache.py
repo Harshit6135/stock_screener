@@ -1,0 +1,256 @@
+"""Content-addressed indicator node cache in SQLite.
+
+Stores computed indicator series keyed by ``(node_hash, instrument_id, date)``
+rather than by strategy.  Two strategies that reference the same EMA(50) node
+share a single cached result because the node content hash is identical.
+
+The cache is additive.  Rows are inserted or replaced; they are never deleted
+except by an explicit administrative wipe.
+"""
+
+from __future__ import annotations
+
+import json
+from datetime import UTC, date, datetime
+from pathlib import Path
+
+from src.application.sqlite import migrate_sqlite, sqlite_connection
+
+
+class IndicatorNodeCache:
+    """Persistent content-addressed indicator cache.
+
+    The primary key is ``(node_hash, instrument_id, as_of_date)``.
+    ``node_hash`` is the deterministic SHA-256 of a ``DagNode``'s computation
+    definition (provider, function, parameters, inputs), making the cache
+    agnostic to which strategy declared the node.
+    """
+
+    def __init__(self, database: str | Path) -> None:
+        self.database = Path(database)
+        migrate_sqlite(
+            self.database,
+            "indicator_node_cache",
+            {
+                1: (
+                    """CREATE TABLE IF NOT EXISTS indicator_node_cache (
+                        node_hash TEXT NOT NULL,
+                        instrument_id TEXT NOT NULL,
+                        as_of_date TEXT NOT NULL,
+                        value_json TEXT NOT NULL,
+                        source_snapshot_id TEXT NOT NULL,
+                        calculated_at TEXT NOT NULL,
+                        PRIMARY KEY (node_hash, instrument_id, as_of_date)
+                    )""",
+                    ("CREATE INDEX IF NOT EXISTS idx_node_cache_hash_date "
+                     "ON indicator_node_cache(node_hash, as_of_date)"),
+                    ("CREATE INDEX IF NOT EXISTS idx_node_cache_instrument "
+                     "ON indicator_node_cache(instrument_id, as_of_date)"),
+                ),
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # Single-value operations
+    # ------------------------------------------------------------------
+
+    def get(
+        self,
+        node_hash: str,
+        instrument_id: str,
+        as_of_date: date,
+    ) -> float | None:
+        """Return a cached scalar value, or ``None`` if absent."""
+        with sqlite_connection(self.database, read_only=True, row_factory=True) as conn:
+            row = conn.execute(
+                """SELECT value_json FROM indicator_node_cache
+                   WHERE node_hash = ? AND instrument_id = ? AND as_of_date = ?""",
+                (node_hash, instrument_id, as_of_date.isoformat()),
+            ).fetchone()
+        if row is None:
+            return None
+        return float(json.loads(row["value_json"]))
+
+    def put(
+        self,
+        node_hash: str,
+        instrument_id: str,
+        as_of_date: date,
+        value: float,
+        source_snapshot_id: str,
+    ) -> None:
+        """Insert or replace a single cached value."""
+        now = datetime.now(UTC).isoformat()
+        with sqlite_connection(self.database) as conn:
+            conn.execute(
+                """INSERT INTO indicator_node_cache
+                   (node_hash, instrument_id, as_of_date, value_json,
+                    source_snapshot_id, calculated_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(node_hash, instrument_id, as_of_date) DO UPDATE SET
+                   value_json = excluded.value_json,
+                   source_snapshot_id = excluded.source_snapshot_id,
+                   calculated_at = excluded.calculated_at""",
+                (
+                    node_hash,
+                    instrument_id,
+                    as_of_date.isoformat(),
+                    json.dumps(value),
+                    source_snapshot_id,
+                    now,
+                ),
+            )
+
+    # ------------------------------------------------------------------
+    # Bulk operations (used by research jobs)
+    # ------------------------------------------------------------------
+
+    def get_series(
+        self,
+        node_hash: str,
+        instrument_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, float]:
+        """Return cached values for one node + instrument over a date range.
+
+        Returns ``{iso_date_string: value}`` for each cached row.
+        """
+        with sqlite_connection(self.database, read_only=True, row_factory=True) as conn:
+            rows = conn.execute(
+                """SELECT as_of_date, value_json FROM indicator_node_cache
+                   WHERE node_hash = ? AND instrument_id = ?
+                   AND as_of_date BETWEEN ? AND ?
+                   ORDER BY as_of_date""",
+                (node_hash, instrument_id, start_date.isoformat(), end_date.isoformat()),
+            ).fetchall()
+        return {str(row["as_of_date"]): float(json.loads(row["value_json"])) for row in rows}
+
+    def get_bulk(
+        self,
+        node_hashes: set[str],
+        start_date: date,
+        end_date: date,
+    ) -> dict[str, dict[str, dict[str, float]]]:
+        """Return cached values for multiple nodes across all instruments.
+
+        Returns ``{node_hash: {instrument_id: {iso_date: value}}}``.
+        """
+        if not node_hashes:
+            return {}
+        result: dict[str, dict[str, dict[str, float]]] = {h: {} for h in node_hashes}
+        # SQLite parameter limit is 999; batch if needed
+        hash_list = sorted(node_hashes)
+        for batch_start in range(0, len(hash_list), 900):
+            batch = hash_list[batch_start : batch_start + 900]
+            placeholders = ",".join("?" * len(batch))
+            with sqlite_connection(self.database, read_only=True, row_factory=True) as conn:
+                rows = conn.execute(
+                    f"""SELECT node_hash, instrument_id, as_of_date, value_json
+                        FROM indicator_node_cache
+                        WHERE node_hash IN ({placeholders})
+                        AND as_of_date BETWEEN ? AND ?
+                        ORDER BY node_hash, instrument_id, as_of_date""",
+                    (*batch, start_date.isoformat(), end_date.isoformat()),
+                ).fetchall()
+            for row in rows:
+                nh = str(row["node_hash"])
+                iid = str(row["instrument_id"])
+                day = str(row["as_of_date"])
+                result.setdefault(nh, {}).setdefault(iid, {})[day] = float(
+                    json.loads(row["value_json"])
+                )
+        return result
+
+    def put_bulk(
+        self,
+        node_hash: str,
+        values: dict[str, dict[str, float]],
+        source_snapshot_id: str,
+    ) -> int:
+        """Bulk insert cached values for one node across instruments and dates.
+
+        Parameters
+        ----------
+        node_hash : str
+            The content hash of the DAG node.
+        values : dict[str, dict[str, float]]
+            ``{instrument_id: {iso_date: value}}``.
+        source_snapshot_id : str
+            Provenance identifier.
+
+        Returns
+        -------
+        int
+            Number of rows written.
+        """
+        if not values:
+            return 0
+        now = datetime.now(UTC).isoformat()
+        rows: list[tuple[str, str, str, str, str, str]] = []
+        for instrument_id, series in values.items():
+            for day, value in series.items():
+                rows.append((
+                    node_hash,
+                    instrument_id,
+                    day,
+                    json.dumps(value),
+                    source_snapshot_id,
+                    now,
+                ))
+        with sqlite_connection(self.database) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.executemany(
+                """INSERT INTO indicator_node_cache
+                   (node_hash, instrument_id, as_of_date, value_json,
+                    source_snapshot_id, calculated_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(node_hash, instrument_id, as_of_date) DO UPDATE SET
+                   value_json = excluded.value_json,
+                   source_snapshot_id = excluded.source_snapshot_id,
+                   calculated_at = excluded.calculated_at""",
+                rows,
+            )
+        return len(rows)
+
+    def has_coverage(
+        self,
+        node_hash: str,
+        instrument_id: str,
+        dates: set[str],
+    ) -> bool:
+        """Return whether all requested dates are cached for this node + instrument."""
+        if not dates:
+            return True
+        sorted_dates = sorted(dates)
+        with sqlite_connection(self.database, read_only=True, row_factory=True) as conn:
+            rows = conn.execute(
+                """SELECT as_of_date FROM indicator_node_cache
+                   WHERE node_hash = ? AND instrument_id = ?
+                   AND as_of_date BETWEEN ? AND ?""",
+                (node_hash, instrument_id, sorted_dates[0], sorted_dates[-1]),
+            ).fetchall()
+        cached = {str(row["as_of_date"]) for row in rows}
+        return dates.issubset(cached)
+
+    def cached_node_hashes(self) -> set[str]:
+        """Return the set of distinct node hashes that have cached data."""
+        with sqlite_connection(self.database, read_only=True, row_factory=True) as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT node_hash FROM indicator_node_cache"
+            ).fetchall()
+        return {str(row["node_hash"]) for row in rows}
+
+    def row_count(self, node_hash: str | None = None) -> int:
+        """Return the total number of cached rows, optionally filtered by node."""
+        with sqlite_connection(self.database, read_only=True, row_factory=True) as conn:
+            if node_hash is not None:
+                row = conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM indicator_node_cache WHERE node_hash = ?",
+                    (node_hash,),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT COUNT(*) AS cnt FROM indicator_node_cache"
+                ).fetchone()
+        return int(row["cnt"]) if row else 0

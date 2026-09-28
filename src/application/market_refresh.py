@@ -125,6 +125,7 @@ class MarketRefreshPlanner:
             {"instrument_id": instrument_id, "reason": "held_position_not_in_reference_catalog"}
             for instrument_id in sorted(held_ids - known_ids)
         )
+        valid_items = []
         for item in instruments:
             if exchange is not None and item["exchange"] != exchange:
                 continue
@@ -136,16 +137,24 @@ class MarketRefreshPlanner:
                 row = {"instrument_id": str(item["instrument_id"]), "reason": "missing_provider_token"}
                 (blocked if is_held else excluded).append(row)
                 continue
-            fingerprint = f"market-bars:{item['instrument_id']}:{start.isoformat()}:{end.isoformat()}"
+            valid_items.append(item)
+            
+        if valid_items:
+            fingerprint = f"market-bars-bulk:{start.isoformat()}:{end.isoformat()}"
+            payload_items = [{"symbol": item["symbol"], "exchange": item["exchange"]} for item in valid_items]
             job = self.jobs.submit(
                 fingerprint,
-                "market.fetch-kite-bars",
-                {"symbol": item["symbol"], "exchange": item["exchange"], "start_date": start.isoformat(), "end_date": end.isoformat()},
+                "market.fetch-bulk-kite-bars",
+                {"start_date": start.isoformat(), "end_date": end.isoformat(), "items": payload_items},
                 max_attempts=3,
             )
             jobs.append(job.job_id)
+            scheduled_count = len(payload_items)
+        else:
+            scheduled_count = 0
+            
         return {
             "start_date": start.isoformat(), "end_date": end.isoformat(),
-            "scheduled_count": len(jobs), "job_ids": jobs, "excluded": excluded,
+            "scheduled_count": scheduled_count, "job_ids": jobs, "excluded": excluded,
             "blocked_held_positions": sorted(blocked, key=lambda item: item["instrument_id"]),
         }

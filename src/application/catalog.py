@@ -208,6 +208,20 @@ class ArtifactCatalog:
             for row in rows
         )
 
+    def recovery_state(self) -> tuple[bool, bool]:
+        """Return whether the catalog has rows and any non-missing row.
+
+        Startup only needs these two booleans; materializing the complete
+        artifact catalog is prohibitively expensive for long research runs.
+        """
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT EXISTS(SELECT 1 FROM catalog_artifacts) AS populated,
+                          EXISTS(SELECT 1 FROM catalog_artifacts
+                                 WHERE status <> 'MISSING') AS has_live"""
+            ).fetchone()
+        return bool(row["populated"]), bool(row["has_live"])
+
     def supersede(self, previous_id: str, replacement_id: str) -> None:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")

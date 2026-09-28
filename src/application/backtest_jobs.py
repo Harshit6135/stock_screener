@@ -40,12 +40,14 @@ class BacktestJobs:
         research: ResearchJobs,
         publisher: ArtifactPublisher,
         corporate_actions: CorporateActions | None = None,
+        positional_trend=None,
     ) -> None:
         self.database = Path(database)
         self.market = market
         self.research = research
         self.publisher = publisher
         self.corporate_actions = corporate_actions
+        self.positional_trend = positional_trend
         migrate_sqlite(
             self.database,
             "backtest",
@@ -89,6 +91,8 @@ class BacktestJobs:
         return revision_id
 
     def execute(self, payload: dict[str, Any]) -> dict[str, object]:
+        if isinstance(payload, dict) and payload.get("strategy_id") == "strategy4":
+            return self._execute_strategy4(payload)
         unsupported = set(payload) - {
             "strategy_id",
             "start_date",
@@ -239,22 +243,37 @@ class BacktestJobs:
         if not by_date:
             raise DomainValidationError("backtest has no market sessions")
         steps: list[BacktestStep] = []
+        risk_cache: dict[date, dict[str, dict[str, object]]] = {}
+        missing_atr_candidates = 0
         for day in sorted(by_date):
             prior = [week for week in weeks if week < day]
             if not prior:
                 raise DomainValidationError("backtest has no prior completed weekly ranking")
             week_end = prior[-1]
+            if week_end not in risk_cache:
+                risk_cache[week_end] = self.market.indicators_for_date(
+                    self.research._indicator_set("strategy1", None), week_end
+                )
+                if not risk_cache[week_end]:
+                    raise DomainValidationError(f"ATR cache missing for completed week {week_end}")
             ranking = self.research.all_rankings(week_end, strategy_id)
             if not ranking:
                 raise DomainValidationError("backtest prior weekly ranking is empty")
             upstream_ids.add(str(ranking[0]["artifact_id"]))
             candidates = tuple(
-                Candidate(str(item["instrument_id"]), _decimal(item["score"], "score"), Decimal(1))
+                Candidate(
+                    str(item["instrument_id"]), _decimal(item["score"], "score"), Decimal(1),
+                    _decimal(risk_cache[week_end][str(item["instrument_id"])]["atrr_14"], "ATR")
+                    if float(risk_cache[week_end].get(str(item["instrument_id"]), {}).get("atrr_14", 0)) > 0 else None,
+                    _decimal(risk_cache[week_end][str(item["instrument_id"])]["close"], "signal close")
+                    if float(risk_cache[week_end].get(str(item["instrument_id"]), {}).get("close", 0)) > 0 else None,
+                )
                 for item in ranking
                 if str(item["instrument_id"]) in by_date[day]
             )
             if not candidates:
                 raise DomainValidationError("backtest has no tradable ranked candidates")
+            missing_atr_candidates += sum(candidate.atr is None for candidate in candidates)
             steps.append(BacktestStep(day, candidates, by_date[day], regime_by_date.get(day, "RISK_ON")))
         policy_payload = {
             "max_positions": max_positions,
@@ -272,6 +291,15 @@ class BacktestJobs:
             "mid_week_buy": mid_week_buy,
             "enable_pyramiding": enable_pyramiding,
             "pyramid_fraction": str(pyramid_fraction),
+            "stop_model": "weekly_friday_atr",
+            "atr_multiplier": str(policy.atr_multiplier),
+            "hard_stop_buffer": "0.03",
+            "hard_stop_daily": True,
+            "atr_inputs_hash": hashlib.sha256(json.dumps(
+                {day.isoformat(): {instrument_id: {key: row.get(key) for key in ("atrr_14", "close")}
+                                   for instrument_id, row in values.items()}
+                 for day, values in risk_cache.items()}, sort_keys=True,
+            ).encode()).hexdigest(),
         }
         strategy_revision_id = str(self.research.runtime.revision(str(strategy_id))["revision_id"])
         policy_revision_id = self._revision(
@@ -291,7 +319,7 @@ class BacktestJobs:
             UUID(strategy_revision_id),
             UUID(policy_revision_id),
             fill_model.revision_id,
-            "portfolio-engine-v4-1",
+            "portfolio-engine-v4-2-atr",
             steps[0].as_of_date,
             steps[-1].as_of_date,
             {
@@ -326,6 +354,7 @@ class BacktestJobs:
                 "limitations": [
                     f"market bars use {data_basis} basis",
                     "strategy outputs provisional; not live-trading evidence",
+                    f"candidate-session observations without ATR (ineligible for entry): {missing_atr_candidates}",
                 ],
             },
             upstream_ids=result.upstream_ids,
@@ -356,6 +385,151 @@ class BacktestJobs:
             "fill_count": len(result.fills),
             "metrics": {key: str(value) for key, value in result.metrics.items()},
         }
+
+    def _execute_strategy4(self, payload: dict[str, Any]) -> dict[str, object]:
+        """Replay the standalone Strategy 4 simulator as a normal run artifact."""
+        allowed = {"strategy_id", "start_date", "end_date", "starting_cash", "max_positions",
+                   "risk_pct", "max_order_pct", "adv_participation_pct", "round_trip_cost_bps",
+                   "universe", "include_be", "enable_pyramiding"}
+        if not {"strategy_id", "start_date", "end_date"} <= set(payload) or set(payload) - allowed:
+            raise DomainValidationError("Strategy 4 backtest payload is incomplete or unsupported")
+        if not isinstance(payload.get("enable_pyramiding", False), bool):
+            raise DomainValidationError("enable_pyramiding must be boolean")
+        if payload.get("enable_pyramiding", False):
+            raise DomainValidationError("Strategy 4 pyramiding is deferred; set enable_pyramiding to false")
+        if "include_be" in payload and not isinstance(payload["include_be"], bool):
+            raise DomainValidationError("include_be must be boolean")
+        universe = payload.get("universe", "NIFTY500")
+        if not isinstance(universe, str) or universe not in {"NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500"}:
+            raise DomainValidationError("Strategy 4 universe is invalid")
+        if payload.get("include_be", False) and universe != "NIFTY_TOTAL_MARKET":
+            raise DomainValidationError("BE rows can be enabled only for NIFTY_TOTAL_MARKET")
+        try:
+            start, end = date.fromisoformat(str(payload["start_date"])), date.fromisoformat(str(payload["end_date"]))
+        except (TypeError, ValueError) as exc:
+            raise DomainValidationError("Strategy 4 backtest dates must be ISO dates") from exc
+        if start > end or end >= datetime.now(UTC).date() or (end - start).days > 3650:
+            raise DomainValidationError("Strategy 4 backtest requires completed dates within 10 years")
+        if self.positional_trend is None:
+            raise DomainValidationError("Strategy 4 service is unavailable")
+        settings = self.research.runtime.portfolio_policy("strategy4")
+        root = Path(__file__).resolve().parents[2]
+        from src.application.positional_trend_backtest import Policy as Strategy4Policy
+        from src.application.positional_trend_backtest import (
+            benchmark_price_return,
+            load_data,
+            load_market_cap_universe,
+            simulate,
+        )
+        try:
+            capital = float(payload.get("starting_cash", settings["initial_capital"]))
+            positions = payload.get("max_positions", settings["max_positions"])
+            risk = float(payload.get("risk_pct", float(settings["risk_fraction"]) * 100)) / 100
+            order_cap = float(payload.get("max_order_pct", float(settings["max_order_fraction"]) * 100)) / 100
+            adv_cap = float(payload.get("adv_participation_pct", float(settings["adv_participation_fraction"]) * 100)) / 100
+            costs = float(payload.get("round_trip_cost_bps", settings["round_trip_cost_bps"]))
+        except (TypeError, ValueError) as exc:
+            raise DomainValidationError("Strategy 4 portfolio limits must be numeric") from exc
+        if isinstance(positions, bool) or not isinstance(positions, int) or not 1 <= positions <= 50:
+            raise DomainValidationError("Strategy 4 max_positions must be between 1 and 50")
+        policy = Strategy4Policy(capital, positions, order_cap, risk, adv_cap, costs, False)
+        try:
+            policy.validate()
+            if universe == "APPLICATION_MCAP500":
+                histories, sessions, coverage = load_market_cap_universe(self.database, end_date=end.isoformat())
+            else:
+                universe_csv = root / ("ind_niftytotalmarket_list.csv" if universe == "NIFTY_TOTAL_MARKET" else "ind_nifty500list.csv")
+                histories, sessions, coverage = load_data(
+                    self.database, universe_csv, end_date=end.isoformat(),
+                    include_be=bool(payload.get("include_be", False)),
+                )
+            instrument_ids = tuple(histories)
+            if not instrument_ids:
+                raise DomainValidationError("Strategy 4 universe has no matched market history")
+            with sqlite_connection(self.database, read_only=True) as connection:
+                source_rows = connection.execute(
+                    "SELECT instrument_id, as_of_date, snapshot_id FROM market_bars "
+                    f"WHERE instrument_id IN ({','.join('?' for _ in instrument_ids)}) "
+                    "AND as_of_date BETWEEN '2021-01-01' AND ? ORDER BY instrument_id, as_of_date",
+                    (*instrument_ids, end.isoformat()),
+                ).fetchall()
+            market_snapshot_hash = hashlib.sha256(
+                json.dumps([tuple(row) for row in source_rows], separators=(",", ":")).encode()
+            ).hexdigest()
+            signal_rules = self.research.runtime.signal_rules("strategy4")
+            result = simulate(histories, sessions, policy=policy,
+                              start_date=start.isoformat(), end_date=end.isoformat(),
+                              rules=signal_rules)
+        except (ValueError, OSError) as exc:
+            raise DomainValidationError(f"Strategy 4 backtest could not load or simulate: {exc}") from exc
+        revision = self.research.runtime.revision("strategy4")
+        first, last = result["period"]["first_session"], result["period"]["last_session"]
+        result.update({"strategy_id": "strategy4", "strategy_revision_id": revision["revision_id"],
+                       "strategy_definition_hash": revision["definition_hash"], "data": coverage,
+                       "benchmark": benchmark_price_return(self.database, first, last),
+                       "limitations": ["current constituent membership applied retrospectively",
+                                       "stored OHLCV without corporate-action adjustment",
+                                       "daily OHLCV cannot verify opening fill availability or upper circuits",
+                                       "exploratory replay; Phase 1 advancement gate is not enforced",
+                                       "open holdings marked to latest stored close; not forcibly sold",
+                                       "pyramiding disabled"]})
+        performance = result["performance"]
+        result["metrics"] = {
+            "total_return": performance["total_return"], "cagr": performance["cagr"],
+            "max_drawdown": performance["max_drawdown"],
+            "sharpe": performance["sharpe_zero_risk_free"],
+            "win_rate": performance["win_rate"], "profit_factor": performance["profit_factor"],
+        }
+        result["annual_returns"] = performance["annual_returns"]
+        result["final_cash"] = result["equity_curve"][-1]["cash"]
+        result["ending_equity"] = performance["final_equity"]
+        result["open_position_value"] = performance["final_equity"] - result["final_cash"]
+        result["open_positions"] = [
+            {"symbol": symbol, "shares": holding["shares"]}
+            for symbol, holding in result["open_holdings"].items()
+        ]
+        result["fills"] = [
+            {**fill, "as_of_date": fill["date"], "decision_type": fill["side"],
+             "instrument_id": fill["symbol"], "units": fill["shares"],
+             "side": "BUY" if fill["side"] == "BUY" else "SELL"}
+            for fill in result["fills"]
+        ]
+        result["trade_counts"] = {
+            "buy": sum(fill["side"] == "BUY" for fill in result["fills"]),
+            "sell": sum(fill["side"] == "SELL" for fill in result["fills"]), "pyramid": 0,
+        }
+        fingerprint = hashlib.sha256(json.dumps({"payload": payload, "revision": revision["definition_hash"],
+                                                 "universe_sha256": coverage.get("universe_csv_sha256", coverage.get("membership_sha256")),
+                                                 "market_snapshot_hash": market_snapshot_hash,
+                                                 "code_hash": hashlib.sha256(
+                                                     (Path(__file__).resolve().parents[2] / "src/application/positional_trend.py").read_bytes()
+                                                     + Path(__file__).with_name("positional_trend_backtest.py").read_bytes()
+                                                 ).hexdigest()},
+                                                sort_keys=True).encode()).hexdigest()
+        run_id = str(uuid5(NAMESPACE_URL, f"strategy4-backtest:{fingerprint}"))
+        if self.publisher.catalog.has(run_id):
+            manifest, _ = self.publisher.store.read_json("runs/backtests", run_id)
+            artifact_id = manifest.artifact_id
+            reused = True
+        else:
+            artifact = self.publisher.publish_json("runs/backtests", run_id, result,
+                                                   upstream_ids=(str(revision["revision_id"]),
+                                                                 coverage.get("universe_csv_sha256", coverage.get("membership_sha256")), market_snapshot_hash),
+                                                   quality=QualityStatus.PARTIAL)
+            artifact_id = artifact.artifact_id
+            reused = False
+        with sqlite_connection(self.database) as connection:
+            connection.execute(
+                """INSERT OR IGNORE INTO backtest_runs
+                   (run_id, artifact_id, strategy_id, start_date, end_date, fingerprint,
+                    total_return, max_drawdown, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (run_id, artifact_id, "strategy4", first, last, fingerprint,
+                 str(result["performance"]["total_return"]), str(result["performance"]["max_drawdown"]),
+                 datetime.now(UTC).isoformat()),
+            )
+        return {"run_id": run_id, "artifact_id": artifact_id,
+                "strategy_id": "strategy4", "period": result["period"],
+                "performance": result["performance"], "data": coverage, "reused": reused}
 
     def stress(self, payload: dict[str, Any]) -> dict[str, object]:
         """Run a bounded immutable scenario matrix for migration validation."""

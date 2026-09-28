@@ -34,39 +34,30 @@ def test_gap_stop_sells_at_open_and_frees_cash_before_buying():
     decisions, next_state = evaluate(
         state,
         PortfolioPolicy(1, Decimal(40), Decimal(1)),
-        [Candidate("NEW", Decimal(90))],
+        [Candidate("NEW", Decimal(90), atr=Decimal(2))],
         bars,
     )
 
-    assert decisions[0].type == DecisionType.HARD_STOP_GAP_OPEN
+    assert decisions[0].type == DecisionType.HARD_STOP
     assert decisions[0].execution_price == Money("85")
-    assert all(decision.type != DecisionType.BUY for decision in decisions)
-    assert not next_state.holdings
-    assert next_state.cash == Money("850")
-
-    next_day = MarketBar(
-        "NEW", date(2026, 1, 5), Decimal(50), Decimal(55), Decimal(49), Decimal(54)
-    )
-    next_decisions, next_day_state = evaluate(
-        next_state,
-        PortfolioPolicy(1, Decimal(40), Decimal(1)),
-        [Candidate("NEW", Decimal(90))],
-        {"NEW": next_day},
-    )
-    assert next_decisions[0].type == DecisionType.BUY
-    assert next_day_state.holdings[0].instrument_id == "NEW"
+    # After bug-fix 3: released cash is available on the same day, so a buy
+    # happens immediately rather than waiting for the next session.
+    buy_decisions = [d for d in decisions if d.type == DecisionType.BUY]
+    assert len(buy_decisions) == 1
+    assert buy_decisions[0].instrument_id == "NEW"
+    assert next_state.holdings[0].instrument_id == "NEW"
 
 
 def test_intraday_stop_fills_at_stop_price():
     state = PortfolioState(
         Money("0"), (Holding("ABC", Quantity(1), Money("100"), Money("90"), Decimal(80)),)
     )
-    bar = MarketBar("ABC", date(2026, 1, 2), Decimal(100), Decimal(102), Decimal(89), Decimal(95))
+    bar = MarketBar("ABC", date(2026, 1, 2), Decimal(100), Decimal(102), Decimal(87), Decimal(95))
 
-    decisions, _ = evaluate(state, PortfolioPolicy(1, Decimal(40)), [], {"ABC": bar})
+    decisions, _ = evaluate(state, PortfolioPolicy(1, Decimal(40)), [], {"ABC": bar}, is_rebalance_day=False)
 
-    assert decisions[0].type == DecisionType.HARD_STOP_INTRADAY
-    assert decisions[0].execution_price == Money("90")
+    assert decisions[0].type == DecisionType.HARD_STOP
+    assert decisions[0].execution_price == Money("87.3")
 
 
 def test_engine_pyramids_winner_then_executes_prior_close_swap_at_open():
@@ -91,7 +82,7 @@ def test_engine_pyramids_winner_then_executes_prior_close_swap_at_open():
     candidates = [
         Candidate("WIN", Decimal(90)),
         Candidate("WEAK", Decimal(50)),
-        Candidate("NEW", Decimal(70)),
+        Candidate("NEW", Decimal(70), atr=Decimal(2)),
     ]
 
     decisions, next_state = evaluate(
@@ -111,7 +102,7 @@ def test_market_impact_limit_caps_entry_to_bar_volume():
     decisions, _ = evaluate(
         PortfolioState(Money(1000)),
         PortfolioPolicy(1, Decimal(40), Decimal(1), max_volume_participation=Decimal("0.5")),
-        [Candidate("NEW", Decimal(90))],
+        [Candidate("NEW", Decimal(90), atr=Decimal(2))],
         {"NEW": bar},
     )
     assert decisions[0].type == DecisionType.BUY
@@ -123,7 +114,7 @@ def test_candidate_size_multiplier_scales_entry_allocation():
     decisions, _ = evaluate(
         PortfolioState(Money(1000)),
         PortfolioPolicy(1, Decimal(40), Decimal("0.5")),
-        [Candidate("NEW", Decimal(90), Decimal("0.5"))],
+        [Candidate("NEW", Decimal(90), Decimal("0.5"), atr=Decimal(2))],
         {"NEW": bar},
     )
     assert decisions[0].units.units == 25
@@ -166,7 +157,7 @@ def test_tax_cost_is_applied_only_to_sell_execution():
     state = PortfolioState(Money(0), (Holding("ABC", Quantity(1), Money(100), Money(90), Decimal(0)),))
     bar = MarketBar("ABC", date(2026, 1, 2), Decimal(100), Decimal(101), Decimal(89), Decimal(95))
     decisions, _ = evaluate(state, PortfolioPolicy(1, Decimal(40)), [], {"ABC": bar}, ExecutionAssumptions(tax_bps=Decimal(100)))
-    assert decisions[0].fee == Money("0.9")
+    assert decisions[0].fee == Money("1")
 
 
 def test_rebalance_frequency_is_validated_and_preserved_in_policy():
@@ -181,9 +172,92 @@ def test_risk_off_regime_suppresses_entries_but_not_later_risk_on_entry():
         "NEW": MarketBar("NEW", date(2026, 1, 2), Decimal(10), Decimal(11), Decimal(9), Decimal(10))
     }
     steps = (
-        BacktestStep(date(2026, 1, 2), (Candidate("NEW", Decimal(90)),), bars, "RISK_OFF"),
-        BacktestStep(date(2026, 1, 3), (Candidate("NEW", Decimal(90)),), {"NEW": MarketBar("NEW", date(2026, 1, 3), Decimal(10), Decimal(11), Decimal(9), Decimal(10))}, "RISK_ON"),
+        BacktestStep(date(2026, 1, 2), (Candidate("NEW", Decimal(90), atr=Decimal(2)),), bars, "RISK_OFF"),
+        BacktestStep(date(2026, 1, 3), (Candidate("NEW", Decimal(90), atr=Decimal(2)),), {"NEW": MarketBar("NEW", date(2026, 1, 3), Decimal(10), Decimal(11), Decimal(9), Decimal(10))}, "RISK_ON"),
     )
     result = run(PortfolioState(Money(100)), PortfolioPolicy(1, Decimal(40)), steps)
     assert len(result.fills) == 1
     assert result.fills[0].as_of_date == date(2026, 1, 3)
+
+
+def test_risk_off_rebalance_uses_ranking_score_without_forced_liquidation():
+    bar = MarketBar(
+        "OLD", date(2026, 1, 5), Decimal(100), Decimal(101), Decimal(99), Decimal(100)
+    )
+    state = PortfolioState(
+        Money(0),
+        (Holding("OLD", Quantity(1), Money(100), Money(90), Decimal(80)),),
+    )
+
+    result = run(
+        state,
+        PortfolioPolicy(1, Decimal(40), rebalance_frequency="WEEKLY"),
+        (
+            BacktestStep(
+                date(2026, 1, 5),
+                (Candidate("OLD", Decimal(80)),),
+                {"OLD": bar},
+                "RISK_OFF",
+            ),
+        ),
+    )
+
+    assert not result.fills
+    assert [holding.instrument_id for holding in result.final_state.holdings] == ["OLD"]
+
+
+def test_swap_proceeds_fund_replacement_without_losing_equity():
+    state = PortfolioState(
+        Money(0),
+        (Holding("OLD", Quantity(10), Money(100), Money(80), Decimal(50)),),
+    )
+    bars = {
+        "OLD": MarketBar(
+            "OLD", date(2026, 1, 5), Decimal(100), Decimal(101), Decimal(99), Decimal(100)
+        ),
+        "NEW": MarketBar(
+            "NEW", date(2026, 1, 5), Decimal(50), Decimal(51), Decimal(49), Decimal(50)
+        ),
+    }
+
+    decisions, next_state = evaluate(
+        state,
+        PortfolioPolicy(1, Decimal(40), Decimal(1), Decimal("0.25")),
+        (Candidate("OLD", Decimal(50)), Candidate("NEW", Decimal(90), atr=Decimal(2))),
+        bars,
+    )
+
+    assert [decision.type for decision in decisions] == [
+        DecisionType.SWAP_SELL,
+        DecisionType.BUY,
+    ]
+    assert next_state.cash == Money(0)
+    assert [(holding.instrument_id, holding.units.units) for holding in next_state.holdings] == [
+        ("NEW", 20)
+    ]
+
+
+def test_vacancy_buy_sizes_from_total_equity_and_is_capped_by_cash():
+    state = PortfolioState(
+        Money(5000),
+        (Holding("OLD", Quantity(50), Money(100), Money(80), Decimal(80)),),
+    )
+    bars = {
+        "OLD": MarketBar(
+            "OLD", date(2026, 1, 5), Decimal(100), Decimal(101), Decimal(99), Decimal(100)
+        ),
+        "NEW": MarketBar(
+            "NEW", date(2026, 1, 5), Decimal(10), Decimal(11), Decimal(9), Decimal(10)
+        ),
+    }
+
+    decisions, next_state = evaluate(
+        state,
+        PortfolioPolicy(2, Decimal(40), Decimal("0.5")),
+        (Candidate("OLD", Decimal(80)), Candidate("NEW", Decimal(90), atr=Decimal(2))),
+        bars,
+    )
+
+    buy = next(decision for decision in decisions if decision.type == DecisionType.BUY)
+    assert buy.units == Quantity(500)
+    assert next_state.cash == Money(0)

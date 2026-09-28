@@ -37,6 +37,10 @@ def _services(tmp_path):
     ranking = services.publisher.publish_json(
         "rankings/strategy1", str(uuid4()), {"week_end": "2026-09-04"}
     )
+    services.market.upsert_indicators(
+        services.research._indicator_set("strategy1", None), date(2026, 9, 4),
+        {instrument_id: {"atrr_14": 5, "close": 100}}, "bar-abc-20260904",
+    )
     with sqlite_connection(services.database) as connection:
         connection.execute(
             """INSERT INTO research_weekly_rankings

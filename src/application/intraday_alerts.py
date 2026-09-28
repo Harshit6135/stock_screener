@@ -33,7 +33,14 @@ class IntradayStopAlerts:
             raise DomainValidationError("intraday observations require account_id and a non-empty list")
         account_id = str(payload["account_id"])
         projection = self.ledger.projection(account_id)
-        stops = {lot.instrument_id: lot.unit_cost.amount * Decimal("0.9") for lot in projection.open_lots}
+        held = {lot.instrument_id for lot in projection.open_lots}
+        with sqlite_connection(self.database, read_only=True) as connection:
+            ids = connection.execute("SELECT artifact_id FROM catalog_artifacts WHERE category='actions/risk-projections' AND status='VALID'").fetchall()
+        risk = []
+        for (artifact_id,) in ids:
+            _, item = self.publisher.store.read_json("actions/risk-projections", artifact_id)
+            if item.get("account_id") == account_id and item.get("stop_model") == "ATR":
+                risk.append(item)
         alerts: list[dict[str, object]] = []
         for observation in payload["observations"]:
             if not isinstance(observation, dict) or set(observation) not in ({"instrument_id", "price", "observed_at"}, {"instrument_id", "price", "observed_at", "source"}):
@@ -46,7 +53,13 @@ class IntradayStopAlerts:
                 raise DomainValidationError("intraday observation values are invalid") from exc
             if not isinstance(instrument_id, str) or not instrument_id.strip() or not price.is_finite() or price <= 0 or observed_at.tzinfo is None or observed_at.utcoffset() is None:
                 raise DomainValidationError("intraday observation values are invalid")
-            stop = stops.get(instrument_id)
+            applicable = [item for item in risk if str(item["action_date"]) <= observed_at.date().isoformat()]
+            latest = max(applicable, key=lambda item: str(item["action_date"]), default=None)
+            stops = {str(item["instrument_id"]): Decimal(str(item["current_trailing_stop"])) * Decimal("0.97")
+                     for item in latest["positions"]} if latest else {}
+            if instrument_id in held and instrument_id not in stops:
+                raise DomainValidationError("held stock is missing an ATR risk projection")
+            stop = stops.get(instrument_id) if instrument_id in held else None
             if stop is None or price > stop:
                 continue
             source = str(observation.get("source", "provider-tick"))

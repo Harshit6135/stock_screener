@@ -115,6 +115,24 @@ class MarketRepository:
                     )""",
                     "CREATE INDEX IF NOT EXISTS market_fetch_coverage_range ON market_fetch_coverage(instrument_id, provider, start_date, end_date)",
                 ),
+                8: (
+                    "ALTER TABLE market_indicators RENAME TO market_indicators_legacy",
+                    "DROP INDEX IF EXISTS market_indicators_date",
+                    """CREATE TABLE market_indicators (
+                        indicator_set TEXT NOT NULL, instrument_id TEXT NOT NULL,
+                        as_of_date TEXT NOT NULL, values_json TEXT NOT NULL,
+                        source_snapshot_id TEXT NOT NULL, calculated_at TEXT NOT NULL,
+                        PRIMARY KEY(indicator_set, instrument_id, as_of_date),
+                        FOREIGN KEY(instrument_id) REFERENCES reference_instruments(instrument_id))""",
+                    """INSERT INTO market_indicators
+                       (indicator_set, instrument_id, as_of_date, values_json,
+                        source_snapshot_id, calculated_at)
+                       SELECT 'legacy', instrument_id, as_of_date, values_json,
+                              source_snapshot_id, calculated_at
+                       FROM market_indicators_legacy""",
+                    "DROP TABLE market_indicators_legacy",
+                    "CREATE INDEX market_indicators_date ON market_indicators(indicator_set, as_of_date)",
+                ),
             },
         )
 
@@ -345,6 +363,20 @@ class MarketRepository:
             return date.fromisoformat(row["max_date"])
         return None
 
+    def session_dates(self, start_date: date, end_date: date, *, exchange: str = "NSE") -> list[str]:
+        """Return the stored exchange sessions in a date range."""
+        if start_date > end_date or exchange not in {"NSE", "BSE"}:
+            raise DomainValidationError("market session range is invalid")
+        with sqlite_connection(self.path, read_only=True) as connection:
+            rows = connection.execute(
+                """SELECT DISTINCT b.as_of_date FROM market_bars b
+                   JOIN reference_instruments i ON i.instrument_id=b.instrument_id
+                   WHERE i.exchange=? AND b.as_of_date BETWEEN ? AND ?
+                   ORDER BY b.as_of_date""",
+                (exchange, start_date.isoformat(), end_date.isoformat()),
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
 
     def token_assignments(
         self, provider_token: str, *, exchange: str | None = None, as_of: date | None = None
@@ -454,16 +486,38 @@ class MarketRepository:
             )
         return len(values)
 
-    def indicators_for_date(self, as_of_date: date) -> dict[str, dict[str, object]]:
+    def indicators_for_date(
+        self, indicator_set: str, as_of_date: date
+    ) -> dict[str, dict[str, object]]:
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
-                "SELECT instrument_id, values_json FROM market_indicators WHERE as_of_date=?",
-                (as_of_date.isoformat(),),
+                """SELECT instrument_id, values_json FROM market_indicators
+                   WHERE indicator_set=? AND as_of_date=?""",
+                (indicator_set, as_of_date.isoformat()),
             ).fetchall()
         return {str(row["instrument_id"]): json.loads(row["values_json"]) for row in rows}
 
+    def indicator_series(
+        self, indicator_set: str, start_date: date, end_date: date
+    ) -> dict[str, dict[str, dict[str, object]]]:
+        """Return cached raw indicators grouped by instrument and date."""
+        with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
+            rows = connection.execute(
+                """SELECT instrument_id, as_of_date, values_json FROM market_indicators
+                   WHERE indicator_set=? AND as_of_date BETWEEN ? AND ?
+                   ORDER BY instrument_id, as_of_date""",
+                (indicator_set, start_date.isoformat(), end_date.isoformat()),
+            ).fetchall()
+        grouped: dict[str, dict[str, dict[str, object]]] = {}
+        for row in rows:
+            grouped.setdefault(str(row["instrument_id"]), {})[str(row["as_of_date"])] = (
+                json.loads(row["values_json"])
+            )
+        return grouped
+
     def upsert_indicators(
-        self, as_of_date: date, values: dict[str, dict[str, object]], source_snapshot_id: str
+        self, indicator_set: str, as_of_date: date,
+        values: dict[str, dict[str, object]], source_snapshot_id: str
     ) -> int:
         if not values:
             return 0
@@ -472,13 +526,15 @@ class MarketRepository:
             connection.execute("BEGIN IMMEDIATE")
             connection.executemany(
                 """INSERT INTO market_indicators
-                   (instrument_id, as_of_date, values_json, source_snapshot_id, calculated_at)
-                   VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(instrument_id, as_of_date) DO UPDATE SET
+                   (indicator_set, instrument_id, as_of_date, values_json,
+                    source_snapshot_id, calculated_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(indicator_set, instrument_id, as_of_date) DO UPDATE SET
                    values_json=excluded.values_json, source_snapshot_id=excluded.source_snapshot_id,
                    calculated_at=excluded.calculated_at""",
                 [
-                    (instrument_id, as_of_date.isoformat(), json.dumps(item, sort_keys=True), source_snapshot_id, now)
+                    (indicator_set, instrument_id, as_of_date.isoformat(),
+                     json.dumps(item, sort_keys=True), source_snapshot_id, now)
                     for instrument_id, item in values.items()
                 ],
             )
@@ -599,11 +655,26 @@ class MarketRepository:
         return [dict(row) for row in rows]
 
     def histories(
-        self, start_date: date, end_date: date
+        self, start_date: date, end_date: date, *, isins: set[str] | None = None,
+        instrument_ids: set[str] | None = None,
     ) -> dict[str, tuple[list[dict[str, object]], dict[str, object]]]:
         """Read complete per-instrument warm-up series without future bars."""
         if start_date > end_date:
             raise DomainValidationError("market history range is invalid")
+        selected_isins = sorted(isins) if isins is not None else None
+        selected_ids = sorted(instrument_ids) if instrument_ids is not None else None
+        if selected_isins is not None and not selected_isins:
+            return {}
+        if selected_ids is not None and not selected_ids:
+            return {}
+        membership_clause = (
+            f" AND i.isin IN ({','.join('?' for _ in selected_isins)})"
+            if selected_isins is not None else ""
+        )
+        identity_clause = (
+            f" AND i.instrument_id IN ({','.join('?' for _ in selected_ids)})"
+            if selected_ids is not None else " AND i.preferred_row = 1"
+        )
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
                 """WITH preferred_instruments AS (
@@ -617,10 +688,10 @@ class MarketRepository:
                    )
                    SELECT b.*, i.symbol, i.exchange, i.isin
                    FROM market_bars b JOIN preferred_instruments i
-                   ON i.instrument_id = b.instrument_id AND i.preferred_row = 1
-                   WHERE b.as_of_date BETWEEN ? AND ?
-                   ORDER BY b.instrument_id, b.as_of_date""",
-                (start_date.isoformat(), end_date.isoformat()),
+                   ON i.instrument_id = b.instrument_id
+                   WHERE b.as_of_date BETWEEN ? AND ?""" + membership_clause + identity_clause +
+                " ORDER BY b.instrument_id, b.as_of_date",
+                (start_date.isoformat(), end_date.isoformat(), *(selected_isins or []), *(selected_ids or [])),
             ).fetchall()
         grouped: dict[str, tuple[list[dict[str, object]], dict[str, object]]] = {}
         for row in rows:

@@ -13,6 +13,8 @@ from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from kiteconnect import KiteConnect  # type: ignore[import-untyped]
+from kiteconnect.exceptions import KiteException
+from requests.exceptions import RequestException
 
 from src.application.ingestion import ingest_market_bars
 from src.application.intraday_alerts import IntradayStopAlerts
@@ -506,6 +508,126 @@ class KiteMarketJobs:
             "first_date": bars[0].as_of_date.isoformat(),
             "last_date": bars[-1].as_of_date.isoformat(),
         }
+
+    def fetch_bulk_bars(self, payload: dict[str, Any], context: Any) -> dict[str, object]:
+        """Fetch multiple instruments concurrently from Kite but write them sequentially to SQLite."""
+        import concurrent.futures
+
+        items = payload.get("items")
+        if not isinstance(items, list):
+            raise DomainValidationError("bulk fetch requires an 'items' list")
+            
+        try:
+            start_date = date.fromisoformat(payload["start_date"])
+            end_date = date.fromisoformat(payload["end_date"])
+        except (TypeError, ValueError, KeyError) as exc:
+            raise DomainValidationError("bar fetch dates must be ISO dates") from exc
+            
+        if start_date > end_date or end_date - start_date > timedelta(days=365):
+            raise DomainValidationError("bar fetch range must be at most 365 days")
+            
+        client = self._client()
+        provider = KiteHistoricalBarsProvider(client)
+        
+        def _fetch(item: dict[str, str]) -> tuple[dict[str, str], dict[str, Any]]:
+            symbol = item.get("symbol", "")
+            exchange = item.get("exchange", "NSE")
+            try:
+                instrument = self.repository.instrument(symbol, exchange)
+                instrument_id = str(instrument["instrument_id"])
+                token = str(instrument["provider_token"])
+                if self.repository.has_coverage(instrument_id, start_date, end_date, "kite"):
+                    return item, {"skipped": True, "instrument_id": instrument_id}
+                
+                fetched = provider.get_bars(token, start_date, end_date)
+                return item, {"skipped": False, "fetched": fetched, "instrument_id": instrument_id, "token": token}
+            except (DomainValidationError, KiteException, RequestException, OSError,
+                    ValueError, TypeError, KeyError) as e:
+                return item, {"error": str(e)}
+
+        results: list[dict[str, Any]] = []
+        total = len(items)
+        processed = 0
+        written_count = 0
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_item = {executor.submit(_fetch, item): item for item in items}
+            for future in concurrent.futures.as_completed(future_to_item):
+                item = future_to_item[future]
+                processed += 1
+                _, data = future.result()
+                
+                if "error" in data:
+                    results.append({"symbol": item.get("symbol"), "status": "error", "reason": data["error"]})
+                    continue
+                    
+                if data["skipped"]:
+                    results.append({"symbol": item.get("symbol"), "status": "skipped"})
+                    continue
+                    
+                instrument_id = data["instrument_id"]
+                fetched = data["fetched"]
+                symbol = item.get("symbol", "")
+                exchange = item.get("exchange", "NSE")
+                
+                if not fetched:
+                    self.repository.record_fetch_coverage(instrument_id, start_date, end_date, provider="kite", bar_count=0)
+                    results.append({"symbol": symbol, "status": "empty"})
+                    continue
+                    
+                bars = tuple(
+                    NormalizedBar(
+                        instrument_id,
+                        bar.as_of_date,
+                        bar.open,
+                        bar.high,
+                        bar.low,
+                        bar.close,
+                        bar.volume,
+                        bar.traded_value,
+                    )
+                    for bar in fetched
+                )
+                
+                _raw, normalized = ingest_market_bars(
+                    self.publisher,
+                    "kite",
+                    bars,
+                    source_request={
+                        "symbol": symbol,
+                        "exchange": exchange,
+                        "provider_token": data["token"],
+                        "start_date": start_date.isoformat(),
+                        "end_date": end_date.isoformat(),
+                    },
+                    provider_version="kiteconnect-v5",
+                )
+                
+                self.repository.upsert_bars(instrument_id, bars, normalized.artifact_id)
+                self.repository.record_fetch_coverage(
+                    instrument_id, start_date, end_date, provider="kite", bar_count=len(bars)
+                )
+                
+                written_count += len(bars)
+                results.append({"symbol": symbol, "status": "fetched", "bar_count": len(bars)})
+                
+                if hasattr(context, "checkpoint") and (processed % 50 == 0 or processed == total):
+                    context.checkpoint(progress={"stage": "bulk_fetch", "processed": processed, "total": total, "written_bars": written_count})
+
+        if hasattr(context, "checkpoint"):
+            context.checkpoint(progress={"stage": "bulk_fetch", "processed": processed,
+                                         "total": total, "written_bars": written_count})
+
+        return {
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
+            "requested": total,
+            "processed": processed,
+            "written_bars": written_count,
+            "failed": sum(item["status"] == "error" for item in results),
+            "results": sorted(results, key=lambda item: str(item["symbol"])),
+        }
+
 
     def enrich_and_sync_universe(
         self, payload: dict[str, Any] | None = None, context: Any | None = None

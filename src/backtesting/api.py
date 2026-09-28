@@ -10,7 +10,12 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from src.platform_kernel import ArtifactManifest, ArtifactStore, DomainValidationError, freeze_value
+from src.platform_kernel import (
+    ArtifactManifest,
+    ArtifactStore,
+    DomainValidationError,
+    freeze_value,
+)
 from src.portfolio_engine import (
     Candidate,
     Decision,
@@ -400,8 +405,8 @@ class BacktestResult:
 _SELLS = {
     DecisionType.SELL,
     DecisionType.SWAP_SELL,
-    DecisionType.HARD_STOP_GAP_OPEN,
-    DecisionType.HARD_STOP_INTRADAY,
+    DecisionType.STOP_LOSS,
+    DecisionType.HARD_STOP,
     DecisionType.SCORE_EXIT,
 }
 
@@ -435,6 +440,8 @@ def run(
     last_close: dict[str, Decimal] = {}
     first_rebalance_day = dates[0] if dates else None
     rebalance_months: set[tuple[int, int]] = set()
+    last_rebalance_week: tuple[int, int] | None = None
+    last_rebalance_biweek_ref = first_rebalance_day
     starting_equity = initial_state.cash.amount
     if steps:
         for holding in initial_state.holdings:
@@ -446,20 +453,26 @@ def run(
             starting_equity += bar.open * holding.units.units
     for step in steps:
         last_close.update({instrument_id: bar.close for instrument_id, bar in step.bars.items()})
+        # ── Bug-fix 4: use ISO week numbers so holiday-shifted weeks still rebalance ──
+        iso_year, iso_week, _ = step.as_of_date.isocalendar()
         rebalance = (
             policy.rebalance_frequency == "DAILY"
             or first_rebalance_day is not None
             and (
                 policy.rebalance_frequency == "BIWEEKLY"
-                and (step.as_of_date - first_rebalance_day).days % 14 == 0
+                and last_rebalance_biweek_ref is not None
+                and (step.as_of_date - last_rebalance_biweek_ref).days >= 14
                 or policy.rebalance_frequency == "WEEKLY"
-                and (step.as_of_date - first_rebalance_day).days % 7 == 0
+                and (iso_year, iso_week) != last_rebalance_week
                 or policy.rebalance_frequency == "MONTHLY"
                 and (step.as_of_date.year, step.as_of_date.month) not in rebalance_months
             )
         )
         if rebalance:
             rebalance_months.add((step.as_of_date.year, step.as_of_date.month))
+            last_rebalance_week = (iso_year, iso_week)
+            if policy.rebalance_frequency == "BIWEEKLY":
+                last_rebalance_biweek_ref = step.as_of_date
         candidates = (
             step.candidates
             if (rebalance or policy.mid_week_buy) and step.regime == "RISK_ON"
@@ -472,6 +485,7 @@ def run(
             step.bars,
             fill_model.execution_assumptions(),
             is_rebalance_day=rebalance,
+            score_candidates=step.candidates,
         )
         all_decisions.extend(decisions)
         for decision in decisions:
@@ -496,6 +510,7 @@ def run(
                 raise DomainValidationError(f"missing valuation bar for {holding.instrument_id}")
             value += close * holding.units.units
         equity_curve.append((step.as_of_date, value))
+
     return BacktestResult(
         manifest.run_id if manifest else uuid4(),
         tuple(all_decisions),

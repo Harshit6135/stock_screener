@@ -1,0 +1,34 @@
+schema_version: 1
+strategy:
+  id: strategy4
+  name: Positional Trend Following
+  version: 1.0.0
+  description: Daily event strategy using Donchian breakouts, ADX and Supertrend.
+  kind: event_signal
+
+calculation:
+  instrument_implementation: custom.positional_trend_features
+  required_sessions: 100
+
+signal_rules:
+  donchian_entry_period: 50
+  donchian_exit_period: 20
+  adx_period: 14
+  adx_minimum: 25
+  atr_period: 10
+  supertrend_multiplier: 3
+  adtv_period: 30
+  minimum_adtv: 100000000
+
+ranking:
+  frequency: daily
+  session: each_trading_session
+  tie_policy: adx_desc_adtv_desc_symbol_asc
+
+portfolio_policy:
+  initial_capital: 500000
+  max_positions: 15
+  risk_fraction: 0.01
+  max_order_fraction: 0.10
+  adv_participation_fraction: 0.01
+  round_trip_cost_bps: 50

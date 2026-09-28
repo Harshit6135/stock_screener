@@ -1,0 +1,62 @@
+{
+  "study_id": "strategy3-individual-hypotheses-20260926",
+  "original": {
+    "candidate_id": "legacy",
+    "rules": {}
+  },
+  "candidates": [
+    {
+      "candidate_id": "C1_prior10_squeeze",
+      "rules": {
+        "squeeze_mode": "prior10_minimum"
+      }
+    },
+    {
+      "candidate_id": "C2_prior20_high_cross",
+      "rules": {
+        "trigger": "prior20_high_cross"
+      }
+    },
+    {
+      "candidate_id": "C3_strong_close",
+      "rules": {
+        "close_location_minimum": 0.75
+      }
+    },
+    {
+      "candidate_id": "C4_bounded_daily_move",
+      "rules": {
+        "max_daily_move_atr": 2.0
+      }
+    },
+    {
+      "candidate_id": "C5_raw63_skip5",
+      "rules": {
+        "ranking_factor": "momentum_63_skip5"
+      }
+    },
+    {
+      "candidate_id": "C6_benchmark_uptrend",
+      "rules": {
+        "benchmark_regime_required": true
+      }
+    }
+  ],
+  "method": {
+    "changes": "Each challenger changes exactly one legacy rule; there are no combinations or parameter sweeps.",
+    "development_signal_start": "2022-01-03",
+    "development_outcome_cutoff": "2024-12-31",
+    "minimum_complete20_overall": 150,
+    "minimum_complete20_per_year": 30,
+    "primary_objective": "equal-weight mean of the 2022, 2023, and 2024 yearly 20-session returns"
+  },
+  "sources": [
+    "https://www.bollingerbands.com/bollinger-band-rules",
+    "https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.1992.tb04681.x",
+    "https://bollingerbands.us/help-screening.php",
+    "https://www.kentdaniel.net/papers/published/mom12.pdf",
+    "https://repub.eur.nl/pub/22252",
+    "https://mebfaber.com/timing-model/"
+  ],
+  "source_scope": "Sources motivate hypotheses only; they do not establish the exact thresholds as optimal."
+}

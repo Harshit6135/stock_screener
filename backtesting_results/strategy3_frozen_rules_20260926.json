@@ -1,0 +1,34 @@
+{
+  "artifact_id": "0998ac19-d860-5392-9295-23a18c1e252f",
+  "beats_original": true,
+  "candidate_id": "C5_raw63_skip5",
+  "category": "research/strategy3-frozen-rules",
+  "claim": "Selected revised rules beat the legacy reference on the prespecified development objective.",
+  "development_artifact_id": "9c570cac-7c40-5ccd-9d9a-e6a272410d3f",
+  "development_outcome_cutoff": "2024-12-31",
+  "limitations": [
+    "0 corporate-action facts existed at experiment time; nominal bars are therefore unadjusted by recorded facts",
+    "The instrument set is the current survivor universe; results are subject to survivorship bias",
+    "The validation period had previously been viewed, so this was not a blind validation",
+    "Returns exclude transaction costs and slippage, per user instruction"
+  ],
+  "raw_artifact_id": "e6642627-8a2e-5496-93da-5211a0abfbaa",
+  "raw_source_hash": "48c69e8dec4db96f5266e2f798936a080cdfda375a599cadc37161cb01f4843d",
+  "rules": {
+    "benchmark_regime_required": false,
+    "close_location_minimum": null,
+    "extension_maximum": 2.5,
+    "max_daily_move_atr": null,
+    "ranking_factor": "momentum_63_skip5",
+    "residual_top_fraction": 0.2,
+    "squeeze_mode": "current",
+    "squeeze_threshold": 0.25,
+    "trigger": "bb_cross",
+    "version": 1,
+    "volume_minimum": 1.5
+  },
+  "rules_hash": "9a47b986b54c4eca4ec8f236a5a7784b1a86f07c79ef40709b4ccc57b24c0864",
+  "schema_version": 1,
+  "status": "frozen",
+  "strategy_id": "strategy3"
+}

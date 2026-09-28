@@ -6,7 +6,7 @@ and the in-memory backtester will share.
 """
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from decimal import ROUND_DOWN, Decimal
 from enum import Enum
@@ -19,8 +19,8 @@ class DecisionType(str, Enum):
     SELL = "SELL"
     PYRAMID_ADD = "PYRAMID_ADD"
     SWAP_SELL = "SWAP_SELL"
-    HARD_STOP_GAP_OPEN = "HARD_STOP_GAP_OPEN"
-    HARD_STOP_INTRADAY = "HARD_STOP_INTRADAY"
+    STOP_LOSS = "STOP_LOSS"
+    HARD_STOP = "HARD_STOP"
     SCORE_EXIT = "SCORE_EXIT"
     NO_ACTION = "NO_ACTION"
 
@@ -71,6 +71,8 @@ class Candidate:
     instrument_id: str
     score: Decimal
     size_multiplier: Decimal = Decimal(1)
+    atr: Decimal | None = None
+    signal_close: Decimal | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "score", _amount(self.score, "score"))
@@ -78,6 +80,13 @@ class Candidate:
         if multiplier <= 0:
             raise DomainValidationError("size_multiplier must be positive")
         object.__setattr__(self, "size_multiplier", multiplier)
+        for name in ("atr", "signal_close"):
+            value = getattr(self, name)
+            if value is not None:
+                value = _amount(value, name)
+                if not value.is_finite() or value <= 0:
+                    raise DomainValidationError(f"{name} must be positive")
+                object.__setattr__(self, name, value)
 
 
 @dataclass(frozen=True)
@@ -87,7 +96,7 @@ class PortfolioPolicy:
     max_position_fraction: Decimal = Decimal("0.25")
     swap_buffer: Decimal = Decimal("0.25")
     pyramid_fraction: Decimal = Decimal(0)
-    initial_stop_fraction: Decimal = Decimal("0.10")
+    atr_multiplier: Decimal = Decimal(2)
     max_volume_participation: Decimal | None = None
     ltcg_hold_days: int | None = None
     rebalance_frequency: str = "DAILY"
@@ -105,12 +114,12 @@ class PortfolioPolicy:
         object.__setattr__(self, "max_position_fraction", fraction)
         swap_buffer = _amount(self.swap_buffer, "swap_buffer")
         pyramid_fraction = _amount(self.pyramid_fraction, "pyramid_fraction")
-        initial_stop_fraction = _amount(self.initial_stop_fraction, "initial_stop_fraction")
+        atr_multiplier = _amount(self.atr_multiplier, "atr_multiplier")
         participation = None if self.max_volume_participation is None else _amount(self.max_volume_participation, "max_volume_participation")
         if (
             swap_buffer < 0
             or not Decimal(0) <= pyramid_fraction <= Decimal(1)
-            or not Decimal(0) < initial_stop_fraction < Decimal(1)
+            or atr_multiplier <= 0
             or participation is not None and not Decimal(0) < participation <= Decimal(1)
             or self.ltcg_hold_days is not None and (isinstance(self.ltcg_hold_days, bool) or not isinstance(self.ltcg_hold_days, int) or self.ltcg_hold_days < 1)
             or self.rebalance_frequency not in {"DAILY", "WEEKLY", "BIWEEKLY", "MONTHLY"}
@@ -120,7 +129,7 @@ class PortfolioPolicy:
             raise DomainValidationError("swap and pyramid policy values are invalid")
         object.__setattr__(self, "swap_buffer", swap_buffer)
         object.__setattr__(self, "pyramid_fraction", pyramid_fraction)
-        object.__setattr__(self, "initial_stop_fraction", initial_stop_fraction)
+        object.__setattr__(self, "atr_multiplier", atr_multiplier)
         object.__setattr__(self, "max_volume_participation", participation)
         object.__setattr__(self, "swap_cost_bps", _amount(self.swap_cost_bps, "swap_cost_bps"))
         object.__setattr__(self, "check_daily_sl", bool(self.check_daily_sl))
@@ -174,24 +183,14 @@ def _sell_decision(
     bar: MarketBar,
     policy: PortfolioPolicy,
     is_rebalance_day: bool = True,
+    signal_close: Decimal | None = None,
 ) -> Decision | None:
-    if policy.check_daily_sl or is_rebalance_day:
-        if bar.open <= holding.current_stop.amount:
-            return Decision(
-                DecisionType.HARD_STOP_GAP_OPEN,
-                holding.instrument_id,
-                holding.units,
-                Money(bar.open),
-                "open breached stop",
-            )
-        if bar.low <= holding.current_stop.amount:
-            return Decision(
-                DecisionType.HARD_STOP_INTRADAY,
-                holding.instrument_id,
-                holding.units,
-                holding.current_stop,
-                "intraday low breached stop",
-            )
+    if is_rebalance_day and signal_close is not None and signal_close < holding.current_stop.amount:
+        return Decision(DecisionType.STOP_LOSS, holding.instrument_id, holding.units,
+                        Money(bar.open), "Friday close below latest ATR stop")
+    if bar.open <= holding.current_stop.amount * Decimal("0.97"):
+        return Decision(DecisionType.HARD_STOP, holding.instrument_id, holding.units,
+                        Money(bar.open), "price breached 3% below ATR stop")
     if is_rebalance_day and holding.score < policy.exit_score:
         return Decision(
             DecisionType.SCORE_EXIT,
@@ -251,6 +250,7 @@ def evaluate(
     bars: Mapping[str, MarketBar],
     execution: ExecutionAssumptions | None = None,
     is_rebalance_day: bool = True,
+    score_candidates: Sequence[Candidate] | None = None,
 ) -> tuple[tuple[Decision, ...], PortfolioState]:
     """Return deterministic sell, pyramid, vacancy-buy, and swap decisions.
 
@@ -264,8 +264,18 @@ def evaluate(
     cash = state.cash.amount
     released_cash = Decimal(0)
     deferred_cash = Decimal(0)
-    intraday_event = False
     assumptions = execution or ExecutionAssumptions()
+    original_scores: dict[str, Decimal] = {}  # track pre-refresh scores for pyramid check
+
+    # Entry candidates may be suppressed by a risk regime while the complete
+    # ranking remains necessary to refresh scores for existing holdings.
+    if not is_rebalance_day and not policy.mid_week_buy:
+        candidates = ()
+    candidate_by_id = {candidate.instrument_id: candidate for candidate in candidates}
+    score_by_id = {
+        candidate.instrument_id: candidate
+        for candidate in (score_candidates if score_candidates is not None else candidates)
+    }
 
     for holding in sorted(state.holdings, key=lambda item: item.instrument_id):
         bar = bars.get(holding.instrument_id)
@@ -275,35 +285,53 @@ def evaluate(
             # bar instead of aborting the entire replay.
             retained.append(holding)
             continue
-        sell = _sell_decision(holding, bar, policy, is_rebalance_day=is_rebalance_day)
+        # ── Bug-fix 1: refresh holding score from the current week's ranking ──
+        # Without this, scores are frozen at entry and SCORE_EXIT never fires.
+        original_scores[holding.instrument_id] = holding.score
+        refreshed = holding
+        if is_rebalance_day:
+            current_candidate = score_by_id.get(holding.instrument_id)
+            if current_candidate is not None and current_candidate.atr is not None and current_candidate.signal_close is not None:
+                refreshed = replace(refreshed, current_stop=Money(max(
+                    holding.current_stop.amount,
+                    current_candidate.signal_close - policy.atr_multiplier * current_candidate.atr,
+                )))
+            updated_score = current_candidate.score if current_candidate is not None else Decimal(0)
+            if updated_score != holding.score:
+                refreshed = Holding(
+                    holding.instrument_id,
+                    holding.units,
+                    holding.average_price,
+                    refreshed.current_stop,
+                    updated_score,
+                    holding.opened_on,
+                )
+        signal = score_by_id.get(holding.instrument_id)
+        sell = _sell_decision(refreshed, bar, policy, is_rebalance_day=is_rebalance_day,
+                              signal_close=signal.signal_close if signal else None)
         if sell is None:
-            retained.append(holding)
+            retained.append(refreshed)
             continue
         sell = _with_costs(sell, assumptions)
         decisions.append(sell)
         proceeds = _execution_price(sell).amount * holding.units.units - sell.fee.amount
-        if sell.type == DecisionType.HARD_STOP_INTRADAY:
-            deferred_cash += proceeds
-            intraday_event = True
-        else:
-            released_cash += proceeds
+        released_cash += proceeds
 
-    if not is_rebalance_day and not policy.mid_week_buy:
-        candidates = ()
-
-    candidate_by_id = {candidate.instrument_id: candidate for candidate in candidates}
     held = {holding.instrument_id for holding in retained}
+    sold_today = {decision.instrument_id for decision in decisions}
 
-    if policy.pyramid_fraction and not intraday_event:
+    if policy.pyramid_fraction and not deferred_cash:
         rewritten: list[Holding] = []
         for holding in retained:
             candidate = candidate_by_id.get(holding.instrument_id)
             bar = bars.get(holding.instrument_id)
+            # Use the pre-refresh score for the pyramid improvement check.
+            prior_score = original_scores.get(holding.instrument_id, holding.score)
             if (
                 candidate is None
                 or bar is None
                 or holding.current_stop.amount < holding.average_price.amount
-                or candidate.score <= holding.score
+                or candidate.score <= prior_score
             ):
                 rewritten.append(holding)
                 continue
@@ -360,18 +388,39 @@ def evaluate(
             )
         retained = rewritten
 
-    if intraday_event:
-        return tuple(decisions), PortfolioState(
-            Money(cash + released_cash + deferred_cash), tuple(retained)
+    # ── Bug-fix 5: don't abort buys/swaps on intraday stop events ──────────
+    # The old code returned early here, preventing any new buys or swaps on
+    # the same day an intraday stop fired.  Deferred cash (from intraday
+    # stop proceeds) is withheld from the buy loop but released cash and
+    # existing idle cash are still available for new positions.
+
+    # ── Bug-fix 3: make released_cash available for candidate buys ────────
+    # Previously released_cash was only added to the PortfolioState at the
+    # very end (line 454), so the buy loop could only use pre-existing idle
+    # cash, starving buys of capital from same-day sells.
+    cash += released_cash
+    released_cash = Decimal(0)
+
+    # Position limits are percentages of total portfolio equity, not a
+    # percentage of the shrinking idle-cash balance. Cash remains the hard
+    # affordability cap for each purchase.
+    portfolio_equity = cash + deferred_cash
+    for holding in retained:
+        holding_bar = bars.get(holding.instrument_id)
+        valuation_price = (
+            holding_bar.open if holding_bar is not None else holding.average_price.amount
         )
+        portfolio_equity += valuation_price * holding.units.units
 
     for candidate in sorted(candidates, key=lambda item: (-item.score, item.instrument_id)):
-        if candidate.instrument_id in held:
+        if candidate.instrument_id in held or candidate.instrument_id in sold_today or candidate.atr is None:
             continue
         bar = bars.get(candidate.instrument_id)
         if bar is None:
             continue
         if len(retained) >= policy.max_positions:
+            if not is_rebalance_day:
+                continue
             weakest = min(retained, key=lambda holding: (holding.score, holding.instrument_id))
             effective_swap_buffer = policy.swap_buffer + policy.swap_cost_bps / Decimal(10_000)
             if candidate.score <= weakest.score * (Decimal(1) + effective_swap_buffer):
@@ -396,12 +445,15 @@ def evaluate(
                 assumptions,
             )
             decisions.append(sell)
-            released_cash += _execution_price(sell).amount * weakest.units.units - sell.fee.amount
+            cash += _execution_price(sell).amount * weakest.units.units - sell.fee.amount
             retained.remove(weakest)
             held.remove(weakest.instrument_id)
             # Candidate and weakest scores are prior-close inputs; both legs
             # execute at this step's open under sell-first sequencing.
-        allocation = min(cash * policy.max_position_fraction * candidate.size_multiplier, cash)
+        allocation = min(
+            portfolio_equity * policy.max_position_fraction * candidate.size_multiplier,
+            cash,  # can only spend non-deferred cash
+        )
         units = int((allocation / bar.open).to_integral_value(rounding=ROUND_DOWN))
         cap = _volume_cap(bar, policy)
         if cap is not None:
@@ -443,12 +495,29 @@ def evaluate(
                 candidate.instrument_id,
                 quantity,
                 price,
-                Money(price.amount * (Decimal(1) - policy.initial_stop_fraction)),
+                Money(max(Decimal(0), price.amount - policy.atr_multiplier * candidate.atr)),
                 candidate.score,
+                bar.as_of_date,
             )
         )
         held.add(candidate.instrument_id)
 
+    # Opening decisions are complete before observing the session's low.
+    # Intraday exits cannot fund or create vacancies for earlier opening buys.
+    survivors = []
+    for holding in retained:
+        bar = bars.get(holding.instrument_id)
+        hard_stop = holding.current_stop.amount * Decimal("0.97")
+        if bar is not None and bar.low <= hard_stop:
+            sell = _with_costs(Decision(
+                DecisionType.HARD_STOP, holding.instrument_id, holding.units,
+                Money(min(bar.open, hard_stop)), "price breached 3% below ATR stop",
+            ), assumptions)
+            decisions.append(sell)
+            cash += _execution_price(sell).amount * holding.units.units - sell.fee.amount
+        else:
+            survivors.append(holding)
+    retained = survivors
     if not decisions:
         decisions.append(Decision(DecisionType.NO_ACTION, None, None, None, "portfolio unchanged"))
-    return tuple(decisions), PortfolioState(Money(cash + released_cash), tuple(retained))
+    return tuple(decisions), PortfolioState(Money(cash + deferred_cash), tuple(retained))
