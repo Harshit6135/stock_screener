@@ -10,7 +10,7 @@ from pathlib import Path
 
 from src.application.sqlite import migrate_sqlite, sqlite_connection
 from src.platform_kernel import DomainValidationError, Money, Quantity
-from src.portfolio_accounting import Fill, FillSide, project
+from src.portfolio_accounting import Fill, FillSide, OpeningPosition, AccountingEvent, project
 
 
 class Ledger:
@@ -116,15 +116,15 @@ class Ledger:
             if current != expected_version:
                 raise DomainValidationError("stale ledger version")
             previous_rows = connection.execute(
-                """SELECT event_json FROM ledger_events WHERE account_id = ?
-                   AND event_type = 'FILL_RECORDED' ORDER BY version""",
+                """SELECT event_json, event_type FROM ledger_events WHERE account_id = ?
+                   AND event_type IN ('FILL_RECORDED', 'OPENING_POSITION_IMPORTED') ORDER BY version""",
                 (account_id,),
             ).fetchall()
             previous_fills = tuple(
-                self._event_fill(json.loads(row["event_json"])) for row in previous_rows
+                self._parse_accounting_event(json.loads(row["event_json"]), row["event_type"]) for row in previous_rows
             )
             
-            existing_trade_ids = {f.broker_trade_id for f in previous_fills if f.broker_trade_id}
+            existing_trade_ids = {f.broker_trade_id for f in previous_fills if getattr(f, "broker_trade_id", None)}
             for f in fills:
                 if f.broker_trade_id and f.broker_trade_id in existing_trade_ids:
                     raise DomainValidationError(f"duplicate broker trade ID {f.broker_trade_id}")
@@ -166,6 +166,74 @@ class Ledger:
                         json.dumps(event, sort_keys=True),
                         self._execution_time(fill).isoformat(),
                     ),
+                )
+            connection.execute(
+                "INSERT INTO ledger_commands(account_id, idempotency_key, resulting_version, payload_checksum, command_json) VALUES (?, ?, ?, ?, ?)",
+                (account_id, idempotency_key, version, checksum, command_json),
+            )
+            return version
+
+
+    def import_opening_positions(
+        self,
+        account_id: str,
+        idempotency_key: str,
+        expected_version: int,
+        positions: Iterable[OpeningPosition],
+    ) -> int:
+        positions = tuple(positions)
+        if not positions or expected_version < 0 or not idempotency_key:
+            raise DomainValidationError("ledger command is incomplete")
+        command = {
+            "type": "IMPORT_OPENING_POSITIONS",
+            "account_id": account_id,
+            "expected_version": expected_version,
+            "positions": [self._opening_position_event(p) for p in positions],
+        }
+        command_json = json.dumps(command, sort_keys=True, separators=(',', ':'))
+        import hashlib
+        checksum = hashlib.sha256(command_json.encode('utf-8')).hexdigest()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT resulting_version, payload_checksum FROM ledger_commands WHERE account_id = ? AND idempotency_key = ?",
+                (account_id, idempotency_key),
+            ).fetchone()
+            if existing:
+                if existing['payload_checksum'] != checksum:
+                    raise DomainValidationError("idempotency key was reused with a different ledger command")
+                return existing['resulting_version']
+            account = connection.execute(
+                "SELECT opening_cash, currency FROM ledger_accounts WHERE account_id = ?",
+                (account_id,),
+            ).fetchone()
+            if account is None:
+                raise DomainValidationError("account does not exist")
+            current = connection.execute(
+                "SELECT COALESCE(MAX(version), 0) AS version FROM ledger_events WHERE account_id = ?",
+                (account_id,),
+            ).fetchone()['version']
+            if current != expected_version:
+                raise DomainValidationError("stale ledger version")
+            previous_rows = connection.execute(
+                "SELECT event_json, event_type FROM ledger_events WHERE account_id = ? AND event_type IN ('FILL_RECORDED', 'OPENING_POSITION_IMPORTED') ORDER BY version",
+                (account_id,),
+            ).fetchall()
+            previous_events = tuple(
+                self._parse_accounting_event(json.loads(row['event_json']), row['event_type']) for row in previous_rows
+            )
+
+            # Validate
+            project(Money(account['opening_cash'], account['currency']), previous_events + positions)
+            version = current
+            for p in positions:
+                if p.unit_cost.currency != account['currency']:
+                    raise DomainValidationError("position currency does not match account currency")
+                version += 1
+                event = self._opening_position_event(p)
+                connection.execute(
+                    "INSERT INTO ledger_events(account_id, version, event_json, event_type, occurred_at) VALUES (?, ?, ?, 'OPENING_POSITION_IMPORTED', ?)",
+                    (account_id, version, json.dumps(event, sort_keys=True), p.imported_at.isoformat()),
                 )
             connection.execute(
                 "INSERT INTO ledger_commands(account_id, idempotency_key, resulting_version, payload_checksum, command_json) VALUES (?, ?, ?, ?, ?)",
@@ -264,21 +332,21 @@ class Ledger:
                 raise DomainValidationError("account does not exist")
             cutoff = f"{as_of.isoformat()}T23:59:59.999999" if as_of else None
             rows = connection.execute(
-                "SELECT event_json FROM ledger_events WHERE account_id = ? AND event_type = 'FILL_RECORDED' AND (? IS NULL OR occurred_at <= ?) ORDER BY version",
+                "SELECT event_json, event_type FROM ledger_events WHERE account_id = ? AND event_type IN ('FILL_RECORDED', 'OPENING_POSITION_IMPORTED') AND (? IS NULL OR occurred_at <= ?) ORDER BY version",
                 (account_id, cutoff, cutoff),
             ).fetchall()
             transfers = connection.execute(
                 "SELECT event_json FROM ledger_events WHERE account_id=? AND event_type='CASH_TRANSFER' AND (? IS NULL OR occurred_at <= ?) ORDER BY version",
                 (account_id, cutoff, cutoff),
             ).fetchall()
-        fills = tuple(self._event_fill(json.loads(row["event_json"])) for row in rows)
+        events_parsed = tuple(self._parse_accounting_event(json.loads(row["event_json"]), row["event_type"]) for row in rows)
         transfer_total = sum(
             (Decimal(str(json.loads(row["event_json"])["amount"]))
              * (1 if json.loads(row["event_json"])["direction"] == "DEPOSIT" else -1)
              for row in transfers),
             Decimal(0),
         )
-        return project(Money(Decimal(account["opening_cash"]) + transfer_total, account["currency"]), fills)
+        return project(Money(Decimal(account["opening_cash"]) + transfer_total, account["currency"]), events_parsed)
 
     def journal(self, account_id: str, *, long_term_days: int = 365) -> list[dict[str, object]]:
         """Return an immutable FIFO trade journal derived from ledger events."""
@@ -288,6 +356,14 @@ class Ledger:
         lots: dict[str, list[dict[str, object]]] = {}
         journal: list[dict[str, object]] = []
         for event in events:
+            if event["event_type"] == "OPENING_POSITION_IMPORTED":
+                pos = event["event"]
+                units = int(str(pos["units"]))
+                price = Decimal(str(pos["unit_cost"]))
+                lots.setdefault(str(pos["instrument_id"]), []).append(
+                    {"units": units, "price": price, "date": date.fromisoformat(str(pos["acquisition_date"]))}
+                )
+                continue
             if event["event_type"] != "FILL_RECORDED":
                 continue
             fill = event["event"]
@@ -410,6 +486,37 @@ class Ledger:
             "broker_trade_id": fill.broker_trade_id,
         }
 
+
+    @staticmethod
+    def _opening_position_event(p: OpeningPosition) -> dict[str, object]:
+        return {
+            "instrument_id": p.instrument_id,
+            "acquisition_date": p.acquisition_date.isoformat(),
+            "units": p.units.units,
+            "unit_cost": str(p.unit_cost.amount),
+            "currency": p.unit_cost.currency,
+            "imported_at": p.imported_at.isoformat(),
+            "broker_provenance": p.broker_provenance,
+        }
+
+    @staticmethod
+    def _parse_accounting_event(event: dict[str, object], event_type: str) -> AccountingEvent:
+        if event_type == 'FILL_RECORDED':
+            return Ledger._event_fill(event)
+        elif event_type == 'OPENING_POSITION_IMPORTED':
+            currency = str(event.get("currency", "INR"))
+            from src.portfolio_accounting.api import Quantity
+            from decimal import Decimal
+            return OpeningPosition(
+                str(event["instrument_id"]),
+                date.fromisoformat(str(event["acquisition_date"])),
+                Quantity(int(str(event["units"]))),
+                Money(Decimal(str(event["unit_cost"])), currency),
+                datetime.fromisoformat(str(event["imported_at"])),
+                str(event["broker_provenance"]),
+            )
+        raise ValueError(f"Unknown event type {event_type}")
+
     @staticmethod
     def _event_fill(event: dict[str, object]) -> Fill:
         currency = str(event.get("currency", "INR"))
@@ -447,3 +554,4 @@ class Ledger:
                 fee = Decimal(str(event.get("fee", "0")))
                 balance += value - fee if event["side"] == "SELL" else -(value + fee)
         return balance
+

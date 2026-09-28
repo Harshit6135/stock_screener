@@ -81,8 +81,7 @@ class ResearchPipelineJobs:
             raise DomainValidationError("pipeline date range must be at most 365 days")
         if end_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
             raise DomainValidationError("research pipeline requires completed dates")
-        # Event strategies must never enter the weekly score/ranking pipeline.
-        strategies_value = payload.get("strategies", ["strategy1", "strategy2"])
+        strategies_value = payload.get("strategies", ["momentum", "positional_trend_following"])
         if not isinstance(payload.get("orchestrate_data", False), bool):
             raise DomainValidationError("orchestrate_data must be boolean")
         if (
@@ -90,11 +89,8 @@ class ResearchPipelineJobs:
             or not strategies_value
             or len(strategies_value) != len(set(strategies_value))
             or any(strategy not in self.runtime.strategy_ids() for strategy in strategies_value)
-            or any(self.runtime.strategy_kind(strategy) == "event_signal" for strategy in strategies_value)
         ):
-            raise DomainValidationError(
-                "factor strategies only; event strategies use their dedicated signal jobs"
-            )
+            raise DomainValidationError("pipeline strategies must be known, unique strategy IDs")
         trading_dates = payload.get("trading_dates")
         if trading_dates is not None:
             if not isinstance(trading_dates, list):
@@ -179,22 +175,34 @@ class ResearchPipelineJobs:
         else:
             if not trading_dates:
                 raise DomainValidationError("bulk research requires explicit trading_dates")
-            child_jobs.append(
-                (
-                    "research:bulk",
+            factor_strategies = [strategy for strategy in strategies
+                                 if self.runtime.strategy_kind(strategy) == "factor_score"]
+            event_strategies = [strategy for strategy in strategies
+                                if self.runtime.strategy_kind(strategy) == "event_signal"]
+            if factor_strategies:
+                child_jobs.append((
+                    "research:factor-bulk",
                     self.jobs.submit(
-                        f"research-pipeline:{fingerprint}:bulk",
+                        f"research-pipeline:{fingerprint}:factor-bulk",
                         "research.rebuild-range",
                         {
                             "start_date": start_date.isoformat(),
                             "end_date": end_date.isoformat(),
-                            "strategies": list(strategies),
+                            "strategies": factor_strategies,
                             "trading_dates": [item.isoformat() for item in trading_dates],
                         },
                         max_attempts=2,
-                    ),
-                )
-            )
+                    )))
+            if event_strategies:
+                child_jobs.append((
+                    "research:event-signals",
+                    self.jobs.submit(
+                        f"research-pipeline:{fingerprint}:event-signals",
+                        "research.positional-trend-build-range",
+                        {"trading_dates": [item.isoformat() for item in trading_dates],
+                         "universe": "SNAPSHOT_NIFTY500"},
+                        max_attempts=2,
+                    )))
         coordinator = (
             self.jobs.submit(
                 f"research-pipeline:{fingerprint}:advance",
@@ -286,7 +294,7 @@ class ResearchPipelineJobs:
         start_date = date.fromisoformat(str(pipeline["start_date"] or pipeline["as_of_date"]))
         end_date = date.fromisoformat(str(pipeline["end_date"] or pipeline["as_of_date"]))
         strategies = tuple(json.loads(str(pipeline["strategies_json"])))
-        if any(stage["stage_name"] == "research:bulk" for stage in stages):
+        if any(str(stage["stage_name"]).startswith("research:") for stage in stages):
             return self.status(pipeline_id)
         sessions = [item.isoformat() for item in self._market_sessions(start_date, end_date)]
         if sessions:
@@ -299,23 +307,25 @@ class ResearchPipelineJobs:
             sessions = json.loads(str(pipeline["trading_dates_json"]))
         if not sessions:
             raise DomainValidationError("research pipeline has no explicit trading sessions")
-        job = self.jobs.submit(
-            f"research-pipeline:{pipeline['fingerprint']}:bulk",
-            "research.rebuild-range",
-            {
-                "start_date": start_date.isoformat(),
-                "end_date": end_date.isoformat(),
-                "strategies": list(strategies),
-                "trading_dates": sessions,
-            },
-            max_attempts=2,
-        )
+        factor_strategies = [strategy for strategy in strategies
+                             if self.runtime.strategy_kind(strategy) == "factor_score"]
+        event_strategies = [strategy for strategy in strategies
+                            if self.runtime.strategy_kind(strategy) == "event_signal"]
+        jobs_to_add = []
+        if factor_strategies:
+            jobs_to_add.append(("research:factor-bulk", self.jobs.submit(
+                f"research-pipeline:{pipeline['fingerprint']}:factor-bulk", "research.rebuild-range",
+                {"start_date": start_date.isoformat(), "end_date": end_date.isoformat(),
+                 "strategies": factor_strategies, "trading_dates": sessions}, max_attempts=2)))
+        if event_strategies:
+            jobs_to_add.append(("research:event-signals", self.jobs.submit(
+                f"research-pipeline:{pipeline['fingerprint']}:event-signals", "research.positional-trend-build-range",
+                {"trading_dates": sessions, "universe": "SNAPSHOT_NIFTY500"}, max_attempts=2)))
         with sqlite_connection(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")
-            connection.execute(
-                "INSERT OR IGNORE INTO research_pipeline_stages"
-                "(pipeline_id, stage_name, job_id) VALUES (?, 'research:bulk', ?)",
-                (pipeline_id, job.job_id),
+            connection.executemany(
+                "INSERT OR IGNORE INTO research_pipeline_stages (pipeline_id, stage_name, job_id) VALUES (?, ?, ?)",
+                [(pipeline_id, name, job.job_id) for name, job in jobs_to_add],
             )
         return self.status(pipeline_id)
 

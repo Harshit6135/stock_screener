@@ -144,6 +144,74 @@ def load_market_cap_universe(database: Path, *, end_date: str) -> tuple[dict, li
         connection.close()
 
 
+def load_snapshot_universe(database: Path, *, end_date: str) -> tuple[dict, list[str], dict]:
+    """Load the persisted Nifty 500 snapshot used by current replay input.
+
+    This deliberately does not fall back to the retired constituent CSV.  A
+    later as-of replay extension can select a different snapshot per session;
+    the selected snapshot is recorded in the run lineage now.
+    """
+    connection = sqlite3.connect(f"file:{database.resolve().as_posix()}?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        snapshot = connection.execute(
+            """SELECT snapshot_id, snapshot_date, source_hash FROM universe_snapshots
+               WHERE index_name='NIFTY 500' AND snapshot_date <= ?
+               ORDER BY snapshot_date DESC LIMIT 1""", (end_date,)
+        ).fetchone()
+        if snapshot is None:
+            raise ValueError("Nifty 500 universe snapshot is unavailable")
+        members = connection.execute(
+            "SELECT isin FROM universe_snapshot_members WHERE snapshot_id=? AND series='EQ'",
+            (snapshot["snapshot_id"],),
+        ).fetchall()
+        isins = [str(row["isin"]) for row in members]
+        if not isins:
+            raise ValueError("Nifty 500 universe snapshot has no EQ members")
+        slots = ",".join("?" for _ in isins)
+        identities = connection.execute(
+            f"""SELECT instrument_id, isin, symbol FROM reference_instruments
+                WHERE exchange='NSE' AND isin IN ({slots})
+                ORDER BY isin, observed_on DESC, symbol""", isins
+        ).fetchall()
+        chosen: dict[str, tuple[str, str]] = {}
+        for row in identities:
+            chosen.setdefault(str(row["isin"]), (str(row["instrument_id"]), str(row["symbol"])))
+        if not chosen:
+            raise ValueError("no snapshot members match NSE reference instruments")
+        histories = {instrument_id: (symbol, []) for instrument_id, symbol in chosen.values()}
+        ids = list(histories)
+        slots = ",".join("?" for _ in ids)
+        sessions: set[str] = set()
+        count = 0
+        for row in connection.execute(
+            f"""SELECT instrument_id, as_of_date, open, high, low, close, volume
+                FROM market_bars WHERE instrument_id IN ({slots})
+                AND as_of_date BETWEEN '2021-01-01' AND ? ORDER BY instrument_id, as_of_date""",
+            [*ids, end_date],
+        ):
+            bar = dict(row)
+            instrument_id = str(bar.pop("instrument_id"))
+            histories[instrument_id][1].append(bar)
+            sessions.add(str(bar["as_of_date"]))
+            count += 1
+        coverage = {
+            "universe_source": "nifty500_snapshot", "universe_snapshot_id": snapshot["snapshot_id"],
+            "snapshot_date": snapshot["snapshot_date"], "universe_sha256": snapshot["source_hash"],
+            "membership_sha256": snapshot["source_hash"],
+            "included_member_count": len(isins), "matched_isin_count": len(chosen),
+            "instruments_with_bars": sum(bool(bars) for _, bars in histories.values()),
+            "bar_count": count, "session_count": len(sessions),
+            "first_session": min(sessions) if sessions else None, "last_session": max(sessions) if sessions else None,
+            "missing_isins": sorted(set(isins) - set(chosen)),
+            "historical_membership": "latest_snapshot_at_replay_end_applied_backwards",
+            "corporate_action_adjustment": "not_applied_per_research_scope",
+        }
+        return histories, sorted(sessions), coverage
+    finally:
+        connection.close()
+
+
 @dataclass(frozen=True)
 class Policy:
     initial_capital: float = 500_000.0

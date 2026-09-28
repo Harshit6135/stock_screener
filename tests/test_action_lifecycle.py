@@ -19,8 +19,8 @@ from src.portfolio_accounting import Fill, FillSide
 
 def _services(tmp_path):
     services = ApplicationServices.create(tmp_path)
-    source = (Path(__file__).resolve().parents[1] / "strategies" / "momentum_quality.yml").read_text()
-    source = source.replace("version: 1.0.0", "version: 1.0.1").replace(
+    source = (Path(__file__).resolve().parents[1] / "strategies" / "momentum.yml").read_text()
+    source = source.replace("version: 1.2.0", "version: 1.2.1").replace(
         "max_positions: 15", "max_positions: 1"
     ).replace("exit_threshold: 40", "exit_threshold: 41")
     revision = services.strategies.create_from_yaml(source)
@@ -35,19 +35,19 @@ def _services(tmp_path):
         "bar-abc-20260907",
     )
     ranking = services.publisher.publish_json(
-        "rankings/strategy1", str(uuid4()), {"week_end": "2026-09-04"}
+        "rankings/momentum", str(uuid4()), {"week_end": "2026-09-04"}
     )
     services.market.upsert_indicators(
-        services.research._indicator_set("strategy1", None), date(2026, 9, 4),
+        services.research._indicator_set("momentum", None), date(2026, 9, 4),
         {instrument_id: {"atrr_14": 5, "close": 100}}, "bar-abc-20260904",
     )
     with sqlite_connection(services.database) as connection:
         connection.execute(
             """INSERT INTO research_weekly_rankings
                (strategy_id, strategy_revision_id, week_end, instrument_id, symbol, score, rank, artifact_id)
-               VALUES ('strategy1', ?, '2026-09-04', ?, 'ABC', 80, 1, ?)""",
+               VALUES ('momentum', ?, '2026-09-04', ?, 'ABC', 80, 1, ?)""",
             (
-                services.strategy_runtime.revision("strategy1")["revision_id"],
+                services.strategy_runtime.revision("momentum")["revision_id"],
                 instrument_id,
                 ranking.artifact_id,
             ),
@@ -58,7 +58,7 @@ def _services(tmp_path):
 def _payload(account_id="paper"):
     return {
         "account_id": account_id,
-        "strategy_id": "strategy1",
+        "strategy_id": "momentum",
         "action_date": "2026-09-07",
         "max_positions": 1,
     }
@@ -252,8 +252,8 @@ def test_invalidated_proposal_cannot_process(tmp_path):
 def test_action_generation_uses_active_configuration(tmp_path):
     services, _ = _services(tmp_path)
     services.ledger.open_account("paper", Money(1000))
-    source = (Path(__file__).resolve().parents[1] / "strategies" / "momentum_quality.yml").read_text()
-    source = source.replace("version: 1.0.0", "version: 1.0.1").replace(
+    source = (Path(__file__).resolve().parents[1] / "strategies" / "momentum.yml").read_text()
+    source = source.replace("version: 1.2.0", "version: 1.2.1").replace(
         "max_positions: 15", "max_positions: 1"
     ).replace("exit_threshold: 40", "exit_threshold: 41")
     revision = services.strategies.create_from_yaml(source)
@@ -269,7 +269,7 @@ def test_action_generation_uses_active_configuration(tmp_path):
     with pytest.raises(DomainValidationError, match="conflicts"):
         services.actions.generate(conflicting)
     result = services.backtests.execute(
-        {"strategy_id": "strategy1", "start_date": "2026-09-07", "end_date": "2026-09-07"}
+        {"strategy_id": "momentum", "start_date": "2026-09-07", "end_date": "2026-09-07"}
     )
     _, report = services.artifacts.read_json("runs/backtests", result["artifact_id"])
     assert report["manifest"]["parameters"]["strategy_revision_id"] == revision["revision_id"]

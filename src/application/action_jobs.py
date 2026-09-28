@@ -54,6 +54,7 @@ class ActionJobs:
         ledger: Ledger,
         publisher: ArtifactPublisher,
         positional_trend=None,
+        risk_config=None,
     ) -> None:
         self.database = Path(database)
         self.market = market
@@ -61,6 +62,7 @@ class ActionJobs:
         self.ledger = ledger
         self.publisher = publisher
         self.positional_trend = positional_trend
+        self.risk_config = risk_config
         migrate_sqlite(
             self.database,
             "actions",
@@ -112,8 +114,8 @@ class ActionJobs:
         if not prior_sessions or not sessions or sessions[-1] != action_date.isoformat():
             raise DomainValidationError("Strategy 4 action date requires a prior and current stored session")
         signal_date = date.fromisoformat(prior_sessions[-1])
-        universe = payload.get("universe", "NIFTY500")
-        if not isinstance(universe, str) or universe not in {"NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500"}:
+        universe = payload.get("universe", "SNAPSHOT_NIFTY500")
+        if not isinstance(universe, str) or universe not in {"SNAPSHOT_NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500"}:
             raise DomainValidationError("Strategy 4 universe is invalid")
         signal_entry = self.positional_trend.read_signals(signal_date, str(universe))
         if signal_entry is None:
@@ -314,7 +316,9 @@ class ActionJobs:
             )
         account_id = payload["account_id"]
         strategy_id = payload["strategy_id"]
-        if strategy_id == "strategy4":
+        from src.application.strategy_runtime import resolve_strategy_id
+        resolved = resolve_strategy_id(strategy_id)
+        if resolved in ("positional_trend_following", "strategy4"):
             return self._generate_strategy4(payload)
         positions = payload.get("max_positions")
         ltcg_hold_days = payload.get("ltcg_hold_days", 365)

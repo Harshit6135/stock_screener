@@ -16,8 +16,9 @@ from src.platform_kernel import DomainValidationError, QualityStatus
 
 
 class PositionalTrendJobs:
-    STRATEGY_ID = "strategy4"
-    CATEGORY = "research/strategy4-signals"
+    STRATEGY_ID = "positional_trend_following"
+    LEGACY_STRATEGY_ID = "strategy4"
+    CATEGORY = "research/strategy4-signals"  # Keep legacy category for historical reads
 
     def __init__(self, market, publisher, runtime, universe_csv_path: str | Path | None = None):
         self.market, self.publisher, self.runtime = market, publisher, runtime
@@ -36,6 +37,20 @@ class PositionalTrendJobs:
                                      "member_count": len(rows), "members_by_exchange": {
                                          exchange: sum(row["exchange"] == exchange for row in rows)
                                          for exchange in ("NSE", "BSE")}}
+        # Phase 2 Task 2.8: snapshot-driven universe
+        if universe == "SNAPSHOT_NIFTY500":
+            snapshot = self.market.latest_universe_snapshot("NIFTY 500")
+            if snapshot is None:
+                raise DomainValidationError("Strategy 4 universe snapshot is not available; download NIFTY 500 first")
+            snapshot_id = str(snapshot["snapshot_id"])
+            rows = self.market.universe_snapshot_members(snapshot_id, limit=1000)
+            if not rows:
+                raise DomainValidationError("Strategy 4 universe snapshot has no members")
+            members = {str(row["isin"]) for row in rows}
+            digest = hashlib.sha256(json.dumps(rows, sort_keys=True, default=str).encode()).hexdigest()
+            return members, digest, {"source": universe, "snapshot_id": snapshot_id,
+                                     "snapshot_date": str(snapshot["snapshot_date"]),
+                                     "member_count": len(rows)}
         if universe not in {"NIFTY500", "NIFTY_TOTAL_MARKET"}:
             raise DomainValidationError("Strategy 4 universe is invalid")
         csv_path = self.universe_csv_path if universe == "NIFTY500" else self.universe_csv_path.with_name("ind_niftytotalmarket_list.csv")
@@ -82,7 +97,7 @@ class PositionalTrendJobs:
         }
         return hashlib.sha256(json.dumps(state, sort_keys=True, default=str).encode()).hexdigest()
 
-    def input_fingerprint(self, as_of: date, universe: str = "NIFTY500") -> str:
+    def input_fingerprint(self, as_of: date, universe: str = "SNAPSHOT_NIFTY500") -> str:
         """Invalidate jobs and cached signals when their rules, code or market inputs change."""
         members, universe_hash, metadata = self._members(universe)
         histories = self._histories(as_of, members, metadata)
@@ -91,8 +106,8 @@ class PositionalTrendJobs:
     def build_signals(self, payload: dict[str, object]) -> dict[str, object]:
         if not isinstance(payload, dict) or set(payload) - {"as_of_date", "universe"} or "as_of_date" not in payload:
             raise DomainValidationError("Strategy 4 signal job requires as_of_date and optional universe")
-        universe = str(payload.get("universe", "NIFTY500"))
-        if universe not in {"NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500"}:
+        universe = str(payload.get("universe", "SNAPSHOT_NIFTY500"))
+        if universe not in {"NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500", "SNAPSHOT_NIFTY500"}:
             raise DomainValidationError("Strategy 4 universe is invalid")
         try:
             as_of = date.fromisoformat(str(payload["as_of_date"]))
@@ -171,7 +186,18 @@ class PositionalTrendJobs:
                 "signal_count": len(payload_out["buy_candidates"]),
                 "exit_count": len(payload_out["exit_candidates"]), "reused": False}
 
-    def read_signals(self, as_of_date: date, universe: str = "NIFTY500") -> tuple[str, dict[str, object]] | None:
+    def build_range(self, payload: dict[str, object]) -> dict[str, object]:
+        """Build the event-signal branch once per pinned market session."""
+        if not isinstance(payload, dict) or set(payload) - {"trading_dates", "universe"}:
+            raise DomainValidationError("positional trend range payload is invalid")
+        dates = payload.get("trading_dates")
+        if not isinstance(dates, list) or not dates:
+            raise DomainValidationError("positional trend range requires trading_dates")
+        results = [self.build_signals({"as_of_date": day, "universe": payload.get("universe", "SNAPSHOT_NIFTY500")})
+                   for day in dates]
+        return {"strategy_id": self.STRATEGY_ID, "results": results}
+
+    def read_signals(self, as_of_date: date, universe: str = "SNAPSHOT_NIFTY500") -> tuple[str, dict[str, object]] | None:
         with sqlite_connection(self.market.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
                 "SELECT artifact_id FROM catalog_artifacts WHERE category=? AND status='VALID' ORDER BY created_at DESC",
@@ -185,7 +211,7 @@ class PositionalTrendJobs:
             except DomainValidationError:
                 continue
             if (payload.get("as_of_date") == as_of_date.isoformat()
-                    and payload.get("universe_id", "NIFTY500") == universe):
+                    and payload.get("universe_id", "SNAPSHOT_NIFTY500") == universe):
                 if current_fingerprint is None:
                     current_fingerprint = self.input_fingerprint(as_of_date, universe)
                 if payload.get("input_fingerprint") == current_fingerprint:

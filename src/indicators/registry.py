@@ -106,7 +106,7 @@ class PandasTaAdapter:
         self, key: str, inputs: Mapping[str, pd.Series], parameters: Mapping[str, object] | None = None
     ) -> pd.DataFrame:
         spec = self.spec(key)
-        params = self._validate_parameters(spec, parameters or {})
+        params = self.validate_parameters(spec, parameters or {})
         if set(inputs) != set(spec.required_inputs):
             raise DomainValidationError(f"indicator '{key}' requires inputs: {', '.join(spec.required_inputs)}")
         series = {name: self._validate_series(name, value) for name, value in inputs.items()}
@@ -138,7 +138,7 @@ class PandasTaAdapter:
         return numeric.astype("float64")
 
     @staticmethod
-    def _validate_parameters(spec: IndicatorSpec, supplied: Mapping[str, object]) -> dict[str, object]:
+    def validate_parameters(spec: IndicatorSpec, supplied: Mapping[str, object]) -> dict[str, object]:
         if unknown := set(supplied) - set(spec.parameters):
             raise DomainValidationError(f"indicator '{spec.key}' has unsupported parameters: {', '.join(sorted(unknown))}")
         result: dict[str, object] = {}

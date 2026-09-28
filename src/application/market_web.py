@@ -22,6 +22,20 @@ def create_market_blueprint(
 ) -> Blueprint:
     blueprint = Blueprint("market_v2", __name__, url_prefix="/api/v2/market")
 
+    @blueprint.get("/quality-events")
+    def quality_events():
+        try:
+            limit = int(request.args.get("limit", "100"))
+            offset = int(request.args.get("offset", "0"))
+            events = repository.quality_events(
+                instrument_id=request.args.get("instrument_id"),
+                check_type=request.args.get("check_type"), severity=request.args.get("severity"),
+                limit=limit, offset=offset,
+            )
+            return jsonify({"quality_events": events, "limit": limit, "offset": offset})
+        except (ValueError, DomainValidationError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
     @blueprint.get("/coverage")
     def coverage():
         try:
@@ -64,6 +78,14 @@ def create_market_blueprint(
             )
             quotes.append(quote)
         return jsonify({"quotes": quotes, "refresh_job_kind": "market.fetch-kite-index-quotes"})
+
+    @blueprint.get("/indices/history")
+    def index_history():
+        try:
+            sessions = int(request.args.get("sessions", "30"))
+            return jsonify({"sessions": sessions, "history": repository.index_quote_history(sessions)})
+        except (ValueError, DomainValidationError) as exc:
+            return jsonify({"error": str(exc)}), 400
 
     @blueprint.get("/indices/poller")
     def poller_state():

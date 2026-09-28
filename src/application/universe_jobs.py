@@ -1,0 +1,126 @@
+"""Durable immutable daily universe snapshot collection."""
+
+from __future__ import annotations
+
+import csv
+import hashlib
+import io
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
+from uuid import NAMESPACE_URL, uuid5
+
+from src.application.exchange_calendar import TradingCalendar
+from src.application.market_repository import MarketRepository
+from src.application.nse_client import NseClient
+from src.platform_kernel import DomainValidationError
+
+
+class UniverseJobs:
+    INDEX_NAME = "NIFTY 500"
+
+    def __init__(self, repository: MarketRepository, client: NseClient | None = None) -> None:
+        self.repository, self.client = repository, client or NseClient()
+
+    def download_nifty500_constituents(self, payload: dict[str, Any], context: Any = None) -> dict[str, object]:
+        if set(payload) - {"snapshot_date"}:
+            raise DomainValidationError("universe download payload is invalid")
+        try:
+            collection_day = date.fromisoformat(str(payload.get("snapshot_date") or datetime.now(UTC).date()))
+        except ValueError as exc:
+            raise DomainValidationError("snapshot_date must be ISO formatted") from exc
+        existing = self.repository.universe_snapshot(self.INDEX_NAME, collection_day)
+        if existing is not None:
+            if context is not None:
+                context.checkpoint(progress={"stage": "universe_snapshot", "status": "reused", "snapshot_id": existing["snapshot_id"]})
+            return {"status": "reused", "snapshot_id": existing["snapshot_id"], "member_count": existing["member_count"]}
+        source_url, raw = self.client.nifty_500_csv()
+        members = self._parse(raw)
+        snapshot_id = str(uuid5(NAMESPACE_URL, f"nifty500:{collection_day.isoformat()}:{hashlib.sha256(raw).hexdigest()}"))
+        prior = self.repository.latest_universe_snapshot(self.INDEX_NAME)
+        stored = self.repository.create_universe_snapshot(
+            snapshot_id=snapshot_id, index_name=self.INDEX_NAME, snapshot_date=collection_day,
+            source_url=source_url, raw_csv=raw, members=members,
+        )
+        diff = self.repository.universe_snapshot_diff(str(prior["snapshot_id"]), snapshot_id) if prior and prior["snapshot_id"] != snapshot_id else {"additions": [], "removals": [], "series_transitions": []}
+        # Phase 2 Task 2.11: record exit eligibility for removed members
+        exit_records = self._record_exit_eligibility(diff.get("removals", []), collection_day, snapshot_id)
+        if context is not None:
+            context.checkpoint(progress={"stage": "universe_snapshot", "status": "stored", "snapshot_id": snapshot_id, "member_count": len(members)})
+        return {"status": "stored", "snapshot_id": stored["snapshot_id"], "member_count": stored["member_count"], "source_hash": stored["source_hash"], "diff": diff, "exit_eligibility": exit_records}
+
+    def _record_exit_eligibility(
+        self, removals: list[dict[str, object]], decision_date: date, snapshot_id: str,
+    ) -> list[dict[str, str]]:
+        """Phase 2 Task 2.11: persist exit eligibility for removed members with held positions."""
+        if not removals:
+            return []
+        # Target the next trading session after the decision date
+        try:
+            calendar = TradingCalendar(self.repository.path)
+            target_window = calendar.sessions(
+                decision_date + timedelta(days=1),
+                decision_date + timedelta(days=10),
+            )
+            target_session = target_window[0] if target_window else decision_date + timedelta(days=1)
+        except Exception:
+            target_session = decision_date + timedelta(days=1)
+        recorded: list[dict[str, str]] = []
+        for removed in removals:
+            isin = str(removed["isin"])
+            symbol = str(removed["symbol"])
+            # Look up the instrument_id from reference_instruments
+            instruments = self.repository.instruments(symbol=symbol, limit=1)
+            if not instruments:
+                continue
+            instrument_id = str(instruments[0]["instrument_id"])
+            was_new = self.repository.record_exit_eligibility(
+                instrument_id=instrument_id, isin=isin, symbol=symbol,
+                decision_date=decision_date, decision_snapshot_id=snapshot_id,
+                target_session_date=target_session,
+            )
+            if was_new:
+                recorded.append({"instrument_id": instrument_id, "symbol": symbol, "target_session": target_session.isoformat()})
+        return recorded
+
+    def detect_universe_exits(
+        self, payload: dict[str, Any], context: Any = None,
+    ) -> dict[str, object]:
+        """Phase 2 Task 2.13: detect managed holdings absent from current snapshot and generate exit records."""
+        snapshot_id = payload.get("snapshot_id")
+        held_instrument_ids = payload.get("held_instrument_ids", [])
+        if not isinstance(snapshot_id, str) or not isinstance(held_instrument_ids, list):
+            raise DomainValidationError("exit detection requires snapshot_id and held_instrument_ids")
+        members = self.repository.universe_snapshot_members(snapshot_id, limit=1000)
+        member_isins = {str(m["isin"]) for m in members}
+        exits: list[dict[str, object]] = []
+        for instrument_id in held_instrument_ids:
+            instrument = self.repository.instrument_by_id(str(instrument_id))
+            if instrument is None:
+                continue
+            isin = str(instrument["isin"])
+            if isin.startswith("INDEX:"):
+                continue
+            if isin not in member_isins and not self.repository.is_exit_only(str(instrument_id)):
+                exits.append({
+                    "instrument_id": str(instrument_id),
+                    "isin": isin,
+                    "symbol": str(instrument["symbol"]),
+                    "reason": "universe_exit",
+                })
+        return {"snapshot_id": snapshot_id, "exits": exits, "exit_count": len(exits)}
+
+    @staticmethod
+    def _parse(raw: bytes) -> list[dict[str, object]]:
+        try:
+            reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
+            result = [{"isin": str(row["ISIN Code"]).strip(), "symbol": str(row["Symbol"]).strip(),
+                       "company_name": str(row["Company Name"]).strip(), "industry": str(row["Industry"]).strip(),
+                       "series": str(row["Series"]).strip()}
+                      for row in reader]
+        except (UnicodeDecodeError, KeyError) as exc:
+            raise DomainValidationError("NSE constituent CSV is invalid") from exc
+        if not result or any(not all(str(value).strip() for value in row.values()) for row in result):
+            raise DomainValidationError("NSE constituent CSV has incomplete members")
+        if len({str(row["isin"]).upper() for row in result}) != len(result):
+            raise DomainValidationError("NSE constituent CSV has duplicate ISINs")
+        return result

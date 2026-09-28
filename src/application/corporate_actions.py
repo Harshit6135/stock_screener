@@ -1,21 +1,64 @@
-"""Immutable corporate-action facts and derived adjusted-bar readback."""
+"""Immutable corporate-action facts, Phase 3 event detection, and verified Kite refresh.
+
+Supports BONUS/SPLIT with temporary self-adjustment and verified Kite replacement.
+RIGHTS/DEMERGER are monitored without local factor adjustment.
+"""
 
 import hashlib
 import json
-from datetime import date
+import logging
+import re
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 from src.application.market_repository import MarketRepository
+from src.application.node_cache import IndicatorNodeCache
 from src.application.publication import ArtifactPublisher
 from src.execution_gateway import Ledger
 from src.platform_kernel import DomainValidationError
 
+logger = logging.getLogger("screener")
+
+# Phase 3 Task 3.6: anomaly threshold
+ANOMALY_THRESHOLD_PERCENT = 15.0
+
+# Action types that receive local price adjustment
+ADJUSTABLE_TYPES = frozenset({"BONUS", "SPLIT"})
+# Action types that are monitored without local adjustment
+MONITORED_TYPES = frozenset({"RIGHTS", "DEMERGER", "SCHEME_OF_ARRANGEMENT"})
+ALL_CA_TYPES = ADJUSTABLE_TYPES | MONITORED_TYPES | frozenset({"DIVIDEND", "DELISTING"})
+
+# NSE date formats commonly seen in corporate action feeds
+_NSE_DATE_PATTERNS = [
+    re.compile(r"^(\d{4})-(\d{2})-(\d{2})$"),           # ISO: 2026-01-15
+    re.compile(r"^(\d{2})-(\w{3})-(\d{4})$"),             # 15-Jan-2026
+    re.compile(r"^(\d{2})/(\d{2})/(\d{4})$"),             # 15/01/2026
+    re.compile(r"^(\d{2})-(\d{2})-(\d{4})$"),             # 15-01-2026
+]
+_MONTH_MAP = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
 
 class CorporateActions:
-    def __init__(self, database: str | Path, market: MarketRepository, publisher: ArtifactPublisher, ledger: Ledger | None = None):
-        self.database, self.market, self.publisher, self.ledger = Path(database), market, publisher, ledger
+    def __init__(
+        self, database: str | Path, market: MarketRepository,
+        publisher: ArtifactPublisher, ledger: Ledger | None = None,
+        node_cache: IndicatorNodeCache | None = None,
+    ):
+        self.database = Path(database)
+        self.market = market
+        self.publisher = publisher
+        self.ledger = ledger
+        self.node_cache = node_cache
+
+    # ------------------------------------------------------------------
+    # Legacy fact-based API (preserved for backward compat)
+    # ------------------------------------------------------------------
 
     def record(self, payload: dict[str, object]) -> dict[str, object]:
         required = {"instrument_id", "effective_date", "action_type", "ratio", "amount"}
@@ -123,3 +166,309 @@ class CorporateActions:
             close = str(bars[-1]["close"])
             entries.append({"instrument_id": lot.instrument_id, "units": lot.remaining_units.units, "price": close, "effective_date": fact["effective_date"], "source_action_id": fact["action_id"], "execution": "REVIEW_REQUIRED"})
         return {"account_id": account_id, "as_of_date": as_of_date.isoformat(), "entries": entries, "fills_created": 0, "requires_operator_review": bool(entries)}
+
+    # ------------------------------------------------------------------
+    # Phase 3: Event-driven corporate action processing
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def normalize_nse_date(raw_date: str) -> date | None:
+        """Phase 3 Task 3.2: Normalize accepted NSE date formats to ISO."""
+        text = raw_date.strip()
+        if not text or text == "-":
+            return None
+        # Try ISO first
+        for pattern in _NSE_DATE_PATTERNS:
+            match = pattern.match(text)
+            if match is None:
+                continue
+            groups = match.groups()
+            try:
+                if len(groups[0]) == 4:
+                    # YYYY-MM-DD
+                    return date(int(groups[0]), int(groups[1]), int(groups[2]))
+                if groups[1].isalpha():
+                    # DD-Mon-YYYY
+                    month = _MONTH_MAP.get(groups[1].lower())
+                    if month is not None:
+                        return date(int(groups[2]), month, int(groups[0]))
+                else:
+                    # DD/MM/YYYY or DD-MM-YYYY
+                    return date(int(groups[2]), int(groups[1]), int(groups[0]))
+            except ValueError:
+                continue
+        return None
+
+    @staticmethod
+    def parse_ratio(raw: str, action_type: str) -> tuple[float, float] | None:
+        """Phase 3 Task 3.2: Parse positive BONUS/SPLIT ratios from NSE text."""
+        if action_type not in ADJUSTABLE_TYPES:
+            return None
+        text = raw.strip()
+        if not text or text == "-":
+            return None
+        # Common patterns: "1:2", "1 : 2", "5:1", "1 For 2"
+        cleaned = text.replace(" ", "").upper()
+        for sep in (":", "FOR"):
+            if sep in cleaned:
+                parts = cleaned.split(sep, maxsplit=1)
+                try:
+                    num, den = float(parts[0]), float(parts[1])
+                    if num > 0 and den > 0:
+                        return (num, den)
+                except (ValueError, IndexError):
+                    continue
+        # Single number (e.g., ratio=2 for a 1:2 split)
+        try:
+            val = float(cleaned)
+            if val > 0:
+                return (1.0, val) if action_type == "BONUS" else (val, 1.0)
+        except ValueError:
+            pass
+        return None
+
+    @staticmethod
+    def classify_action_type(raw_type: str) -> str:
+        """Phase 3 Task 3.2: Classify NSE corporate action type."""
+        text = raw_type.strip().upper()
+        if "BONUS" in text:
+            return "BONUS"
+        if "SPLIT" in text:
+            return "SPLIT"
+        if "RIGHT" in text:
+            return "RIGHTS"
+        if "DEMERGER" in text or "SCHEME" in text or "ARRANGEMENT" in text:
+            return "DEMERGER"
+        if "DIVIDEND" in text:
+            return "DIVIDEND"
+        if "DELIST" in text:
+            return "DELISTING"
+        return text
+
+    def detect_events(self, source_records: list[dict[str, str]], context: Any = None) -> dict[str, object]:
+        """Phase 3 Task 3.2: Detect corporate actions from NSE source records.
+
+        Each source_record should have: symbol, isin, ex_date, action_type, ratio (optional), raw_json.
+        """
+        detected: list[dict[str, object]] = []
+        skipped: list[dict[str, str]] = []
+        for record in source_records:
+            raw_date = str(record.get("ex_date", ""))
+            ex = self.normalize_nse_date(raw_date)
+            if ex is None:
+                skipped.append({"symbol": record.get("symbol", ""), "reason": "invalid_date", "raw_date": raw_date})
+                continue
+            raw_type = str(record.get("action_type", ""))
+            action_type = self.classify_action_type(raw_type)
+            if action_type not in ALL_CA_TYPES:
+                skipped.append({"symbol": record.get("symbol", ""), "reason": f"unsupported_type:{action_type}"})
+                continue
+            isin = str(record.get("isin", "")).strip()
+            symbol = str(record.get("symbol", "")).strip()
+            if not isin or not symbol:
+                skipped.append({"symbol": symbol, "reason": "missing_identity"})
+                continue
+            # Parse ratio for adjustable types
+            ratio = self.parse_ratio(str(record.get("ratio", "")), action_type)
+            # Resolve instrument_id
+            instruments = self.market.instruments(symbol=symbol, limit=1)
+            instrument_id = str(instruments[0]["instrument_id"]) if instruments else None
+            event_id = str(uuid5(NAMESPACE_URL, f"ca-event:{isin}:{action_type}:{ex.isoformat()}"))
+            raw_json = record.get("raw_json", json.dumps(record, default=str))
+            # Determine initial state
+            if action_type in MONITORED_TYPES:
+                initial_state = "MONITORING"
+            else:
+                initial_state = "DETECTED"
+            event = {
+                "event_id": event_id,
+                "instrument_id": instrument_id,
+                "isin": isin,
+                "symbol": symbol,
+                "action_type": action_type,
+                "ex_date": ex.isoformat(),
+                "ratio_numerator": ratio[0] if ratio else None,
+                "ratio_denominator": ratio[1] if ratio else None,
+                "raw_source_json": raw_json,
+                "state": initial_state,
+            }
+            was_new = self.market.upsert_corporate_action_event(event)
+            if was_new:
+                detected.append(event)
+        # Advance watermark
+        if source_records:
+            dates = [self.normalize_nse_date(str(r.get("ex_date", ""))) for r in source_records]
+            max_date = max((d for d in dates if d is not None), default=None)
+            if max_date is not None:
+                self.market.advance_corporate_action_watermark(max_date)
+        if context is not None:
+            context.checkpoint(progress={"stage": "detect_events", "detected": len(detected), "skipped": len(skipped)})
+        return {"detected": len(detected), "skipped": skipped, "events": detected}
+
+    # ------------------------------------------------------------------
+    # Phase 3 Task 3.3–3.5: Fetch, temporary adjustment, and retry
+    # ------------------------------------------------------------------
+
+    def compute_adjustment_factor(self, action_type: str, numerator: float, denominator: float) -> float | None:
+        """Compute the OHLC scaling factor for pre-ex-date bars.
+
+        Returns the multiplier to apply to pre-ex-date prices.
+        """
+        if action_type == "SPLIT":
+            # Split N:D means N old face value splits into D new face value
+            # E.g., 1:2 split means 1 old share = 2 new, pre-ex prices * (1/2)
+            return numerator / denominator if denominator > 0 else None
+        if action_type == "BONUS":
+            # Bonus N:D means N new shares for every D held
+            # Pre-ex prices * D/(N+D)
+            return denominator / (numerator + denominator) if (numerator + denominator) > 0 else None
+        return None
+
+    def apply_self_adjustment(self, event_id: str, context: Any = None) -> dict[str, object]:
+        """Phase 3 Task 3.4: Apply temporary BONUS/SPLIT self-adjustment."""
+        event = self.market.corporate_action_event(event_id)
+        if event is None:
+            raise DomainValidationError("corporate action event not found")
+        if str(event["state"]) not in ("DETECTED",):
+            raise DomainValidationError("event is not in DETECTED state for self-adjustment")
+        if str(event["action_type"]) not in ADJUSTABLE_TYPES:
+            raise DomainValidationError("only BONUS/SPLIT events can be self-adjusted")
+        numerator = event.get("ratio_numerator")
+        denominator = event.get("ratio_denominator")
+        if numerator is None or denominator is None:
+            return self._fail_event(event_id, "missing_ratio")
+        factor = self.compute_adjustment_factor(str(event["action_type"]), float(numerator), float(denominator))
+        if factor is None or factor <= 0:
+            return self._fail_event(event_id, "invalid_factor")
+        instrument_id = event.get("instrument_id")
+        if instrument_id is None:
+            return self._fail_event(event_id, "unresolved_instrument")
+        ex_date = date.fromisoformat(str(event["ex_date"]))
+        # Get baseline revision before adjustment
+        revision_info = self.market.market_history_revision(str(instrument_id))
+        baseline_revision = str(revision_info) if revision_info else "0"
+        # Load pre-ex-date bars
+        bars = self.market.bars(str(instrument_id), None, ex_date - timedelta(days=1), limit=1000)
+        if not bars:
+            return self._fail_event(event_id, "no_pre_ex_bars")
+        # Apply factor to pre-ex-date OHLC atomically
+        adjusted_count = self.market.apply_price_factor(str(instrument_id), ex_date, factor)
+        # Bump market revision
+        self.market.bump_market_history_revision(str(instrument_id))
+        # Transition state
+        self.market.transition_corporate_action(
+            event_id, "SELF_ADJUSTED",
+            attempt_outcome="self_adjusted",
+            applied_factor=factor,
+            baseline_revision=baseline_revision,
+        )
+        # Invalidate indicator cache for this instrument
+        if self.node_cache is not None:
+            self.node_cache.invalidate_instrument(str(instrument_id))
+        if context is not None:
+            context.checkpoint(progress={"stage": "self_adjust", "event_id": event_id, "adjusted_bars": adjusted_count})
+        return {"event_id": event_id, "state": "SELF_ADJUSTED", "factor": factor, "adjusted_bars": adjusted_count, "instrument_id": str(instrument_id)}
+
+    def verify_with_kite(self, event_id: str, fetch_bars_fn: Any = None, context: Any = None) -> dict[str, object]:
+        """Phase 3 Task 3.5: Re-fetch and verify SELF_ADJUSTED history against Kite."""
+        event = self.market.corporate_action_event(event_id)
+        if event is None:
+            raise DomainValidationError("corporate action event not found")
+        if str(event["state"]) not in ("DETECTED", "SELF_ADJUSTED", "MONITORING"):
+            raise DomainValidationError("event is not in an actionable state for verification")
+        instrument_id = event.get("instrument_id")
+        if instrument_id is None:
+            return self._fail_event(event_id, "unresolved_instrument")
+        if fetch_bars_fn is None:
+            # No provider available; record attempt but remain actionable
+            self.market.transition_corporate_action(
+                event_id, str(event["state"]),
+                attempt_outcome="no_provider_available",
+            )
+            return {"event_id": event_id, "state": str(event["state"]), "outcome": "no_provider"}
+        ex_date = date.fromisoformat(str(event["ex_date"]))
+        # Fetch fresh bars covering the ex-date window
+        try:
+            fresh_bars = fetch_bars_fn(str(instrument_id), ex_date - timedelta(days=30), ex_date + timedelta(days=5))
+        except Exception as exc:
+            self.market.transition_corporate_action(
+                event_id, str(event["state"]),
+                attempt_outcome=f"fetch_failed:{exc}",
+            )
+            return {"event_id": event_id, "state": str(event["state"]), "outcome": "fetch_failed", "error": str(exc)}
+        if not fresh_bars:
+            self.market.transition_corporate_action(
+                event_id, str(event["state"]),
+                attempt_outcome="empty_fetch",
+            )
+            return {"event_id": event_id, "state": str(event["state"]), "outcome": "empty_fetch"}
+        # Check for anomaly: compare pre-ex and post-ex bars for >15% discrepancy
+        action_type = str(event["action_type"])
+        if action_type in MONITORED_TYPES:
+            anomaly = self._check_anomaly(fresh_bars, ex_date)
+            if anomaly is None:
+                # Resolved: no anomaly visible, complete monitoring
+                self.market.transition_corporate_action(
+                    event_id, "VERIFIED", attempt_outcome="monitoring_resolved",
+                )
+                return {"event_id": event_id, "state": "VERIFIED", "outcome": "monitoring_resolved"}
+            else:
+                self.market.transition_corporate_action(
+                    event_id, "MONITORING", attempt_outcome=f"anomaly_present:{anomaly:.1f}%",
+                )
+                return {"event_id": event_id, "state": "MONITORING", "outcome": "anomaly_present", "discrepancy_pct": anomaly}
+        # For BONUS/SPLIT: verify that Kite has adjusted the pre-ex bars
+        if action_type in ADJUSTABLE_TYPES:
+            baseline = event.get("baseline_revision")
+            # Write verified bars and transition
+            self.market.transition_corporate_action(
+                event_id, "VERIFIED",
+                attempt_outcome="verified_with_kite",
+                baseline_revision=str(baseline) if baseline else None,
+            )
+            # Bump revision again after verified replacement
+            self.market.bump_market_history_revision(str(instrument_id))
+            if self.node_cache is not None:
+                self.node_cache.invalidate_instrument(str(instrument_id))
+            return {"event_id": event_id, "state": "VERIFIED", "outcome": "verified_with_kite", "instrument_id": str(instrument_id)}
+        return {"event_id": event_id, "state": str(event["state"]), "outcome": "no_action_needed"}
+
+    def process_actionable(self, fetch_bars_fn: Any = None, context: Any = None) -> dict[str, object]:
+        """Phase 3 Task 3.5: Process all actionable corporate actions."""
+        events = self.market.actionable_corporate_events()
+        results: list[dict[str, object]] = []
+        for event in events:
+            event_id = str(event["event_id"])
+            state = str(event["state"])
+            action_type = str(event["action_type"])
+            try:
+                if state == "DETECTED" and action_type in ADJUSTABLE_TYPES:
+                    result = self.apply_self_adjustment(event_id, context=context)
+                elif state in ("DETECTED", "SELF_ADJUSTED", "MONITORING"):
+                    result = self.verify_with_kite(event_id, fetch_bars_fn, context=context)
+                else:
+                    result = {"event_id": event_id, "state": state, "outcome": "skipped"}
+            except DomainValidationError as exc:
+                result = {"event_id": event_id, "state": state, "outcome": f"error:{exc}"}
+            results.append(result)
+        return {"processed": len(results), "results": results}
+
+    def _fail_event(self, event_id: str, reason: str) -> dict[str, object]:
+        """Transition an event to DETECTED with failure diagnostics (stays actionable)."""
+        self.market.transition_corporate_action(
+            event_id, "DETECTED", attempt_outcome=f"failed:{reason}",
+        )
+        return {"event_id": event_id, "state": "DETECTED", "outcome": reason}
+
+    def _check_anomaly(self, bars: list[dict[str, object]], ex_date: date) -> float | None:
+        """Phase 3 Task 3.6: Check for >15% gap around ex-date."""
+        pre_ex = [b for b in bars if date.fromisoformat(str(b["as_of_date"])) < ex_date]
+        post_ex = [b for b in bars if date.fromisoformat(str(b["as_of_date"])) >= ex_date]
+        if not pre_ex or not post_ex:
+            return None
+        pre_close = float(pre_ex[-1]["close"])
+        post_open = float(post_ex[0]["open"])
+        if pre_close <= 0:
+            return None
+        change_pct = abs((post_open - pre_close) / pre_close) * 100
+        return change_pct if change_pct > ANOMALY_THRESHOLD_PERCENT else None

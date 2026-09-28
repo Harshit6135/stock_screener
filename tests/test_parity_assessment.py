@@ -19,7 +19,7 @@ def test_pipeline_enforces_market_data_and_child_bar_jobs(tmp_path):
         {
             "start_date": "2026-09-07",
             "end_date": "2026-09-11",
-            "strategies": ["strategy1"],
+            "strategies": ["momentum"],
             "orchestrate_data": True,
         }
     )
@@ -70,7 +70,7 @@ def test_pipeline_enforces_market_data_and_child_bar_jobs(tmp_path):
 
     # Now advance should queue exactly one staged bulk research rebuild.
     advanced = pipelines.advance({"pipeline_id": pipeline["pipeline_id"]})
-    research_stages = [s for s in advanced["stages"] if s["name"] == "research:bulk"]
+    research_stages = [s for s in advanced["stages"] if s["name"] == "research:factor-bulk"]
     assert len(research_stages) == 1
     bulk = jobs.get(research_stages[0]["job_id"])
     assert bulk.kind == "research.rebuild-range"
@@ -169,8 +169,10 @@ def test_dashboard_web_routes_render():
     app.register_blueprint(create_dashboard_blueprint())
     client = app.test_client()
 
-    for path in ["/app", "/actions", "/backtest", "/portfolio", "/pipeline"]:
+    for path in ["/", "/actions", "/backtest", "/pipeline", "/rankings", "/universe", "/settings", "/logs"]:
         res = client.get(path)
         assert res.status_code == 200, f"failed for {path}"
         html = res.get_data(as_text=True)
-        assert 'class="navbar"' in html
+        assert 'class="sidebar"' in html
+    for path in ["/app", "/portfolio"]:
+        assert client.get(path).status_code == 302

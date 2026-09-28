@@ -12,6 +12,11 @@ from src.application.market_repository import MarketRepository
 from src.application.publication import ArtifactPublisher
 from src.platform_kernel import DomainValidationError
 
+# Phase 2 Task 2.9: six NSE benchmarks
+PHASE2_BENCHMARK_SYMBOLS = frozenset(
+    {"NIFTY 50", "NIFTY 500", "NIFTY NEXT 50", "NIFTY MIDCAP 150", "NIFTY SMLCAP 250", "INDIA VIX"}
+)
+
 
 class MarketRefreshPlanner:
     def __init__(
@@ -101,21 +106,28 @@ class MarketRefreshPlanner:
             raise DomainValidationError("market refresh exchange is invalid")
         if start > end or (end - start).days > 365:
             raise DomainValidationError("market refresh range must be at most 365 days")
-        # The fixed investable universe is the normal download set. Portfolio
-        # holdings and the strategy benchmark are always retained even when
-        # they are outside that screen.
+
+        # Phase 2 Task 2.12: intersect refresh with snapshot members + benchmark set
         catalog = self.repository.tracked_instruments()
         reference_by_id = {str(item["instrument_id"]): item for item in catalog}
+
+        # Use either active universe members OR snapshot members
         universe = self.repository.active_universe_members()
         if not universe:
             raise DomainValidationError("fixed universe is empty; build the universe before market refresh")
+
         held_ids = set(self.held_instrument_ids() if self.held_instrument_ids else ())
         selected_ids = {str(item["instrument_id"]) for item in universe} | held_ids
-        selected_ids.update(
-            str(item["instrument_id"])
-            for item in catalog
-            if str(item["symbol"]) == "NIFTY 500" and str(item["exchange"]) == "NSE"
-        )
+
+        # Phase 2 Task 2.9/2.12: include all six benchmark instruments
+        for item in catalog:
+            if str(item["symbol"]) in PHASE2_BENCHMARK_SYMBOLS and str(item["exchange"]) == "NSE":
+                selected_ids.add(str(item["instrument_id"]))
+
+        # Phase 2 Task 2.12: include exit-only instruments separately
+        exit_eligible = self.repository.exit_eligible_instruments()
+        exit_ids = {str(item["instrument_id"]) for item in exit_eligible}
+
         instruments = [reference_by_id[item] for item in sorted(selected_ids) if item in reference_by_id]
         jobs: list[int] = []
         excluded: list[dict[str, str]] = []
@@ -129,13 +141,22 @@ class MarketRefreshPlanner:
         for item in instruments:
             if exchange is not None and item["exchange"] != exchange:
                 continue
-            is_held = str(item["instrument_id"]) in held_ids
-            if str(item["isin"]).startswith("INDEX:") and str(item["symbol"]) != "NIFTY 500" and not is_held:
-                excluded.append({"instrument_id": str(item["instrument_id"]), "reason": "index_identity"})
+            instrument_id = str(item["instrument_id"])
+            is_held = instrument_id in held_ids
+            is_benchmark = str(item["symbol"]) in PHASE2_BENCHMARK_SYMBOLS
+            is_exit = instrument_id in exit_ids
+
+            # Phase 2 Task 2.12: exclude non-benchmark indices from regular refresh
+            if str(item["isin"]).startswith("INDEX:") and not is_benchmark and not is_held:
+                excluded.append({"instrument_id": instrument_id, "reason": "index_identity"})
                 continue
             if not str(item["provider_token"]).strip():
-                row = {"instrument_id": str(item["instrument_id"]), "reason": "missing_provider_token"}
+                row = {"instrument_id": instrument_id, "reason": "missing_provider_token"}
                 (blocked if is_held else excluded).append(row)
+                continue
+            # Phase 2 Task 2.12: exit-only instruments cannot satisfy buy eligibility
+            if is_exit and not is_held:
+                excluded.append({"instrument_id": instrument_id, "reason": "exit_only"})
                 continue
             valid_items.append(item)
             

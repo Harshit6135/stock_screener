@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import Enum
+from typing import Union
 
 from src.platform_kernel import DomainValidationError, Money, Quantity
 
@@ -42,6 +43,22 @@ class Fill:
                 datetime.combine(self.fill_date, datetime.min.time(), tzinfo=UTC),
             )
 
+@dataclass(frozen=True)
+class OpeningPosition:
+    instrument_id: str
+    acquisition_date: date
+    units: Quantity
+    unit_cost: Money
+    imported_at: datetime
+    broker_provenance: str
+
+    def __post_init__(self) -> None:
+        if not self.instrument_id or self.units.units <= 0 or self.unit_cost.amount <= 0:
+            raise DomainValidationError("opening position is invalid")
+        if self.imported_at.tzinfo is None or self.imported_at.utcoffset() is None:
+            raise DomainValidationError("import timestamp must be timezone-aware")
+
+AccountingEvent = Union[Fill, OpeningPosition]
 
 @dataclass(frozen=True)
 class Lot:
@@ -58,55 +75,69 @@ class PortfolioProjection:
     realised_pnl: Money
 
 
-def project(opening_cash: Money, fills: Iterable[Fill]) -> PortfolioProjection:
-    """Project cash, open lots, and realised P&L from chronological FIFO fills."""
+def project(opening_cash: Money, events: Iterable[AccountingEvent]) -> PortfolioProjection:
+    """Project cash, open lots, and realised P&L from chronological FIFO events."""
     cash = opening_cash.amount
     realised = Decimal(0)
     lots: dict[str, list[Lot]] = {}
 
-    ordered_fills = tuple(fills)
-    if any(fill.executed_at is None for fill in ordered_fills):
-        raise DomainValidationError("fill execution timestamp is required")
-    chronology = tuple(fill.executed_at for fill in ordered_fills if fill.executed_at is not None)
-    if chronology != tuple(sorted(chronology)):
-        raise DomainValidationError("fills must be chronological")
+    ordered_events = tuple(events)
+    
+    def event_time(evt: AccountingEvent) -> datetime:
+        if isinstance(evt, Fill):
+            if evt.executed_at is None:
+                raise DomainValidationError("fill execution timestamp is required")
+            return evt.executed_at
+        return evt.imported_at
 
-    for fill in ordered_fills:
-        if fill.price.currency != opening_cash.currency:
+    chronology = tuple(event_time(evt) for evt in ordered_events)
+    if chronology != tuple(sorted(chronology)):
+        raise DomainValidationError("events must be chronological")
+
+    for event in ordered_events:
+        if isinstance(event, OpeningPosition):
+            if event.unit_cost.currency != opening_cash.currency:
+                raise DomainValidationError("opening position currency does not match account currency")
+            lots.setdefault(event.instrument_id, []).append(
+                Lot(event.instrument_id, event.acquisition_date, event.units, event.unit_cost)
+            )
+            continue
+            
+        if event.price.currency != opening_cash.currency:
             raise DomainValidationError("fill currency does not match account currency")
-        value = fill.price.amount * fill.units.units
-        if fill.side == FillSide.BUY:
-            total_cost = value + fill.fee.amount
+        value = event.price.amount * event.units.units
+        if event.side == FillSide.BUY:
+            total_cost = value + event.fee.amount
             if total_cost > cash:
                 raise DomainValidationError("buy fill exceeds confirmed cash")
             cash -= total_cost
             unit_cost = Money(
-                (value + fill.fee.amount) / fill.units.units,
-                fill.price.currency,
+                (value + event.fee.amount) / event.units.units,
+                event.price.currency,
             )
-            lots.setdefault(fill.instrument_id, []).append(
-                Lot(fill.instrument_id, fill.fill_date, fill.units, unit_cost)
+            lots.setdefault(event.instrument_id, []).append(
+                Lot(event.instrument_id, event.fill_date, event.units, unit_cost)
             )
             continue
 
-        remaining = fill.units.units
-        instrument_lots = lots.get(fill.instrument_id, [])
+        remaining = event.units.units
+        instrument_lots = lots.get(event.instrument_id, [])
         available = sum(lot.remaining_units.units for lot in instrument_lots)
         if remaining > available:
             raise DomainValidationError("sell fill exceeds held units")
-        cash += value - fill.fee.amount
+        cash += value - event.fee.amount
         rewritten: list[Lot] = []
         for lot in instrument_lots:
             matched = min(remaining, lot.remaining_units.units)
-            allocated_sell_fee = fill.fee.amount * Decimal(matched) / Decimal(fill.units.units)
-            realised += (fill.price.amount - lot.unit_cost.amount) * matched - allocated_sell_fee
+            allocated_sell_fee = event.fee.amount * Decimal(matched) / Decimal(event.units.units)
+            realised += (event.price.amount - lot.unit_cost.amount) * matched - allocated_sell_fee
             remaining -= matched
             remaining_units = lot.remaining_units.units - matched
             if remaining_units:
                 rewritten.append(
                     Lot(lot.instrument_id, lot.opened_on, Quantity(remaining_units), lot.unit_cost)
                 )
-        lots[fill.instrument_id] = rewritten
+        lots[event.instrument_id] = rewritten
 
     open_lots = tuple(lot for instrument_lots in lots.values() for lot in instrument_lots)
     return PortfolioProjection(

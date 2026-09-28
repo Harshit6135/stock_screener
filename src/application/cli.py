@@ -59,8 +59,6 @@ def main() -> int:
             args.data_directory,
             market_data_kite_credentials=credentials,
             market_data_kite_token_path=RuntimeConfig.MARKET_DATA_KITE_ACCESS_TOKEN_PATH,
-            nse_csv_path=Path.cwd() / "data" / "imports" / "NSE.csv",
-            bse_csv_path=Path.cwd() / "data" / "imports" / "BSE.csv",
         ).worker.run_once()
         print("idle" if job is None else f"{job.job_id}:{job.status.value}")
         return 0

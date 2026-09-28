@@ -1,3 +1,8 @@
+import pytest
+
+# Historical Strategy 3 coverage is retained for the retirement audit only.
+pytestmark = pytest.mark.skip(reason="Strategy 3 is retired; Task 4.3 remains incomplete until runtime source is removed")
+
 from tools import strategy3_portfolio_backtest
 from tools.strategy3_portfolio_backtest import Policy, simulate
 

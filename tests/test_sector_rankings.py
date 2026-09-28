@@ -13,8 +13,8 @@ def test_sector_normalized_ranking_is_versioned_and_lineaged(tmp_path):
     database = tmp_path / "system.db"
     publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
     features = publisher.publish_json(
-        "features/strategy1", "features-1", {
-            "snapshot_id": "features-1", "as_of_date": "2026-09-10", "strategy_id": "strategy1",
+        "features/momentum", "features-1", {
+            "snapshot_id": "features-1", "as_of_date": "2026-09-10", "strategy_id": "momentum",
             "values": {
                 "a": {"symbol": "AAA", "factors": {"trend": 1, "momentum": 1, "efficiency": 1, "volume": 1, "structure": 1}},
                 "b": {"symbol": "BBB", "factors": {"trend": 2, "momentum": 2, "efficiency": 2, "volume": 2, "structure": 2}},
@@ -23,7 +23,7 @@ def test_sector_normalized_ranking_is_versioned_and_lineaged(tmp_path):
     )
     sectors = publisher.publish_json("reference/sectors", "sectors-1", {"snapshot_id": "sectors-1", "as_of_date": "2026-09-10", "values": {"a": "TECH", "b": "TECH"}})
     research = ResearchJobs(database, MarketRepository(database), publisher)
-    result = research.sector_normalize({"as_of_date": "2026-09-10", "strategy_id": "strategy1", "feature_artifact_id": features.artifact_id, "sector_artifact_id": sectors.artifact_id})
+    result = research.sector_normalize({"as_of_date": "2026-09-10", "strategy_id": "momentum", "feature_artifact_id": features.artifact_id, "sector_artifact_id": sectors.artifact_id})
     assert result["normalization"] == "within_sector_zscore"
     assert result["members"][0]["instrument_id"] == "b"
     manifest, _ = publisher.store.read_json("research/sector-rankings", result["artifact_id"])

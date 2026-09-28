@@ -264,7 +264,7 @@ def test_exit_proceeds_can_finance_same_date_open_buy():
 
     # Bug-fix 3: released cash is now available for same-day buys.
     types = [decision.type for decision in decisions]
-    assert DecisionType.SCORE_EXIT in types
+    assert DecisionType.UNIVERSE_EXIT in types
     assert DecisionType.BUY in types
     assert next_state.holdings[0].instrument_id == "NEW"
 

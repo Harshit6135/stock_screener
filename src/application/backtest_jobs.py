@@ -91,7 +91,7 @@ class BacktestJobs:
         return revision_id
 
     def execute(self, payload: dict[str, Any]) -> dict[str, object]:
-        if isinstance(payload, dict) and payload.get("strategy_id") == "strategy4":
+        if isinstance(payload, dict) and payload.get("strategy_id") in ("strategy4", "positional_trend_following"):
             return self._execute_strategy4(payload)
         unsupported = set(payload) - {
             "strategy_id",
@@ -399,8 +399,8 @@ class BacktestJobs:
             raise DomainValidationError("Strategy 4 pyramiding is deferred; set enable_pyramiding to false")
         if "include_be" in payload and not isinstance(payload["include_be"], bool):
             raise DomainValidationError("include_be must be boolean")
-        universe = payload.get("universe", "NIFTY500")
-        if not isinstance(universe, str) or universe not in {"NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500"}:
+        universe = payload.get("universe", "SNAPSHOT_NIFTY500")
+        if not isinstance(universe, str) or universe not in {"SNAPSHOT_NIFTY500", "NIFTY_TOTAL_MARKET", "APPLICATION_MCAP500"}:
             raise DomainValidationError("Strategy 4 universe is invalid")
         if payload.get("include_be", False) and universe != "NIFTY_TOTAL_MARKET":
             raise DomainValidationError("BE rows can be enabled only for NIFTY_TOTAL_MARKET")
@@ -419,6 +419,7 @@ class BacktestJobs:
             benchmark_price_return,
             load_data,
             load_market_cap_universe,
+            load_snapshot_universe,
             simulate,
         )
         try:
@@ -437,6 +438,8 @@ class BacktestJobs:
             policy.validate()
             if universe == "APPLICATION_MCAP500":
                 histories, sessions, coverage = load_market_cap_universe(self.database, end_date=end.isoformat())
+            elif universe == "SNAPSHOT_NIFTY500":
+                histories, sessions, coverage = load_snapshot_universe(self.database, end_date=end.isoformat())
             else:
                 universe_csv = root / ("ind_niftytotalmarket_list.csv" if universe == "NIFTY_TOTAL_MARKET" else "ind_nifty500list.csv")
                 histories, sessions, coverage = load_data(

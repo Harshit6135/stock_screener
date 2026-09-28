@@ -58,7 +58,7 @@ def test_operations_cli_reads_pipeline_and_poller_state(tmp_path, monkeypatch, c
 
     database = tmp_path / "state.db"
     jobs = JobStore(database)
-    pipeline = ResearchPipelineJobs(database, jobs).submit({"as_of_date": "2026-09-10", "strategies": ["strategy1"]})
+    pipeline = ResearchPipelineJobs(database, jobs).submit({"as_of_date": "2026-09-10", "strategies": ["momentum"]})
     monkeypatch.setattr(sys, "argv", ["screener-ops", "pipeline-status", str(database), pipeline["pipeline_id"]])
     assert main() == 0
     assert json.loads(capsys.readouterr().out)["pipeline_id"] == pipeline["pipeline_id"]

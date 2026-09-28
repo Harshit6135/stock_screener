@@ -31,7 +31,7 @@ def _setup(tmp_path):
     database = tmp_path / "system.db"
     publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
     definitions = StrategyDefinitions(database, PandasTaAdapter())
-    text = (Path(__file__).resolve().parents[1] / "strategies/strategy4.yml").read_text()
+    text = (Path(__file__).resolve().parents[1] / "strategies/positional_trend_following.yml").read_text()
     revision = definitions.create_from_yaml(text)
     definitions.activate(revision["revision_id"])
     runtime = StrategyRuntime(definitions)
@@ -42,6 +42,8 @@ def _setup(tmp_path):
     market = SimpleNamespace(
         path=database, histories=lambda *_, **__: source,
         session_dates=lambda *_, exchange="NSE": days if exchange == "NSE" else [],
+        latest_universe_snapshot=lambda _: {"snapshot_id": "snapshot-a", "snapshot_date": days[-1]},
+        universe_snapshot_members=lambda *_args, **_kwargs: [{"isin": "ISIN-A"}],
     )
     csv = tmp_path / "nifty500.csv"
     csv.write_text("Symbol,Series,ISIN Code\nA,EQ,ISIN-A\n")
@@ -102,7 +104,7 @@ def test_proposals_and_replay_size_competing_entries_after_fees(tmp_path, monkey
     ledger = Ledger(jobs.market.path)
     ledger.open_account("paper", Money(10_000))
     actions = ActionJobs(jobs.market.path, market, SimpleNamespace(runtime=runtime), ledger, publisher, service)
-    proposal = actions.generate({"account_id": "paper", "strategy_id": "strategy4",
+    proposal = actions.generate({"account_id": "paper", "strategy_id": "positional_trend_following",
                                  "action_date": days[1]})
     monkeypatch.setattr("src.application.positional_trend_backtest.feature_series",
                         lambda history, sessions, symbol, rules: [row for row in rows if row["symbol"] == symbol])
@@ -136,11 +138,11 @@ def test_held_exit_survives_missing_open_and_universe_removal(tmp_path, monkeypa
     signal = publisher.publish_json("research/strategy4-signals", str(uuid4()), {"signals": []})
     service = SimpleNamespace(read_signals=lambda *_, **__: (signal.artifact_id, {"signals": []}))
     actions = ActionJobs(jobs.market.path, market, SimpleNamespace(runtime=runtime), ledger, publisher, service)
-    first = actions.generate({"account_id": "paper", "strategy_id": "strategy4", "action_date": days[1]})
+    first = actions.generate({"account_id": "paper", "strategy_id": "positional_trend_following", "action_date": days[1]})
     assert first["decisions"][0]["type"] == "NO_ACTION"
     _, artifact = publisher.store.read_json("actions/proposals", first["proposal_id"])
     assert artifact["skipped_candidates"][0]["reason"] == "exit_waiting_for_valid_open"
-    second = actions.generate({"account_id": "paper", "strategy_id": "strategy4", "action_date": days[2]})
+    second = actions.generate({"account_id": "paper", "strategy_id": "positional_trend_following", "action_date": days[2]})
     assert second["decisions"][0]["type"] == "SELL"
     assert second["decisions"][0]["units"] == 10
     assert second["decisions"][0]["signal_date"] == days[0]
@@ -148,14 +150,19 @@ def test_held_exit_survives_missing_open_and_universe_removal(tmp_path, monkeypa
 
 def test_v4_real_indicators_signals_actions_and_cataloged_backtest_agree(tmp_path):
     services = ApplicationServices.create(tmp_path)
-    root = Path(__file__).resolve().parents[1]
-    with (root / "ind_nifty500list.csv").open(encoding="utf-8-sig", newline="") as stream:
-        member = next(row for row in csv.DictReader(stream) if row["Series"] == "EQ")
+    member = {"ISIN Code": "INE000A01000", "Symbol": "FIXTURE", "Series": "EQ"}
     instrument = str(uuid4())
     start = date(2022, 1, 1)
     services.market.upsert_instruments([
         TrackedInstrument(instrument, member["ISIN Code"], member["Symbol"], "NSE", "42", start),
     ])
+    services.market.create_universe_snapshot(
+        snapshot_id="fixture-nifty500", index_name="NIFTY 500", snapshot_date=start,
+        source_url="fixture", raw_csv=b"fixture", members=[{
+            "isin": member["ISIN Code"], "symbol": member["Symbol"],
+            "company_name": "Fixture", "industry": "Fixture", "series": "EQ",
+        }],
+    )
     bars = []
     for index in range(108):
         close = Decimal(100 if index < 70 else min(187, 100 + 3 * (index - 70)))
@@ -174,17 +181,17 @@ def test_v4_real_indicators_signals_actions_and_cataloged_backtest_agree(tmp_pat
     signal_result = services.positional_trend.build_signals({"as_of_date": signal_day.isoformat()})
     assert signal_result["signal_count"] == 1
     services.ledger.open_account("paper", Money(500_000))
-    buy = services.actions.generate({"account_id": "paper", "strategy_id": "strategy4",
+    buy = services.actions.generate({"account_id": "paper", "strategy_id": "positional_trend_following",
                                      "action_date": buy_day.isoformat()})["decisions"][0]
     assert buy["type"] == "BUY"
     services.ledger.record_fills("paper", "fixture-confirmed-buy", 0, [
         Fill(instrument, buy_day, FillSide.BUY, Quantity(buy["units"]),
              Money(Decimal(buy["execution_price"])), Money(Decimal(buy["fee"]))),
     ])
-    sell = services.actions.generate({"account_id": "paper", "strategy_id": "strategy4",
+    sell = services.actions.generate({"account_id": "paper", "strategy_id": "positional_trend_following",
                                       "action_date": sell_day.isoformat()})["decisions"][0]
     assert sell["type"] == "SELL"
-    replay_run = services.backtests.execute({"strategy_id": "strategy4",
+    replay_run = services.backtests.execute({"strategy_id": "positional_trend_following",
                                             "start_date": signal_day.isoformat(),
                                             "end_date": sell_day.isoformat()})
     _, report = services.artifacts.read_json("runs/backtests", replay_run["artifact_id"])

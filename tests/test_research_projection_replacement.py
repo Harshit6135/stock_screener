@@ -46,11 +46,11 @@ def test_recomputation_removes_stale_daily_and_weekly_members(tmp_path, monkeypa
         factors,
     )
     day = date(2026, 9, 4)
-    research.calculate_day({"as_of_date": day.isoformat(), "strategy_id": "strategy1"})
-    research.rank_week({"week_end": day.isoformat(), "strategy_id": "strategy1"})
-    assert len(research.top_rankings(day, 20, "strategy1")) == 2
+    research.calculate_day({"as_of_date": day.isoformat(), "strategy_id": "momentum"})
+    research.rank_week({"week_end": day.isoformat(), "strategy_id": "momentum"})
+    assert len(research.top_rankings(day, 20, "momentum")) == 2
 
     include_b = False
-    research.calculate_day({"as_of_date": day.isoformat(), "strategy_id": "strategy1"})
-    research.rank_week({"week_end": day.isoformat(), "strategy_id": "strategy1"})
-    assert [row["symbol"] for row in research.top_rankings(day, 20, "strategy1")] == ["A"]
+    research.calculate_day({"as_of_date": day.isoformat(), "strategy_id": "momentum"})
+    research.rank_week({"week_end": day.isoformat(), "strategy_id": "momentum"})
+    assert [row["symbol"] for row in research.top_rankings(day, 20, "momentum")] == ["A"]

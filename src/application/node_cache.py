@@ -47,6 +47,11 @@ class IndicatorNodeCache:
                     ("CREATE INDEX IF NOT EXISTS idx_node_cache_instrument "
                      "ON indicator_node_cache(instrument_id, as_of_date)"),
                 ),
+                2: (
+                    "ALTER TABLE indicator_node_cache ADD COLUMN market_revision TEXT NOT NULL DEFAULT ''",
+                    "ALTER TABLE indicator_node_cache ADD COLUMN implementation_revision TEXT NOT NULL DEFAULT ''",
+                    "CREATE INDEX IF NOT EXISTS idx_node_cache_revisions ON indicator_node_cache(instrument_id, market_revision, implementation_revision)",
+                ),
             },
         )
 
@@ -59,14 +64,21 @@ class IndicatorNodeCache:
         node_hash: str,
         instrument_id: str,
         as_of_date: date,
+        *,
+        market_revision: str | None = None,
+        implementation_revision: str | None = None,
     ) -> float | None:
         """Return a cached scalar value, or ``None`` if absent."""
         with sqlite_connection(self.database, read_only=True, row_factory=True) as conn:
-            row = conn.execute(
-                """SELECT value_json FROM indicator_node_cache
-                   WHERE node_hash = ? AND instrument_id = ? AND as_of_date = ?""",
-                (node_hash, instrument_id, as_of_date.isoformat()),
-            ).fetchone()
+            sql = "SELECT value_json FROM indicator_node_cache WHERE node_hash=? AND instrument_id=? AND as_of_date=?"
+            args: list[object] = [node_hash, instrument_id, as_of_date.isoformat()]
+            if market_revision is not None:
+                sql += " AND market_revision=?"
+                args.append(market_revision)
+            if implementation_revision is not None:
+                sql += " AND implementation_revision=?"
+                args.append(implementation_revision)
+            row = conn.execute(sql, args).fetchone()
         if row is None:
             return None
         return float(json.loads(row["value_json"]))
@@ -78,6 +90,9 @@ class IndicatorNodeCache:
         as_of_date: date,
         value: float,
         source_snapshot_id: str,
+        *,
+        market_revision: str = "",
+        implementation_revision: str = "",
     ) -> None:
         """Insert or replace a single cached value."""
         now = datetime.now(UTC).isoformat()
@@ -85,12 +100,14 @@ class IndicatorNodeCache:
             conn.execute(
                 """INSERT INTO indicator_node_cache
                    (node_hash, instrument_id, as_of_date, value_json,
-                    source_snapshot_id, calculated_at)
-                   VALUES (?, ?, ?, ?, ?, ?)
+                    source_snapshot_id, calculated_at, market_revision, implementation_revision)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(node_hash, instrument_id, as_of_date) DO UPDATE SET
                    value_json = excluded.value_json,
                    source_snapshot_id = excluded.source_snapshot_id,
-                   calculated_at = excluded.calculated_at""",
+                   calculated_at = excluded.calculated_at,
+                   market_revision = excluded.market_revision,
+                   implementation_revision = excluded.implementation_revision""",
                 (
                     node_hash,
                     instrument_id,
@@ -98,6 +115,8 @@ class IndicatorNodeCache:
                     json.dumps(value),
                     source_snapshot_id,
                     now,
+                    market_revision,
+                    implementation_revision,
                 ),
             )
 
@@ -111,19 +130,25 @@ class IndicatorNodeCache:
         instrument_id: str,
         start_date: date,
         end_date: date,
+        *,
+        market_revision: str | None = None,
+        implementation_revision: str | None = None,
     ) -> dict[str, float]:
         """Return cached values for one node + instrument over a date range.
 
         Returns ``{iso_date_string: value}`` for each cached row.
         """
         with sqlite_connection(self.database, read_only=True, row_factory=True) as conn:
-            rows = conn.execute(
-                """SELECT as_of_date, value_json FROM indicator_node_cache
-                   WHERE node_hash = ? AND instrument_id = ?
-                   AND as_of_date BETWEEN ? AND ?
-                   ORDER BY as_of_date""",
-                (node_hash, instrument_id, start_date.isoformat(), end_date.isoformat()),
-            ).fetchall()
+            sql = """SELECT as_of_date, value_json FROM indicator_node_cache
+                     WHERE node_hash=? AND instrument_id=? AND as_of_date BETWEEN ? AND ?"""
+            args: list[object] = [node_hash, instrument_id, start_date.isoformat(), end_date.isoformat()]
+            if market_revision is not None:
+                sql += " AND market_revision=?"
+                args.append(market_revision)
+            if implementation_revision is not None:
+                sql += " AND implementation_revision=?"
+                args.append(implementation_revision)
+            rows = conn.execute(sql + " ORDER BY as_of_date", args).fetchall()
         return {str(row["as_of_date"]): float(json.loads(row["value_json"])) for row in rows}
 
     def get_bulk(
@@ -131,6 +156,9 @@ class IndicatorNodeCache:
         node_hashes: set[str],
         start_date: date,
         end_date: date,
+        *,
+        revisions: dict[str, str] | None = None,
+        implementation_revision: str | None = None,
     ) -> dict[str, dict[str, dict[str, float]]]:
         """Return cached values for multiple nodes across all instruments.
 
@@ -146,16 +174,20 @@ class IndicatorNodeCache:
             placeholders = ",".join("?" * len(batch))
             with sqlite_connection(self.database, read_only=True, row_factory=True) as conn:
                 rows = conn.execute(
-                    f"""SELECT node_hash, instrument_id, as_of_date, value_json
+                    f"""SELECT node_hash, instrument_id, as_of_date, value_json,
+                               market_revision, implementation_revision
                         FROM indicator_node_cache
-                        WHERE node_hash IN ({placeholders})
-                        AND as_of_date BETWEEN ? AND ?
+                        WHERE node_hash IN ({placeholders}) AND as_of_date BETWEEN ? AND ?
                         ORDER BY node_hash, instrument_id, as_of_date""",
                     (*batch, start_date.isoformat(), end_date.isoformat()),
                 ).fetchall()
             for row in rows:
                 nh = str(row["node_hash"])
                 iid = str(row["instrument_id"])
+                if revisions is not None and str(row["market_revision"]) != revisions.get(iid):
+                    continue
+                if implementation_revision is not None and str(row["implementation_revision"]) != implementation_revision:
+                    continue
                 day = str(row["as_of_date"])
                 result.setdefault(nh, {}).setdefault(iid, {})[day] = float(
                     json.loads(row["value_json"])
@@ -167,6 +199,9 @@ class IndicatorNodeCache:
         node_hash: str,
         values: dict[str, dict[str, float]],
         source_snapshot_id: str,
+        *,
+        market_revisions: dict[str, str] | None = None,
+        implementation_revision: str = "",
     ) -> int:
         """Bulk insert cached values for one node across instruments and dates.
 
@@ -187,7 +222,7 @@ class IndicatorNodeCache:
         if not values:
             return 0
         now = datetime.now(UTC).isoformat()
-        rows: list[tuple[str, str, str, str, str, str]] = []
+        rows: list[tuple[str, str, str, str, str, str, str, str]] = []
         for instrument_id, series in values.items():
             for day, value in series.items():
                 rows.append((
@@ -197,18 +232,22 @@ class IndicatorNodeCache:
                     json.dumps(value),
                     source_snapshot_id,
                     now,
+                    (market_revisions or {}).get(instrument_id, ""),
+                    implementation_revision,
                 ))
         with sqlite_connection(self.database) as conn:
             conn.execute("BEGIN IMMEDIATE")
             conn.executemany(
                 """INSERT INTO indicator_node_cache
                    (node_hash, instrument_id, as_of_date, value_json,
-                    source_snapshot_id, calculated_at)
-                   VALUES (?, ?, ?, ?, ?, ?)
+                    source_snapshot_id, calculated_at, market_revision, implementation_revision)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(node_hash, instrument_id, as_of_date) DO UPDATE SET
                    value_json = excluded.value_json,
                    source_snapshot_id = excluded.source_snapshot_id,
-                   calculated_at = excluded.calculated_at""",
+                   calculated_at = excluded.calculated_at,
+                   market_revision = excluded.market_revision,
+                   implementation_revision = excluded.implementation_revision""",
                 rows,
             )
         return len(rows)
@@ -254,3 +293,13 @@ class IndicatorNodeCache:
                     "SELECT COUNT(*) AS cnt FROM indicator_node_cache"
                 ).fetchone()
         return int(row["cnt"]) if row else 0
+
+    def invalidate_instrument(self, instrument_id: str) -> int:
+        """Remove cached values for a changed market history only."""
+        if not instrument_id:
+            raise ValueError("instrument_id is required")
+        with sqlite_connection(self.database) as conn:
+            cursor = conn.execute(
+                "DELETE FROM indicator_node_cache WHERE instrument_id=?", (instrument_id,)
+            )
+        return int(cursor.rowcount)

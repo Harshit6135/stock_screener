@@ -12,7 +12,7 @@ class _Runtime:
         return "factor_score"
 
     def strategy_ids(self):
-        return ("strategy1",)
+        return ("momentum",)
 
     def revision(self, _strategy_id):
         return {
@@ -90,14 +90,14 @@ def test_bulk_rebuild_calculates_each_stage_and_persists_range(tmp_path):
         {
             "start_date": sessions[0],
             "end_date": sessions[-1],
-            "strategies": ["strategy1"],
+            "strategies": ["momentum"],
             "trading_dates": sessions,
         },
         context,
     )
 
     assert result["execution_model"] == "bulk-staged-vectorized"
-    assert result["strategies"]["strategy1"]["scored_rows"] == 10
+    assert result["strategies"]["momentum"]["scored_rows"] == 10
     assert result["weekly_rankings"] == 1
     assert {item["stage"] for item in context.progress} == {
         "loading_market_history",
@@ -124,13 +124,13 @@ def test_bulk_rebuild_accepts_a_range_before_strategy_warmup(tmp_path):
         {
             "start_date": sessions[0],
             "end_date": sessions[-1],
-            "strategies": ["strategy1"],
+            "strategies": ["momentum"],
             "trading_dates": sessions,
         },
         context,
     )
 
-    assert result["strategies"]["strategy1"]["scored_rows"] == 0
+    assert result["strategies"]["momentum"]["scored_rows"] == 0
     assert result["weekly_rankings"] == 1
     with sqlite_connection(database, read_only=True) as connection:
         assert connection.execute("SELECT COUNT(*) FROM research_daily_scores").fetchone()[0] == 0

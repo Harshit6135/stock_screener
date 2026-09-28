@@ -1,7 +1,8 @@
+import logging
 import os
 from pathlib import Path
 
-from flask import Flask, jsonify, redirect
+from flask import Flask, jsonify
 from waitress import serve  # type: ignore[import-untyped]
 
 from src.application.actions_web import create_actions_blueprint
@@ -9,10 +10,10 @@ from src.application.backtest_web import create_backtest_blueprint
 from src.application.broker_web import create_broker_blueprint
 from src.application.composition import ApplicationServices
 from src.application.dashboard_web import create_dashboard_blueprint
-from src.application.early_momentum_web import create_early_momentum_blueprint
 from src.application.index_poller import BackgroundIndexPoller
 from src.application.indicators_web import create_indicators_blueprint
 from src.application.kite_auth import KiteAuthService, load_kite_credentials
+from src.application.kite_accounts_web import create_kite_accounts_blueprint
 from src.application.kite_web import create_kite_auth_blueprint
 from src.application.market_web import create_market_blueprint
 from src.application.operations import sqlite_ready
@@ -23,8 +24,22 @@ from src.application.reference_web import create_reference_blueprint
 from src.application.research_web import create_research_blueprint
 from src.application.runtime import RuntimeConfig
 from src.application.strategies_web import create_strategies_blueprint
+from src.application.universe_web import create_universe_blueprint
 from src.application.web import create_operations_blueprint
 from src.indicators.registry import PandasTaAdapter
+
+
+def configure_logging() -> None:
+    """Configure the application logger once, without exposing payload values."""
+    logger = logging.getLogger("screener")
+    if logger.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s %(message)s"
+    ))
+    logger.addHandler(handler)
+    logger.setLevel(os.environ.get("SCREENER_LOG_LEVEL", "INFO").upper())
 
 
 def create_app(config_class=RuntimeConfig):
@@ -34,6 +49,7 @@ def create_app(config_class=RuntimeConfig):
     metadata.  Database creation is performed by reviewed store migrations,
     never by a web-process-wide ``create_all`` side effect.
     """
+    configure_logging()
     app = Flask(__name__)
     app.config.from_object(config_class)
     data_directory = Path(app.config["DATA_DIRECTORY"])
@@ -61,8 +77,6 @@ def create_app(config_class=RuntimeConfig):
         portfolio_kite_credentials=portfolio_credentials,
         portfolio_kite_token_path=portfolio_token_path,
         portfolio_live_execution=bool(app.config.get("PORTFOLIO_KITE_LIVE_EXECUTION", False)),
-        nse_csv_path=Path.cwd() / "data" / "imports" / "NSE.csv",
-        bse_csv_path=Path.cwd() / "data" / "imports" / "BSE.csv",
     )
     app.extensions["screener_services"] = services
     app.register_blueprint(create_dashboard_blueprint())
@@ -77,6 +91,7 @@ def create_app(config_class=RuntimeConfig):
     app.register_blueprint(
         create_reference_blueprint(services.artifacts, services.market, services.publisher)
     )
+    app.register_blueprint(create_universe_blueprint(services.market, services.jobs))
     app.register_blueprint(
         create_market_blueprint(
             services.market,
@@ -93,22 +108,16 @@ def create_app(config_class=RuntimeConfig):
     )
     app.register_blueprint(create_pipeline_blueprint(services.pipelines))
     app.register_blueprint(create_positional_trend_blueprint(services.positional_trend, services.jobs))
-    app.register_blueprint(create_early_momentum_blueprint(services.artifacts))
     app.register_blueprint(create_indicators_blueprint(PandasTaAdapter()))
     app.register_blueprint(create_strategies_blueprint(services.strategies))
-    app.register_blueprint(create_portfolio_blueprint(services.ledger, services.market, services.actions.risk_projection))
+    app.register_blueprint(create_portfolio_blueprint(
+        services.ledger, services.market, services.actions.risk_projection,
+        services.broker_orders.risk_config,
+    ))
     app.register_blueprint(create_broker_blueprint(services.broker_orders))
+    app.register_blueprint(create_kite_accounts_blueprint(services.kite_accounts, services.portfolio_sync))
     app.register_blueprint(create_backtest_blueprint(services.backtests, services.artifacts))
     app.register_blueprint(create_actions_blueprint(services.actions))
-
-    @app.get("/")
-    def dashboard_root():
-        if (
-            services.market_jobs.credentials is not None
-            and not services.market_jobs.token_path.exists()
-        ):
-            return redirect("/integrations/kite")
-        return redirect("/app")
 
     app.register_blueprint(
         create_kite_auth_blueprint(

@@ -87,24 +87,39 @@ class KiteExecutionGateway:
             raise DomainValidationError("broker instrument is not allowlisted")
         client = self._client()
         return str(client.place_order(
-            variety="regular", exchange=str(order["exchange"]), tradingsymbol=str(order["symbol"]),
+            variety=str(order.get("variety", "regular")), exchange=str(order["exchange"]), tradingsymbol=str(order["symbol"]),
             transaction_type=str(order["side"]), quantity=int(str(order["quantity"])),
             order_type=str(order["order_type"]), product="CNC", validity="DAY",
         ))
 
     def order_status(self, broker_order_id: str) -> dict[str, object]:
-        return dict(self._client().order_history(broker_order_id)[-1])
+        client = self._client()
+        status = dict(client.order_history(broker_order_id)[-1])
+        # Reconciliation consumes actual trade rows, not the aggregate order
+        # history returned by Kite.
+        status["fills"] = [
+            {
+                "trade_id": str(row["trade_id"]),
+                "quantity": int(row["quantity"]),
+                "price": str(row["fill_price"]),
+                "fill_date": str(row.get("exchange_timestamp") or row.get("order_timestamp"))[:10],
+                "executed_at": str(row.get("exchange_timestamp") or row.get("order_timestamp")),
+            }
+            for row in client.order_trades(broker_order_id)
+            if row.get("trade_id") and row.get("quantity") and row.get("fill_price")
+        ]
+        return status
 
 
 class BrokerOrderService:
-    def __init__(self, database: str | Path, ledger: Ledger, gateway: BrokerExecutionGateway | None = None):
-        self.database, self.ledger, self.gateway = Path(database), ledger, gateway
+    def __init__(self, database: str | Path, ledger: Ledger, gateway: BrokerExecutionGateway | None = None, risk_config=None):
+        self.database, self.ledger, self.gateway, self.risk_config = Path(database), ledger, gateway, risk_config
         migrate_sqlite(self.database, "broker_orders", {1: (
             """CREATE TABLE IF NOT EXISTS broker_orders (
                 order_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, proposal_id TEXT NOT NULL,
                 idempotency_key TEXT NOT NULL UNIQUE, instrument_id TEXT NOT NULL,
                 symbol TEXT NOT NULL, exchange TEXT NOT NULL, side TEXT NOT NULL,
-                quantity INTEGER NOT NULL, order_type TEXT NOT NULL, status TEXT NOT NULL,
+                quantity INTEGER NOT NULL, order_type TEXT NOT NULL, variety TEXT NOT NULL DEFAULT 'regular', status TEXT NOT NULL,
                 broker_order_id TEXT, created_at TEXT NOT NULL)""",
             """CREATE TABLE IF NOT EXISTS broker_execution_events (
                 event_id INTEGER PRIMARY KEY, order_id TEXT NOT NULL, event_type TEXT NOT NULL,
@@ -185,10 +200,16 @@ class BrokerOrderService:
 
     def create_intent(self, payload: dict[str, object]) -> dict[str, object]:
         required = {"account_id", "proposal_id", "idempotency_key", "instrument_id", "symbol", "exchange", "side", "quantity", "order_type"}
-        if not isinstance(payload, dict) or set(payload) != required:
+        optional = {"variety"}
+        if not isinstance(payload, dict) or not required.issubset(payload) or set(payload) - (required | optional):
             raise DomainValidationError("broker order intent is incomplete")
-        if payload["side"] not in {"BUY", "SELL"} or payload["exchange"] not in {"NSE", "BSE"} or payload["order_type"] not in {"MARKET", "LIMIT"}:
+        if payload["side"] not in {"BUY", "SELL"} or payload["exchange"] != "NSE" or payload["order_type"] not in {"MARKET", "LIMIT"}:
             raise DomainValidationError("broker order intent values are invalid")
+        variety = str(payload.get("variety", "regular"))
+        if variety not in {"regular", "amo"}:
+            raise DomainValidationError("broker order variety is invalid")
+        if variety == "amo" and payload["side"] != "SELL":
+            raise DomainValidationError("AMO is only supported for next-session SELL intents")
         if isinstance(payload["quantity"], bool) or not isinstance(payload["quantity"], int) or payload["quantity"] < 1:
             raise DomainValidationError("broker order quantity is invalid")
         if not all(isinstance(payload[field], str) and str(payload[field]).strip() for field in ("account_id", "proposal_id", "idempotency_key", "instrument_id", "symbol")):
@@ -201,8 +222,8 @@ class BrokerOrderService:
             if existing is not None:
                 return dict(existing)
             connection.execute(
-                "INSERT INTO broker_orders(order_id, account_id, proposal_id, idempotency_key, instrument_id, symbol, exchange, side, quantity, order_type, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'LOCAL_CREATED', ?)",
-                (order_id, payload["account_id"], payload["proposal_id"], payload["idempotency_key"], payload["instrument_id"], payload["symbol"], payload["exchange"], payload["side"], payload["quantity"], payload["order_type"], timestamp),
+                "INSERT INTO broker_orders(order_id, account_id, proposal_id, idempotency_key, instrument_id, symbol, exchange, side, quantity, order_type, variety, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'LOCAL_CREATED', ?)",
+                (order_id, payload["account_id"], payload["proposal_id"], payload["idempotency_key"], payload["instrument_id"], payload["symbol"], payload["exchange"], payload["side"], payload["quantity"], payload["order_type"], variety, timestamp),
             )
             self._event(connection, order_id, "LOCAL_CREATED", None, payload, timestamp)
         return self.get(order_id)

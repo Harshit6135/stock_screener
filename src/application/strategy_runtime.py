@@ -20,6 +20,20 @@ from src.indicators.dag import DagExecutor, DagGraph
 from src.indicators.registry import PandasTaAdapter
 from src.platform_kernel import DomainValidationError
 
+# Phase 4 Task 4.1: Canonical named IDs and legacy mapping
+LEGACY_STRATEGY_MAP: dict[str, str] = {
+    "strategy1": "momentum",
+    "strategy4": "positional_trend_following",
+}
+NAMED_TO_LEGACY: dict[str, str] = {v: k for k, v in LEGACY_STRATEGY_MAP.items()}
+REMOVED_STRATEGIES = frozenset({"strategy2", "strategy3"})
+RETAINED_STRATEGIES = frozenset({"momentum", "positional_trend_following"})
+
+
+def resolve_strategy_id(raw_id: str) -> str:
+    """Map legacy numbered IDs to canonical named IDs at read boundaries."""
+    return LEGACY_STRATEGY_MAP.get(raw_id, raw_id)
+
 
 class StrategyRuntime:
     def __init__(self, definitions: StrategyDefinitions, adapter: PandasTaAdapter | None = None) -> None:
@@ -29,23 +43,34 @@ class StrategyRuntime:
     def seed(self, directory: str | Path) -> None:
         for path in sorted(Path(directory).glob("*.yml")):
             revision = self.definitions.create_from_yaml(path.read_text(encoding="utf-8"))
-            active = self.definitions.active(str(revision["strategy_id"]))
+            strategy_id = str(revision["strategy_id"])
+            # Skip removed strategies
+            if strategy_id in REMOVED_STRATEGIES:
+                continue
+            active = self.definitions.active(strategy_id)
             active_definition = cast(dict[str, Any], active["definition"]) if active else {}
             new_definition = cast(dict[str, Any], revision["definition"])
             if (active is None or "portfolio_policy" not in active_definition
-                    or (str(revision["strategy_id"]) == "strategy4"
+                    or (strategy_id in ("strategy4", "positional_trend_following")
                         and active_definition.get("strategy", {}).get("kind") != "event_signal"
                         and new_definition.get("strategy", {}).get("kind") == "event_signal")):
                 self.definitions.activate(str(revision["revision_id"]))
 
     def revision(self, strategy_id: str) -> dict[str, object]:
-        revision = self.definitions.active(strategy_id)
+        resolved = resolve_strategy_id(strategy_id)
+        revision = self.definitions.active(resolved)
+        if revision is None and resolved != strategy_id:
+            # Try the original ID for legacy stores
+            revision = self.definitions.active(strategy_id)
         if revision is None:
             raise DomainValidationError(f"strategy '{strategy_id}' has no active revision")
         return revision
 
     def strategy_ids(self) -> tuple[str, ...]:
-        return tuple(item["strategy_id"] for item in self.definitions.active_revisions())
+        return tuple(
+            item["strategy_id"] for item in self.definitions.active_revisions()
+            if str(item["strategy_id"]) not in REMOVED_STRATEGIES
+        )
 
     def factor_weights(self, strategy_id: str) -> dict[str, float]:
         definition = cast(dict[str, Any], self.revision(strategy_id)["definition"])
@@ -70,9 +95,10 @@ class StrategyRuntime:
         return str(dependencies["benchmark"]) if dependencies.get("benchmark") else None
 
     def portfolio_policy(self, strategy_id: str) -> dict[str, object]:
-        if strategy_id == "strategy3":
-            raise DomainValidationError("Strategy 3 is research-only; no portfolio policy is available")
-        definition = cast(dict[str, Any], self.revision(strategy_id)["definition"])
+        resolved = resolve_strategy_id(strategy_id)
+        if resolved in REMOVED_STRATEGIES or strategy_id in REMOVED_STRATEGIES:
+            raise DomainValidationError(f"Strategy '{strategy_id}' has been retired; no portfolio policy is available")
+        definition = cast(dict[str, Any], self.revision(resolved)["definition"])
         return dict(definition["portfolio_policy"])
 
     def compute(

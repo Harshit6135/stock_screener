@@ -31,14 +31,15 @@ from .registry import IndicatorSpec, PandasTaAdapter
 # ---------------------------------------------------------------------------
 PRIMITIVE_FIELDS = frozenset({"open", "high", "low", "close", "volume", "benchmark.close"})
 
-# Approved built-in operations (mirrors strategy_definitions._OPERATIONS)
+# Operations which have an executable, per-instrument DAG handler.  Keep this
+# list next to the dispatcher so publication validation cannot approve a node
+# which fails later in a worker.
 APPROVED_OPERATIONS = frozenset({
     "add", "subtract", "multiply", "divide", "ratio", "logarithm", "shift",
     "rolling_mean", "rolling_std", "rolling_correlation", "clip", "scale",
-    "piecewise_linear", "default", "conditional", "all", "any", "not",
+    "piecewise_linear", "default", "conditional",
     "greater_than", "greater_than_or_equal", "less_than", "less_than_or_equal",
-    "equal", "percentile", "rank", "z_score", "sector_z_score", "weighted_sum",
-    "modifier", "abs", "pct_change", "ewm_mean",
+    "equal", "weighted_sum", "abs", "pct_change", "ewm_mean",
 })
 
 
@@ -129,6 +130,7 @@ class DagGraph:
             self._nodes[node.node_id] = node
         self._validate_references()
         self._execution_order = self._topological_sort()
+        self._content_hashes = self._compute_content_hashes()
 
     @property
     def nodes(self) -> dict[str, DagNode]:
@@ -209,8 +211,44 @@ class DagGraph:
         return max((_warmup(nid) for nid in self._nodes), default=0)
 
     def unique_content_hashes(self) -> dict[str, str]:
-        """Return {node_id: content_hash} for every node."""
-        return {nid: node.content_hash for nid, node in self._nodes.items()}
+        """Return graph-resolved, recursive content identities by node id.
+
+        A node's standalone ``DagNode.content_hash`` remains useful for a
+        leaf, but cannot identify a graph because its string references are
+        local names.  These hashes replace each node reference with that
+        dependency's identity in topological order.
+        """
+        return dict(self._content_hashes)
+
+    def content_hash(self, node_id: str) -> str:
+        """Return the graph-resolved identity for ``node_id``."""
+        try:
+            return self._content_hashes[node_id]
+        except KeyError as exc:
+            raise DomainValidationError(f"unknown DAG node '{node_id}'") from exc
+
+    def _compute_content_hashes(self) -> dict[str, str]:
+        hashes: dict[str, str] = {}
+        for node in self._execution_order:
+            dependencies = [
+                (role, hashes.get(ref, {"primitive": ref}))
+                for role, ref in node.inputs
+            ]
+            body = json.dumps(
+                {
+                    "provider": node.provider,
+                    "function": node.function,
+                    "inputs": dependencies,
+                    "parameters": list(node.parameters),
+                    # This identifies a selected output of a multi-output
+                    # provider without incorporating its local node name.
+                    "output_key": node.output_key,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            hashes[node.node_id] = hashlib.sha256(body).hexdigest()
+        return hashes
 
     # ------------------------------------------------------------------
     # Serialization
@@ -411,7 +449,7 @@ class DagExecutor:
             # Chained indicator — call pandas_ta directly with NaN-tolerant inputs
             import pandas_ta  # type: ignore[import-untyped]
 
-            validated_params = self._adapter._validate_parameters(spec, parameters)
+            validated_params = self._adapter.validate_parameters(spec, parameters)
             series = {name: s.astype("float64") for name, s in raw_inputs.items()}
             function = getattr(pandas_ta, node.function, None)
             if function is None:

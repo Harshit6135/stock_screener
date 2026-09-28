@@ -44,14 +44,12 @@ class RebuildRangePayload:
 
     def validate(self, available_strategies: tuple[str, ...]) -> None:
         """Raise if the payload contents violate business rules."""
-        if "strategy3" in self.strategies:
-            raise DomainValidationError(
-                "Strategy 3 requires its dedicated ranking job"
-            )
-        if "strategy4" in self.strategies:
-            raise DomainValidationError(
-                "Strategy 4 requires its dedicated daily signal job"
-            )
+        from src.application.strategy_runtime import REMOVED_STRATEGIES
+        for sid in self.strategies:
+            if sid in REMOVED_STRATEGIES:
+                raise DomainValidationError(
+                    f"Strategy '{sid}' has been retired"
+                )
         if (
             self.start_date > self.end_date
             or (self.end_date - self.start_date).days > 365
@@ -101,7 +99,7 @@ class RebuildIndicatorsPayload:
             str(s)
             for s in raw.get(
                 "strategies",
-                [s for s in default_strategies if s not in {"strategy3", "strategy4"}],
+                [s for s in default_strategies if s not in {"strategy3", "strategy4", "positional_trend_following"}],
             )
         )
         return cls(start, end, strategies)
@@ -191,14 +189,12 @@ class RebuildMultiYearPayload:
         """Raise if the payload violates business rules."""
         if self.start_date > self.end_date:
             raise DomainValidationError("start_date must be before end_date")
-        if "strategy3" in self.strategies:
-            raise DomainValidationError(
-                "Strategy 3 requires its dedicated ranking job"
-            )
-        if "strategy4" in self.strategies:
-            raise DomainValidationError(
-                "Strategy 4 requires its dedicated daily signal job"
-            )
+        from src.application.strategy_runtime import REMOVED_STRATEGIES
+        for sid in self.strategies:
+            if sid in REMOVED_STRATEGIES:
+                raise DomainValidationError(
+                    f"Strategy '{sid}' has been retired"
+                )
         if not self.strategies or any(
             s not in available_strategies for s in self.strategies
         ):

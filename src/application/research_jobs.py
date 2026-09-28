@@ -80,16 +80,49 @@ class ResearchJobs:
                         PRIMARY KEY(strategy_revision_id, week_end, instrument_id))""",
                     "CREATE INDEX research_weekly_rankings_date ON research_weekly_rankings(strategy_revision_id, week_end, rank)",
                 ),
+                3: (
+                    # Phase 4 Task 4.6: Percentile snapshot persistence
+                    """CREATE TABLE IF NOT EXISTS research_percentiles (
+                        snapshot_id TEXT NOT NULL,
+                        as_of_date TEXT NOT NULL,
+                        instrument_id TEXT NOT NULL,
+                        symbol TEXT NOT NULL,
+                        factor_name TEXT NOT NULL,
+                        raw_value REAL,
+                        percentile_rank REAL NOT NULL,
+                        PRIMARY KEY(snapshot_id, as_of_date, instrument_id, factor_name))""",
+                    """CREATE TABLE IF NOT EXISTS research_percentile_snapshots (
+                        snapshot_id TEXT PRIMARY KEY,
+                        strategy_revision_id TEXT NOT NULL,
+                        as_of_date TEXT NOT NULL,
+                        universe_snapshot_id TEXT,
+                        indicator_code_hash TEXT,
+                        input_fingerprint TEXT NOT NULL,
+                        created_at TEXT NOT NULL)""",
+                    "CREATE INDEX IF NOT EXISTS research_percentile_snapshots_date ON research_percentile_snapshots(strategy_revision_id, as_of_date)",
+                    # Phase 4 Task 4.10: Research artifact lineage
+                    """CREATE TABLE IF NOT EXISTS research_lineage (
+                        artifact_id TEXT PRIMARY KEY,
+                        strategy_id TEXT NOT NULL,
+                        strategy_revision_id TEXT NOT NULL,
+                        indicator_code_hash TEXT,
+                        universe_snapshot_id TEXT,
+                        market_data_start TEXT,
+                        market_data_end TEXT,
+                        market_history_revision TEXT,
+                        percentile_snapshot_id TEXT,
+                        computed_at TEXT NOT NULL)""",
+                ),
             },
         )
 
     @staticmethod
     def _indicator_set(strategy_id: str, benchmark_name: str | None) -> str:
         """Stable raw-input namespace; weights and score rules never belong here."""
-        if strategy_id == "strategy1":
+        from src.application.strategy_runtime import resolve_strategy_id
+        resolved = resolve_strategy_id(strategy_id)
+        if resolved in ("momentum", "strategy1"):
             return "strategy1:momentum-quality-v2"
-        if strategy_id == "strategy2" and benchmark_name:
-            return f"strategy2:relative-strength-v1:{benchmark_name.lower().replace(' ', '-') }"
         raise DomainValidationError(f"strategy '{strategy_id}' has no raw-indicator cache definition")
 
     def calculate_day(self, payload: dict[str, Any]) -> dict[str, object]:
@@ -131,9 +164,17 @@ class ResearchJobs:
                 
                 graph = DagGraph.from_dict(compiled_dag)
                 executor = DagExecutor(self.runtime._adapter)
-                node_hashes = {node.content_hash for node in graph.execution_order()}
+                graph_hashes = graph.unique_content_hashes()
+                node_hashes = set(graph_hashes.values())
+                implementation_revision = f"dag-executor:{PandasTaAdapter.adapter_version}"
+                instrument_revisions = self.market.market_history_revisions(
+                    str(instrument_id) for instrument_id, _ in eligible
+                )
                 # Pull existing cache across all instruments
-                cached = self.node_cache.get_bulk(node_hashes, start, end)
+                cached = self.node_cache.get_bulk(
+                    node_hashes, start, end, revisions=instrument_revisions,
+                    implementation_revision=implementation_revision,
+                )
                 
                 bench_df = pd.DataFrame(benchmark) if benchmark else None
                 written = 0
@@ -148,9 +189,10 @@ class ResearchJobs:
                     # Fetch precomputed series from our cache
                     precomputed: dict[str, pd.Series] = {}
                     for node in graph.execution_order():
-                        if node.content_hash in cached and instrument_id in cached[node.content_hash]:
+                        node_hash = graph_hashes[node.node_id]
+                        if node_hash in cached and instrument_id in cached[node_hash]:
                             # Map date string to float values
-                            date_vals = cached[node.content_hash][instrument_id]
+                            date_vals = cached[node_hash][instrument_id]
                             # Create a Series aligned to the OHLCV index
                             series_idx = []
                             series_vals = []
@@ -178,9 +220,11 @@ class ResearchJobs:
                                         to_cache[str(d)] = float(val)
                                 if to_cache:
                                     written += self.node_cache.put_bulk(
-                                        node.content_hash,
+                                        graph_hashes[node.node_id],
                                         {instrument_id: to_cache},
-                                        f"job:rebuild-indicators:{strategy_id}"
+                                        f"job:rebuild-indicators:{strategy_id}",
+                                        market_revisions={instrument_id: instrument_revisions[instrument_id]},
+                                        implementation_revision=implementation_revision,
                                     )
                                     
                     if index % 25 == 0 or index == len(eligible):
@@ -195,7 +239,7 @@ class ResearchJobs:
                 for index, (instrument_id, (bars, _identity)) in enumerate(eligible, start=1):
                     series = (
                         momentum_quality_indicator_series(bars)
-                        if strategy_id == "strategy1"
+                        if strategy_id in ("strategy1", "momentum")
                         else relative_strength_feature_series(bars, benchmark)
                     )
                     for day, values in series.items():
@@ -224,12 +268,13 @@ class ResearchJobs:
 
         started = perf_counter()
         timings: dict[str, float] = {}
-        cache_only_strategy1 = (
-            isinstance(self.runtime, StrategyRuntime) and strategies == ("strategy1",)
+        cache_only_momentum = (
+            isinstance(self.runtime, StrategyRuntime) and strategies == ("momentum",)
+            or isinstance(self.runtime, StrategyRuntime) and strategies == ("strategy1",)
         )
         context.checkpoint(
             progress={
-                "stage": "loading_indicator_cache" if cache_only_strategy1 else "loading_market_history",
+                "stage": "loading_indicator_cache" if cache_only_momentum else "loading_market_history",
                 "stage_number": 1,
                 "stage_count": 4,
                 "start_date": start.isoformat(),
@@ -237,15 +282,15 @@ class ResearchJobs:
                 "strategies": list(strategies),
                 "sessions": len(sessions),
                 "detail": (
-                    "Loading cached Strategy 1 inputs and instrument identities."
-                    if cache_only_strategy1
+                    "Loading cached momentum inputs and instrument identities."
+                    if cache_only_momentum
                     else "Loading the shared warm-up history once for this range."
                 ),
             }
         )
         stage_started = perf_counter()
         histories = (
-            {} if cache_only_strategy1 else self.market.histories(start - timedelta(days=900), end)
+            {} if cache_only_momentum else self.market.histories(start - timedelta(days=900), end)
         )
         identities = (
             {
@@ -253,10 +298,10 @@ class ResearchJobs:
                 for item in self.market.tracked_instruments()
                 if not str(item["isin"]).startswith("INDEX:")
             }
-            if cache_only_strategy1
+            if cache_only_momentum
             else {}
         )
-        timings["loading_indicator_cache" if cache_only_strategy1 else "loading_market_history"] = (
+        timings["loading_indicator_cache" if cache_only_momentum else "loading_market_history"] = (
             perf_counter() - stage_started
         )
         session_keys = {item.isoformat() for item in sessions}
@@ -286,7 +331,7 @@ class ResearchJobs:
                 item.isoformat(): {} for item in sessions
             }
             symbols: dict[str, str] = {}
-            use_indicator_cache = strategy_id in {"strategy1", "strategy2"} and isinstance(
+            use_indicator_cache = strategy_id in {"strategy1", "momentum"} and isinstance(
                 self.runtime, StrategyRuntime
             )
             cached_indicators = (
@@ -311,7 +356,7 @@ class ResearchJobs:
                     for instrument_id, identity in identities.items()
                     if instrument_id in cached_indicators
                 ]
-                if cache_only_strategy1
+                if cache_only_momentum
                 else [
                     (instrument_id, bars, identity)
                     for instrument_id, (bars, identity) in histories.items()
@@ -323,7 +368,7 @@ class ResearchJobs:
                     raw_series = cached_indicators.get(instrument_id, {})
                     series = ({day: momentum_quality_from_indicators(values)
                                for day, values in raw_series.items()}
-                              if strategy_id == "strategy1" else raw_series)
+                              if strategy_id in ("strategy1", "momentum") else raw_series)
                 else:
                     series = self.runtime.compute_series(strategy_id, bars, benchmark)
                 symbols[instrument_id] = str(identity["symbol"])
@@ -806,8 +851,10 @@ class ResearchJobs:
         return {"artifact_id": artifact_id, **report}
 
     def _calculate_day(self, payload: dict[str, Any]) -> dict[str, object]:
-        if payload.get("strategy_id") == "strategy3":
-            raise DomainValidationError("Strategy 3 requires its dedicated research jobs")
+        from src.application.strategy_runtime import REMOVED_STRATEGIES, resolve_strategy_id
+        resolved = resolve_strategy_id(str(payload.get("strategy_id", "")))
+        if resolved in REMOVED_STRATEGIES:
+            raise DomainValidationError(f"Strategy '{payload.get('strategy_id')}' has been retired")
         if (
             set(payload) - {"as_of_date", "strategy_id", "symbols"}
             or not {"as_of_date", "strategy_id"}.issubset(payload)
@@ -1027,8 +1074,10 @@ class ResearchJobs:
         }
 
     def rank_week(self, payload: dict[str, Any]) -> dict[str, object]:
-        if payload.get("strategy_id") == "strategy3":
-            raise DomainValidationError("Strategy 3 uses daily rankings in its dedicated job")
+        from src.application.strategy_runtime import REMOVED_STRATEGIES, resolve_strategy_id
+        resolved = resolve_strategy_id(str(payload.get("strategy_id", "")))
+        if resolved in REMOVED_STRATEGIES:
+            raise DomainValidationError(f"Strategy '{payload.get('strategy_id')}' has been retired")
         if (
             set(payload) != {"week_end", "strategy_id"}
             or not isinstance(payload.get("week_end"), str)
@@ -1225,3 +1274,114 @@ class ResearchJobs:
             return None
         _, payload = max(candidates, key=lambda item: item[0])
         return payload
+
+    # Phase 4 Task 4.6: Percentile snapshot persistence
+
+    def upsert_percentile_snapshot(
+        self,
+        snapshot_id: str,
+        strategy_revision_id: str,
+        as_of_date: str,
+        input_fingerprint: str,
+        percentiles: dict[str, dict[str, tuple[float | None, float]]],
+        symbols: dict[str, str],
+        *,
+        universe_snapshot_id: str | None = None,
+        indicator_code_hash: str | None = None,
+    ) -> dict[str, object]:
+        """Persist a cross-sectional percentile snapshot atomically.
+
+        ``percentiles`` maps instrument_id -> factor_name -> (raw_value, percentile_rank).
+        """
+        from datetime import UTC, datetime
+        now = datetime.now(UTC).isoformat()
+        with sqlite_connection(self.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """INSERT OR IGNORE INTO research_percentile_snapshots
+                   (snapshot_id, strategy_revision_id, as_of_date, universe_snapshot_id,
+                    indicator_code_hash, input_fingerprint, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (snapshot_id, strategy_revision_id, as_of_date,
+                 universe_snapshot_id, indicator_code_hash, input_fingerprint, now),
+            )
+            rows_written = 0
+            for instrument_id, factors in percentiles.items():
+                symbol = symbols.get(instrument_id, "")
+                for factor_name, (raw_value, percentile_rank) in factors.items():
+                    connection.execute(
+                        """INSERT OR REPLACE INTO research_percentiles
+                           (snapshot_id, as_of_date, instrument_id, symbol, factor_name,
+                            raw_value, percentile_rank)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        (snapshot_id, as_of_date, instrument_id, symbol,
+                         factor_name, raw_value, percentile_rank),
+                    )
+                    rows_written += 1
+        return {"snapshot_id": snapshot_id, "rows": rows_written}
+
+    def read_percentile_snapshot(
+        self, input_fingerprint: str, as_of_date: str
+    ) -> dict[str, dict[str, float]] | None:
+        """Look up a cached percentile snapshot by fingerprint and date.
+
+        Returns instrument_id -> factor_name -> percentile_rank, or None if not found.
+        """
+        with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
+            meta = connection.execute(
+                """SELECT snapshot_id FROM research_percentile_snapshots
+                   WHERE input_fingerprint=? AND as_of_date=?""",
+                (input_fingerprint, as_of_date),
+            ).fetchone()
+            if meta is None:
+                return None
+            rows = connection.execute(
+                "SELECT * FROM research_percentiles WHERE snapshot_id=? AND as_of_date=?",
+                (meta["snapshot_id"], as_of_date),
+            ).fetchall()
+        result: dict[str, dict[str, float]] = {}
+        for row in rows:
+            inst = str(row["instrument_id"])
+            result.setdefault(inst, {})[str(row["factor_name"])] = float(row["percentile_rank"])
+        return result
+
+    # Phase 4 Task 4.10: Research artifact lineage
+
+    def record_lineage(
+        self,
+        artifact_id: str,
+        strategy_id: str,
+        strategy_revision_id: str,
+        *,
+        indicator_code_hash: str | None = None,
+        universe_snapshot_id: str | None = None,
+        market_data_start: str | None = None,
+        market_data_end: str | None = None,
+        market_history_revision: str | None = None,
+        percentile_snapshot_id: str | None = None,
+    ) -> None:
+        """Attach lineage metadata to a research artifact."""
+        from datetime import UTC, datetime
+        now = datetime.now(UTC).isoformat()
+        with sqlite_connection(self.database) as connection:
+            connection.execute(
+                """INSERT OR REPLACE INTO research_lineage
+                   (artifact_id, strategy_id, strategy_revision_id,
+                    indicator_code_hash, universe_snapshot_id,
+                    market_data_start, market_data_end, market_history_revision,
+                    percentile_snapshot_id, computed_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (artifact_id, strategy_id, strategy_revision_id,
+                 indicator_code_hash, universe_snapshot_id,
+                 market_data_start, market_data_end, market_history_revision,
+                 percentile_snapshot_id, now),
+            )
+
+    def read_lineage(self, artifact_id: str) -> dict[str, object] | None:
+        """Retrieve lineage metadata for a research artifact."""
+        with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
+            row = connection.execute(
+                "SELECT * FROM research_lineage WHERE artifact_id=?",
+                (artifact_id,),
+            ).fetchone()
+        return dict(row) if row else None

@@ -26,9 +26,12 @@ from src.market_data import NormalizedBar
 from src.platform_kernel import DomainValidationError
 
 NSE_INDEX_SYMBOLS = frozenset(
-    {"NIFTY 50", "NIFTY 100", "NIFTY BANK", "NIFTY MIDCAP 50", "NIFTY 500", "INDIA VIX"}
+    {"NIFTY 50", "NIFTY 500", "NIFTY NEXT 50", "NIFTY MIDCAP 150", "NIFTY SMLCAP 250", "INDIA VIX"}
 )
-BSE_INDEX_SYMBOLS = frozenset({"SENSEX", "BANKEX"})
+# Phase 2: BSE runtime support removed; retained historical data preserved.
+BSE_INDEX_SYMBOLS: frozenset[str] = frozenset()
+
+PHASE2_BENCHMARK_SYMBOLS = NSE_INDEX_SYMBOLS
 
 
 class KiteMarketJobs:
@@ -38,7 +41,7 @@ class KiteMarketJobs:
         publisher: ArtifactPublisher,
         credentials: KiteCredentials | None,
         token_path: str | Path,
-        nse_csv_path: str | Path,
+        nse_csv_path: str | Path | None = None,
         bse_csv_path: str | Path | None = None,
         intraday_alerts: IntradayStopAlerts | None = None,
     ) -> None:
@@ -46,9 +49,10 @@ class KiteMarketJobs:
         self.publisher = publisher
         self.credentials = credentials
         self.token_path = Path(token_path)
-        self.nse_csv_path = Path(nse_csv_path)
+        self.nse_csv_path = Path(nse_csv_path) if nse_csv_path else None
         self.bse_csv_path = Path(bse_csv_path) if bse_csv_path else None
         self.intraday_alerts = intraday_alerts
+        self._kite_dump_cache: dict[str, list[dict[str, Any]]] | None = None
 
     def _client(self) -> KiteConnect:
         if self.credentials is None:
@@ -63,9 +67,22 @@ class KiteMarketJobs:
         client.set_access_token(token)
         return client
 
+    def _cached_kite_nse_dump(self) -> list[dict[str, Any]]:
+        """Cache Kite NSE instrument dump per collection day."""
+        today = datetime.now(UTC).date().isoformat()
+        if self._kite_dump_cache is not None and today in self._kite_dump_cache:
+            return self._kite_dump_cache[today]
+        records = self._client().instruments("NSE")
+        self._kite_dump_cache = {today: records}
+        return records
+
     def sync_instruments(self, payload: dict[str, Any]) -> dict[str, object]:
         if payload:
             raise DomainValidationError("instrument sync takes no payload")
+        if self.nse_csv_path is None:
+            raise DomainValidationError(
+                "static NSE import is retired; download a universe snapshot and use snapshot instrument sync"
+            )
         with self.nse_csv_path.open(newline="", encoding="utf-8-sig") as source:
             reader = csv.DictReader(source)
             if reader.fieldnames is None:
@@ -86,7 +103,7 @@ class KiteMarketJobs:
         listing = {symbol: isin for symbol, isin in listing_rows if symbol not in duplicate_symbols}
         if not listing:
             raise DomainValidationError("NSE reference file has no EQ instruments")
-        provider_records = self._client().instruments("NSE")
+        provider_records = self._cached_kite_nse_dump()
         observed_on = datetime.now(UTC).date()
         records: list[TrackedInstrument] = []
         seen: set[str] = set()
@@ -145,91 +162,78 @@ class KiteMarketJobs:
             "observed_on": observed_on.isoformat(),
         }
 
-    def sync_bse_instruments(self, payload: dict[str, Any]) -> dict[str, object]:
-        """Match active BSE equity ISINs and index tokens against Kite's BSE master."""
-        if payload:
-            raise DomainValidationError("BSE instrument sync takes no payload")
-        if self.bse_csv_path is None or not self.bse_csv_path.is_file():
-            raise DomainValidationError("BSE reference file is unavailable")
-        with self.bse_csv_path.open(newline="", encoding="utf-8-sig") as source:
-            reader = csv.DictReader(source)
-            if reader.fieldnames is None:
-                raise DomainValidationError("BSE reference file is empty")
-            reader.fieldnames = [name.strip() for name in reader.fieldnames]
-            listing_rows = [
-                (row["Security Id"].strip(), row["ISIN No"].strip())
-                for row in reader
-                if row.get("Security Id")
-                and row.get("ISIN No", "").startswith("IN")
-                and row.get("Status", "").strip() == "Active"
-                and row.get("Instrument", "").strip() == "Equity"
-            ]
-        duplicate_symbols = {
-            symbol
-            for symbol, count in Counter(symbol for symbol, _ in listing_rows).items()
-            if count > 1
-        }
-        listing = {symbol: isin for symbol, isin in listing_rows if symbol not in duplicate_symbols}
-        if not listing:
-            raise DomainValidationError("BSE reference file has no active equity instruments")
-        provider_records = self._client().instruments("BSE")
+    def sync_snapshot_instruments(
+        self, payload: dict[str, Any], context: Any = None,
+    ) -> dict[str, object]:
+        """Phase 2 Task 2.6: resolve universe snapshot members against cached Kite NSE dump.
+
+        Replaces CSV-filtered sync for snapshot-driven pipelines.
+        """
+        snapshot_id = payload.get("snapshot_id")
+        if not isinstance(snapshot_id, str) or not snapshot_id.strip():
+            raise DomainValidationError("snapshot instrument sync requires snapshot_id")
+        members = self.repository.universe_snapshot_members(snapshot_id, limit=1000)
+        if not members:
+            raise DomainValidationError("snapshot has no members to resolve")
+        provider_records = self._cached_kite_nse_dump()
         observed_on = datetime.now(UTC).date()
-        records: list[TrackedInstrument] = []
-        seen: set[str] = set()
+        # Build lookup: tradingsymbol -> provider record (prefer EQ instrument_type)
+        provider_by_symbol: dict[str, dict[str, Any]] = {}
         for record in provider_records:
-            symbol = str(record.get("tradingsymbol", ""))
-            isin = listing.get(symbol)
-            if isin and record.get("instrument_type") == "EQ":
-                instrument_id = str(uuid5(NAMESPACE_URL, f"BSE:{isin}"))
-            elif symbol in BSE_INDEX_SYMBOLS:
-                isin = f"INDEX:{symbol}"
-                instrument_id = str(uuid5(NAMESPACE_URL, f"BSE:INDEX:{symbol}"))
-            else:
+            ts = str(record.get("tradingsymbol", ""))
+            if ts and (ts not in provider_by_symbol or record.get("instrument_type") == "EQ"):
+                provider_by_symbol[ts] = record
+        records: list[TrackedInstrument] = []
+        unresolved: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for member in members:
+            symbol = str(member["symbol"])
+            isin = str(member["isin"])
+            series = str(member.get("series", "EQ"))
+            provider_record = provider_by_symbol.get(symbol)
+            if provider_record is None:
+                unresolved.append({"isin": isin, "symbol": symbol, "reason": "absent_from_kite_dump"})
                 continue
+            instrument_id = str(uuid5(NAMESPACE_URL, f"NSE:{isin}"))
             if instrument_id in seen:
-                raise DomainValidationError("Kite BSE master contains duplicate identity")
+                continue
             seen.add(instrument_id)
             records.append(
                 TrackedInstrument(
-                    instrument_id,
-                    isin,
-                    symbol,
-                    "BSE",
-                    str(record["instrument_token"]),
-                    observed_on,
+                    instrument_id, isin, symbol, "NSE",
+                    str(provider_record["instrument_token"]), observed_on,
+                    series=series,
                 )
             )
+        # Also resolve benchmarks
+        for bm_symbol in sorted(PHASE2_BENCHMARK_SYMBOLS):
+            bm_record = provider_by_symbol.get(bm_symbol)
+            if bm_record is None:
+                unresolved.append({"isin": f"INDEX:{bm_symbol}", "symbol": bm_symbol, "reason": "benchmark_absent_from_kite_dump"})
+                continue
+            bm_isin = f"INDEX:{bm_symbol}"
+            bm_id = str(uuid5(NAMESPACE_URL, f"NSE:INDEX:{bm_symbol}"))
+            if bm_id not in seen:
+                seen.add(bm_id)
+                records.append(
+                    TrackedInstrument(bm_id, bm_isin, bm_symbol, "NSE",
+                                     str(bm_record["instrument_token"]), observed_on)
+                )
         if not records:
-            raise DomainValidationError("Kite returned no matching BSE instruments")
-        token_changes = self._token_changes(records)
-        fingerprint = hashlib.sha256(
-            json.dumps(
-                sorted((item.instrument_id, item.symbol, item.provider_token) for item in records)
-            ).encode("utf-8")
-        ).hexdigest()
-        snapshot_id = str(uuid5(NAMESPACE_URL, f"kite-bse-instruments:{observed_on}:{fingerprint}"))
-        if not self.publisher.catalog.has(snapshot_id):
-            self.publisher.publish_json(
-                "reference/kite_instruments",
-                snapshot_id,
-                {
-                    "snapshot_id": snapshot_id,
-                    "observed_on": observed_on,
-                    "source": "Kite BSE instrument master + BSE equity CSV",
-                    "matched_count": len(records),
-                    "instruments": [record.__dict__ for record in records],
-                },
-            )
+            raise DomainValidationError("Kite dump resolved no snapshot members")
         self.repository.upsert_instruments(records)
-        reconciliation_id = self._publish_reconciliation(
-            "BSE", observed_on, snapshot_id, listing_rows, provider_records, records, token_changes
-        )
+        if context is not None:
+            context.checkpoint(progress={"stage": "snapshot_resolve", "resolved": len(records), "unresolved": len(unresolved)})
         return {
-            "artifact_id": snapshot_id,
-            "reconciliation_artifact_id": reconciliation_id,
-            "matched_count": len(records),
+            "snapshot_id": snapshot_id,
+            "resolved_count": len(records),
+            "unresolved": unresolved,
             "observed_on": observed_on.isoformat(),
         }
+
+    def sync_bse_instruments(self, payload: dict[str, Any]) -> dict[str, object]:
+        """Phase 2: BSE runtime removed. Retained for backward compatibility; raises immediately."""
+        raise DomainValidationError("BSE runtime support has been removed in Phase 2")
 
     def _token_changes(self, records: list[TrackedInstrument]) -> list[dict[str, str]]:
         changes = []
@@ -328,13 +332,12 @@ class KiteMarketJobs:
         if payload:
             raise DomainValidationError("index quote refresh takes no payload")
         tracked = []
-        for exchange, symbols in (("NSE", NSE_INDEX_SYMBOLS), ("BSE", BSE_INDEX_SYMBOLS)):
-            for symbol in sorted(symbols):
-                try:
-                    instrument = self.repository.instrument(symbol, exchange)
-                except DomainValidationError:
-                    continue
-                tracked.append((exchange, symbol, instrument))
+        for symbol in sorted(PHASE2_BENCHMARK_SYMBOLS):
+            try:
+                instrument = self.repository.instrument(symbol, "NSE")
+            except DomainValidationError:
+                continue
+            tracked.append(("NSE", symbol, instrument))
         if not tracked:
             raise DomainValidationError("no index identities are synchronized")
         raw = self._client().ohlc([f"{exchange}:{symbol}" for exchange, symbol, _ in tracked])
@@ -642,7 +645,7 @@ class KiteMarketJobs:
         min_mcap = threshold_crore * 10_000_000
 
         sync_result = self.sync_instruments({})
-        bse_result = self.sync_bse_instruments({}) if self.bse_csv_path else None
+        # Phase 2 Task 2.7: BSE runtime removed; no longer sync BSE instruments
         tracked = self.repository.tracked_instruments()
 
         from src.application.yfinance_provider import fetch_symbol_enrichment
@@ -651,14 +654,6 @@ class KiteMarketJobs:
             str(item["isin"]): item for item in self.repository.active_universe_members()
         }
         initial_build = not existing
-        bse_scrip_codes: dict[str, str] = {}
-        if self.bse_csv_path and self.bse_csv_path.is_file():
-            with self.bse_csv_path.open(newline="", encoding="utf-8-sig") as source:
-                for row in csv.DictReader(source):
-                    symbol = str(row.get("Security Id", "")).strip()
-                    code = str(row.get("Security Code", "")).strip()
-                    if symbol and code:
-                        bse_scrip_codes[symbol] = code
         snapshot_date = datetime.now(UTC).date().isoformat()
         enriched_count = 0
         added_count = 0
@@ -680,7 +675,6 @@ class KiteMarketJobs:
                 info = fetch_symbol_enrichment(
                     str(item["symbol"]),
                     str(item["exchange"]),
-                    bse_scrip_codes.get(str(item["symbol"])),
                 )
                 enriched_count += 1
             except DomainValidationError:
@@ -730,7 +724,6 @@ class KiteMarketJobs:
 
         return {
             "base_sync": sync_result,
-            "bse_sync": bse_result,
             "total_tracked": len(tracked),
             "enriched_count": enriched_count,
             "added_count": added_count,

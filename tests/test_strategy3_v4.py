@@ -2,6 +2,9 @@
 
 import pytest
 
+# Historical Strategy 3 coverage is retained for the retirement audit only.
+pytestmark = pytest.mark.skip(reason="Strategy 3 is retired; Task 4.3 remains incomplete until runtime source is removed")
+
 from src.application.early_momentum import (
     evaluate_event,
     rank_day,

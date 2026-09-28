@@ -72,7 +72,7 @@ def test_targeted_recalculation_submits_the_registered_generic_job(tmp_path):
         "/api/v2/research/recalculate",
         json={
             "as_of_date": "2026-03-24",
-            "strategy_id": "strategy1",
+            "strategy_id": "momentum",
             "symbols": ["ABC"],
         },
     )
@@ -83,7 +83,7 @@ def test_targeted_recalculation_submits_the_registered_generic_job(tmp_path):
     assert job.payload == {
         "start_date": "2026-03-24",
         "end_date": "2026-03-24",
-        "strategies": ["strategy1"],
+        "strategies": ["momentum"],
         "trading_dates": ["2026-03-24"],
     }
     assert response.json["requested_symbols"] == ["ABC"]

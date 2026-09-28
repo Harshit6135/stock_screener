@@ -20,21 +20,12 @@ import yaml
 
 from src.application.sqlite import migrate_sqlite, sqlite_connection
 from src.indicators.custom import CUSTOM_IMPLEMENTATIONS
-from src.indicators.dag import DagGraph
+from src.indicators.dag import APPROVED_OPERATIONS, DagGraph
 from src.indicators.registry import PandasTaAdapter
 from src.platform_kernel import DomainValidationError
 
 _STATUSES = {"DRAFT", "VALIDATED", "READY", "ACTIVE", "RETIRED"}
 _SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
-_OPERATIONS = {
-    "add", "subtract", "multiply", "divide", "ratio", "logarithm", "shift",
-    "rolling_mean", "rolling_std", "rolling_correlation", "clip", "scale",
-    "piecewise_linear", "default", "conditional", "all", "any", "not",
-    "greater_than", "greater_than_or_equal", "less_than", "less_than_or_equal",
-    "equal", "percentile", "rank", "z_score", "sector_z_score", "weighted_sum",
-    "modifier",
-}
-
 
 class StrategyDefinitions:
     def __init__(self, database: str | Path, indicators: PandasTaAdapter) -> None:
@@ -133,7 +124,7 @@ class StrategyDefinitions:
         if value.get("schema_version") != 1:
             raise DomainValidationError("strategy schema_version must be 1")
         strategy = value.get("strategy")
-        if not isinstance(strategy, dict) or set(strategy) - {"id", "name", "version", "description", "kind"} or not isinstance(strategy.get("id"), str) or not strategy["id"].replace("_", "").isalnum() or not isinstance(strategy.get("name"), str) or not isinstance(strategy.get("version"), str) or not _SEMVER.fullmatch(strategy["version"]):
+        if not isinstance(strategy, dict) or set(strategy) - {"id", "name", "version", "description", "kind", "legacy_id"} or not isinstance(strategy.get("id"), str) or not strategy["id"].replace("_", "").isalnum() or not isinstance(strategy.get("name"), str) or not isinstance(strategy.get("version"), str) or not _SEMVER.fullmatch(strategy["version"]):
             raise DomainValidationError("strategy id, name and version are required")
         strategy_kind = strategy.get("kind", "factor_score")
         if strategy_kind not in {"factor_score", "event_signal"}:
@@ -166,7 +157,7 @@ class StrategyDefinitions:
             spec = self.indicators.spec(item["function"])
             if set(item["inputs"]) != set(spec.required_inputs):
                 raise DomainValidationError(f"indicator '{item['id']}' inputs do not match '{spec.key}'")
-            self.indicators._validate_parameters(spec, item.get("parameters", {}))
+            self.indicators.validate_parameters(spec, item.get("parameters", {}))
             indicator_ids.add(item["id"])
         for section in ("factors", "eligibility", "score"):
             if section in value:
@@ -187,7 +178,7 @@ class StrategyDefinitions:
             if any(not math.isfinite(weight) or weight < 0 for weight in weights) or abs(sum(weights) - 1) > 1e-9:
                 raise DomainValidationError("strategy factor weights must sum to one")
         ranking = value.get("ranking")
-        if not isinstance(ranking, dict) or ranking.get("frequency") not in {"daily", "weekly"} or ranking.get("session") not in {"last_trading_session", "each_trading_session"}:
+        if not isinstance(ranking, dict) or ranking.get("frequency") not in {"daily", "weekly"} or ranking.get("session") not in {"last_trading_session", "each_trading_session"} or (ranking.get("pattern") is not None and ranking["pattern"] not in {"factor_percentile", "direct_signal"}):
             raise DomainValidationError("ranking frequency and session are invalid")
         policy = value.get("portfolio_policy")
         required_policy = ({"initial_capital", "max_positions", "risk_fraction", "max_order_fraction",
@@ -250,7 +241,7 @@ class StrategyDefinitions:
             return
         operation = value.get("operation")
         if operation is not None:
-            if operation not in _OPERATIONS:
+            if operation not in APPROVED_OPERATIONS:
                 raise DomainValidationError(f"operation '{operation}' is not approved")
             # Any string inputs must refer to a declared node or known market field.
             for key in ("input", "left", "right", "factor"):

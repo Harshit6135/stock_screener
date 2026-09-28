@@ -9,7 +9,7 @@ from src.application.action_jobs import ActionJobs
 from src.application.backtest_jobs import BacktestJobs
 from src.application.catalog import ArtifactCatalog
 from src.application.corporate_actions import CorporateActions
-from src.application.early_momentum import EarlyMomentumJobs
+
 from src.application.index_poller import IndexQuotePoller
 from src.application.intraday_alerts import IntradayStopAlerts
 from src.application.intraday_stream import IntradayStreamLease
@@ -21,13 +21,17 @@ from src.application.market_refresh import MarketRefreshPlanner
 from src.application.market_repository import MarketRepository
 from src.application.node_cache import IndicatorNodeCache
 from src.application.pipeline_jobs import ResearchPipelineJobs
+from src.application.portfolio_sync import PortfolioSync
 from src.application.positional_trend_jobs import PositionalTrendJobs
 from src.application.publication import ArtifactPublisher
 from src.application.research_jobs import ResearchJobs
 from src.application.strategy_definitions import StrategyDefinitions
 from src.application.strategy_runtime import StrategyRuntime
+from src.application.universe_jobs import UniverseJobs
 from src.application.worker import BackgroundWorker, JobWorker
 from src.execution_gateway import BrokerOrderService, KiteExecutionGateway, Ledger
+from src.execution_gateway.kite_accounts import KiteAccounts
+from src.execution_gateway.risk_guard import PortfolioRiskConfig
 from src.indicators.registry import PandasTaAdapter
 from src.platform_kernel import ArtifactStore, SqliteArtifactStore
 
@@ -56,6 +60,9 @@ class ApplicationServices:
     intraday_stream: IntradayStreamLease
     broker_orders: BrokerOrderService
     market_jobs: KiteMarketJobs
+    universe: UniverseJobs
+    kite_accounts: KiteAccounts
+    portfolio_sync: PortfolioSync
     background_worker: BackgroundWorker | None = None
 
     @classmethod
@@ -66,8 +73,6 @@ class ApplicationServices:
         *,
         market_data_kite_credentials: KiteCredentials | None = None,
         market_data_kite_token_path: str | Path = "access_token.txt",
-        nse_csv_path: str | Path = "data/imports/NSE.csv",
-        bse_csv_path: str | Path = "data/imports/BSE.csv",
         portfolio_kite_credentials: KiteCredentials | None = None,
         portfolio_kite_token_path: str | Path = "portfolio_access_token.txt",
         portfolio_live_execution: bool = False,
@@ -79,25 +84,28 @@ class ApplicationServices:
         jobs = JobStore(database)
         index_poller = IndexQuotePoller(database, jobs)
         market = MarketRepository(database)
+        universe = UniverseJobs(market)
         publisher = ArtifactPublisher(artifacts, catalog)
         ledger = Ledger(database)
+        kite_accounts = KiteAccounts(str(database))
+        portfolio_sync = PortfolioSync(database, kite_accounts, ledger)
         intraday_alerts = IntradayStopAlerts(database, ledger, publisher)
         intraday_stream = IntradayStreamLease(database)
         market_refresh = MarketRefreshPlanner(
             database, market, jobs, publisher, held_instrument_ids=ledger.open_instrument_ids
         )
-        corporate_actions = CorporateActions(database, market, publisher, ledger)
+        node_cache = IndicatorNodeCache(database)
+        corporate_actions = CorporateActions(database, market, publisher, ledger, node_cache)
+        risk_config = PortfolioRiskConfig(str(database))
         broker_orders = BrokerOrderService(
             database, ledger, KiteExecutionGateway(
                 portfolio_kite_credentials, portfolio_kite_token_path, enabled=portfolio_live_execution
-            ),
+            ), risk_config
         )
         strategies = StrategyDefinitions(database, PandasTaAdapter())
         strategy_runtime = StrategyRuntime(strategies)
         strategy_runtime.seed(Path(__file__).resolve().parents[2] / "strategies")
-        node_cache = IndicatorNodeCache(database)
         research = ResearchJobs(database, market, publisher, strategy_runtime, node_cache)
-        early_momentum = EarlyMomentumJobs(market, publisher, strategy_runtime)
         positional_trend = PositionalTrendJobs(market, publisher, strategy_runtime)
         backtests = BacktestJobs(database, market, research, publisher, corporate_actions, positional_trend)
         # Full artifact verification is expensive with a large research history.
@@ -118,15 +126,15 @@ class ApplicationServices:
             publisher.recover()
         else:
             publisher.store.recover_staging()
-        actions = ActionJobs(database, market, research, ledger, publisher, positional_trend)
+        actions = ActionJobs(database, market, research, ledger, publisher, positional_trend, risk_config)
         pipelines = ResearchPipelineJobs(database, jobs, strategy_runtime)
         market_jobs = KiteMarketJobs(
             market,
             publisher,
             market_data_kite_credentials,
             market_data_kite_token_path,
-            nse_csv_path,
-            bse_csv_path,
+            None,
+            None,
             intraday_alerts,
         )
 
@@ -150,7 +158,7 @@ class ApplicationServices:
                 "artifacts.recover": lambda payload: publisher.recover(),
                 "research.build-liquidity-universe": build_liquidity_universe_job,
                 "reference.sync-kite-instruments": market_jobs.sync_instruments,
-                "reference.sync-bse-instruments": market_jobs.sync_bse_instruments,
+                "reference.sync-snapshot-instruments": market_jobs.sync_snapshot_instruments,
                 "market.fetch-kite-bars": market_jobs.fetch_bars,
                 "market.fetch-bulk-kite-bars": market_jobs.fetch_bulk_bars,
                 "market.fetch-kite-index-quotes": market_jobs.fetch_index_quotes,
@@ -159,10 +167,9 @@ class ApplicationServices:
                 "reference.reconcile-market": market_refresh.reconcile,
                 "research.rebuild-range": research.rebuild_range,
                 "research.rebuild-indicators": research.rebuild_indicators,
-                "research.strategy3-rebuild-indicators": early_momentum.rebuild_indicators,
-                "research.strategy3-rebuild-rankings": early_momentum.rebuild_rankings,
-                "research.strategy3-event-study": early_momentum.event_study,
                 "research.strategy4-build-signals": positional_trend.build_signals,
+                "research.positional-trend-build-signals": positional_trend.build_signals,
+                "research.positional-trend-build-range": positional_trend.build_range,
                 "backtest.run": backtests.execute,
                 "backtest.stress": backtests.stress,
                 "backtest.walk-forward": backtests.walk_forward,
@@ -170,6 +177,10 @@ class ApplicationServices:
                 "actions.generate-portfolio-proposal": generate_portfolio_proposal,
                 "research.pipeline-advance": pipelines.advance,
                 "reference.enrich-day0-universe": market_jobs.enrich_and_sync_universe,
+                "reference.download-nifty500-constituents": universe.download_nifty500_constituents,
+                "universe.detect-exits": universe.detect_universe_exits,
+                "reference.detect-corporate-actions": corporate_actions.detect_events,
+                "reference.process-corporate-actions": lambda payload, context=None: corporate_actions.process_actionable(context=context),
             },
         )
         return cls(
@@ -195,5 +206,8 @@ class ApplicationServices:
             intraday_stream,
             broker_orders,
             market_jobs,
+            universe,
+            kite_accounts,
+            portfolio_sync,
             background_worker=BackgroundWorker(worker),
         )

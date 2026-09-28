@@ -25,31 +25,44 @@ def _money(value: object, field: str) -> Money:
         raise DomainValidationError(f"{field} must be numeric") from exc
 
 
-def _xirr(flows: list[tuple[date, Decimal]]) -> Decimal | None:
-    if not flows or not any(value < 0 for _, value in flows) or not any(value > 0 for _, value in flows):
-        return None
-    origin = flows[0][0]
-    rate = Decimal("0.1")
-    for _ in range(50):
-        value = sum(amount / (Decimal(1) + rate) ** (Decimal((day - origin).days) / Decimal(365)) for day, amount in flows)
-        derivative = sum(-Decimal((day - origin).days) / Decimal(365) * amount / (Decimal(1) + rate) ** (Decimal((day - origin).days) / Decimal(365) + 1) for day, amount in flows)
-        if not derivative:
-            return None
-        next_rate = rate - value / derivative
-        if next_rate <= Decimal("-0.999999") or not isfinite(float(next_rate)):
-            return None
-        if abs(next_rate - rate) < Decimal("0.00000001"):
-            return next_rate
-        rate = next_rate
-    return None
-
-
-def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_reader=None) -> Blueprint:
+from src.application.portfolio_performance import PortfolioPerformance
+def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_reader=None, risk_config=None) -> Blueprint:
     blueprint = Blueprint("portfolio_v2", __name__, url_prefix="/api/v2/portfolio")
 
     @blueprint.get("/accounts")
     def accounts():
         return jsonify({"accounts": ledger.accounts()})
+
+    @blueprint.get("/risk-config")
+    def get_risk_config():
+        if risk_config is None:
+            return jsonify({"error": "risk configuration is unavailable"}), 404
+        version, limits = risk_config.get_limits()
+        return jsonify({"version": version, "limits": limits.__dict__})
+
+    @blueprint.put("/risk-config")
+    def update_risk_config():
+        if risk_config is None:
+            return jsonify({"error": "risk configuration is unavailable"}), 404
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or set(body) != {"expected_version", "limits"}:
+            return jsonify({"error": "expected_version and limits are required"}), 400
+        try:
+            expected = body["expected_version"]
+            if isinstance(expected, bool) or not isinstance(expected, int) or not isinstance(body["limits"], dict):
+                raise DomainValidationError("risk configuration payload is invalid")
+            current, _ = risk_config.get_limits()
+            if current != expected:
+                raise DomainValidationError("stale risk configuration version")
+            from src.execution_gateway.risk_guard import RiskGuardLimits
+            allowed = set(RiskGuardLimits.__dataclass_fields__)
+            if set(body["limits"]) - allowed:
+                raise DomainValidationError("risk configuration contains unsupported limits")
+            version = risk_config.update_limits(RiskGuardLimits(**body["limits"]))
+        except (TypeError, DomainValidationError) as exc:
+            status = 409 if "stale" in str(exc) else 400
+            return jsonify({"error": str(exc)}), status
+        return jsonify({"version": version}), 200
 
     @blueprint.post("/accounts")
     def open_account():
@@ -242,21 +255,12 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_re
                 "hard_stop": str(current_stop * Decimal("0.97")) if current_stop is not None else None,
                 "stop_risk": str(lot_risk) if lot_risk is not None else None,
             })
-        flows: list[tuple[date, Decimal]] = [(as_of, -Decimal(str(next(
-            item["opening_cash"] for item in ledger.accounts() if item["account_id"] == account_id
-        ))))]
-        for item in ledger.events(account_id):
-            event_day = date.fromisoformat(str(item["occurred_at"][:10]))
-            if event_day > as_of:
-                continue
-            event = item["event"]
-            if item["event_type"] == "CASH_TRANSFER":
-                flows.append((event_day, Decimal(str(event["amount"])) * (-1 if event["direction"] == "DEPOSIT" else 1)))
-            elif item["event_type"] == "FILL_RECORDED":
-                value = Decimal(str(event["price"])) * Decimal(str(event["units"]))
-                fee = Decimal(str(event.get("fee", "0")))
-                flows.append((event_day, value - fee if event["side"] == "SELL" else -(value + fee)))
-        flows.append((as_of, projection.cash.amount + market_value))
+        # Only investor capital and original imported cost belong in the return
+        # cash-flow basis.  Normal buys/sells are internal transfers and must
+        # not be counted again as contributions or withdrawals.
+        xirr = PortfolioPerformance(ledger).calculate_xirr(
+            account_id, projection.cash.amount + market_value, as_of
+        )
         result = {
             "account_id": account_id,
             "as_of_date": as_of.isoformat(),
@@ -267,7 +271,7 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_re
             "equity": str(projection.cash.amount + market_value),
             "realised_pnl": str(projection.realised_pnl.amount),
             "stop_based_risk": str(stop_risk) if risk_complete else None,
-            "xirr": str(_xirr(sorted(flows),)) if _xirr(sorted(flows)) is not None else None,
+            "xirr": str(xirr) if xirr is not None else None,
             "stale_prices": sum(not item["fresh"] for item in holdings),
             "holdings": holdings,
         }
