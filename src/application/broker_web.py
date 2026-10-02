@@ -20,6 +20,13 @@ def create_broker_blueprint(orders: BrokerOrderService) -> Blueprint:
     def execution_controls():
         return jsonify(orders.execution_controls())
 
+    @blueprint.post("/proposals/<proposal_id>/broker-intents")
+    def prepare_proposal(proposal_id):
+        try:
+            return jsonify({"orders": orders.prepare_proposal(proposal_id), "submitted": False}), 201
+        except DomainValidationError as exc:
+            return jsonify({"error": str(exc)}), 409
+
     @blueprint.post("/baskets")
     def create_basket():
         try:

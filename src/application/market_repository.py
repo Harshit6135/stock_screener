@@ -8,6 +8,7 @@ import math
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
@@ -28,8 +29,11 @@ class TrackedInstrument:
 
 
 class MarketRepository:
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, *, price_gap_threshold: float = 0.15):
         self.path = Path(path)
+        if not math.isfinite(price_gap_threshold) or not 0 < price_gap_threshold < 1:
+            raise DomainValidationError("price gap threshold must be a finite fraction between zero and one")
+        self.price_gap_threshold = price_gap_threshold
         migrate_sqlite(
             self.path,
             "market",
@@ -695,10 +699,10 @@ class MarketRepository:
             # A new bar is a history change too; prior code only noticed
             # replacements, allowing stale indicator caches after extension.
             changed = len(existing) != len(values) or any(
-                str(row["open"]) != str(incoming[row["as_of_date"]].open)
-                or str(row["high"]) != str(incoming[row["as_of_date"]].high)
-                or str(row["low"]) != str(incoming[row["as_of_date"]].low)
-                or str(row["close"]) != str(incoming[row["as_of_date"]].close)
+                Decimal(str(row["open"])) != Decimal(str(incoming[row["as_of_date"]].open))
+                or Decimal(str(row["high"])) != Decimal(str(incoming[row["as_of_date"]].high))
+                or Decimal(str(row["low"])) != Decimal(str(incoming[row["as_of_date"]].low))
+                or Decimal(str(row["close"])) != Decimal(str(incoming[row["as_of_date"]].close))
                 or int(row["volume"]) != int(incoming[row["as_of_date"]].volume)
                 for row in existing
             )
@@ -737,10 +741,14 @@ class MarketRepository:
             # evaluation still sees the stored bar and can make its own data
             # sufficiency decision.
             preceding_close = float(prior[0]["close"]) if prior else None
-            zero_run = sum(1 for row in prior if int(row["volume"]) == 0)
+            zero_run = 0
+            for row in prior:
+                if int(row["volume"]) != 0:
+                    break
+                zero_run += 1
             for bar in sorted(values, key=lambda item: item.as_of_date):
                 close = float(bar.close)
-                if preceding_close and abs(close / preceding_close - 1.0) > 0.15:
+                if preceding_close and abs(close / preceding_close - 1.0) > self.price_gap_threshold:
                     detail = json.dumps(
                         {"expected_close": preceding_close, "actual_close": close,
                          "source_snapshot_id": snapshot_id},
@@ -750,7 +758,7 @@ class MarketRepository:
                         """INSERT OR IGNORE INTO data_quality_events
                            (event_id, instrument_id, as_of_date, check_type, severity, detail_json, detected_at)
                            VALUES (?, ?, ?, 'close_gap', 'WARNING', ?, ?)""",
-                        (str(uuid4()), instrument_id, bar.as_of_date.isoformat(), detail,
+                        (hashlib.sha256(f"close-gap:{instrument_id}:{bar.as_of_date}:{preceding_close}:{close}".encode()).hexdigest(), instrument_id, bar.as_of_date.isoformat(), detail,
                          datetime.now(UTC).isoformat()),
                     )
                 zero_run = zero_run + 1 if int(bar.volume) == 0 else 0
@@ -764,7 +772,7 @@ class MarketRepository:
                         """INSERT OR IGNORE INTO data_quality_events
                            (event_id, instrument_id, as_of_date, check_type, severity, detail_json, detected_at)
                            VALUES (?, ?, ?, 'zero_volume_streak', 'WARNING', ?, ?)""",
-                        (str(uuid4()), instrument_id, bar.as_of_date.isoformat(), detail,
+                        (hashlib.sha256(f"zero-volume:{instrument_id}:{bar.as_of_date}:{zero_run}".encode()).hexdigest(), instrument_id, bar.as_of_date.isoformat(), detail,
                          datetime.now(UTC).isoformat()),
                     )
                 preceding_close = close
@@ -877,6 +885,38 @@ class MarketRepository:
             )
         return cursor.rowcount
 
+    def adjust_corporate_event(self, event_id: str, factor: float) -> int:
+        """Commit price adjustment, revision, invalidation and state as one unit."""
+        if not math.isfinite(factor) or not 0 < factor < 100:
+            raise DomainValidationError("invalid corporate action factor")
+        now = datetime.now(UTC).isoformat()
+        with sqlite_connection(self.path, row_factory=True) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            event = connection.execute("SELECT * FROM corporate_action_events WHERE event_id=?", (event_id,)).fetchone()
+            if event is None or not event["instrument_id"]:
+                raise DomainValidationError("corporate action instrument is unresolved")
+            if event["state"] == "SELF_ADJUSTED":
+                return 0
+            if event["state"] != "DETECTED":
+                raise DomainValidationError("corporate action is not adjustable")
+            instrument_id = event["instrument_id"]
+            baseline = connection.execute("SELECT revision FROM market_history_revisions WHERE instrument_id=?", (instrument_id,)).fetchone()
+            count = connection.execute("""UPDATE market_bars SET
+                open=CAST(CAST(open AS REAL)*? AS TEXT), high=CAST(CAST(high AS REAL)*? AS TEXT),
+                low=CAST(CAST(low AS REAL)*? AS TEXT), close=CAST(CAST(close AS REAL)*? AS TEXT)
+                WHERE instrument_id=? AND as_of_date<?""",
+                (factor, factor, factor, factor, instrument_id, event["ex_date"])).rowcount
+            if not count:
+                raise DomainValidationError("no pre-ex-date bars to adjust")
+            connection.execute("""INSERT INTO market_history_revisions VALUES (?, 1, ?)
+                ON CONFLICT(instrument_id) DO UPDATE SET revision=revision+1, updated_at=excluded.updated_at""", (instrument_id, now))
+            connection.execute("DELETE FROM market_indicators WHERE instrument_id=?", (instrument_id,))
+            connection.execute("""UPDATE corporate_action_events SET state='SELF_ADJUSTED',
+                applied_factor=?, baseline_revision=?, attempt_count=attempt_count+1,
+                last_attempt_at=?, last_attempt_outcome='self_adjusted', updated_at=? WHERE event_id=?""",
+                (factor, str(baseline[0] if baseline else 0), now, now, event_id))
+            return count
+
     def indicators_for_date(
         self, indicator_set: str, as_of_date: date
     ) -> dict[str, dict[str, object]]:
@@ -945,8 +985,9 @@ class MarketRepository:
             raise DomainValidationError("market bar range is invalid")
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
-                """SELECT * FROM market_bars WHERE instrument_id = ?
-                   AND as_of_date BETWEEN ? AND ? ORDER BY as_of_date LIMIT ?""",
+                """SELECT * FROM (SELECT * FROM market_bars WHERE instrument_id = ?
+                   AND as_of_date BETWEEN ? AND ? ORDER BY as_of_date DESC LIMIT ?)
+                   ORDER BY as_of_date""",
                 (instrument_id, actual_start.isoformat(), actual_end.isoformat(), limit),
             ).fetchall()
         return [dict(row) for row in rows]
@@ -1153,7 +1194,12 @@ class MarketRepository:
                 """SELECT instrument_id, observed_at, last_price, prev_close, change_percent, snapshot_id
                    FROM (
                      SELECT *, ROW_NUMBER() OVER (PARTITION BY instrument_id ORDER BY observed_at DESC) AS row_number
-                     FROM market_index_quote_history
+                     FROM (
+                         SELECT *, ROW_NUMBER() OVER (
+                             PARTITION BY instrument_id, substr(observed_at, 1, 10)
+                             ORDER BY observed_at DESC) AS daily_row
+                         FROM market_index_quote_history
+                     ) WHERE daily_row=1
                    ) WHERE row_number <= ? ORDER BY instrument_id, observed_at""",
                 (sessions,),
             ).fetchall()

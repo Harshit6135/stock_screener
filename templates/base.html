@@ -12,7 +12,7 @@
   <a class="skip-link" href="#main-content">Skip to content</a>
   <aside class="sidebar" aria-label="Primary navigation">
     <a class="brand" href="/"><span aria-hidden="true">◆</span><span>SCREENER</span></a>
-    <nav>{% for href, label, key in [('/', 'Home', 'home'), ('/actions', 'Actions', 'actions'), ('/pipeline', 'Pipeline', 'pipeline'), ('/rankings', 'Rankings', 'rankings'), ('/universe', 'Universe', 'universe'), ('/backtest', 'Backtest', 'backtest'), ('/settings', 'Settings', 'settings'), ('/logs', 'Logs', 'logs')] %}<a href="{{ href }}" {% if active_page == key %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
+    <nav>{% for href, label, key in [('/', 'Home', 'home'), ('/actions', 'Actions', 'actions'), ('/pipeline', 'Pipeline', 'pipeline'), ('/rankings', 'Rankings', 'rankings'), ('/universe', 'Universe', 'universe'), ('/backtest', 'Backtest', 'backtest'), ('/settings', 'Settings', 'settings'), ('/logs', 'Logs', 'logs'), ('/wiki', 'Wiki', 'wiki')] %}<a href="{{ href }}" {% if active_page == key %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
     <a href="/integrations/kite">Kite access</a>
   </aside>
   <div class="app-shell"><header class="topbar"><span id="page-status" role="status" aria-live="polite">Ready</span><button id="theme-toggle" class="icon-button" type="button" aria-label="Switch color theme">◐</button></header><main id="main-content">{% block content %}{% endblock %}</main></div>

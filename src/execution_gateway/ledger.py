@@ -4,13 +4,14 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Iterable
+from contextlib import nullcontext
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 
 from src.application.sqlite import migrate_sqlite, sqlite_connection
 from src.platform_kernel import DomainValidationError, Money, Quantity
-from src.portfolio_accounting import Fill, FillSide, OpeningPosition, AccountingEvent, project
+from src.portfolio_accounting import AccountingEvent, Fill, FillSide, OpeningPosition, project
 
 
 class Ledger:
@@ -180,6 +181,7 @@ class Ledger:
         idempotency_key: str,
         expected_version: int,
         positions: Iterable[OpeningPosition],
+        *, transaction_connection=None,
     ) -> int:
         positions = tuple(positions)
         if not positions or expected_version < 0 or not idempotency_key:
@@ -193,8 +195,9 @@ class Ledger:
         command_json = json.dumps(command, sort_keys=True, separators=(',', ':'))
         import hashlib
         checksum = hashlib.sha256(command_json.encode('utf-8')).hexdigest()
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with (nullcontext(transaction_connection) if transaction_connection is not None else self._connect()) as connection:
+            if not connection.in_transaction:
+                connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
                 "SELECT resulting_version, payload_checksum FROM ledger_commands WHERE account_id = ? AND idempotency_key = ?",
                 (account_id, idempotency_key),
@@ -249,10 +252,13 @@ class Ledger:
         direction: str,
         amount: Money,
         occurred_at: datetime | None = None,
+        reason: str | None = None,
     ) -> int:
         """Append an idempotent deposit or withdrawal without mutating history."""
         if direction not in {"DEPOSIT", "WITHDRAW"} or amount.amount <= 0:
             raise DomainValidationError("cash transfer is invalid")
+        if not isinstance(reason, str) or not reason.strip():
+            raise DomainValidationError("cash transfer reason is required")
         if occurred_at is None:
             occurred_at = datetime.now(UTC)
         if occurred_at.tzinfo is None or occurred_at.utcoffset() is None:
@@ -265,6 +271,7 @@ class Ledger:
             "amount": str(amount.amount),
             "currency": amount.currency,
             "occurred_at": occurred_at.isoformat(),
+            "reason": reason.strip(),
         }
         command_json = json.dumps(command, sort_keys=True, separators=(",", ":"))
         checksum = hashlib.sha256(command_json.encode("utf-8")).hexdigest()
@@ -300,6 +307,7 @@ class Ledger:
                 "amount": str(amount.amount),
                 "currency": amount.currency,
                 "transfer_at": occurred_at.isoformat(),
+                "reason": reason.strip(),
             }
             connection.execute(
                 "INSERT INTO ledger_events(account_id, version, event_json, event_type, occurred_at) VALUES (?, ?, ?, 'CASH_TRANSFER', ?)",
@@ -505,8 +513,9 @@ class Ledger:
             return Ledger._event_fill(event)
         elif event_type == 'OPENING_POSITION_IMPORTED':
             currency = str(event.get("currency", "INR"))
-            from src.portfolio_accounting.api import Quantity
             from decimal import Decimal
+
+            from src.portfolio_accounting.api import Quantity
             return OpeningPosition(
                 str(event["instrument_id"]),
                 date.fromisoformat(str(event["acquisition_date"])),

@@ -9,18 +9,19 @@ from src.application.action_jobs import ActionJobs
 from src.application.backtest_jobs import BacktestJobs
 from src.application.catalog import ArtifactCatalog
 from src.application.corporate_actions import CorporateActions
-
 from src.application.index_poller import IndexQuotePoller
 from src.application.intraday_alerts import IntradayStopAlerts
 from src.application.intraday_stream import IntradayStreamLease
 from src.application.jobs import JobStore
 from src.application.kite_auth import KiteCredentials
 from src.application.liquidity import publish_liquidity_universe
+from src.application.managed_risk import ManagedRiskGuard
 from src.application.market_jobs import KiteMarketJobs
 from src.application.market_refresh import MarketRefreshPlanner
 from src.application.market_repository import MarketRepository
 from src.application.node_cache import IndicatorNodeCache
 from src.application.pipeline_jobs import ResearchPipelineJobs
+from src.application.pipeline_preparation import PipelinePreparation
 from src.application.portfolio_sync import PortfolioSync
 from src.application.positional_trend_jobs import PositionalTrendJobs
 from src.application.publication import ArtifactPublisher
@@ -88,7 +89,7 @@ class ApplicationServices:
         publisher = ArtifactPublisher(artifacts, catalog)
         ledger = Ledger(database)
         kite_accounts = KiteAccounts(str(database))
-        portfolio_sync = PortfolioSync(database, kite_accounts, ledger)
+        portfolio_sync = PortfolioSync(database, kite_accounts, ledger, market)
         intraday_alerts = IntradayStopAlerts(database, ledger, publisher)
         intraday_stream = IntradayStreamLease(database)
         market_refresh = MarketRefreshPlanner(
@@ -99,7 +100,7 @@ class ApplicationServices:
         risk_config = PortfolioRiskConfig(str(database))
         broker_orders = BrokerOrderService(
             database, ledger, KiteExecutionGateway(
-                portfolio_kite_credentials, portfolio_kite_token_path, enabled=portfolio_live_execution
+                portfolio_kite_credentials, portfolio_kite_token_path, enabled=portfolio_live_execution, accounts=kite_accounts
             ), risk_config
         )
         strategies = StrategyDefinitions(database, PandasTaAdapter())
@@ -127,6 +128,9 @@ class ApplicationServices:
         else:
             publisher.store.recover_staging()
         actions = ActionJobs(database, market, research, ledger, publisher, positional_trend, risk_config)
+        risk_guard = ManagedRiskGuard(database, ledger, market, risk_config, actions.risk_projection)
+        actions.risk_guard = risk_guard
+        broker_orders.risk_guard = risk_guard
         pipelines = ResearchPipelineJobs(database, jobs, strategy_runtime)
         market_jobs = KiteMarketJobs(
             market,
@@ -176,11 +180,12 @@ class ApplicationServices:
                 "backtest.attribute": backtests.attribute,
                 "actions.generate-portfolio-proposal": generate_portfolio_proposal,
                 "research.pipeline-advance": pipelines.advance,
+                "research.pipeline-prepare": PipelinePreparation(universe, market, market_jobs, corporate_actions, research, market_refresh, kite_accounts).run,
                 "reference.enrich-day0-universe": market_jobs.enrich_and_sync_universe,
                 "reference.download-nifty500-constituents": universe.download_nifty500_constituents,
                 "universe.detect-exits": universe.detect_universe_exits,
-                "reference.detect-corporate-actions": corporate_actions.detect_events,
-                "reference.process-corporate-actions": lambda payload, context=None: corporate_actions.process_actionable(context=context),
+                "reference.detect-corporate-actions": corporate_actions.detect_job,
+                "reference.process-corporate-actions": lambda payload, context=None: corporate_actions.process_actionable(market_jobs.corporate_history, context=context),
             },
         )
         return cls(

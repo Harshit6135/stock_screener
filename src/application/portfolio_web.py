@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from math import isfinite
 from zoneinfo import ZoneInfo
 
 from flask import Blueprint, Response, jsonify, request
@@ -26,6 +25,8 @@ def _money(value: object, field: str) -> Money:
 
 
 from src.application.portfolio_performance import PortfolioPerformance
+
+
 def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_reader=None, risk_config=None) -> Blueprint:
     blueprint = Blueprint("portfolio_v2", __name__, url_prefix="/api/v2/portfolio")
 
@@ -58,7 +59,7 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_re
             allowed = set(RiskGuardLimits.__dataclass_fields__)
             if set(body["limits"]) - allowed:
                 raise DomainValidationError("risk configuration contains unsupported limits")
-            version = risk_config.update_limits(RiskGuardLimits(**body["limits"]))
+            version = risk_config.update_limits(RiskGuardLimits(**body["limits"]), expected)
         except (TypeError, DomainValidationError) as exc:
             status = 409 if "stale" in str(exc) else 400
             return jsonify({"error": str(exc)}), status
@@ -190,8 +191,8 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_re
     def cash_transfer(account_id: str):
         body = request.get_json(silent=True)
         if not isinstance(body, dict) or set(body) - {
-            "idempotency_key", "expected_version", "direction", "amount", "occurred_at"
-        } or not {"idempotency_key", "expected_version", "direction", "amount"}.issubset(body):
+            "idempotency_key", "expected_version", "direction", "amount", "occurred_at", "reason"
+        } or not {"idempotency_key", "expected_version", "direction", "amount", "reason"}.issubset(body):
             return jsonify({"error": "idempotency_key, expected_version, direction and amount are required"}), 400
         try:
             key = body["idempotency_key"]
@@ -200,7 +201,7 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_re
                 raise DomainValidationError("cash transfer command is invalid")
             occurred_at = datetime.fromisoformat(body["occurred_at"]) if body.get("occurred_at") else None
             version = ledger.record_cash_transfer(
-                account_id, key, expected, str(body["direction"]), _money(body["amount"], "amount"), occurred_at
+                account_id, key, expected, str(body["direction"]), _money(body["amount"], "amount"), occurred_at, body["reason"]
             )
         except (KeyError, TypeError, ValueError, DomainValidationError) as exc:
             error = str(exc) if isinstance(exc, DomainValidationError) else "cash transfer command is invalid"
@@ -243,6 +244,7 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_re
             identity = market.instrument_by_id(lot.instrument_id)
             holdings.append({
                 "instrument_id": lot.instrument_id,
+                "acquisition_date": lot.opened_on.isoformat(),
                 "symbol": identity["symbol"] if identity else None,
                 "units": lot.remaining_units.units,
                 "cost": str(cost),
@@ -261,6 +263,31 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_re
         xirr = PortfolioPerformance(ledger).calculate_xirr(
             account_id, projection.cash.amount + market_value, as_of
         )
+        day_pnl = None
+        day_pnl_basis = "prior_session_valuation_unavailable"
+        from datetime import timedelta
+
+        from src.application.exchange_calendar import TradingCalendar
+        prior_sessions = TradingCalendar(market.path).sessions(as_of - timedelta(days=14), as_of - timedelta(days=1))
+        prior_date = prior_sessions[-1] if prior_sessions else None
+        snapshots = ledger.valuations(account_id, 100)
+        previous = next((row for row in snapshots if prior_date and row["as_of_date"] == prior_date.isoformat()), None)
+        if previous:
+            flows = Decimal(0)
+            imports = False
+            for event in ledger.events(account_id):
+                event_day = date.fromisoformat(event["occurred_at"][:10])
+                if prior_date < event_day <= as_of:
+                    if event["event_type"] == "CASH_TRANSFER":
+                        flow = event["event"]
+                        flows += Decimal(flow["amount"]) * (1 if flow["direction"] == "DEPOSIT" else -1)
+                    elif event["event_type"] == "OPENING_POSITION_IMPORTED":
+                        imports = True
+            if not imports:
+                day_pnl = projection.cash.amount + market_value - Decimal(previous["payload"]["equity"]) - flows
+                day_pnl_basis = "prior_session_valuation_less_external_capital"
+            else:
+                day_pnl_basis = "opening_import_requires_prior_session_basis"
         result = {
             "account_id": account_id,
             "as_of_date": as_of.isoformat(),
@@ -272,6 +299,8 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_re
             "realised_pnl": str(projection.realised_pnl.amount),
             "stop_based_risk": str(stop_risk) if risk_complete else None,
             "xirr": str(xirr) if xirr is not None else None,
+            "day_pnl": str(day_pnl) if day_pnl is not None else None,
+            "day_pnl_basis": day_pnl_basis,
             "stale_prices": sum(not item["fresh"] for item in holdings),
             "holdings": holdings,
         }

@@ -5,6 +5,9 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import logging
+
+logger = logging.getLogger("screener." + __name__)
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -75,6 +78,20 @@ class KiteMarketJobs:
         records = self._client().instruments("NSE")
         self._kite_dump_cache = {today: records}
         return records
+
+    def corporate_history(self, instrument_id: str, start: date, end: date) -> list[dict[str, object]]:
+        identity = self.repository.instrument_by_id(instrument_id)
+        if identity is None or identity["exchange"] != "NSE":
+            raise DomainValidationError("corporate action instrument is not tracked on NSE")
+        provider = KiteHistoricalBarsProvider(self._client())
+        rows = []
+        while start <= end:
+            chunk_end = min(end, start + timedelta(days=364))
+            rows.extend({"as_of_date": bar.as_of_date.isoformat(), "open": str(bar.open),
+                "high": str(bar.high), "low": str(bar.low), "close": str(bar.close), "volume": bar.volume}
+                for bar in provider.get_bars(str(identity["provider_token"]), start, chunk_end))
+            start = chunk_end + timedelta(days=1)
+        return rows
 
     def sync_instruments(self, payload: dict[str, Any]) -> dict[str, object]:
         if payload:

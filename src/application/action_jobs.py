@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+
+logger = logging.getLogger("screener." + __name__)
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -63,6 +66,7 @@ class ActionJobs:
         self.publisher = publisher
         self.positional_trend = positional_trend
         self.risk_config = risk_config
+        self.risk_guard = None
         migrate_sqlite(
             self.database,
             "actions",
@@ -133,7 +137,7 @@ class ActionJobs:
             risk_fraction = Decimal(str(payload.get("risk_pct", float(settings["risk_fraction"]) * 100))) / 100
             order_fraction = Decimal(str(payload.get("max_order_pct", float(settings["max_order_fraction"]) * 100))) / 100
             adv_fraction = Decimal(str(payload.get("adv_participation_pct", float(settings["adv_participation_fraction"]) * 100))) / 100
-            round_trip_cost_bps = Decimal(str(payload.get("round_trip_cost_bps", settings["round_trip_cost_bps"])))
+            round_trip_cost_bps = Decimal(str(payload.get("round_trip_cost_bps", 0)))
         except (InvalidOperation, TypeError, ValueError) as exc:
             raise DomainValidationError("Strategy 4 portfolio limits must be numeric") from exc
         if (not risk_fraction.is_finite() or not 0 < risk_fraction <= 1
@@ -290,7 +294,7 @@ class ActionJobs:
         if not self.publisher.catalog.has(proposal_id):
             self.publisher.publish_json(
                 "actions/proposals", proposal_id,
-                {"proposal_id": proposal_id, "account_id": account_id, "strategy_id": "strategy4",
+                {"proposal_id": proposal_id, "account_id": account_id, "strategy_id": "positional_trend_following",
                  "ranking_week_end": signal_date.isoformat(), "signal_date": signal_date.isoformat(),
                  "action_date": action_date.isoformat(), "expected_ledger_version": version,
                  "strategy_revision_id": revision["revision_id"], "signal_artifact_id": signal_artifact_id,
@@ -961,6 +965,8 @@ class ActionJobs:
             })
         if buy_total > projection.cash.amount + sell_total:
             raise DomainValidationError("manual BUY batch exceeds available cash after sells")
+        if self.risk_guard:
+            self.risk_guard.validate(account_id, decisions, int(account["version"]))
         version = int(str(account["version"]))
         fingerprint = hashlib.sha256(json.dumps({
             "account_id": account_id, "action_date": action_date.isoformat(),
@@ -1041,6 +1047,8 @@ class ActionJobs:
         if manifest.artifact_id != proposal_id:
             raise DomainValidationError("action proposal artifact identity is invalid")
         timestamp = manifest.created_at
+        if self.risk_guard:
+            self.risk_guard.validate(payload["account_id"], payload["decisions"], payload["expected_ledger_version"])
         with sqlite_connection(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
@@ -1165,6 +1173,12 @@ class ActionJobs:
     def decide(self, proposal_id: str, action: str) -> dict[str, object]:
         if action not in {"APPROVED", "REJECTED"}:
             raise DomainValidationError("proposal decision is invalid")
+        proposal = self.proposal(proposal_id)
+        if proposal["status"] != "PENDING":
+            raise DomainValidationError("action proposal is not pending")
+        if action == "APPROVED" and self.risk_guard:
+            self.risk_guard.validate(str(proposal["account_id"]), proposal["decisions"],
+                int(proposal["expected_ledger_version"]), reservation_id=f"proposal:{proposal_id}", proposal_id=proposal_id)
         timestamp = datetime.now(UTC).isoformat()
         with sqlite_connection(self.database, row_factory=True) as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -1184,6 +1198,8 @@ class ActionJobs:
                    (proposal_id, event_type, occurred_at, detail_json) VALUES (?, ?, ?, '{}')""",
                 (proposal_id, action, timestamp),
             )
+        if action == "REJECTED" and self.risk_guard:
+            self.risk_guard.release(f"proposal:{proposal_id}")
         return self.proposal(proposal_id)
 
     def process(self, proposal_id: str) -> dict[str, object]:
@@ -1192,6 +1208,9 @@ class ActionJobs:
             return proposal
         if proposal["status"] != "APPROVED":
             raise DomainValidationError("action proposal is not approved")
+        if self.risk_guard:
+            self.risk_guard.validate(str(proposal["account_id"]), proposal["decisions"],
+                int(proposal["expected_ledger_version"]), reservation_id=f"proposal:{proposal_id}", proposal_id=proposal_id)
         if proposal["strategy_id"] != "manual":
             raise DomainValidationError(
                 "strategy and generated stop proposals require confirmed Kite or manual execution"
@@ -1279,4 +1298,6 @@ class ActionJobs:
                     json.dumps({"resulting_ledger_version": resulting_version, "adjustments": adjustments}),
                 ),
             )
+        if self.risk_guard:
+            self.risk_guard.release(f"proposal:{proposal_id}")
         return self.proposal(proposal_id)

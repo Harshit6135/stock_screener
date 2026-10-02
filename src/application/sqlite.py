@@ -1,13 +1,13 @@
 """Atomic, namespaced schema migrations for the shared local SQLite store."""
 
 import sqlite3
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
 from src.platform_kernel import DomainValidationError
 
-Migration = Sequence[str]
+Migration = Sequence[str | Callable[[sqlite3.Connection], None]]
 
 
 @contextmanager
@@ -61,7 +61,10 @@ def migrate_sqlite(path: str | Path, namespace: str, migrations: Mapping[int, Mi
             raise DomainValidationError("SQLite database schema is newer than this application")
         for version in range(current + 1, len(versions) + 1):
             for statement in migrations[version]:
-                connection.execute(statement)
+                if callable(statement):
+                    statement(connection)
+                else:
+                    connection.execute(statement)
             connection.execute(
                 "INSERT INTO system_schema_migrations(namespace, version) VALUES (?, ?)",
                 (namespace, version),

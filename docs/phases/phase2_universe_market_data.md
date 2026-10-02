@@ -1,6 +1,6 @@
 # Phase 2: Daily Universe Snapshots, NSE Market Data and Exclusion Coverage
 
-> Status: Plan only. Implementation requires explicit user approval.
+> Status: Partially implemented; not accepted as complete. See [repair-status.md](repair-status.md).
 > Authority: [Overhaul_Plan.md](../Overhaul_Plan.md).
 > Dependencies: None for design; integrate Phase 1 shared migrations before Phase 2 schema additions.
 > Numbered tasks: 18.

@@ -18,9 +18,10 @@ from src.application.market_repository import MarketRepository
 from src.application.node_cache import IndicatorNodeCache
 from src.application.publication import ArtifactPublisher
 from src.execution_gateway import Ledger
+from src.market_data import NormalizedBar
 from src.platform_kernel import DomainValidationError
 
-logger = logging.getLogger("screener")
+logger = logging.getLogger(__name__)
 
 # Phase 3 Task 3.6: anomaly threshold
 ANOMALY_THRESHOLD_PERCENT = 15.0
@@ -271,7 +272,7 @@ class CorporateActions:
             # Parse ratio for adjustable types
             ratio = self.parse_ratio(str(record.get("ratio", "")), action_type)
             # Resolve instrument_id
-            instruments = self.market.instruments(symbol=symbol, limit=1)
+            instruments = [item for item in self.market.tracked_instruments() if item["isin"] == isin and item["exchange"] == "NSE"]
             instrument_id = str(instruments[0]["instrument_id"]) if instruments else None
             event_id = str(uuid5(NAMESPACE_URL, f"ca-event:{isin}:{action_type}:{ex.isoformat()}"))
             raw_json = record.get("raw_json", json.dumps(record, default=str))
@@ -304,6 +305,30 @@ class CorporateActions:
         if context is not None:
             context.checkpoint(progress={"stage": "detect_events", "detected": len(detected), "skipped": len(skipped)})
         return {"detected": len(detected), "skipped": skipped, "events": detected}
+
+    def detect_job(self, payload: dict[str, object], context=None) -> dict[str, object]:
+        """Adapt durable job payloads to normalized NSE source records."""
+        from src.application.nse_client import NseClient
+        if set(payload) - {"as_of_date"}:
+            raise DomainValidationError("corporate action detection payload is invalid")
+        end = date.fromisoformat(str(payload.get("as_of_date") or datetime.now(UTC).date()))
+        start = (self.market.corporate_action_watermark() or end - timedelta(days=365)) - timedelta(days=7)
+        raw = NseClient().corporate_actions(from_date=start.strftime("%d-%m-%Y"), to_date=end.strftime("%d-%m-%Y"))
+        records = []
+        for row in raw:
+            subject = str(row.get("subject", ""))
+            ratio = re.search(r"(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)", subject)
+            face_values = re.search(r"FROM\s+(?:RS\.?\s*)?(\d+(?:\.\d+)?).*?TO\s+(?:RS\.?\s*)?(\d+(?:\.\d+)?)", subject.upper())
+            ratio_text = ratio.group(0) if ratio else ""
+            if "SPLIT" in subject.upper() and face_values:
+                ratio_text = face_values.group(2) + ":" + face_values.group(1)
+            records.append({"symbol": row.get("symbol", ""), "isin": row.get("isin", ""),
+                "ex_date": row.get("exDate", ""), "action_type": subject,
+                "ratio": ratio_text, "raw_json": json.dumps(row)})
+        result = self.detect_events(records, context)
+        # Advance the source query window even when it contained no events.
+        self.market.advance_corporate_action_watermark(end)
+        return result
 
     # ------------------------------------------------------------------
     # Phase 3 Task 3.3–3.5: Fetch, temporary adjustment, and retry
@@ -345,23 +370,12 @@ class CorporateActions:
             return self._fail_event(event_id, "unresolved_instrument")
         ex_date = date.fromisoformat(str(event["ex_date"]))
         # Get baseline revision before adjustment
-        revision_info = self.market.market_history_revision(str(instrument_id))
-        baseline_revision = str(revision_info) if revision_info else "0"
         # Load pre-ex-date bars
         bars = self.market.bars(str(instrument_id), None, ex_date - timedelta(days=1), limit=1000)
         if not bars:
             return self._fail_event(event_id, "no_pre_ex_bars")
         # Apply factor to pre-ex-date OHLC atomically
-        adjusted_count = self.market.apply_price_factor(str(instrument_id), ex_date, factor)
-        # Bump market revision
-        self.market.bump_market_history_revision(str(instrument_id))
-        # Transition state
-        self.market.transition_corporate_action(
-            event_id, "SELF_ADJUSTED",
-            attempt_outcome="self_adjusted",
-            applied_factor=factor,
-            baseline_revision=baseline_revision,
-        )
+        adjusted_count = self.market.adjust_corporate_event(event_id, factor)
         # Invalidate indicator cache for this instrument
         if self.node_cache is not None:
             self.node_cache.invalidate_instrument(str(instrument_id))
@@ -389,13 +403,13 @@ class CorporateActions:
         ex_date = date.fromisoformat(str(event["ex_date"]))
         # Fetch fresh bars covering the ex-date window
         try:
-            fresh_bars = fetch_bars_fn(str(instrument_id), ex_date - timedelta(days=30), ex_date + timedelta(days=5))
-        except Exception as exc:
+            fresh_bars = fetch_bars_fn(str(instrument_id), date(2021, 1, 1), datetime.now(UTC).date() - timedelta(days=1))
+        except Exception as exc:  # noqa: BLE001 - sanitize provider failures at this boundary
             self.market.transition_corporate_action(
                 event_id, str(event["state"]),
-                attempt_outcome=f"fetch_failed:{exc}",
+                attempt_outcome=f"fetch_failed:{type(exc).__name__}",
             )
-            return {"event_id": event_id, "state": str(event["state"]), "outcome": "fetch_failed", "error": str(exc)}
+            return {"event_id": event_id, "state": str(event["state"]), "outcome": "fetch_failed", "error": type(exc).__name__}
         if not fresh_bars:
             self.market.transition_corporate_action(
                 event_id, str(event["state"]),
@@ -405,6 +419,8 @@ class CorporateActions:
         # Check for anomaly: compare pre-ex and post-ex bars for >15% discrepancy
         action_type = str(event["action_type"])
         if action_type in MONITORED_TYPES:
+            if not any(str(b["as_of_date"]) < ex_date.isoformat() for b in fresh_bars) or not any(str(b["as_of_date"]) >= ex_date.isoformat() for b in fresh_bars):
+                return {"event_id": event_id, "state": str(event["state"]), "outcome": "incomplete_ex_date_window"}
             anomaly = self._check_anomaly(fresh_bars, ex_date)
             if anomaly is None:
                 # Resolved: no anomaly visible, complete monitoring
@@ -419,6 +435,26 @@ class CorporateActions:
                 return {"event_id": event_id, "state": "MONITORING", "outcome": "anomaly_present", "discrepancy_pct": anomaly}
         # For BONUS/SPLIT: verify that Kite has adjusted the pre-ex bars
         if action_type in ADJUSTABLE_TYPES:
+            pre = [b for b in fresh_bars if str(b["as_of_date"]) < ex_date.isoformat()]
+            post = [b for b in fresh_bars if str(b["as_of_date"]) >= ex_date.isoformat()]
+            if not pre or not post or self._check_anomaly(fresh_bars, ex_date) is not None:
+                return {"event_id": event_id, "state": str(event["state"]), "outcome": "provider_history_not_verified"}
+            stored = self.market.histories(date(2021, 1, 1), ex_date - timedelta(days=1)).get(str(instrument_id), ([], {}))[0]
+            if stored and min(str(b["as_of_date"]) for b in fresh_bars) > str(stored[0]["as_of_date"]):
+                return {"event_id": event_id, "state": str(event["state"]), "outcome": "incomplete_provider_history"}
+            if event["state"] == "SELF_ADJUSTED" and stored:
+                reference = {str(row["as_of_date"]): Decimal(str(row["close"])) for row in pre}
+                latest_pre = stored[-1]
+                fetched_close = reference.get(str(latest_pre["as_of_date"]))
+                expected_close = Decimal(str(latest_pre["close"]))
+                if fetched_close is None or abs(fetched_close / expected_close - 1) > Decimal("0.02"):
+                    return {"event_id": event_id, "state": "SELF_ADJUSTED", "outcome": "provider_adjustment_not_confirmed"}
+            normalized = tuple(NormalizedBar(str(instrument_id), date.fromisoformat(str(b["as_of_date"])),
+                Decimal(str(b["open"])), Decimal(str(b["high"])), Decimal(str(b["low"])),
+                Decimal(str(b["close"])), int(b["volume"])) for b in fresh_bars)
+            # Replacement is repeat-safe: a crash before the state transition
+            # re-fetches and upserts the same authoritative prices, never factors them.
+            self.market.upsert_bars(str(instrument_id), normalized, f"corporate-action:{event_id}")
             baseline = event.get("baseline_revision")
             # Write verified bars and transition
             self.market.transition_corporate_action(

@@ -1,6 +1,7 @@
 """Single-writer local worker for durable, typed application jobs."""
 
 import inspect
+import logging
 import threading
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
@@ -38,6 +39,7 @@ class JobWorker:
             )
         try:
             payload = dict(job.payload or {})
+            logging.getLogger("screener." + handler.__module__).info("Starting job %s (%s)", job.job_id, job.kind)
             # Keep the original one-argument handler contract while allowing
             # new handlers to opt into cooperative lease/cancel controls.
             if len(inspect.signature(handler).parameters) >= 2:

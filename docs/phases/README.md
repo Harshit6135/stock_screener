@@ -1,6 +1,7 @@
 # Phase Execution Guide
 
-> Status: Consolidated plan; waiting for explicit implementation approval.
+> Status: Historical implementation plan and evidence index. Individual phase
+> files record their own implementation/review state.
 > Authority: [Overhaul_Plan.md](../Overhaul_Plan.md). The master governs conflicts.
 > Phases: 7. Integrated numbered tasks: 98.
 
@@ -62,4 +63,7 @@ Worker threads process manually submitted work; no calendar scheduler is introdu
 
 Each task specifies file targets, sequential low-level steps and acceptance evidence. Existing interfaces are distinguished from planned new modules; test placeholders and unsupported pseudocode were removed. Master-to-phase ownership is listed in the master plan.
 
-Implementation is not started. Obtain explicit user approval before any code/schema/data cleanup. During implementation, use temporary/mocked broker data for checks, preserve existing live controls, run the relevant tests and full-suite baseline comparison, and record phase exit evidence. No permission to arm or submit live orders is implied by approving code work.
+Implementation work is authorized separately from this guide. During any future
+change, use temporary/mocked broker data for checks, preserve existing live
+controls, run relevant tests and record evidence. No phase or document grants
+permission to arm or submit live orders.

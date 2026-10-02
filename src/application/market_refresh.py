@@ -102,7 +102,7 @@ class MarketRefreshPlanner:
         except ValueError as exc:
             raise DomainValidationError("market refresh dates must be ISO dates") from exc
         exchange = payload.get("exchange")
-        if exchange is not None and exchange not in {"NSE", "BSE"}:
+        if exchange is not None and exchange != "NSE":
             raise DomainValidationError("market refresh exchange is invalid")
         if start > end or (end - start).days > 365:
             raise DomainValidationError("market refresh range must be at most 365 days")
@@ -112,9 +112,12 @@ class MarketRefreshPlanner:
         reference_by_id = {str(item["instrument_id"]): item for item in catalog}
 
         # Use either active universe members OR snapshot members
-        universe = self.repository.active_universe_members()
-        if not universe:
-            raise DomainValidationError("fixed universe is empty; build the universe before market refresh")
+        snapshot = self.repository.universe_snapshot_as_of("NIFTY 500", end)
+        if snapshot is None:
+            raise DomainValidationError("NIFTY 500 snapshot is unavailable")
+        members = self.repository.universe_snapshot_members(str(snapshot["snapshot_id"]), limit=1000)
+        member_isins = {str(item["isin"]) for item in members}
+        universe = [item for item in catalog if str(item["isin"]) in member_isins and item["exchange"] == "NSE"]
 
         held_ids = set(self.held_instrument_ids() if self.held_instrument_ids else ())
         selected_ids = {str(item["instrument_id"]) for item in universe} | held_ids
@@ -161,7 +164,8 @@ class MarketRefreshPlanner:
             valid_items.append(item)
             
         if valid_items:
-            fingerprint = f"market-bars-bulk:{start.isoformat()}:{end.isoformat()}"
+            identity = hashlib.sha256(json.dumps([(item["instrument_id"], item["provider_token"]) for item in valid_items], sort_keys=True).encode()).hexdigest()
+            fingerprint = f"market-bars-bulk:{snapshot['snapshot_id']}:{identity}:{start.isoformat()}:{end.isoformat()}"
             payload_items = [{"symbol": item["symbol"], "exchange": item["exchange"]} for item in valid_items]
             job = self.jobs.submit(
                 fingerprint,

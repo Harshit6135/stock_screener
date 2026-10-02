@@ -36,6 +36,7 @@ class KiteExecutionGateway:
         client_factory=KiteConnect,
         allowed_accounts: Iterable[str] = (),
         allowed_instruments: Iterable[str] = (),
+        accounts=None,
     ):
         self.credentials = credentials
         self.token_path = Path(token_path)
@@ -44,6 +45,7 @@ class KiteExecutionGateway:
         self.allowed_accounts = frozenset(allowed_accounts)
         self.allowed_instruments = frozenset(allowed_instruments)
         self.kill_switch = True
+        self.accounts = accounts
 
     def arm(self) -> None:
         """Explicitly clear the kill switch for a controlled deployment."""
@@ -60,11 +62,17 @@ class KiteExecutionGateway:
             "allowlisted_instrument_count": len(self.allowed_instruments),
         }
 
-    def _client(self):
-        if not self.enabled:
+    def _client(self, account_id: str | None = None, *, for_write=True):
+        if for_write and not self.enabled:
             raise DomainValidationError("live broker execution is disabled")
-        if self.kill_switch:
+        if for_write and self.kill_switch:
             raise DomainValidationError("live broker kill switch is active")
+        if self.accounts is not None:
+            if not account_id:
+                raise DomainValidationError("explicit ledger account is required for broker routing")
+            binding = self.accounts.binding(account_id)
+            self.accounts.validate(binding["broker_account_id"])
+            return self.accounts.client(binding["broker_account_id"])
         if self.credentials is None or not self.token_path.is_file():
             raise DomainValidationError("portfolio Kite credentials are unavailable")
         token = self.token_path.read_text(encoding="utf-8").strip()
@@ -85,15 +93,16 @@ class KiteExecutionGateway:
             raise DomainValidationError("broker account is not allowlisted")
         if not self.allowed_instruments or instrument_id not in self.allowed_instruments:
             raise DomainValidationError("broker instrument is not allowlisted")
-        client = self._client()
+        client = self._client(account_id)
         return str(client.place_order(
             variety=str(order.get("variety", "regular")), exchange=str(order["exchange"]), tradingsymbol=str(order["symbol"]),
             transaction_type=str(order["side"]), quantity=int(str(order["quantity"])),
             order_type=str(order["order_type"]), product="CNC", validity="DAY",
+            tag=str(order["order_id"]).replace("-", "")[:20],
         ))
 
-    def order_status(self, broker_order_id: str) -> dict[str, object]:
-        client = self._client()
+    def order_status(self, broker_order_id: str, account_id: str | None = None) -> dict[str, object]:
+        client = self._client(account_id, for_write=False)
         status = dict(client.order_history(broker_order_id)[-1])
         # Reconciliation consumes actual trade rows, not the aggregate order
         # history returned by Kite.
@@ -110,10 +119,30 @@ class KiteExecutionGateway:
         ]
         return status
 
+    def find_order(self, order: dict[str, object]) -> str | None:
+        client = self._client(str(order["account_id"]), for_write=False)
+        tag = str(order["order_id"]).replace("-", "")[:20]
+        matches = [row for row in client.orders() if row.get("tag") == tag]
+        if len(matches) > 1:
+            raise DomainValidationError("ambiguous broker receipt; operator review required")
+        return str(matches[0]["order_id"]) if matches else None
+
 
 class BrokerOrderService:
     def __init__(self, database: str | Path, ledger: Ledger, gateway: BrokerExecutionGateway | None = None, risk_config=None):
         self.database, self.ledger, self.gateway, self.risk_config = Path(database), ledger, gateway, risk_config
+        self.risk_guard = None
+        def upgrade_variety(connection):
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(broker_orders)")}
+            if "variety" not in columns:
+                connection.execute("ALTER TABLE broker_orders ADD COLUMN variety TEXT NOT NULL DEFAULT 'regular'")
+
+        def upgrade_context(connection):
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(broker_orders)")}
+            for column in ("broker_account_id", "strategy_id", "decision_date", "target_session_date", "exit_reason", "expected_ledger_version"):
+                if column not in columns:
+                    connection.execute(f"ALTER TABLE broker_orders ADD COLUMN {column} TEXT")
+
         migrate_sqlite(self.database, "broker_orders", {1: (
             """CREATE TABLE IF NOT EXISTS broker_orders (
                 order_id TEXT PRIMARY KEY, account_id TEXT NOT NULL, proposal_id TEXT NOT NULL,
@@ -135,7 +164,7 @@ class BrokerOrderService:
                 basket_id TEXT NOT NULL, order_id TEXT NOT NULL,
                 slice_index INTEGER NOT NULL, PRIMARY KEY(basket_id, order_id),
                 FOREIGN KEY(basket_id) REFERENCES broker_baskets(basket_id))""",
-        )})
+        ), 2: (upgrade_variety,), 3: (upgrade_context,)})
 
     def execution_controls(self) -> dict[str, object]:
         """Return non-secret execution guard state for operator readback."""
@@ -220,6 +249,11 @@ class BrokerOrderService:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute("SELECT * FROM broker_orders WHERE idempotency_key=?", (payload["idempotency_key"],)).fetchone()
             if existing is not None:
+                for field in required - {"idempotency_key"}:
+                    if str(existing[field]) != str(payload[field]):
+                        raise DomainValidationError("idempotency key reused with different broker intent")
+                if existing["variety"] != variety:
+                    raise DomainValidationError("idempotency key reused with different order variety")
                 return dict(existing)
             connection.execute(
                 "INSERT INTO broker_orders(order_id, account_id, proposal_id, idempotency_key, instrument_id, symbol, exchange, side, quantity, order_type, variety, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'LOCAL_CREATED', ?)",
@@ -235,6 +269,43 @@ class BrokerOrderService:
             raise DomainValidationError("broker order was not found")
         return dict(row)
 
+    def prepare_proposal(self, proposal_id: str) -> list[dict[str, object]]:
+        """Create local intents only. Submission remains an explicit gated command."""
+        if self.risk_guard is None:
+            raise DomainValidationError("managed portfolio guards are unavailable")
+        with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
+            proposal = connection.execute("SELECT * FROM action_proposals WHERE proposal_id=?", (proposal_id,)).fetchone()
+        if proposal is None or proposal["status"] != "APPROVED":
+            raise DomainValidationError("an approved proposal is required")
+        accounts = getattr(self.gateway, "accounts", None)
+        if accounts is None:
+            raise DomainValidationError("account-specific broker routing is unavailable")
+        binding = accounts.binding(proposal["account_id"])
+        decisions = json.loads(proposal["decision_json"])
+        self.risk_guard.validate(proposal["account_id"], decisions, int(proposal["expected_ledger_version"]),
+            reservation_id=f"proposal:{proposal_id}", proposal_id=proposal_id)
+        results = []
+        for index, decision in enumerate(decisions):
+            if decision["type"] == "NO_ACTION":
+                continue
+            instrument = self.risk_guard.market.instrument_by_id(decision["instrument_id"])
+            if instrument is None:
+                raise DomainValidationError("proposal instrument identity is unavailable")
+            side = "BUY" if decision["type"] in {"BUY", "PYRAMID_ADD"} else "SELL"
+            protective = decision["type"] in {"HARD_STOP", "STOP_LOSS"}
+            variety = "amo" if side == "SELL" and not protective and proposal["strategy_id"] != "manual" else "regular"
+            order = self.create_intent({"account_id": proposal["account_id"], "proposal_id": proposal_id,
+                "idempotency_key": f"proposal:{proposal_id}:decision:{index}", "instrument_id": decision["instrument_id"],
+                "symbol": instrument["symbol"], "exchange": "NSE", "side": side,
+                "quantity": int(decision["units"]), "order_type": "MARKET", "variety": variety})
+            with sqlite_connection(self.database) as connection:
+                connection.execute("""UPDATE broker_orders SET broker_account_id=?, strategy_id=?, decision_date=?,
+                    target_session_date=?, exit_reason=?, expected_ledger_version=? WHERE order_id=?""",
+                    (binding["broker_account_id"], binding["strategy_id"], proposal["ranking_week_end"], proposal["action_date"],
+                     decision.get("exit_reason") or decision["type"].lower(), str(proposal["expected_ledger_version"]), order["order_id"]))
+            results.append(self.get(order["order_id"]))
+        return results
+
     def submit(self, order_id: str) -> dict[str, object]:
         order = self.get(order_id)
         if order["status"] == "SUBMITTED":
@@ -243,9 +314,30 @@ class BrokerOrderService:
             raise DomainValidationError("broker order is not submit-ready")
         if self.gateway is None:
             raise DomainValidationError("broker execution gateway is unavailable")
+        if self.risk_guard:
+            with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
+                proposal = connection.execute("SELECT * FROM action_proposals WHERE proposal_id=? AND account_id=?", (order["proposal_id"], order["account_id"])).fetchone()
+            if proposal is None or proposal["status"] != "APPROVED":
+                raise DomainValidationError("broker order requires an approved owning proposal")
+            decisions = json.loads(proposal["decision_json"])
+            decision = next((item for item in decisions if item.get("instrument_id") == order["instrument_id"] and (item.get("type") in {"BUY", "PYRAMID_ADD"}) == (order["side"] == "BUY")), None)
+            if not decision or int(order["quantity"]) > int(decision["units"]):
+                raise DomainValidationError("broker order does not match the approved decision")
+            self.risk_guard.validate(str(order["account_id"]), [{**decision, "units": order["quantity"]}],
+                int(proposal["expected_ledger_version"]), reservation_id=f"broker:{order_id}", proposal_id=str(order["proposal_id"]))
+        with sqlite_connection(self.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            claimed = connection.execute("UPDATE broker_orders SET status='SUBMITTING' WHERE order_id=? AND status='LOCAL_CREATED'", (order_id,)).rowcount
+            if claimed != 1:
+                raise DomainValidationError("broker order is already being submitted; reconcile before retry")
+            self._event(connection, order_id, "SUBMITTING", None, {}, datetime.now(UTC).isoformat())
         try:
             broker_id = self.gateway.submit_order(order)
         except DomainValidationError:
+            with sqlite_connection(self.database) as connection:
+                connection.execute("UPDATE broker_orders SET status='LOCAL_CREATED' WHERE order_id=? AND status='SUBMITTING'", (order_id,))
+            if self.risk_guard:
+                self.risk_guard.release(f"broker:{order_id}")
             raise
         except Exception as exc:
             with sqlite_connection(self.database) as connection:
@@ -259,11 +351,25 @@ class BrokerOrderService:
 
     def reconcile(self, order_id: str) -> dict[str, object]:
         order = self.get(order_id)
+        if order["status"] in {"SUBMITTING", "SUBMIT_UNKNOWN"}:
+            lookup = getattr(self.gateway, "find_order", None)
+            if not callable(lookup):
+                raise DomainValidationError("unknown broker receipt requires explicit operator review")
+            broker_id = lookup(order)
+            if not broker_id:
+                raise DomainValidationError("broker has no confirmed matching receipt; do not resubmit")
+            with sqlite_connection(self.database) as connection:
+                connection.execute("UPDATE broker_orders SET status='SUBMITTED', broker_order_id=? WHERE order_id=?", (broker_id, order_id))
+                self._event(connection, order_id, "RECEIPT_RECOVERED", None, {"broker_order_id": broker_id}, datetime.now(UTC).isoformat())
+            order = self.get(order_id)
         if order["status"] not in {"SUBMITTED", "PARTIALLY_FILLED"} or not order["broker_order_id"]:
             raise DomainValidationError("broker order is not open for reconciliation")
         if self.gateway is None:
             raise DomainValidationError("broker execution gateway is unavailable")
-        state = self.gateway.order_status(str(order["broker_order_id"]))
+        if isinstance(self.gateway, KiteExecutionGateway):
+            state = self.gateway.order_status(str(order["broker_order_id"]), str(order["account_id"]))
+        else:
+            state = self.gateway.order_status(str(order["broker_order_id"]))
         fills = state.get("fills", [])
         if not isinstance(fills, list):
             raise DomainValidationError("broker status has invalid fills")
@@ -276,6 +382,12 @@ class BrokerOrderService:
         with sqlite_connection(self.database) as connection:
             connection.execute("UPDATE broker_orders SET status=? WHERE order_id=?", (mapped, order_id))
             self._event(connection, order_id, "BROKER_STATUS", None, state, datetime.now(UTC).isoformat())
+        if self.risk_guard and mapped in {"FILLED", "CANCELLED", "REJECTED"}:
+            self.risk_guard.release(f"broker:{order_id}")
+            with sqlite_connection(self.database, read_only=True) as connection:
+                outstanding = connection.execute("SELECT COUNT(*) FROM broker_orders WHERE proposal_id=? AND status NOT IN ('FILLED','CANCELLED','REJECTED')", (order["proposal_id"],)).fetchone()[0]
+            if not outstanding:
+                self.risk_guard.release(f"proposal:{order['proposal_id']}")
         return self.get(order_id)
 
     def manual_fill(self, order_id: str, payload: dict[str, object]) -> dict[str, object]:

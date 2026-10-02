@@ -3,6 +3,7 @@
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from math import isfinite
 from typing import Any
 
 from src.application.sqlite import migrate_sqlite, sqlite_connection
@@ -26,7 +27,7 @@ class RiskGuardLimits:
         fractions = ("max_concentration", "max_sector_exposure", "max_heat", "max_drawdown")
         for name in non_negative:
             value = getattr(self, name)
-            if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not isfinite(value) or value < 0):
                 raise DomainValidationError(f"{name} must be a non-negative number")
         for name in fractions:
             value = getattr(self, name)
@@ -70,11 +71,14 @@ class PortfolioRiskConfig:
             data = json.loads(row["config_json"])
             return row["version"], RiskGuardLimits(**data)
 
-    def update_limits(self, limits: RiskGuardLimits) -> int:
+    def update_limits(self, limits: RiskGuardLimits, expected_version: int | None = None) -> int:
         now = datetime.now(UTC).isoformat()
         data = {k: v for k, v in limits.__dict__.items() if v is not None}
         with sqlite_connection(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute("SELECT MAX(version) FROM portfolio_risk_config").fetchone()[0]
+            if expected_version is not None and current != expected_version:
+                raise DomainValidationError("stale risk configuration version")
             connection.execute(
                 "INSERT INTO portfolio_risk_config (config_json, updated_at) VALUES (?, ?)",
                 (json.dumps(data), now)

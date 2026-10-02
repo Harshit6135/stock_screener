@@ -26,6 +26,7 @@ from src.application.runtime import RuntimeConfig
 from src.application.strategies_web import create_strategies_blueprint
 from src.application.universe_web import create_universe_blueprint
 from src.application.web import create_operations_blueprint
+from src.application.wiki_web import create_wiki_blueprint
 from src.indicators.registry import PandasTaAdapter
 
 
@@ -80,6 +81,7 @@ def create_app(config_class=RuntimeConfig):
     )
     app.extensions["screener_services"] = services
     app.register_blueprint(create_dashboard_blueprint())
+    app.register_blueprint(create_wiki_blueprint())
     app.register_blueprint(
         create_operations_blueprint(
             services.jobs,

@@ -56,6 +56,14 @@ class JobExecutionContext:
     def checkpoint(self, *, progress: dict[str, Any] | None = None) -> Job:
         job = self.jobs.heartbeat(self.job_id, str(self.claim_token), self.lease_seconds)
         if progress:
+            progress = dict(progress)
+            current = progress.get("current", progress.get("processed", progress.get("processed_instruments")))
+            total = progress.get("total", progress.get("total_instruments"))
+            progress.setdefault("message", progress.get("detail", str(progress.get("stage", "working"))))
+            progress.setdefault("current", current)
+            progress.setdefault("total", total)
+            progress.setdefault("percent", min(100, max(0, current / total * 100)) if isinstance(current, (int, float)) and isinstance(total, (int, float)) and total > 0 else None)
+            progress.setdefault("job_id", self.job_id)
             self.jobs.emit(self.job_id, "progress", progress)
         if job.cancel_requested:
             raise DomainValidationError("job cancellation requested")

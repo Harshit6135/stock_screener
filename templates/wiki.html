@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Wiki · Stock Screener{% endblock %}
+{% block content %}
+<div class="page-heading"><div><h1>Operator wiki</h1><p class="muted">Read-only documentation shipped with this application.</p></div></div>
+<section class="grid two"><aside class="card"><h2>Pages</h2><nav id="wiki-pages" class="grid"></nav></aside><article class="card"><h2 id="wiki-title">Choose a page</h2><pre id="wiki-content">Loading documentation…</pre></article></section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/wiki.js') }}"></script>{% endblock %}

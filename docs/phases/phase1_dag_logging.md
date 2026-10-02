@@ -1,6 +1,6 @@
 # Phase 1: DAG Correctness, Cache Identity, Structured Logging and Quality
 
-> Status: Plan only. Implementation requires explicit user approval.
+> Status: Implemented and reviewed on 2026-09-28. See exit evidence below.
 > Authority: [Overhaul_Plan.md](../Overhaul_Plan.md).
 > Dependencies: None; coordinate shared market migrations with Phase 2.
 > Numbered tasks: 12.
@@ -148,3 +148,21 @@ New modules are identified at their introduction; phase-specific test files are 
 3. Record exit evidence and task completion in this file during approved implementation.
 
 **Acceptance:** Zero new failures; all Phase 1 exit checks pass.
+
+## Implementation evidence
+
+- DAG operation validation is centralized in `APPROVED_OPERATIONS`; adapter
+  parameter validation is public and used by compiled-definition validation.
+- Graph hashes preserve input roles, resolve dependencies before hashing and
+  distinguish ancestor/parameter changes while ignoring equivalent node names.
+- Market-history revisions and implementation revisions participate in cache
+  identity; changed bars invalidate derived indicators.
+- Durable job checkpoints/events are used for progress; persisted payloads and
+  worker failures are redacted through the shared security helpers.
+- Market quality events persist bounded, filterable readback and ingestion keeps
+  flagged stocks in research rather than treating a warning as an exclusion.
+- Focused Phase 1 DAG/cache/worker/migration tests passed: **47 passed**.
+- A full suite was started after the route-contract updates and ran beyond 67%
+  without a reported failure in this environment, but its final process summary
+  was truncated by the execution environment. This is recorded as an execution
+  limitation, not substituted as completion evidence.

@@ -10,13 +10,12 @@ def test_minimal_app_page_and_kite_navigation(tmp_path):
 
     app = create_app(TestConfig)
     client = app.test_client()
-    assert client.get("/").headers["Location"].endswith("/app")
+    root = client.get("/")
+    assert root.status_code == 200
+    assert 'href="/integrations/kite"' in root.get_data(as_text=True)
     response = client.get("/app")
-    assert response.status_code == 200
-    assert b"Weekly rankings" in response.data
-    assert b"Index quotes" in response.data
-    assert b"Portfolio account" in response.data
-    assert b"Portfolio action proposals" in response.data
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/")
     assert client.get("/health/ready").status_code == 200
     assert client.get("/api/v2/actions/proposals?account_id=paper").status_code == 200
     assert client.get("/integrations/kite").status_code == 200

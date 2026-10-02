@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+
+logger = logging.getLogger("screener." + __name__)
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -17,7 +20,7 @@ from src.application.strategy_runtime import StrategyRuntime
 from src.indicators.registry import PandasTaAdapter
 from src.platform_kernel import DomainValidationError
 
-_CALCULATION_REVISION = "bulk-staged-vectorized-v1"
+_CALCULATION_REVISION = "snapshot-prerequisites-v2"
 
 
 class ResearchPipelineJobs:
@@ -141,37 +144,9 @@ class ResearchPipelineJobs:
             return self.status(pipeline_id)
         child_jobs = []
         if normalized["orchestrate_data"]:
-            child_jobs.extend(
-                [
-                    (
-                        "reference:sync",
-                        self.jobs.submit(
-                            f"research-pipeline:{fingerprint}:reference-sync",
-                            "reference.sync-kite-instruments",
-                            {},
-                        ),
-                    ),
-                    (
-                        "market:refresh",
-                        self.jobs.submit(
-                            f"research-pipeline:{fingerprint}:market-refresh",
-                            "market.schedule-all-symbol-refresh",
-                            {
-                                "start_date": start_date.isoformat(),
-                                "end_date": end_date.isoformat(),
-                            },
-                        ),
-                    ),
-                    (
-                        "reference:reconcile",
-                        self.jobs.submit(
-                            f"research-pipeline:{fingerprint}:reference-reconcile",
-                            "reference.reconcile-market",
-                            {"as_of_date": end_date.isoformat()},
-                        ),
-                    ),
-                ]
-            )
+            child_jobs.append(("market:prepare", self.jobs.submit(
+                f"research-pipeline:{fingerprint}:prepare", "research.pipeline-prepare",
+                {"start_date": start_date.isoformat(), "end_date": end_date.isoformat()})))
         else:
             if not trading_dates:
                 raise DomainValidationError("bulk research requires explicit trading_dates")

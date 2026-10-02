@@ -4,10 +4,12 @@ Submitted jobs are durable and observable here; a worker is responsible for
 claiming and executing its domain-specific work.
 """
 
+import json
+import time
 from collections.abc import Collection
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 from src.application.jobs import Job, JobStore
 from src.application.worker import BackgroundWorker, JobWorker
@@ -86,7 +88,7 @@ def create_operations_blueprint(
 
     @blueprint.get("/jobs/<int:job_id>/events")
     def job_events(job_id: int):
-        raw_cursor = request.args.get("after", "0")
+        raw_cursor = request.headers.get("Last-Event-ID") or request.args.get("after", "0")
         try:
             cursor = int(raw_cursor)
             if cursor < 0:
@@ -96,6 +98,22 @@ def create_operations_blueprint(
             return jsonify({"error": "job not found"}), 404
         except ValueError:
             return jsonify({"error": "after must be a non-negative integer"}), 400
+        if request.args.get("stream") == "1" or request.accept_mimetypes.best == "text/event-stream":
+            @stream_with_context
+            def stream_events():
+                after = cursor
+                while True:
+                    events = jobs.events_after(job_id, after)
+                    for event in events:
+                        after = event["event_id"]
+                        yield f"id: {after}\nevent: job-event\ndata: {json.dumps(event)}\n\n"
+                    state = jobs.get(job_id).status.value
+                    if state in {"SUCCEEDED", "FAILED", "CANCELLED"} and not events:
+                        yield f"event: terminal\ndata: {json.dumps({'status': state})}\n\n"
+                        break
+                    yield ": heartbeat\n\n"
+                    time.sleep(1)
+            return Response(stream_events(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
         return jsonify({"events": jobs.events_after(job_id, cursor)})
 
     @blueprint.post("/jobs/<int:job_id>/cancel")

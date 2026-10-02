@@ -23,11 +23,12 @@ class RebuildRangePayload:
     end_date: date
     strategies: tuple[str, ...]
     trading_dates: tuple[date, ...]
+    universe_snapshot_id: str | None = None
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> RebuildRangePayload:
         allowed = {"start_date", "end_date", "strategies", "trading_dates"}
-        if not isinstance(raw, dict) or set(raw) != allowed:
+        if not isinstance(raw, dict) or not allowed.issubset(raw) or set(raw) - (allowed | {"universe_snapshot_id"}):
             raise DomainValidationError("research range rebuild payload is incomplete")
         try:
             start = date.fromisoformat(str(raw["start_date"]))
@@ -40,7 +41,7 @@ class RebuildRangePayload:
             raise DomainValidationError(
                 "research range dates must be ISO dates"
             ) from exc
-        return cls(start, end, strategies, trading_dates)
+        return cls(start, end, strategies, trading_dates, raw.get("universe_snapshot_id"))
 
     def validate(self, available_strategies: tuple[str, ...]) -> None:
         """Raise if the payload contents violate business rules."""

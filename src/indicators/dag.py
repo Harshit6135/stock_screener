@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+
+logger = logging.getLogger("screener." + __name__)
 import math
 from collections import defaultdict, deque
 from collections.abc import Mapping, Sequence

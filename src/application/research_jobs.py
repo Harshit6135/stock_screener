@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import logging
+
+logger = logging.getLogger("screener." + __name__)
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -166,7 +169,14 @@ class ResearchJobs:
                 executor = DagExecutor(self.runtime._adapter)
                 graph_hashes = graph.unique_content_hashes()
                 node_hashes = set(graph_hashes.values())
-                implementation_revision = f"dag-executor:{PandasTaAdapter.adapter_version}"
+                import hashlib
+                code_root = Path(__file__).resolve().parents[1] / "indicators"
+                identity = hashlib.sha256(PandasTaAdapter.adapter_version.encode())
+                for code_file in sorted(code_root.rglob("*.py")):
+                    identity.update(code_file.relative_to(code_root).as_posix().encode())
+                    identity.update(code_file.read_bytes())
+                identity.update(Path(__file__).read_bytes())
+                implementation_revision = identity.hexdigest()
                 instrument_revisions = self.market.market_history_revisions(
                     str(instrument_id) for instrument_id, _ in eligible
                 )
@@ -400,6 +410,17 @@ class ResearchJobs:
 
             stage_started = perf_counter()
             percentiles_by_date: dict[str, dict[str, dict[str, float]]] = {}
+            membership_lineage = {}
+            for session in sessions:
+                snapshot = self.market.universe_snapshot_as_of("NIFTY 500", session)
+                snapshot_id = parsed.universe_snapshot_id or (str(snapshot["snapshot_id"]) if snapshot else None)
+                if not snapshot_id:
+                    raise DomainValidationError("NIFTY 500 snapshot is required for research")
+                member_isins = {row["isin"] for row in self.market.universe_snapshot_members(snapshot_id, limit=1000)}
+                allowed_ids = {row["instrument_id"] for row in self.market.tracked_instruments() if row["exchange"] == "NSE" and row["isin"] in member_isins}
+                day = session.isoformat()
+                features_by_date[day] = {key: value for key, value in features_by_date[day].items() if key in allowed_ids}
+                membership_lineage[day] = snapshot_id
             for index, session in enumerate(sessions, start=1):
                 day = session.isoformat()
                 values = features_by_date[day]
@@ -409,24 +430,25 @@ class ResearchJobs:
                     if cross_section is not None:
                         for instrument_id, factors in cross_section.items():
                             values[instrument_id]["factors"] = factors
-                    for factor in factor_weights:
-                        ordered = sorted(
-                            values,
-                            key=lambda key: (float(values[key]["factors"][factor]), key),
-                        )
-                        position = 0
-                        while position < len(ordered):
-                            tied_end = position + 1
-                            while (
-                                tied_end < len(ordered)
-                                and values[ordered[tied_end]]["factors"][factor]
-                                == values[ordered[position]]["factors"][factor]
-                            ):
-                                tied_end += 1
-                            percentile = ((position + 1 + tied_end) / 2) / len(ordered) * 100
-                            for instrument_id in ordered[position:tied_end]:
-                                percentiles[instrument_id][factor] = percentile
-                            position = tied_end
+                    import hashlib
+
+                    from src.application.ranking_patterns import ranking_pattern_for
+                    raw_factors = {key: value["factors"] for key, value in values.items()}
+                    percentile_fingerprint = hashlib.sha256(json.dumps({
+                        "as_of_date": day,
+                        "factors": raw_factors, "factor_names": sorted(factor_weights),
+                        "universe": membership_lineage[day], "percentile_rule": "average-ties-v1",
+                        "market_revisions": self.market.market_history_revisions(values),
+                        "percentile_code": hashlib.sha256(Path(__file__).with_name("ranking_patterns.py").read_bytes()).hexdigest(),
+                    }, sort_keys=True, default=str).encode()).hexdigest()
+                    percentiles = self.read_percentile_snapshot(percentile_fingerprint, day)
+                    if percentiles is None:
+                        pattern = ranking_pattern_for(self.runtime.strategy_kind(strategy_id))
+                        percentiles = pattern._compute_percentiles(raw_factors, factor_weights)
+                        self.upsert_percentile_snapshot(percentile_fingerprint, revision_id, day,
+                            percentile_fingerprint, {key: {factor: (raw_factors[key][factor], value)
+                                for factor, value in factors.items()} for key, factors in percentiles.items()},
+                            symbols=symbols, universe_snapshot_id=membership_lineage[day], indicator_code_hash="average-ties-v1")
                 percentiles_by_date[day] = percentiles
                 if index % 10 == 0 or index == len(sessions):
                     context.checkpoint(
@@ -447,7 +469,8 @@ class ResearchJobs:
             artifact_id = str(
                 uuid5(
                     NAMESPACE_URL,
-                    f"research-range:{revision_id}:{start.isoformat()}:{end.isoformat()}",
+                    f"research-range:{revision_id}:{start.isoformat()}:{end.isoformat()}:"
+                    + hashlib.sha256(json.dumps({"features": features_by_date, "membership": membership_lineage}, sort_keys=True, default=str).encode()).hexdigest(),
                 )
             )
             total_scored = 0
@@ -514,6 +537,7 @@ class ResearchJobs:
                         "end_date": end.isoformat(),
                         "sessions": len(sessions),
                         "scored_rows": total_scored,
+                        "universe_snapshots": membership_lineage,
                     },
                     upstream_ids=(revision_id,),
                 )

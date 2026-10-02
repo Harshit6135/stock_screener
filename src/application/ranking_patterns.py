@@ -11,9 +11,6 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
-from datetime import date
-from decimal import Decimal
-from typing import Any
 
 logger = logging.getLogger("screener")
 
@@ -107,9 +104,15 @@ class FactorPercentileRanking(RankingPattern):
                 continue
             sorted_pairs = sorted(pairs, key=lambda x: x[1])
             n = len(sorted_pairs)
-            for rank_pos, (inst_id, _) in enumerate(sorted_pairs):
-                # Percentile rank: fraction of values below
-                result[inst_id][factor] = rank_pos / max(n - 1, 1)
+            position = 0
+            while position < n:
+                tied_end = position + 1
+                while tied_end < n and sorted_pairs[tied_end][1] == sorted_pairs[position][1]:
+                    tied_end += 1
+                percentile = ((position + 1 + tied_end) / 2) / n * 100
+                for inst_id, _ in sorted_pairs[position:tied_end]:
+                    result[inst_id][factor] = percentile
+                position = tied_end
         return dict(result)
 
     @staticmethod

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+
+logger = logging.getLogger("screener." + __name__)
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -459,7 +462,7 @@ class BacktestJobs:
             raise DomainValidationError(f"Strategy 4 backtest could not load or simulate: {exc}") from exc
         revision = self.research.runtime.revision("strategy4")
         first, last = result["period"]["first_session"], result["period"]["last_session"]
-        result.update({"strategy_id": "strategy4", "strategy_revision_id": revision["revision_id"],
+        result.update({"strategy_id": "positional_trend_following", "strategy_revision_id": revision["revision_id"],
                        "strategy_definition_hash": revision["definition_hash"], "data": coverage,
                        "benchmark": benchmark_price_return(self.database, first, last),
                        "limitations": ["current constituent membership applied retrospectively",
@@ -518,12 +521,12 @@ class BacktestJobs:
                 """INSERT OR IGNORE INTO backtest_runs
                    (run_id, artifact_id, strategy_id, start_date, end_date, fingerprint,
                     total_return, max_drawdown, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (run_id, artifact_id, "strategy4", first, last, fingerprint,
+                (run_id, artifact_id, "positional_trend_following", first, last, fingerprint,
                  str(result["performance"]["total_return"]), str(result["performance"]["max_drawdown"]),
                  datetime.now(UTC).isoformat()),
             )
         return {"run_id": run_id, "artifact_id": artifact_id,
-                "strategy_id": "strategy4", "period": result["period"],
+                "strategy_id": "positional_trend_following", "period": result["period"],
                 "performance": result["performance"], "data": coverage, "reused": reused}
 
     def stress(self, payload: dict[str, Any]) -> dict[str, object]:
