@@ -1,1 +1,0 @@
-{"members":[{"composite_score":100.0,"instrument_id":"b","rank":1,"sampled_sessions":5,"symbol":"BBB"},{"composite_score":50.0,"instrument_id":"a","rank":2,"sampled_sessions":5,"symbol":"AAA"}],"snapshot_id":"db928c5a-841d-4b1a-8ed3-9c5d934023c5","strategy_id":"momentum","strategy_revision_id":"revision-1","tie_policy":"composite_score_desc_symbol_asc","week_end":"2025-01-10"}
