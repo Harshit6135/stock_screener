@@ -20,21 +20,10 @@ class PositionalTrendJobs:
     CATEGORY = "research/positional-trend-signals"
     LEGACY_CATEGORY = "research/strategy4-signals"
 
-    def __init__(self, market, publisher, runtime, universe_csv_path: str | Path | None = None):
+    def __init__(self, market, publisher, runtime):
         self.market, self.publisher, self.runtime = market, publisher, runtime
 
     def _members(self, universe: str, as_of: date | None = None, snapshot_id: str | None = None) -> tuple[set[str], str, dict[str, object]]:
-        if universe == "APPLICATION_MCAP500":
-            rows = [row for row in self.market.active_universe_members()
-                    if float(row["last_market_cap"]) >= 5_000_000_000]
-            if not rows:
-                raise DomainValidationError("Strategy 4 application market-cap universe is not ready")
-            members = {str(row["isin"]) for row in rows}
-            digest = hashlib.sha256(json.dumps(rows, sort_keys=True, default=str).encode()).hexdigest()
-            return members, digest, {"source": universe, "snapshot_date": rows[0]["snapshot_date"],
-                                     "member_count": len(rows), "members_by_exchange": {
-                                         exchange: sum(row["exchange"] == exchange for row in rows)
-                                         for exchange in ("NSE", "BSE")}}
         # Phase 2 Task 2.8: snapshot-driven universe
         if universe == "SNAPSHOT_NIFTY500":
             snapshot = self.market.universe_snapshot_as_of("NIFTY 500", as_of or datetime.now(ZoneInfo("Asia/Kolkata")).date())
@@ -52,12 +41,10 @@ class PositionalTrendJobs:
             return members, digest, {"source": universe, "snapshot_id": snapshot_id,
                                      "snapshot_date": str(snapshot["snapshot_date"]),
                                      "member_count": len(rows)}
-        raise DomainValidationError("Strategy 4 universe must be SNAPSHOT_NIFTY500 or APPLICATION_MCAP500")
+        raise DomainValidationError("positional universe must be SNAPSHOT_NIFTY500")
 
     def _histories(self, as_of: date, members: set[str], metadata: dict[str, object]):
         histories = self.market.histories(date(2021, 1, 1), as_of, isins=members)
-        if metadata["source"] == "APPLICATION_MCAP500":
-            return histories
         return {key: value for key, value in histories.items() if value[1]["exchange"] == "NSE"}
 
     def _input_fingerprint(self, as_of: date, universe: str, universe_hash: str,
@@ -69,8 +56,7 @@ class PositionalTrendJobs:
             "feature_hash": hashlib.sha256(Path(__file__).with_name("positional_trend.py").read_bytes()).hexdigest(),
             "job_code_hash": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "histories": histories,
-            "sessions": {exchange: self.market.session_dates(date(2021, 1, 1), as_of, exchange=exchange)
-                         for exchange in ("NSE", "BSE")},
+            "sessions": {"NSE": self.market.session_dates(date(2021, 1, 1), as_of, exchange="NSE")},
         }
         return hashlib.sha256(json.dumps(state, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -84,7 +70,7 @@ class PositionalTrendJobs:
         if not isinstance(payload, dict) or set(payload) - {"as_of_date", "universe", "universe_snapshot_id"} or "as_of_date" not in payload:
             raise DomainValidationError("Strategy 4 signal job requires as_of_date and optional universe")
         universe = str(payload.get("universe", "SNAPSHOT_NIFTY500"))
-        if universe not in {"APPLICATION_MCAP500", "SNAPSHOT_NIFTY500"}:
+        if universe != "SNAPSHOT_NIFTY500":
             raise DomainValidationError("Strategy 4 universe is invalid")
         try:
             as_of = date.fromisoformat(str(payload["as_of_date"]))
@@ -98,10 +84,8 @@ class PositionalTrendJobs:
         rules = self.runtime.signal_rules(self.STRATEGY_ID)
         members, universe_hash, universe_metadata = self._members(universe, as_of, payload.get("universe_snapshot_id"))
         histories = self._histories(as_of, members, universe_metadata)
-        sessions_by_exchange = {
-            exchange: self.market.session_dates(date(2021, 1, 1), as_of, exchange=exchange)
-            for exchange in ("NSE", "BSE")
-        }
+        sessions_by_exchange = {"NSE": self.market.session_dates(
+            date(2021, 1, 1), as_of, exchange="NSE")}
         if not any(as_of.isoformat() in sessions for sessions in sessions_by_exchange.values()):
             raise DomainValidationError("Strategy 4 date has no stored market session")
         rows = []

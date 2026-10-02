@@ -2,8 +2,7 @@
 BSE removal, snapshot-driven strategy consumers, and refresh planner rules."""
 
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
@@ -11,7 +10,6 @@ import pytest
 from src.application.catalog import ArtifactCatalog
 from src.application.jobs import JobStore
 from src.application.market_jobs import (
-    BSE_INDEX_SYMBOLS,
     NSE_INDEX_SYMBOLS,
     PHASE2_BENCHMARK_SYMBOLS,
     KiteMarketJobs,
@@ -20,11 +18,9 @@ from src.application.market_refresh import MarketRefreshPlanner
 from src.application.market_repository import MarketRepository, TrackedInstrument
 from src.application.publication import ArtifactPublisher
 from src.application.universe_jobs import UniverseJobs
-from src.market_data import NormalizedBar
 from src.platform_kernel import ArtifactStore, DomainValidationError
 
-
-# ── Task 2.9: six NSE benchmarks ──
+# â”€â”€ Task 2.9: six NSE benchmarks â”€â”€
 
 class TestBenchmarkSet:
     def test_six_benchmarks_are_defined(self):
@@ -32,22 +28,22 @@ class TestBenchmarkSet:
         assert NSE_INDEX_SYMBOLS == expected
         assert PHASE2_BENCHMARK_SYMBOLS == expected
 
-    def test_bse_index_symbols_is_empty(self):
-        assert BSE_INDEX_SYMBOLS == frozenset()
-
-
-# ── Task 2.7: BSE runtime removed ──
+# â”€â”€ Task 2.7: BSE runtime removed â”€â”€
 
 class TestBseRemoval:
-    def test_sync_bse_instruments_raises(self, tmp_path):
+    def test_direct_and_bulk_bse_history_requests_fail_before_provider_access(self, tmp_path):
         market = MarketRepository(tmp_path / "system.db")
         publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(tmp_path / "system.db"))
-        jobs = KiteMarketJobs(market, publisher, None, tmp_path / "token.txt", tmp_path / "nse.csv")
-        with pytest.raises(DomainValidationError, match="BSE runtime support has been removed"):
-            jobs.sync_bse_instruments({})
+        jobs = KiteMarketJobs(market, publisher, None, tmp_path / "token.txt")
+        with pytest.raises(DomainValidationError, match="bar fetch requires"):
+            jobs.fetch_bars({"symbol": "OLD", "exchange": "BSE", "start_date": "2026-01-01", "end_date": "2026-01-01"})
+        with pytest.raises(DomainValidationError, match="supported exchange"):
+            jobs.fetch_bulk_bars({"items": [{"symbol": "OLD", "exchange": "BSE"}],
+                "start_date": "2026-01-01", "end_date": "2026-01-01"}, None)
 
 
-# ── Task 2.11: exit eligibility ──
+
+# â”€â”€ Task 2.11: exit eligibility â”€â”€
 
 class TestExitEligibility:
     def test_record_and_query_exit_eligibility(self, tmp_path):
@@ -105,7 +101,7 @@ class TestExitEligibility:
             )
 
 
-# ── Task 2.12: refresh planner respects benchmarks and exit-only ──
+# â”€â”€ Task 2.12: refresh planner respects benchmarks and exit-only â”€â”€
 
 class TestRefreshPlannerPhase2:
     def test_refresh_includes_all_six_benchmarks(self, tmp_path):
@@ -131,6 +127,10 @@ class TestRefreshPlannerPhase2:
             snapshot_date=observed.isoformat(), threshold_crore=500, source="test",
             total_tracked=1, resolved_count=1, unresolved_count=0,
         )
+        market.create_universe_snapshot(snapshot_id="snapshot-benchmarks", index_name="NIFTY 500",
+            snapshot_date=observed, source_url="fixture://membership", raw_csv=b"fixture",
+            members=[{"isin": "IN0000000001", "symbol": "MEMBER", "company_name": "Member",
+                      "industry": "IT", "series": "EQ"}])
         planner = MarketRefreshPlanner(database, market, jobs)
         result = planner.schedule({"start_date": "2025-01-01", "end_date": "2025-12-31"})
         queued = {
@@ -190,13 +190,13 @@ class TestRefreshPlannerPhase2:
             for item in jobs.get(job_id).payload["items"]
         }
         assert "MEMBER" in queued
-        # Exit-only instruments should be excluded unless held
+        # Exit-only instruments never enter regular refresh
         assert "EXITING" not in queued
         excluded_ids = {item["instrument_id"] for item in result["excluded"]}
         assert "exiting" in excluded_ids
 
 
-# ── Task 2.13: universe exit detection ──
+# â”€â”€ Task 2.13: universe exit detection â”€â”€
 
 class TestUniverseExitDetection:
     def test_detect_exits_identifies_held_instruments_absent_from_snapshot(self, tmp_path):
@@ -225,7 +225,7 @@ class TestUniverseExitDetection:
         assert result["exits"][0]["reason"] == "universe_exit"
 
 
-# ── Task 2.8: snapshot-driven strategy consumer ──
+# â”€â”€ Task 2.8: snapshot-driven strategy consumer â”€â”€
 
 class TestSnapshotDrivenStrategy:
     def test_snapshot_nifty500_universe_resolves_from_snapshot(self, tmp_path):
@@ -245,13 +245,19 @@ class TestSnapshotDrivenStrategy:
         from src.application.positional_trend_jobs import PositionalTrendJobs
         trend = PositionalTrendJobs(market, MagicMock(), MagicMock())
         members, digest, metadata = trend._members("SNAPSHOT_NIFTY500")
+        assert digest == trend._members("SNAPSHOT_NIFTY500")[1]
         assert members == {"IN0000000001", "IN0000000002"}
         assert metadata["source"] == "SNAPSHOT_NIFTY500"
         assert metadata["snapshot_id"] == snap_id
         assert metadata["member_count"] == 2
+        with pytest.raises(DomainValidationError, match="SNAPSHOT_NIFTY500"):
+            trend._members("APPLICATION_MCAP500")
+        with pytest.raises(DomainValidationError, match="universe is invalid"):
+            trend.build_signals({"as_of_date": observed.isoformat(),
+                                 "universe": "APPLICATION_MCAP500"})
 
 
-# ── Task 2.6: snapshot-driven instrument sync ──
+# â”€â”€ Task 2.6: snapshot-driven instrument sync â”€â”€
 
 class TestSnapshotInstrumentSync:
     def test_sync_snapshot_instruments_resolves_members_and_benchmarks(self, tmp_path):
@@ -281,7 +287,7 @@ class TestSnapshotInstrumentSync:
         token_path = tmp_path / "token.txt"
         token_path.write_text("dummy_token")
         jobs = KiteMarketJobs(
-            market, publisher, None, token_path, tmp_path / "nse.csv",
+            market, publisher, None, token_path,
         )
         jobs._kite_dump_cache = {datetime.now(UTC).date().isoformat(): fake_kite_dump}
         result = jobs.sync_snapshot_instruments({"snapshot_id": snap_id})
@@ -318,7 +324,7 @@ class TestSnapshotInstrumentSync:
         token_path = tmp_path / "token.txt"
         token_path.write_text("dummy_token")
         jobs = KiteMarketJobs(
-            market, publisher, None, token_path, tmp_path / "nse.csv",
+            market, publisher, None, token_path,
         )
         jobs._kite_dump_cache = {datetime.now(UTC).date().isoformat(): fake_kite_dump}
         result = jobs.sync_snapshot_instruments({"snapshot_id": snap_id})
@@ -327,7 +333,7 @@ class TestSnapshotInstrumentSync:
         assert result["unresolved"][0]["symbol"] == "GHOSTSYM"
 
 
-# ── Task 2.14: pipeline prerequisites check ──
+# â”€â”€ Task 2.14: pipeline prerequisites check â”€â”€
 
 class TestPipelinePrerequisites:
     def test_snapshot_exists_before_pipeline_can_proceed(self, tmp_path):
@@ -347,7 +353,7 @@ class TestPipelinePrerequisites:
         assert snapshot["snapshot_id"] == snap_id
 
 
-# ── Comprehensive universe snapshot lifecycle test ──
+# â”€â”€ Comprehensive universe snapshot lifecycle test â”€â”€
 
 class TestUniverseSnapshotLifecycle:
     def test_snapshot_diff_triggers_exit_eligibility(self, tmp_path):
@@ -398,3 +404,90 @@ class TestUniverseSnapshotLifecycle:
         assert market.is_exit_only("inst-b") is True
         assert market.is_exit_only("inst-a") is False
         assert market.is_exit_only("inst-c") is False
+
+
+def test_history_fetch_requires_current_membership_or_exact_exit_session(tmp_path, monkeypatch):
+    database = tmp_path / "system.db"
+    market = MarketRepository(database)
+    publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
+    first = date(2026, 6, 1)
+    decision = date(2026, 6, 2)
+    target = date(2026, 6, 3)
+    market.upsert_instruments([
+        TrackedInstrument("removed", "IN0000000001", "REMOVED", "NSE", "11", first),
+        TrackedInstrument("current", "IN0000000002", "CURRENT", "NSE", "12", first),
+    ])
+    market.create_universe_snapshot(snapshot_id="before", index_name="NIFTY 500",
+        snapshot_date=first, source_url="fixture://nse", raw_csv=b"before",
+        members=[{"isin": "IN0000000001", "symbol": "REMOVED", "company_name": "Removed",
+                  "industry": "IT", "series": "EQ"}])
+    market.create_universe_snapshot(snapshot_id="decision", index_name="NIFTY 500",
+        snapshot_date=decision, source_url="fixture://nse", raw_csv=b"after",
+        members=[{"isin": "IN0000000002", "symbol": "CURRENT", "company_name": "Current",
+                  "industry": "IT", "series": "EQ"}])
+    market.record_exit_eligibility(instrument_id="removed", isin="IN0000000001",
+        symbol="REMOVED", decision_date=decision, decision_snapshot_id="decision",
+        target_session_date=target)
+    queue = JobStore(database)
+    planner = MarketRefreshPlanner(database, market, queue)
+    planned = planner.schedule({"start_date": first.isoformat(), "end_date": first.isoformat()})
+    queued_symbols = {item["symbol"] for job_id in planned["job_ids"]
+                      for item in queue.get(job_id).payload.get("items", [])}
+    assert "CURRENT" in queued_symbols
+    assert "REMOVED" not in queued_symbols
+    jobs = KiteMarketJobs(market, publisher, None, tmp_path / "token.txt")
+    calls = []
+
+    class Client:
+        def historical_data(self, token, start, end, interval):
+            calls.append((token, start, end))
+            return [{"date": target, "open": 100, "high": 101, "low": 99,
+                     "close": 100, "volume": 10}]
+
+    monkeypatch.setattr(jobs, "_client", Client)
+    monkeypatch.setattr("src.application.providers._ProviderThrottle.wait", lambda self: None)
+    payload = {"symbol": "REMOVED", "exchange": "NSE",
+               "start_date": target.isoformat(), "end_date": target.isoformat()}
+    with pytest.raises(DomainValidationError, match="outside the current"):
+        jobs.fetch_bars(payload)
+    with pytest.raises(DomainValidationError, match="outside the current"):
+        jobs.fetch_bulk_bars({"items": [{"symbol": "REMOVED"}],
+            "start_date": target.isoformat(), "end_date": target.isoformat()}, None)
+    assert calls == []
+    fetched = jobs.fetch_bars({**payload, "exit_only": True})
+    assert fetched["bar_count"] == 1
+    assert len(calls) == 1
+    assert market.has_coverage("removed", target, target, "kite", coverage_context="exit_only")
+    assert not market.has_coverage("removed", target, target, "kite")
+    assert jobs.fetch_bars({**payload, "exit_only": True})["skipped"] is True
+    with pytest.raises(DomainValidationError, match="exit-only"):
+        jobs.fetch_bars({**payload, "start_date": decision.isoformat(), "exit_only": True})
+
+
+def test_legacy_fetch_coverage_upgrade_preserves_regular_windows(tmp_path):
+    from src.application.sqlite import sqlite_connection
+
+    database = tmp_path / "system.db"
+    market = MarketRepository(database)
+    day = date(2026, 6, 1)
+    market.upsert_instruments([TrackedInstrument("stock", "IN0000000001", "STOCK", "NSE", "1", day)])
+    market.record_fetch_coverage("stock", day, day, provider="kite", bar_count=1)
+    with sqlite_connection(database) as connection:
+        connection.execute("""CREATE TABLE legacy_fetch_coverage (
+            instrument_id TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL,
+            provider TEXT NOT NULL, fetched_at TEXT NOT NULL, bar_count INTEGER NOT NULL,
+            PRIMARY KEY(instrument_id, start_date, end_date, provider),
+            FOREIGN KEY(instrument_id) REFERENCES reference_instruments(instrument_id))""")
+        connection.execute("""INSERT INTO legacy_fetch_coverage
+            SELECT instrument_id, start_date, end_date, provider, fetched_at, bar_count
+            FROM market_fetch_coverage""")
+        connection.execute("DROP TABLE market_fetch_coverage")
+        connection.execute("ALTER TABLE legacy_fetch_coverage RENAME TO market_fetch_coverage")
+        connection.execute("DELETE FROM system_schema_migrations WHERE namespace='market' AND version>=16")
+    upgraded = MarketRepository(database)
+    assert upgraded.has_coverage("stock", day, day, "kite")
+    assert not upgraded.has_coverage("stock", day, day, "kite", coverage_context="exit_only")
+    upgraded.record_fetch_coverage("stock", day, day, provider="kite", bar_count=1,
+                                   coverage_context="exit_only")
+    assert upgraded.has_coverage("stock", day, day, "kite")
+    assert upgraded.has_coverage("stock", day, day, "kite", coverage_context="exit_only")

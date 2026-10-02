@@ -82,6 +82,16 @@ class KiteExecutionGateway:
         client.set_access_token(token)
         return client
 
+    @staticmethod
+    def _order_tag(order: dict[str, object]) -> str:
+        identity = order.get("order_id") or order.get("idempotency_key")
+        if not isinstance(identity, str) or not identity.strip():
+            raise DomainValidationError("broker order requires a stable order identity")
+        if order.get("order_id"):
+            # Retain tags already used by existing persisted order intents.
+            return identity.replace("-", "")[:20]
+        return str(uuid5(NAMESPACE_URL, f"kite-order:{order.get('account_id')}:{identity}")).replace("-", "")[:20]
+
     def submit_order(self, order: dict[str, object]) -> str:
         if not self.enabled:
             raise DomainValidationError("live broker execution is disabled")
@@ -93,12 +103,13 @@ class KiteExecutionGateway:
             raise DomainValidationError("broker account is not allowlisted")
         if not self.allowed_instruments or instrument_id not in self.allowed_instruments:
             raise DomainValidationError("broker instrument is not allowlisted")
+        tag = self._order_tag(order)
         client = self._client(account_id)
         return str(client.place_order(
             variety=str(order.get("variety", "regular")), exchange=str(order["exchange"]), tradingsymbol=str(order["symbol"]),
             transaction_type=str(order["side"]), quantity=int(str(order["quantity"])),
             order_type=str(order["order_type"]), product="CNC", validity="DAY",
-            tag=str(order["order_id"]).replace("-", "")[:20],
+            tag=tag,
         ))
 
     def order_status(self, broker_order_id: str, account_id: str | None = None) -> dict[str, object]:
@@ -121,7 +132,7 @@ class KiteExecutionGateway:
 
     def find_order(self, order: dict[str, object]) -> str | None:
         client = self._client(str(order["account_id"]), for_write=False)
-        tag = str(order["order_id"]).replace("-", "")[:20]
+        tag = self._order_tag(order)
         matches = [row for row in client.orders() if row.get("tag") == tag]
         if len(matches) > 1:
             raise DomainValidationError("ambiguous broker receipt; operator review required")
@@ -229,7 +240,7 @@ class BrokerOrderService:
 
     def create_intent(self, payload: dict[str, object]) -> dict[str, object]:
         required = {"account_id", "proposal_id", "idempotency_key", "instrument_id", "symbol", "exchange", "side", "quantity", "order_type"}
-        optional = {"variety"}
+        optional = {"variety", "broker_account_id", "strategy_id", "decision_date", "target_session_date", "exit_reason", "expected_ledger_version"}
         if not isinstance(payload, dict) or not required.issubset(payload) or set(payload) - (required | optional):
             raise DomainValidationError("broker order intent is incomplete")
         if payload["side"] not in {"BUY", "SELL"} or payload["exchange"] != "NSE" or payload["order_type"] not in {"MARKET", "LIMIT"}:
@@ -243,6 +254,12 @@ class BrokerOrderService:
             raise DomainValidationError("broker order quantity is invalid")
         if not all(isinstance(payload[field], str) and str(payload[field]).strip() for field in ("account_id", "proposal_id", "idempotency_key", "instrument_id", "symbol")):
             raise DomainValidationError("broker order identity is invalid")
+        broker_account_id = payload.get("broker_account_id")
+        strategy_id = payload.get("strategy_id")
+        decision_date = payload.get("decision_date")
+        target_session_date = payload.get("target_session_date")
+        exit_reason = payload.get("exit_reason")
+        expected_ledger_version = payload.get("expected_ledger_version")
         order_id = str(uuid4())
         timestamp = datetime.now(UTC).isoformat()
         with sqlite_connection(self.database, row_factory=True) as connection:
@@ -256,8 +273,14 @@ class BrokerOrderService:
                     raise DomainValidationError("idempotency key reused with different order variety")
                 return dict(existing)
             connection.execute(
-                "INSERT INTO broker_orders(order_id, account_id, proposal_id, idempotency_key, instrument_id, symbol, exchange, side, quantity, order_type, variety, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'LOCAL_CREATED', ?)",
-                (order_id, payload["account_id"], payload["proposal_id"], payload["idempotency_key"], payload["instrument_id"], payload["symbol"], payload["exchange"], payload["side"], payload["quantity"], payload["order_type"], variety, timestamp),
+                """INSERT INTO broker_orders(order_id, account_id, proposal_id, idempotency_key, instrument_id,
+                   symbol, exchange, side, quantity, order_type, variety, status, created_at,
+                   broker_account_id, strategy_id, decision_date, target_session_date, exit_reason, expected_ledger_version)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'LOCAL_CREATED', ?, ?, ?, ?, ?, ?, ?)""",
+                (order_id, payload["account_id"], payload["proposal_id"], payload["idempotency_key"], payload["instrument_id"],
+                 payload["symbol"], payload["exchange"], payload["side"], payload["quantity"], payload["order_type"],
+                 variety, timestamp,
+                 broker_account_id, strategy_id, decision_date, target_session_date, exit_reason, str(expected_ledger_version) if expected_ledger_version is not None else None),
             )
             self._event(connection, order_id, "LOCAL_CREATED", None, payload, timestamp)
         return self.get(order_id)
@@ -297,14 +320,28 @@ class BrokerOrderService:
             order = self.create_intent({"account_id": proposal["account_id"], "proposal_id": proposal_id,
                 "idempotency_key": f"proposal:{proposal_id}:decision:{index}", "instrument_id": decision["instrument_id"],
                 "symbol": instrument["symbol"], "exchange": "NSE", "side": side,
-                "quantity": int(decision["units"]), "order_type": "MARKET", "variety": variety})
-            with sqlite_connection(self.database) as connection:
-                connection.execute("""UPDATE broker_orders SET broker_account_id=?, strategy_id=?, decision_date=?,
-                    target_session_date=?, exit_reason=?, expected_ledger_version=? WHERE order_id=?""",
-                    (binding["broker_account_id"], binding["strategy_id"], proposal["ranking_week_end"], proposal["action_date"],
-                     decision.get("exit_reason") or decision["type"].lower(), str(proposal["expected_ledger_version"]), order["order_id"]))
+                "quantity": int(decision["units"]), "order_type": "MARKET", "variety": variety,
+                "broker_account_id": binding["broker_account_id"], "strategy_id": binding["strategy_id"],
+                "decision_date": proposal["ranking_week_end"], "target_session_date": proposal["action_date"],
+                "exit_reason": decision.get("exit_reason") or decision["type"].lower(),
+                "expected_ledger_version": str(proposal["expected_ledger_version"])})
             results.append(self.get(order["order_id"]))
         return results
+
+    def _assert_current_buy_membership(self, order: dict[str, object]) -> None:
+        if order["side"] != "BUY":
+            return
+        from src.application.market_repository import MarketRepository
+
+        market = MarketRepository(self.database)
+        snapshot = market.latest_universe_snapshot("NIFTY 500")
+        identity = market.instrument_by_id(str(order["instrument_id"]))
+        if snapshot is None or identity is None or identity["exchange"] != "NSE":
+            raise DomainValidationError("broker BUY requires a current NSE snapshot member")
+        member_isins = {str(row["isin"]) for row in
+                        market.universe_snapshot_members(str(snapshot["snapshot_id"]), limit=1000)}
+        if str(identity["isin"]) not in member_isins:
+            raise DomainValidationError("broker BUY stock is outside the current NSE snapshot")
 
     def submit(self, order_id: str) -> dict[str, object]:
         order = self.get(order_id)
@@ -314,6 +351,7 @@ class BrokerOrderService:
             raise DomainValidationError("broker order is not submit-ready")
         if self.gateway is None:
             raise DomainValidationError("broker execution gateway is unavailable")
+        self._assert_current_buy_membership(order)
         if self.risk_guard:
             with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
                 proposal = connection.execute("SELECT * FROM action_proposals WHERE proposal_id=? AND account_id=?", (order["proposal_id"], order["account_id"])).fetchone()

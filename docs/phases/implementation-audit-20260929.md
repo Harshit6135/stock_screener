@@ -1,8 +1,8 @@
-# Phase implementation audit — 2026-09-29
+# Phase implementation audit â€” 2026-09-29
 
 This is a preliminary audit of the current working tree, not phase completion
-evidence. Scope and treatment of pre-existing staged/unstaged changes are pending
-user clarification. Requirements examined: `Overhaul_Plan.md` and the seven
+evidence. The user confirmed the seven phases/master plan as full scope and authorized
+building on the existing staged/unstaged development. Requirements examined: `Overhaul_Plan.md` and the seven
 `docs/phases/phase*.md` plans. No live broker operations were performed.
 
 ## Reproducible baseline
@@ -15,6 +15,18 @@ Command (repository root, Windows PowerShell):
 
 Result: **308 passed, 15 failed**, 24.32 seconds. Temporary fixtures use isolated
 databases. Existing application databases and credentials were not inspected.
+
+Follow-up evidence on the same working tree:
+
+- DAG/cache/jobs/migration selection: **47 passed**, 1.90 seconds, using
+  `tests/test_phase1_dag_fixes.py`, `tests/test_dag_executor.py`,
+  `tests/test_node_cache.py`, `tests/test_durable_jobs.py`, and
+  `tests/test_sqlite_migrations.py`.
+- `tools/verify_phase_repairs.py` completed successfully with its disposable
+  store and fake broker. It confirms only the probes it exercises and explicitly
+  excludes pending replay, reconciliation and browser workflows.
+- [Acceptance checklist](acceptance-checklist-20260929.md) inventories all
+  **98 numbered tasks**, including each documented acceptance criterion.
 
 ## Phase findings
 
@@ -59,3 +71,11 @@ green. Existing tests also leave important phase gaps uncovered.
 
 No existing source edits were made during this audit. Repairs and final
 acceptance remain outstanding; none of the phases is newly certified complete.
+
+
+## Repair follow-up
+
+The original findings above describe the audited baseline. See
+[repair status](repair-status.md) for implemented repairs, subsequent checks and
+remaining acceptance work. The full scope remains open until all 98 tasks and
+master-plan constraints have direct evidence.

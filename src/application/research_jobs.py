@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 
 logger = logging.getLogger("screener." + __name__)
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
+from importlib.metadata import version
 from pathlib import Path
 from statistics import mean, pstdev
 from time import perf_counter
@@ -171,7 +173,11 @@ class ResearchJobs:
                 node_hashes = set(graph_hashes.values())
                 import hashlib
                 code_root = Path(__file__).resolve().parents[1] / "indicators"
-                identity = hashlib.sha256(PandasTaAdapter.adapter_version.encode())
+                identity = hashlib.sha256(json.dumps({
+                    "adapter": self.runtime._adapter.adapter_version,
+                    "pandas_ta": self.runtime._adapter.package_version,
+                    "pandas": pd.__version__, "numpy": version("numpy"),
+                }, sort_keys=True).encode())
                 for code_file in sorted(code_root.rglob("*.py")):
                     identity.update(code_file.relative_to(code_root).as_posix().encode())
                     identity.update(code_file.read_bytes())
@@ -430,7 +436,6 @@ class ResearchJobs:
                     if cross_section is not None:
                         for instrument_id, factors in cross_section.items():
                             values[instrument_id]["factors"] = factors
-                    import hashlib
 
                     from src.application.ranking_patterns import ranking_pattern_for
                     raw_factors = {key: value["factors"] for key, value in values.items()}
@@ -444,7 +449,7 @@ class ResearchJobs:
                     percentiles = self.read_percentile_snapshot(percentile_fingerprint, day)
                     if percentiles is None:
                         pattern = ranking_pattern_for(self.runtime.strategy_kind(strategy_id))
-                        percentiles = pattern._compute_percentiles(raw_factors, factor_weights)
+                        percentiles = pattern.compute_percentiles(raw_factors, factor_weights)
                         self.upsert_percentile_snapshot(percentile_fingerprint, revision_id, day,
                             percentile_fingerprint, {key: {factor: (raw_factors[key][factor], value)
                                 for factor, value in factors.items()} for key, factors in percentiles.items()},
@@ -1387,18 +1392,27 @@ class ResearchJobs:
         """Attach lineage metadata to a research artifact."""
         from datetime import UTC, datetime
         now = datetime.now(UTC).isoformat()
+        values = (artifact_id, strategy_id, strategy_revision_id, indicator_code_hash,
+                  universe_snapshot_id, market_data_start, market_data_end,
+                  market_history_revision, percentile_snapshot_id)
         with sqlite_connection(self.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                """SELECT artifact_id, strategy_id, strategy_revision_id, indicator_code_hash,
+                          universe_snapshot_id, market_data_start, market_data_end,
+                          market_history_revision, percentile_snapshot_id
+                   FROM research_lineage WHERE artifact_id=?""", (artifact_id,),
+            ).fetchone()
+            if existing is not None:
+                if tuple(existing) != values:
+                    raise DomainValidationError("published research lineage is immutable")
+                return
             connection.execute(
-                """INSERT OR REPLACE INTO research_lineage
-                   (artifact_id, strategy_id, strategy_revision_id,
-                    indicator_code_hash, universe_snapshot_id,
-                    market_data_start, market_data_end, market_history_revision,
-                    percentile_snapshot_id, computed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (artifact_id, strategy_id, strategy_revision_id,
-                 indicator_code_hash, universe_snapshot_id,
-                 market_data_start, market_data_end, market_history_revision,
-                 percentile_snapshot_id, now),
+                """INSERT INTO research_lineage
+                   (artifact_id, strategy_id, strategy_revision_id, indicator_code_hash,
+                    universe_snapshot_id, market_data_start, market_data_end,
+                    market_history_revision, percentile_snapshot_id, computed_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (*values, now),
             )
 
     def read_lineage(self, artifact_id: str) -> dict[str, object] | None:

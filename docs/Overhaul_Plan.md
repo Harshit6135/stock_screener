@@ -1,6 +1,6 @@
 # Stock Screener v2 — Master Overhaul Plan — Confirmed Scope
 
-> This plan supersedes `detailed_plan.md` and `best_practices_gap_analysis.md`. This is the authoritative plan. Phase files must follow it. This review authorizes documentation updates only; application implementation is not yet authorized.
+> This plan supersedes `detailed_plan.md` and `best_practices_gap_analysis.md`. This is the authoritative plan. Phase files must follow it. The user authorized implementation and completion of all seven phases on 2026-09-29. Current evidence and outstanding work are recorded in [repair-status.md](phases/repair-status.md).
 
 ---
 

@@ -29,6 +29,12 @@ def _services(tmp_path):
     services.market.upsert_instruments(
         [TrackedInstrument(instrument_id, "INE000000001", "ABC", "NSE", "42", date(2026, 9, 4))]
     )
+    services.market.create_universe_snapshot(
+        snapshot_id="action-current-universe", index_name="NIFTY 500",
+        snapshot_date=date(2026, 9, 4), source_url="fixture://nse",
+        raw_csv=b"ABC", members=[{"isin": "INE000000001", "symbol": "ABC",
+            "company_name": "ABC", "industry": "IT", "series": "EQ"}],
+    )
     services.market.upsert_bars(
         instrument_id,
         [NormalizedBar(instrument_id, date(2026, 9, 7), 100, 105, 95, 102, 1000)],
@@ -326,3 +332,99 @@ def test_execution_policy_parity_is_protected_immutable_and_readable(tmp_path):
     readback = client.get(f"{endpoint}/{artifact_id}")
     assert readback.status_code == 200
     assert readback.json["data"]["execution_policy_version"] == "v4-portfolio-execution-1"
+
+
+def test_removed_member_cannot_be_bought_from_old_rankings_or_manual_entry(tmp_path):
+    services, instrument_id = _services(tmp_path)
+    services.ledger.open_account("paper", Money(1000))
+    pending_old = services.actions.generate(_payload())
+    services.market.upsert_instruments([
+        TrackedInstrument("replacement", "INE000000002", "NEW", "NSE", "43", date(2026, 9, 5)),
+    ])
+    services.market.create_universe_snapshot(
+        snapshot_id="action-new-universe", index_name="NIFTY 500",
+        snapshot_date=date(2026, 9, 5), source_url="fixture://nse",
+        raw_csv=b"NEW", members=[{"isin": "INE000000002", "symbol": "NEW",
+            "company_name": "NEW", "industry": "IT", "series": "EQ"}],
+    )
+    with pytest.raises(DomainValidationError, match="outside the current NSE snapshot"):
+        services.actions.decide(pending_old["proposal_id"], "APPROVED")
+    proposal = services.actions.generate(_payload())
+    assert all(item["type"] != "BUY" or item["instrument_id"] != instrument_id
+               for item in proposal["decisions"])
+    with pytest.raises(DomainValidationError, match="outside the current NSE snapshot"):
+        services.actions.create_manual({
+            "account_id": "paper", "action_date": "2026-09-08", "reason": "old ranking",
+            "entries": [{"symbol": "ABC", "exchange": "NSE", "side": "BUY",
+                         "units": 1, "price": "100"}],
+        })
+
+
+def test_momentum_replay_exits_removed_member_at_next_observed_open_only(tmp_path):
+    services, instrument_id = _services(tmp_path)
+    decision = date(2026, 9, 8)
+    # No benchmark bar is stored for September 9; execution uses the next observed session.
+    target = date(2026, 9, 10)
+    services.market.upsert_instruments([
+        TrackedInstrument("benchmark", "INDEX:NIFTY 500", "NIFTY 500", "NSE", "500", date(2026, 9, 4)),
+        TrackedInstrument("replacement", "INE000000002", "NEW", "NSE", "43", decision),
+    ])
+    services.market.upsert_bars("benchmark", [
+        NormalizedBar("benchmark", day, 100, 101, 99, 100, 0)
+        for day in (date(2026, 9, 7), decision, target)
+    ], "benchmark-sessions")
+    services.market.upsert_bars(instrument_id, [
+        NormalizedBar(instrument_id, decision, 102, 105, 100, 103, 1000),
+        NormalizedBar(instrument_id, target, 110, 112, 109, 111, 1000),
+    ], "exit-bars-first")
+    services.market.upsert_indicators(
+        services.research._indicator_set("momentum", None), date(2026, 9, 4),
+        {instrument_id: {"atrr_14": 5, "close": 100}}, "risk-inputs-after-history",
+    )
+    services.market.create_universe_snapshot(
+        snapshot_id="after-abc-removal", index_name="NIFTY 500", snapshot_date=decision,
+        source_url="fixture://nse", raw_csv=b"NEW",
+        members=[{"isin": "INE000000002", "symbol": "NEW", "company_name": "NEW",
+                  "industry": "IT", "series": "EQ"}],
+    )
+    command = {"strategy_id": "momentum", "start_date": "2026-09-07",
+               "end_date": decision.isoformat()}
+    first = services.backtests.execute(command)
+    _, first_report = services.artifacts.read_json("runs/backtests", first["artifact_id"])
+    first_exit = next(fill for fill in first_report["fills"]
+                      if fill["decision_type"] == "UNIVERSE_EXIT")
+    assert first_exit["as_of_date"] == target.isoformat()
+    assert first_exit["decision_date"] == decision.isoformat()
+    assert first_exit["universe_snapshot_id"] == "after-abc-removal"
+    assert first_exit["price_snapshot_id"] == "exit-bars-first"
+    assert Decimal(str(first_exit["price"])) == Decimal(110)
+    assert first_report["equity_curve"][-1]["date"] == decision.isoformat()
+    assert first_report["post_period_exit_fills"] == [first_exit]
+    assert first_report["trade_counts"]["sell"] == 0
+    in_period = services.backtests.execute({**command, "end_date": target.isoformat()})
+    _, in_period_report = services.artifacts.read_json("runs/backtests", in_period["artifact_id"])
+    assert any(fill["decision_type"] == "UNIVERSE_EXIT" and fill["as_of_date"] == target.isoformat()
+               for fill in in_period_report["fills"])
+    assert not any(fill["side"] == "BUY" and fill["as_of_date"] == target.isoformat()
+                   for fill in in_period_report["fills"])
+
+    services.market.upsert_bars(instrument_id, [
+        NormalizedBar(instrument_id, target, 150, 152, 149, 151, 1000),
+    ], "exit-bars-revised")
+    services.market.upsert_indicators(
+        services.research._indicator_set("momentum", None), date(2026, 9, 4),
+        {instrument_id: {"atrr_14": 5, "close": 100}}, "risk-inputs-after-revision",
+    )
+    second = services.backtests.execute(command)
+    _, second_report = services.artifacts.read_json("runs/backtests", second["artifact_id"])
+    second_exit = next(fill for fill in second_report["fills"]
+                       if fill["decision_type"] == "UNIVERSE_EXIT")
+    assert second["artifact_id"] != first["artifact_id"]
+    assert Decimal(str(second_exit["price"])) == Decimal(150)
+    assert second_report["equity_curve"] == first_report["equity_curve"]
+    assert services.artifacts.read_json("runs/backtests", first["artifact_id"])[1] == first_report
+    with sqlite_connection(services.database) as connection:
+        connection.execute("DELETE FROM market_bars WHERE instrument_id=? AND as_of_date=?",
+                           (instrument_id, target.isoformat()))
+    with pytest.raises(DomainValidationError, match="missing declared universe-exit open"):
+        services.backtests.execute(command)

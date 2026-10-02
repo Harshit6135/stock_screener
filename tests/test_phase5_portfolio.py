@@ -1,17 +1,16 @@
 """Phase 5: Portfolio and Broker Account Integration tests."""
 
-import pytest
-from datetime import date, datetime, UTC
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from src.platform_kernel import Money, Quantity
-from src.portfolio_accounting.api import Fill, FillSide, OpeningPosition, project
-from src.execution_gateway.kite_accounts import KiteAccounts
-from src.execution_gateway.ledger import Ledger
 from src.application.portfolio_sync import PortfolioSync
 from src.application.strategy_definitions import StrategyDefinitions
 from src.application.strategy_runtime import StrategyRuntime
+from src.execution_gateway.kite_accounts import KiteAccounts
+from src.execution_gateway.ledger import Ledger
 from src.indicators.registry import PandasTaAdapter
+from src.platform_kernel import Money, Quantity
+from src.portfolio_accounting.api import Fill, FillSide, OpeningPosition, project
 
 
 def test_kite_account_registration_and_linking(tmp_path):
@@ -63,8 +62,8 @@ def test_opening_position_projection():
         executed_at=datetime(2026, 9, 11, 10, 0, tzinfo=UTC)
     )
     proj2 = project(cash, [op, sell])
-    assert proj2.cash.amount == Decimal("13000") # 10000 + 50 * 60
-    assert proj2.realised_pnl.amount == Decimal("500") # (60-50)*50 = 500
+    assert proj2.cash.amount == Decimal(13000) # 10000 + 50 * 60
+    assert proj2.realised_pnl.amount == Decimal(500) # (60-50)*50 = 500
     assert proj2.open_lots[0].remaining_units.units == 50
 
 def test_ledger_import_opening_positions(tmp_path):
@@ -108,11 +107,24 @@ def test_ledger_import_opening_positions(tmp_path):
 
 def test_account_scoped_setup_and_reconciliation(tmp_path):
     database = tmp_path / "system.db"
-    accounts = KiteAccounts(database)
+    from src.application.market_repository import MarketRepository, TrackedInstrument
+    class FakeBroker:
+        def __init__(self, api_key):
+            assert api_key == "key"
+        def set_access_token(self, token):
+            assert token == "fixture-token"
+        def profile(self):
+            return {"user_id": "fixture-user"}
+        def holdings(self):
+            return [{"isin": "ISIN", "quantity": 2}]
+    accounts = KiteAccounts(database, client_factory=FakeBroker)
     accounts.register_account("broker", "Broker", "key", "secret")
+    accounts.update_session("broker", "fixture-token", "fixture-user")
     accounts.link_portfolio("broker", "momentum", "managed-momentum")
     ledger = Ledger(database)
-    sync = PortfolioSync(database, accounts, ledger)
+    market = MarketRepository(database)
+    market.upsert_instruments([TrackedInstrument("inst", "ISIN", "INST", "NSE", "1", date(2026, 1, 1))])
+    sync = PortfolioSync(database, accounts, ledger, market)
     result = sync.setup({
         "broker_account_id": "broker", "strategy_id": "momentum", "opening_cash": "1000",
         "idempotency_key": "setup-1", "positions": [{

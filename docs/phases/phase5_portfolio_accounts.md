@@ -1,6 +1,6 @@
 # Phase 5: Broker Accounts, Day-0 Imports, Reconciliation and AMO Integration
 
-> Status: Plan only. Implementation requires explicit user approval.
+> Status: Implementation authorized and under review; completion is unproven. See [repair-status.md](repair-status.md).
 > Authority: [Overhaul_Plan.md](../Overhaul_Plan.md).
 > Dependencies: Phase 2 and Phase 4.
 > Numbered tasks: 16.

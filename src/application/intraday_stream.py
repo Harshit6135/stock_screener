@@ -61,6 +61,10 @@ class IntradayStreamLease:
             raise DomainValidationError("stream token_count must be between 1 and 500")
         now = datetime.now(UTC).isoformat()
         with sqlite_connection(self.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            enabled = connection.execute("SELECT enabled FROM intraday_stream_leases WHERE stream_name=?", (self.stream_name,)).fetchone()[0]
+            if not enabled:
+                raise DomainValidationError("cannot connect a stopped stream")
             if token_count is None:
                 connection.execute(
                     "UPDATE intraday_stream_leases SET enabled=1, status='CONNECTED', last_error=NULL, updated_at=? WHERE stream_name=?",

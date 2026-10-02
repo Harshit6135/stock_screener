@@ -96,12 +96,15 @@ def test_empty_prelisting_kite_range_is_successful_and_not_refetched(tmp_path, m
     market.upsert_instruments(
         [TrackedInstrument("new-ipo", "IN0000000001", "NEWIPO", "NSE", "42", date(2026, 1, 1))]
     )
+    market.create_universe_snapshot(snapshot_id="current-member", index_name="NIFTY 500",
+        snapshot_date=date(2026, 1, 1), source_url="fixture://nse", raw_csv=b"NEWIPO",
+        members=[{"isin": "IN0000000001", "symbol": "NEWIPO", "company_name": "NEWIPO",
+                  "industry": "IT", "series": "EQ"}])
     jobs = KiteMarketJobs(
         market,
         ArtifactPublisher(SqliteArtifactStore(database), ArtifactCatalog(database)),
         None,
         tmp_path / "token.txt",
-        tmp_path / "nse.csv",
     )
 
     class EmptyHistoryClient:

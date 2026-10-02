@@ -100,7 +100,7 @@ def test_reconciliation_reports_symbol_level_exclusions_and_unmatched_sources(tm
     assert publisher.store.read_json("reference/reconciliations", report["artifact_id"])[1]["unmatched_source_symbols"] == ["UNKNOWN"]
 
 
-def test_refresh_schedules_only_fixed_universe_holdings_and_benchmark(tmp_path):
+def test_refresh_schedules_snapshot_members_and_benchmark_with_managed_exclusions(tmp_path):
     database = tmp_path / "system.db"
     market = MarketRepository(database)
     jobs = JobStore(database)
@@ -136,6 +136,10 @@ def test_refresh_schedules_only_fixed_universe_holdings_and_benchmark(tmp_path):
         resolved_count=1,
         unresolved_count=0,
     )
+    market.create_universe_snapshot(snapshot_id="membership", index_name="NIFTY 500",
+        snapshot_date=observed_on, source_url="fixture://membership", raw_csv=b"fixture",
+        members=[{"isin": "IN0000000001", "symbol": "MEMBER", "company_name": "Member",
+                  "industry": "IT", "series": "EQ"}])
     planner = MarketRefreshPlanner(
         database,
         market,
@@ -145,9 +149,10 @@ def test_refresh_schedules_only_fixed_universe_holdings_and_benchmark(tmp_path):
 
     result = planner.schedule({"start_date": "2025-01-01", "end_date": "2025-12-31"})
 
-    assert result["scheduled_count"] == 3
+    assert result["scheduled_count"] == 2
     queued = {item["symbol"] for job_id in result["job_ids"] for item in jobs.get(job_id).payload["items"]}
-    assert queued == {"MEMBER", "HOLDING", "NIFTY 500"}
+    assert queued == {"MEMBER", "NIFTY 500"}
+    assert {row["instrument_id"] for row in result["excluded"]} >= {"holding"}
     assert "OUTSIDE" not in queued
     assert result["blocked_held_positions"] == [
         {"instrument_id": "blocked", "reason": "missing_provider_token"},
@@ -155,16 +160,16 @@ def test_refresh_schedules_only_fixed_universe_holdings_and_benchmark(tmp_path):
     ]
 
 
-def test_refresh_refuses_to_download_before_fixed_universe_is_built(tmp_path):
+def test_refresh_refuses_to_download_before_a_universe_snapshot_exists(tmp_path):
     database = tmp_path / "system.db"
     market = MarketRepository(database)
     planner = MarketRefreshPlanner(database, market, JobStore(database))
 
-    with pytest.raises(DomainValidationError, match="fixed universe is empty"):
+    with pytest.raises(DomainValidationError, match="NIFTY 500 snapshot is unavailable"):
         planner.schedule({"start_date": "2025-01-01", "end_date": "2025-12-31"})
 
 
-def test_refresh_refuses_partial_universe_rows_without_completed_build(tmp_path):
+def test_refresh_refuses_legacy_membership_rows_without_a_snapshot(tmp_path):
     database = tmp_path / "system.db"
     market = MarketRepository(database)
     observed_on = date(2026, 1, 1)
@@ -189,7 +194,7 @@ def test_refresh_refuses_partial_universe_rows_without_completed_build(tmp_path)
         ]
     )
 
-    with pytest.raises(DomainValidationError, match="fixed universe is empty"):
+    with pytest.raises(DomainValidationError, match="NIFTY 500 snapshot is unavailable"):
         MarketRefreshPlanner(database, market, JobStore(database)).schedule(
             {"start_date": "2025-01-01", "end_date": "2025-12-31"}
         )

@@ -61,6 +61,19 @@ class _Market:
     def histories(self, _start, _end):
         return self.values
 
+    def tracked_instruments(self):
+        return [{"instrument_id": key, "exchange": "NSE", **identity}
+                for key, (_, identity) in self.values.items()]
+
+    def market_history_revisions(self, identifiers):
+        return {key: "1" for key in identifiers}
+
+    def universe_snapshot_as_of(self, _index, _date):
+        return {"snapshot_id": "snapshot-1"}
+
+    def universe_snapshot_members(self, _snapshot, **_kwargs):
+        return [{"isin": "INE-a"}, {"isin": "INE-b"}]
+
 
 class _Context:
     def __init__(self):

@@ -1,6 +1,6 @@
 # Phase 6: Existing Strategy Rules, Global Managed-Portfolio Guards and Returns
 
-> Status: Plan only. Implementation requires explicit user approval.
+> Status: Implementation authorized and under review; completion is unproven. See [repair-status.md](repair-status.md).
 > Authority: [Overhaul_Plan.md](../Overhaul_Plan.md).
 > Dependencies: Phase 5.
 > Numbered tasks: 11.

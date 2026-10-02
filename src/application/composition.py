@@ -15,6 +15,7 @@ from src.application.intraday_stream import IntradayStreamLease
 from src.application.jobs import JobStore
 from src.application.kite_auth import KiteCredentials
 from src.application.liquidity import publish_liquidity_universe
+from src.application.live_quotes import LiveQuotes, LiveQuoteStream
 from src.application.managed_risk import ManagedRiskGuard
 from src.application.market_jobs import KiteMarketJobs
 from src.application.market_refresh import MarketRefreshPlanner
@@ -64,6 +65,8 @@ class ApplicationServices:
     universe: UniverseJobs
     kite_accounts: KiteAccounts
     portfolio_sync: PortfolioSync
+    live_quotes: LiveQuotes
+    live_stream: LiveQuoteStream
     background_worker: BackgroundWorker | None = None
 
     @classmethod
@@ -92,6 +95,8 @@ class ApplicationServices:
         portfolio_sync = PortfolioSync(database, kite_accounts, ledger, market)
         intraday_alerts = IntradayStopAlerts(database, ledger, publisher)
         intraday_stream = IntradayStreamLease(database)
+        live_quotes = LiveQuotes(database)
+        live_stream = LiveQuoteStream(kite_accounts, market, live_quotes, intraday_stream, intraday_alerts)
         market_refresh = MarketRefreshPlanner(
             database, market, jobs, publisher, held_instrument_ids=ledger.open_instrument_ids
         )
@@ -137,9 +142,7 @@ class ApplicationServices:
             publisher,
             market_data_kite_credentials,
             market_data_kite_token_path,
-            None,
-            None,
-            intraday_alerts,
+            intraday_alerts=intraday_alerts,
         )
 
         def build_liquidity_universe_job(payload: dict[str, Any]) -> dict[str, object]:
@@ -161,7 +164,6 @@ class ApplicationServices:
                 "system.echo": lambda payload: {"echo": payload},
                 "artifacts.recover": lambda payload: publisher.recover(),
                 "research.build-liquidity-universe": build_liquidity_universe_job,
-                "reference.sync-kite-instruments": market_jobs.sync_instruments,
                 "reference.sync-snapshot-instruments": market_jobs.sync_snapshot_instruments,
                 "market.fetch-kite-bars": market_jobs.fetch_bars,
                 "market.fetch-bulk-kite-bars": market_jobs.fetch_bulk_bars,
@@ -181,7 +183,6 @@ class ApplicationServices:
                 "actions.generate-portfolio-proposal": generate_portfolio_proposal,
                 "research.pipeline-advance": pipelines.advance,
                 "research.pipeline-prepare": PipelinePreparation(universe, market, market_jobs, corporate_actions, research, market_refresh, kite_accounts).run,
-                "reference.enrich-day0-universe": market_jobs.enrich_and_sync_universe,
                 "reference.download-nifty500-constituents": universe.download_nifty500_constituents,
                 "universe.detect-exits": universe.detect_universe_exits,
                 "reference.detect-corporate-actions": corporate_actions.detect_job,
@@ -214,5 +215,7 @@ class ApplicationServices:
             universe,
             kite_accounts,
             portfolio_sync,
+            live_quotes,
+            live_stream,
             background_worker=BackgroundWorker(worker),
         )

@@ -12,8 +12,8 @@ from src.application.composition import ApplicationServices
 from src.application.dashboard_web import create_dashboard_blueprint
 from src.application.index_poller import BackgroundIndexPoller
 from src.application.indicators_web import create_indicators_blueprint
-from src.application.kite_auth import KiteAuthService, load_kite_credentials
 from src.application.kite_accounts_web import create_kite_accounts_blueprint
+from src.application.kite_auth import KiteAuthService, load_kite_credentials
 from src.application.kite_web import create_kite_auth_blueprint
 from src.application.market_web import create_market_blueprint
 from src.application.operations import sqlite_ready
@@ -23,6 +23,7 @@ from src.application.positional_trend_web import create_positional_trend_bluepri
 from src.application.reference_web import create_reference_blueprint
 from src.application.research_web import create_research_blueprint
 from src.application.runtime import RuntimeConfig
+from src.application.security import RedactingLogFilter
 from src.application.strategies_web import create_strategies_blueprint
 from src.application.universe_web import create_universe_blueprint
 from src.application.web import create_operations_blueprint
@@ -36,6 +37,7 @@ def configure_logging() -> None:
     if logger.handlers:
         return
     handler = logging.StreamHandler()
+    handler.addFilter(RedactingLogFilter())
     handler.setFormatter(logging.Formatter(
         "%(asctime)s %(levelname)s %(name)s %(message)s"
     ))
@@ -103,6 +105,8 @@ def create_app(config_class=RuntimeConfig):
             services.corporate_actions,
             services.intraday_alerts,
             services.intraday_stream,
+            services.live_quotes,
+            services.live_stream,
         )
     )
     app.register_blueprint(

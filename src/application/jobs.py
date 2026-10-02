@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import sqlite3
 from collections.abc import Collection
 from dataclasses import dataclass
@@ -52,21 +53,39 @@ class JobExecutionContext:
     def __init__(self, jobs: "JobStore", job: Job, lease_seconds: int = 60) -> None:
         self.jobs, self.job_id, self.claim_token = jobs, job.job_id, job.claim_token
         self.lease_seconds = lease_seconds
+        self.context = {key: value for key, value in (job.payload or {}).items()
+                        if key in {"account_id", "broker_account_id", "strategy_id", "snapshot_id",
+                                   "revision_id", "start_date", "end_date"}}
 
     def checkpoint(self, *, progress: dict[str, Any] | None = None) -> Job:
         job = self.jobs.heartbeat(self.job_id, str(self.claim_token), self.lease_seconds)
-        if progress:
-            progress = dict(progress)
+        if job.cancel_requested or job.status == JobStatus.CANCELLED:
+            raise DomainValidationError("job cancellation requested")
+        if progress is not None:
+            if not isinstance(progress, dict):
+                raise DomainValidationError("job progress must be an object")
+            progress = {**self.context, **progress}
             current = progress.get("current", progress.get("processed", progress.get("processed_instruments")))
             total = progress.get("total", progress.get("total_instruments"))
-            progress.setdefault("message", progress.get("detail", str(progress.get("stage", "working"))))
-            progress.setdefault("current", current)
-            progress.setdefault("total", total)
-            progress.setdefault("percent", min(100, max(0, current / total * 100)) if isinstance(current, (int, float)) and isinstance(total, (int, float)) and total > 0 else None)
-            progress.setdefault("job_id", self.job_id)
+            for value in (current, total):
+                if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))
+                                          or not math.isfinite(value) or value < 0):
+                    raise DomainValidationError("job progress counters must be non-negative finite numbers")
+            progress.setdefault("stage", "working")
+            progress.setdefault("message", progress.get("detail", str(progress["stage"])))
+            if not isinstance(progress["stage"], str) or not progress["stage"].strip() or not isinstance(progress["message"], str):
+                raise DomainValidationError("job progress stage and message must be text")
+            progress["current"], progress["total"] = current, total
+            percent = (min(100, current / total * 100)
+                       if current is not None and total is not None and total > 0 else progress.get("percent"))
+            if percent is not None and (isinstance(percent, bool) or not isinstance(percent, (int, float))
+                                        or not math.isfinite(percent) or not 0 <= percent <= 100):
+                raise DomainValidationError("job progress percent must be between 0 and 100")
+            progress["percent"] = percent
+            if "strategy" in progress:
+                progress.setdefault("strategy_id", progress["strategy"])
+            progress["job_id"] = self.job_id
             self.jobs.emit(self.job_id, "progress", progress)
-        if job.cancel_requested:
-            raise DomainValidationError("job cancellation requested")
         return job
 
     def heartbeat(self) -> Job:

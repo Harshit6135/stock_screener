@@ -2,7 +2,8 @@
 date normalization, ratio parsing, self-adjustment, anomaly monitoring,
 double-adjustment prevention, watermark management, and indicator cache invalidation."""
 
-from datetime import date, timedelta
+import json
+from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
@@ -10,7 +11,6 @@ import pytest
 
 from src.application.catalog import ArtifactCatalog
 from src.application.corporate_actions import (
-    ADJUSTABLE_TYPES,
     ANOMALY_THRESHOLD_PERCENT,
     CorporateActions,
 )
@@ -20,8 +20,7 @@ from src.application.publication import ArtifactPublisher
 from src.market_data import NormalizedBar
 from src.platform_kernel import ArtifactStore, DomainValidationError
 
-
-# ── Task 3.1: Schema and event persistence ──
+# â”€â”€ Task 3.1: Schema and event persistence â”€â”€
 
 class TestEventPersistence:
     def test_corporate_action_event_upsert_and_query(self, tmp_path):
@@ -100,7 +99,7 @@ class TestEventPersistence:
             market.transition_corporate_action(eid, "INVALID_STATE")
 
 
-# ── Task 3.2: Date normalization and ratio parsing ──
+# â”€â”€ Task 3.2: Date normalization and ratio parsing â”€â”€
 
 class TestDateNormalization:
     @pytest.mark.parametrize("raw,expected", [
@@ -149,7 +148,7 @@ class TestActionClassification:
         assert CorporateActions.classify_action_type(raw) == expected
 
 
-# ── Task 3.2: Event detection from source records ──
+# â”€â”€ Task 3.2: Event detection from source records â”€â”€
 
 class TestEventDetection:
     def test_detect_events_from_valid_records(self, tmp_path):
@@ -195,7 +194,7 @@ class TestEventDetection:
         assert result["events"][0]["state"] == "MONITORING"
 
 
-# ── Task 3.1: Watermark management ──
+# â”€â”€ Task 3.1: Watermark management â”€â”€
 
 class TestWatermark:
     def test_watermark_advances_monotonically(self, tmp_path):
@@ -211,7 +210,7 @@ class TestWatermark:
         assert market.corporate_action_watermark() == date(2026, 6, 15)
 
 
-# ── Task 3.4: Self-adjustment ──
+# â”€â”€ Task 3.4: Self-adjustment â”€â”€
 
 class TestSelfAdjustment:
     def test_split_self_adjustment_scales_pre_ex_bars(self, tmp_path):
@@ -226,12 +225,13 @@ class TestSelfAdjustment:
             NormalizedBar(inst_id, date(2026, 5, 1), Decimal(200), Decimal(210), Decimal(190), Decimal(200), 100),
             NormalizedBar(inst_id, date(2026, 5, 2), Decimal(210), Decimal(220), Decimal(200), Decimal(210), 100),
         ], "snap-1")
-        # Insert post-ex bar
+        # Insert the ex-date bar and its following session.
         market.upsert_bars(inst_id, [
+            NormalizedBar(inst_id, date(2026, 6, 15), Decimal(105), Decimal(110), Decimal(100), Decimal(105), 200),
             NormalizedBar(inst_id, date(2026, 6, 16), Decimal(105), Decimal(110), Decimal(100), Decimal(105), 200),
         ], "snap-2")
         # Insert indicator cache entry
-        node_cache.put("test_hash", inst_id, date(2026, 5, 1), 42.0, "snap-test")
+        node_cache.put("test_hash", inst_id, date(2026, 5, 1), 42.0, "snap-test", market_revision="1", implementation_revision="test")
         ca = CorporateActions(database, market, publisher, node_cache=node_cache)
         # Detect and persist the split event
         eid = str(uuid4())
@@ -253,7 +253,7 @@ class TestSelfAdjustment:
         bars_post = market.bars(inst_id, date(2026, 6, 16), date(2026, 6, 16))
         assert float(bars_post[0]["close"]) == pytest.approx(105.0, rel=0.01)
         # Verify indicator cache was invalidated
-        assert node_cache.get("test_hash", inst_id, date(2026, 5, 1)) is None
+        assert node_cache.get("test_hash", inst_id, date(2026, 5, 1), market_revision="1", implementation_revision="test") is None
         # Verify event state
         event = market.corporate_action_event(eid)
         assert event["state"] == "SELF_ADJUSTED"
@@ -274,7 +274,7 @@ class TestSelfAdjustment:
             ca.apply_self_adjustment(eid)
 
 
-# ── Task 3.4: No double adjustment ──
+# â”€â”€ Task 3.4: No double adjustment â”€â”€
 
 class TestDoubleAdjustmentPrevention:
     def test_cannot_self_adjust_already_adjusted_event(self, tmp_path):
@@ -286,6 +286,7 @@ class TestDoubleAdjustmentPrevention:
         market.upsert_instruments([TrackedInstrument(inst_id, "INE001", "ABC", "NSE", "1", date(2026, 1, 1))])
         market.upsert_bars(inst_id, [
             NormalizedBar(inst_id, date(2026, 5, 1), Decimal(200), Decimal(210), Decimal(190), Decimal(200), 100),
+            NormalizedBar(inst_id, date(2026, 6, 15), Decimal(100), Decimal(105), Decimal(95), Decimal(100), 200),
         ], "snap-1")
         eid = str(uuid4())
         market.upsert_corporate_action_event({
@@ -308,7 +309,7 @@ class TestDoubleAdjustmentPrevention:
         assert float(bars_after[0]["close"]) == pytest.approx(first_close)
 
 
-# ── Task 3.5: Verification with Kite ──
+# â”€â”€ Task 3.5: Verification with Kite â”€â”€
 
 class TestKiteVerification:
     def test_verify_transitions_self_adjusted_to_verified(self, tmp_path):
@@ -317,6 +318,9 @@ class TestKiteVerification:
         publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
         inst_id = str(uuid4())
         market.upsert_instruments([TrackedInstrument(inst_id, "INE001", "ABC", "NSE", "1", date(2026, 1, 1))])
+        market.upsert_bars(inst_id, [
+            NormalizedBar(inst_id, date(2026, 6, 14), Decimal(100), Decimal(110), Decimal(90), Decimal(100), 100),
+        ], "self-adjusted-baseline")
         eid = str(uuid4())
         market.upsert_corporate_action_event({
             "event_id": eid, "instrument_id": inst_id,
@@ -329,8 +333,8 @@ class TestKiteVerification:
         # Mock fetch_bars_fn that returns bars
         def mock_fetch(instrument_id, start, end):
             return [
-                {"as_of_date": "2026-06-14", "open": "100", "high": "110", "low": "90", "close": "100"},
-                {"as_of_date": "2026-06-15", "open": "100", "high": "110", "low": "95", "close": "105"},
+                {"as_of_date": "2026-06-14", "open": "100", "high": "110", "low": "90", "close": "100", "volume": 100},
+                {"as_of_date": "2026-06-15", "open": "100", "high": "110", "low": "95", "close": "105", "volume": 100},
             ]
         result = ca.verify_with_kite(eid, mock_fetch)
         assert result["state"] == "VERIFIED"
@@ -357,7 +361,7 @@ class TestKiteVerification:
         assert event["state"] == "SELF_ADJUSTED"  # remains actionable
 
 
-# ── Task 3.6: Monitoring with anomaly detection ──
+# â”€â”€ Task 3.6: Monitoring with anomaly detection â”€â”€
 
 class TestAnomalyMonitoring:
     def test_rights_event_is_monitored_not_adjusted(self, tmp_path):
@@ -377,8 +381,8 @@ class TestAnomalyMonitoring:
         # Bars with no anomaly (< 15% gap)
         def mock_fetch_no_anomaly(iid, start, end):
             return [
-                {"as_of_date": "2026-06-14", "open": "100", "high": "110", "low": "90", "close": "100"},
-                {"as_of_date": "2026-06-15", "open": "98", "high": "105", "low": "95", "close": "99"},
+                {"as_of_date": "2026-06-14", "open": "100", "high": "110", "low": "90", "close": "100", "volume": 100},
+                {"as_of_date": "2026-06-15", "open": "98", "high": "105", "low": "95", "close": "99", "volume": 100},
             ]
         result = ca.verify_with_kite(eid, mock_fetch_no_anomaly)
         assert result["state"] == "VERIFIED"
@@ -401,16 +405,89 @@ class TestAnomalyMonitoring:
         # Bars with >15% gap
         def mock_fetch_anomaly(iid, start, end):
             return [
-                {"as_of_date": "2026-06-14", "open": "100", "high": "110", "low": "90", "close": "100"},
-                {"as_of_date": "2026-06-15", "open": "80", "high": "85", "low": "75", "close": "82"},
+                {"as_of_date": "2026-06-14", "open": "100", "high": "110", "low": "90", "close": "100", "volume": 100},
+                {"as_of_date": "2026-06-15", "open": "80", "high": "85", "low": "75", "close": "82", "volume": 100},
             ]
         result = ca.verify_with_kite(eid, mock_fetch_anomaly)
         assert result["state"] == "MONITORING"
         assert result["outcome"] == "anomaly_present"
         assert result["discrepancy_pct"] > ANOMALY_THRESHOLD_PERCENT
+        warnings = market.quality_events(instrument_id=inst_id,
+            check_type="corporate_action_mismatch", severity="WARNING")
+        assert len(warnings) == 1
+        assert warnings[0]["detail"]["event_id"] == eid
+        assert warnings[0]["detail"]["ex_date"] == "2026-06-15"
+        assert ca.verify_with_kite(eid, mock_fetch_anomaly)["state"] == "MONITORING"
+        assert len(market.quality_events(instrument_id=inst_id,
+            check_type="corporate_action_mismatch", severity="WARNING")) == 1
+
+        def resolved_history(iid, start, end):
+            return [
+                {"as_of_date": "2026-06-14", "open": "100", "high": "110",
+                 "low": "90", "close": "100", "volume": 100},
+                {"as_of_date": "2026-06-15", "open": "98", "high": "105",
+                 "low": "95", "close": "99", "volume": 100},
+            ]
+        assert ca.verify_with_kite(eid, resolved_history)["state"] == "VERIFIED"
+        resolved = market.quality_events(instrument_id=inst_id,
+            check_type="corporate_action_mismatch", severity="INFO")
+        assert len(resolved) == 1
+        assert resolved[0]["detail"]["state"] == "VERIFIED"
 
 
-# ── Task 3.7: Indicator cache invalidation ──
+def test_self_adjustment_skips_already_smooth_prices_and_records_evidence(tmp_path):
+    database = tmp_path / "system.db"
+    market = MarketRepository(database)
+    publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
+    instrument_id = str(uuid4())
+    market.upsert_instruments([TrackedInstrument(instrument_id, "INE001", "ABC", "NSE", "1", date(2026, 1, 1))])
+    market.upsert_bars(instrument_id, [
+        NormalizedBar(instrument_id, date(2026, 6, 14), 200, 205, 195, 200, 100),
+        NormalizedBar(instrument_id, date(2026, 6, 15), 190, 195, 185, 190, 200),
+    ], "already-adjusted")
+    market.upsert_corporate_action_event({"event_id": "event", "instrument_id": instrument_id,
+        "isin": "INE001", "symbol": "ABC", "action_type": "SPLIT", "ex_date": "2026-06-15",
+        "ratio_numerator": 1, "ratio_denominator": 2, "raw_source_json": "{}", "state": "DETECTED"})
+    service = CorporateActions(database, market, publisher)
+    before = market.bars(instrument_id)
+    result = service.apply_self_adjustment("event")
+    assert result["outcome"] == "stored_history_appears_adjusted"
+    assert market.corporate_action_event("event")["state"] == "DETECTED"
+    assert market.bars(instrument_id) == before
+    warnings = market.quality_events(instrument_id=instrument_id,
+        check_type="corporate_action_mismatch", severity="INFO")
+    assert len(warnings) == 1
+    assert warnings[0]["detail"]["pre_close"] == "200"
+    assert warnings[0]["detail"]["post_close"] == "190"
+
+
+def test_self_adjustment_waits_for_exact_ex_date_price(tmp_path):
+    database = tmp_path / "system.db"
+    market = MarketRepository(database)
+    publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
+    instrument_id = str(uuid4())
+    market.upsert_instruments([TrackedInstrument(instrument_id, "INE001", "ABC", "NSE", "1", date(2026, 1, 1))])
+    market.upsert_bars(instrument_id, [
+        NormalizedBar(instrument_id, date(2026, 6, 14), 200, 205, 195, 200, 100),
+        NormalizedBar(instrument_id, date(2026, 6, 16), 100, 105, 95, 100, 200),
+    ], "missing-ex-date")
+    market.upsert_corporate_action_event({"event_id": "event", "instrument_id": instrument_id,
+        "isin": "INE001", "symbol": "ABC", "action_type": "SPLIT", "ex_date": "2026-06-15",
+        "ratio_numerator": 1, "ratio_denominator": 2, "raw_source_json": "{}", "state": "DETECTED"})
+    service = CorporateActions(database, market, publisher)
+    before = market.bars(instrument_id)
+    result = service.apply_self_adjustment("event")
+    assert result["outcome"] == "incomplete_ex_date_window"
+    event = market.corporate_action_event("event")
+    assert event["state"] == "DETECTED"
+    assert json.loads(event["baseline_prices_json"])["post"] is None
+    assert market.bars(instrument_id) == before
+    warnings = market.quality_events(instrument_id=instrument_id,
+        check_type="corporate_action_mismatch", severity="WARNING")
+    assert len(warnings) == 1
+
+
+# â”€â”€ Task 3.7: Indicator cache invalidation â”€â”€
 
 class TestIndicatorRebuild:
     def test_self_adjustment_invalidates_indicator_cache(self, tmp_path):
@@ -422,11 +499,12 @@ class TestIndicatorRebuild:
         market.upsert_instruments([TrackedInstrument(inst_id, "INE001", "ABC", "NSE", "1", date(2026, 1, 1))])
         market.upsert_bars(inst_id, [
             NormalizedBar(inst_id, date(2026, 5, 1), Decimal(200), Decimal(210), Decimal(190), Decimal(200), 100),
+            NormalizedBar(inst_id, date(2026, 6, 15), Decimal(100), Decimal(105), Decimal(95), Decimal(100), 200),
         ], "snap-1")
         # Seed cache
-        node_cache.put("ema50", inst_id, date(2026, 5, 1), 195.0, "snap-calc")
-        node_cache.put("adx14", inst_id, date(2026, 5, 1), 30.0, "snap-calc")
-        assert node_cache.get("ema50", inst_id, date(2026, 5, 1)) is not None
+        node_cache.put("ema50", inst_id, date(2026, 5, 1), 195.0, "snap-calc", market_revision="1", implementation_revision="test")
+        node_cache.put("adx14", inst_id, date(2026, 5, 1), 30.0, "snap-calc", market_revision="1", implementation_revision="test")
+        assert node_cache.get("ema50", inst_id, date(2026, 5, 1), market_revision="1", implementation_revision="test") is not None
         eid = str(uuid4())
         market.upsert_corporate_action_event({
             "event_id": eid, "instrument_id": inst_id,
@@ -438,11 +516,11 @@ class TestIndicatorRebuild:
         ca = CorporateActions(database, market, publisher, node_cache=node_cache)
         ca.apply_self_adjustment(eid)
         # All cached indicators for this instrument should be gone
-        assert node_cache.get("ema50", inst_id, date(2026, 5, 1)) is None
-        assert node_cache.get("adx14", inst_id, date(2026, 5, 1)) is None
+        assert node_cache.get("ema50", inst_id, date(2026, 5, 1), market_revision="1", implementation_revision="test") is None
+        assert node_cache.get("adx14", inst_id, date(2026, 5, 1), market_revision="1", implementation_revision="test") is None
 
 
-# ── Task 3.4: Price factor operations ──
+# â”€â”€ Task 3.4: Price factor operations â”€â”€
 
 class TestPriceFactorRepository:
     def test_apply_price_factor_scales_pre_ex_bars_only(self, tmp_path):
@@ -479,7 +557,7 @@ class TestPriceFactorRepository:
         assert rev2 == "2"
 
 
-# ── Task 3.4: Adjustment factor computation ──
+# â”€â”€ Task 3.4: Adjustment factor computation â”€â”€
 
 class TestAdjustmentFactorComputation:
     def test_split_factor(self):
@@ -502,7 +580,7 @@ class TestAdjustmentFactorComputation:
         assert ca.compute_adjustment_factor("DEMERGER", 1.0, 1.0) is None
 
 
-# ── Legacy backward compat ──
+# â”€â”€ Legacy backward compat â”€â”€
 
 class TestLegacyBackwardCompat:
     def test_legacy_record_still_works(self, tmp_path):
@@ -517,3 +595,50 @@ class TestLegacyBackwardCompat:
         assert "action_id" in result
         adjusted = ca.adjusted_bars(inst_id, date(2026, 1, 1), date(2026, 1, 1))
         assert Decimal(adjusted["bars"][0]["close"]) == Decimal(50)
+
+
+def test_unverified_corporate_provider_retries_persist_outcome_and_stay_actionable(tmp_path):
+    database = tmp_path / "system.db"
+    market = MarketRepository(database)
+    publisher = ArtifactPublisher(ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(database))
+    instrument_id = str(uuid4())
+    market.upsert_instruments([
+        TrackedInstrument(instrument_id, "INE001", "ABC", "NSE", "1", date(2026, 1, 1)),
+    ])
+    event_id = str(uuid4())
+    market.upsert_corporate_action_event({
+        "event_id": event_id, "instrument_id": instrument_id, "isin": "INE001",
+        "symbol": "ABC", "action_type": "SPLIT", "ex_date": "2026-06-15",
+        "ratio_numerator": 1.0, "ratio_denominator": 2.0,
+        "raw_source_json": "{}", "state": "SELF_ADJUSTED",
+    })
+    actions = CorporateActions(database, market, publisher)
+    provider_rows = [
+        {"as_of_date": "2026-06-14", "open": "200", "high": "201", "low": "199",
+         "close": "200", "volume": 100},
+        {"as_of_date": "2026-06-15", "open": "100", "high": "101", "low": "99",
+         "close": "100", "volume": 100},
+    ]
+    for attempt in (1, 2):
+        result = actions.verify_with_kite(event_id, lambda *_: provider_rows)
+        event = market.corporate_action_event(event_id)
+        assert result["outcome"] == "provider_history_not_verified"
+        assert event["state"] == "SELF_ADJUSTED"
+        assert event["attempt_count"] == attempt
+        assert event["last_attempt_outcome"] == "provider_history_not_verified"
+        assert any(row["event_id"] == event_id for row in market.actionable_corporate_events())
+    assert market.bars(instrument_id, date(2026, 6, 14), date(2026, 6, 15)) == []
+    market.upsert_bars(instrument_id, [
+        NormalizedBar(instrument_id, date(2026, 6, 14), 100, 101, 99, 100, 100),
+    ], "self-adjusted-baseline")
+    different_pre_ex = [
+        {"as_of_date": "2026-06-14", "open": "120", "high": "121", "low": "119",
+         "close": "120", "volume": 100},
+        {"as_of_date": "2026-06-15", "open": "120", "high": "121", "low": "119",
+         "close": "120", "volume": 100},
+    ]
+    result = actions.verify_with_kite(event_id, lambda *_: different_pre_ex)
+    event = market.corporate_action_event(event_id)
+    assert result["outcome"] == "provider_adjustment_not_confirmed"
+    assert event["state"] == "SELF_ADJUSTED" and event["attempt_count"] == 3
+    assert event["last_attempt_outcome"] == "provider_adjustment_not_confirmed"

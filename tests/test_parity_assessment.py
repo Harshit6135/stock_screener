@@ -11,72 +11,45 @@ from src.platform_kernel import Money
 from src.portfolio_engine import Candidate, MarketBar, PortfolioPolicy, PortfolioState, evaluate
 
 
-def test_pipeline_enforces_market_data_and_child_bar_jobs(tmp_path):
+def test_pipeline_waits_for_inline_preparation_before_queuing_both_rankings(tmp_path):
     jobs = JobStore(tmp_path / "system.db")
     pipelines = ResearchPipelineJobs(tmp_path / "system.db", jobs)
-
-    pipeline = pipelines.submit(
-        {
-            "start_date": "2026-09-07",
-            "end_date": "2026-09-11",
-            "strategies": ["momentum"],
-            "orchestrate_data": True,
-        }
-    )
-
-    # Only data jobs should be queued initially when orchestrate_data is True
-    stage_names = {s["name"] for s in pipeline["stages"]}
-    assert "reference:sync" in stage_names
-    assert "market:refresh" in stage_names
-    assert "reference:reconcile" in stage_names
-    assert "advance" in stage_names
-    assert not any(name.startswith("daily:") for name in stage_names)
-
-    # An incomplete coordinator pass is deferred, rather than marked failed.
-    deferred = pipelines.advance({"pipeline_id": pipeline["pipeline_id"]})
-    assert deferred["deferred"] is True
-
-    # Complete reference:sync and reference:reconcile
-    next(s for s in pipeline["stages"] if s["name"] == "reference:sync")
-    claimed_sync = jobs.claim_next("worker-1")
-    jobs.complete(claimed_sync.job_id, {"synced": 10}, claimed_sync.claim_token)
-
-    # Market refresh schedules child bar jobs
-    child_bar_job = jobs.submit(
-        "bar:INFY:2026-09-07:2026-09-11", "market.fetch-kite-bars", {"symbol": "INFY"}
-    )
-    claimed_mkt = jobs.claim_next("worker-1")
-    jobs.complete(
-        claimed_mkt.job_id,
-        {"job_ids": [child_bar_job.job_id], "scheduled_count": 1},
-        claimed_mkt.claim_token,
-    )
-
-    next(s for s in pipeline["stages"] if s["name"] == "reference:reconcile")
-    claimed_rec = jobs.claim_next("worker-1")
-    jobs.complete(claimed_rec.job_id, {"reconciled": True}, claimed_rec.claim_token)
-
-    # Child bar job is still QUEUED, so the coordinator remains deferred.
+    pipeline = pipelines.submit({"start_date": "2026-09-07", "end_date": "2026-09-11",
+                                 "orchestrate_data": True})
+    assert {stage["name"] for stage in pipeline["stages"]} == {"market:prepare", "advance"}
     assert pipelines.advance({"pipeline_id": pipeline["pipeline_id"]})["deferred"] is True
-
-    # Complete child bar job
-    while True:
-        claimed = jobs.claim_next("worker-1")
-        if claimed is None:
-            break
-        jobs.complete(claimed.job_id, {"bars": 5}, claimed.claim_token)
-        if claimed.job_id == child_bar_job.job_id:
-            break
-
-    # Now advance should queue exactly one staged bulk research rebuild.
+    claimed = jobs.claim_next("worker-1")
+    assert claimed.kind == "research.pipeline-prepare"
+    jobs.complete(claimed.job_id, {"snapshot_id": "membership", "market_batches": 1}, claimed.claim_token)
     advanced = pipelines.advance({"pipeline_id": pipeline["pipeline_id"]})
-    research_stages = [s for s in advanced["stages"] if s["name"] == "research:factor-bulk"]
-    assert len(research_stages) == 1
-    bulk = jobs.get(research_stages[0]["job_id"])
-    assert bulk.kind == "research.rebuild-range"
-    assert len(bulk.payload["trading_dates"]) == 5
-    assert advanced["market_data"]["succeeded"] == 1
-    assert advanced["market_data"]["failed"] == 0
+    research_stages = {stage["name"]: jobs.get(stage["job_id"])
+                       for stage in advanced["stages"] if stage["name"].startswith("research:")}
+    assert set(research_stages) == {"research:factor-bulk", "research:event-signals"}
+    factor = research_stages["research:factor-bulk"]
+    event = research_stages["research:event-signals"]
+    assert factor.kind == "research.rebuild-range"
+    assert factor.payload["strategies"] == ["momentum"]
+    assert event.kind == "research.positional-trend-build-range"
+    assert event.payload["universe"] == "SNAPSHOT_NIFTY500"
+    assert factor.payload["trading_dates"] == event.payload["trading_dates"]
+    assert len(factor.payload["trading_dates"]) == 5
+    assert pipelines.advance({"pipeline_id": pipeline["pipeline_id"]})["stages"] == advanced["stages"]
+
+
+def test_failed_preparation_does_not_queue_rankings(tmp_path):
+    import pytest
+
+    from src.platform_kernel import DomainValidationError
+    jobs = JobStore(tmp_path / "system.db")
+    pipelines = ResearchPipelineJobs(tmp_path / "system.db", jobs)
+    pipeline = pipelines.submit({"as_of_date": "2026-09-11", "orchestrate_data": True})
+    claimed = jobs.claim_next("worker-1")
+    jobs.request_cancel(claimed.job_id)
+    jobs.heartbeat(claimed.job_id, claimed.claim_token)
+    with pytest.raises(DomainValidationError, match="failed data stage"):
+        pipelines.advance({"pipeline_id": pipeline["pipeline_id"]})
+    assert not any(stage["name"].startswith("research:")
+                   for stage in pipelines.status(pipeline["pipeline_id"])["stages"])
 
 
 def test_background_worker_lifecycle_and_status(tmp_path):

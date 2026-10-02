@@ -5,9 +5,10 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
+from zoneinfo import ZoneInfo
 
 from src.application.exchange_calendar import TradingCalendar
 from src.application.market_repository import MarketRepository
@@ -18,14 +19,17 @@ from src.platform_kernel import DomainValidationError
 class UniverseJobs:
     INDEX_NAME = "NIFTY 500"
 
-    def __init__(self, repository: MarketRepository, client: NseClient | None = None) -> None:
+    def __init__(self, repository: MarketRepository, client: NseClient | None = None,
+                 *, collection_date=None) -> None:
         self.repository, self.client = repository, client or NseClient()
+        self.collection_date = collection_date or (lambda: datetime.now(ZoneInfo("Asia/Kolkata")).date())
 
     def download_nifty500_constituents(self, payload: dict[str, Any], context: Any = None) -> dict[str, object]:
-        if set(payload) - {"snapshot_date"}:
+        if not isinstance(payload, dict) or set(payload) - {"snapshot_date"}:
             raise DomainValidationError("universe download payload is invalid")
+        actual_day = self.collection_date()
         try:
-            collection_day = date.fromisoformat(str(payload.get("snapshot_date") or datetime.now(UTC).date()))
+            collection_day = date.fromisoformat(str(payload.get("snapshot_date") or actual_day))
         except ValueError as exc:
             raise DomainValidationError("snapshot_date must be ISO formatted") from exc
         existing = self.repository.universe_snapshot(self.INDEX_NAME, collection_day)
@@ -33,6 +37,8 @@ class UniverseJobs:
             if context is not None:
                 context.checkpoint(progress={"stage": "universe_snapshot", "status": "reused", "snapshot_id": existing["snapshot_id"]})
             return {"status": "reused", "snapshot_id": existing["snapshot_id"], "member_count": existing["member_count"]}
+        if collection_day != actual_day:
+            raise DomainValidationError("current NSE downloads must use their actual collection date")
         source_url, raw = self.client.nifty_500_csv()
         members = self._parse(raw)
         snapshot_id = str(uuid5(NAMESPACE_URL, f"nifty500:{collection_day.isoformat()}:{hashlib.sha256(raw).hexdigest()}"))
@@ -41,11 +47,14 @@ class UniverseJobs:
             snapshot_id=snapshot_id, index_name=self.INDEX_NAME, snapshot_date=collection_day,
             source_url=source_url, raw_csv=raw, members=members,
         )
+        # A concurrent collector may have stored a different first snapshot.
+        # All downstream work must use the identity that actually committed.
+        snapshot_id = str(stored["snapshot_id"])
         diff = self.repository.universe_snapshot_diff(str(prior["snapshot_id"]), snapshot_id) if prior and prior["snapshot_id"] != snapshot_id else {"additions": [], "removals": [], "series_transitions": []}
         # Phase 2 Task 2.11: record exit eligibility for removed members
         exit_records = self._record_exit_eligibility(diff.get("removals", []), collection_day, snapshot_id)
         if context is not None:
-            context.checkpoint(progress={"stage": "universe_snapshot", "status": "stored", "snapshot_id": snapshot_id, "member_count": len(members)})
+            context.checkpoint(progress={"stage": "universe_snapshot", "status": "stored", "snapshot_id": snapshot_id, "member_count": stored["member_count"]})
         return {"status": "stored", "snapshot_id": stored["snapshot_id"], "member_count": stored["member_count"], "source_hash": stored["source_hash"], "diff": diff, "exit_eligibility": exit_records}
 
     def _record_exit_eligibility(
@@ -54,22 +63,19 @@ class UniverseJobs:
         """Phase 2 Task 2.11: persist exit eligibility for removed members with held positions."""
         if not removals:
             return []
-        # Target the next trading session after the decision date
-        try:
-            calendar = TradingCalendar(self.repository.path)
-            target_window = calendar.sessions(
-                decision_date + timedelta(days=1),
-                decision_date + timedelta(days=10),
-            )
-            target_session = target_window[0] if target_window else decision_date + timedelta(days=1)
-        except Exception:
-            target_session = decision_date + timedelta(days=1)
+        # Future sessions require calendar evidence. Preserve a pending record
+        # rather than inventing tomorrow when no observed session is available.
+        calendar = TradingCalendar(self.repository.path)
+        target_window = calendar.sessions(decision_date + timedelta(days=1),
+                                          decision_date + timedelta(days=10))
+        target_session = target_window[0] if target_window else None
         recorded: list[dict[str, str]] = []
         for removed in removals:
             isin = str(removed["isin"])
             symbol = str(removed["symbol"])
             # Look up the instrument_id from reference_instruments
-            instruments = self.repository.instruments(symbol=symbol, limit=1)
+            instruments = [row for row in self.repository.tracked_instruments()
+                           if row["isin"] == isin and row["exchange"] == "NSE"]
             if not instruments:
                 continue
             instrument_id = str(instruments[0]["instrument_id"])
@@ -77,9 +83,11 @@ class UniverseJobs:
                 instrument_id=instrument_id, isin=isin, symbol=symbol,
                 decision_date=decision_date, decision_snapshot_id=snapshot_id,
                 target_session_date=target_session,
+                session_source="observed_market" if target_session else "pending",
             )
             if was_new:
-                recorded.append({"instrument_id": instrument_id, "symbol": symbol, "target_session": target_session.isoformat()})
+                recorded.append({"instrument_id": instrument_id, "symbol": symbol, "target_session": target_session.isoformat() if target_session else None,
+                                 "status": "ready" if target_session else "missing_session"})
         return recorded
 
     def detect_universe_exits(
@@ -100,7 +108,7 @@ class UniverseJobs:
             isin = str(instrument["isin"])
             if isin.startswith("INDEX:"):
                 continue
-            if isin not in member_isins and not self.repository.is_exit_only(str(instrument_id)):
+            if isin not in member_isins:
                 exits.append({
                     "instrument_id": str(instrument_id),
                     "isin": isin,

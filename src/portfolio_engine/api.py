@@ -186,6 +186,7 @@ def _sell_decision(
     is_rebalance_day: bool = True,
     signal_close: Decimal | None = None,
     is_in_universe: bool = True,
+    forced_universe_exit: bool = False,
 ) -> Decision | None:
     if is_rebalance_day and signal_close is not None and signal_close < holding.current_stop.amount:
         return Decision(DecisionType.STOP_LOSS, holding.instrument_id, holding.units,
@@ -193,6 +194,9 @@ def _sell_decision(
     if bar.open <= holding.current_stop.amount * Decimal("0.97"):
         return Decision(DecisionType.HARD_STOP, holding.instrument_id, holding.units,
                         Money(bar.open), "price breached 3% below ATR stop")
+    if forced_universe_exit:
+        return Decision(DecisionType.UNIVERSE_EXIT, holding.instrument_id, holding.units,
+                        Money(bar.open), "excluded from dated NIFTY 500 membership")
     if is_rebalance_day and not is_in_universe:
         return Decision(
             DecisionType.UNIVERSE_EXIT,
@@ -201,19 +205,16 @@ def _sell_decision(
             Money(bar.open),
             "holding not in current selection universe",
         )
-    if is_rebalance_day and holding.score < policy.exit_score:
-        if (
-            policy.ltcg_hold_days is None
-            or holding.opened_on is None
-            or (bar.as_of_date - holding.opened_on).days >= policy.ltcg_hold_days
-        ):
-            return Decision(
-                DecisionType.SCORE_EXIT,
-                holding.instrument_id,
-                holding.units,
-                Money(bar.open),
-                "prior signal score below exit threshold",
-            )
+    if (is_rebalance_day and holding.score < policy.exit_score
+            and (policy.ltcg_hold_days is None or holding.opened_on is None
+                 or (bar.as_of_date - holding.opened_on).days >= policy.ltcg_hold_days)):
+        return Decision(
+            DecisionType.SCORE_EXIT,
+            holding.instrument_id,
+            holding.units,
+            Money(bar.open),
+            "prior signal score below exit threshold",
+        )
     return None
 
 
@@ -266,6 +267,7 @@ def evaluate(
     execution: ExecutionAssumptions | None = None,
     is_rebalance_day: bool = True,
     score_candidates: Sequence[Candidate] | None = None,
+    forced_universe_exits: frozenset[str] = frozenset(),
 ) -> tuple[tuple[Decision, ...], PortfolioState]:
     """Return deterministic sell, pyramid, vacancy-buy, and swap decisions.
 
@@ -324,7 +326,8 @@ def evaluate(
         signal = score_by_id.get(holding.instrument_id)
         sell = _sell_decision(refreshed, bar, policy, is_rebalance_day=is_rebalance_day,
                               signal_close=signal.signal_close if signal else None,
-                              is_in_universe=(signal is not None))
+                              is_in_universe=(signal is not None),
+                              forced_universe_exit=holding.instrument_id in forced_universe_exits)
         if sell is None:
             retained.append(refreshed)
             continue

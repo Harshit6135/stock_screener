@@ -6,12 +6,14 @@ import hashlib
 import json
 import math
 from collections.abc import Iterable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
+from src.application.security import sanitize_sensitive
 from src.application.sqlite import migrate_sqlite, sqlite_connection
 from src.market_data import NormalizedBar
 from src.platform_kernel import DomainValidationError
@@ -26,6 +28,13 @@ class TrackedInstrument:
     provider_token: str
     observed_on: date
     series: str = "EQ"
+
+
+def _ensure_market_column(connection, table: str, column: str, declaration: str) -> None:
+    """Apply additive market columns safely after an interrupted/manual upgrade."""
+    names = {str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})")}
+    if column not in names:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
 
 
 class MarketRepository:
@@ -223,6 +232,46 @@ class MarketRepository:
                         FOREIGN KEY(instrument_id) REFERENCES reference_instruments(instrument_id))""",
                     "CREATE INDEX IF NOT EXISTS market_index_quote_history_recent ON market_index_quote_history(instrument_id, observed_at DESC)",
                 ),
+                15: (
+                    """CREATE TABLE universe_exit_eligibility_v15 (
+                        instrument_id TEXT NOT NULL, isin TEXT NOT NULL, symbol TEXT NOT NULL,
+                        decision_date TEXT NOT NULL, decision_snapshot_id TEXT NOT NULL,
+                        target_session_date TEXT, exit_only INTEGER NOT NULL DEFAULT 1,
+                        created_at TEXT NOT NULL, session_source TEXT NOT NULL DEFAULT 'declared',
+                        PRIMARY KEY(instrument_id, decision_snapshot_id),
+                        FOREIGN KEY(instrument_id) REFERENCES reference_instruments(instrument_id),
+                        FOREIGN KEY(decision_snapshot_id) REFERENCES universe_snapshots(snapshot_id))""",
+                    """INSERT INTO universe_exit_eligibility_v15
+                        (instrument_id, isin, symbol, decision_date, decision_snapshot_id,
+                         target_session_date, exit_only, created_at)
+                        SELECT instrument_id, isin, symbol, decision_date, decision_snapshot_id,
+                               target_session_date, exit_only, created_at FROM universe_exit_eligibility""",
+                    "DROP TABLE universe_exit_eligibility",
+                    "ALTER TABLE universe_exit_eligibility_v15 RENAME TO universe_exit_eligibility",
+                    "CREATE INDEX universe_exit_eligibility_target ON universe_exit_eligibility(target_session_date)",
+                ),
+                16: (
+                    """CREATE TABLE market_fetch_coverage_v16 (
+                        instrument_id TEXT NOT NULL, start_date TEXT NOT NULL,
+                        end_date TEXT NOT NULL, provider TEXT NOT NULL,
+                        coverage_context TEXT NOT NULL CHECK(coverage_context IN ('regular', 'exit_only')),
+                        fetched_at TEXT NOT NULL, bar_count INTEGER NOT NULL,
+                        PRIMARY KEY(instrument_id, start_date, end_date, provider, coverage_context),
+                        FOREIGN KEY(instrument_id) REFERENCES reference_instruments(instrument_id))""",
+                    """INSERT INTO market_fetch_coverage_v16
+                        (instrument_id, start_date, end_date, provider, coverage_context, fetched_at, bar_count)
+                        SELECT instrument_id, start_date, end_date, provider, 'regular', fetched_at, bar_count
+                        FROM market_fetch_coverage""",
+                    "DROP TABLE market_fetch_coverage",
+                    "ALTER TABLE market_fetch_coverage_v16 RENAME TO market_fetch_coverage",
+                    "CREATE INDEX market_fetch_coverage_range ON market_fetch_coverage(instrument_id, provider, coverage_context, start_date, end_date)",
+                ),
+                17: (
+                    lambda connection: _ensure_market_column(
+                        connection, "corporate_action_events", "baseline_prices_json", "TEXT"),
+                    lambda connection: _ensure_market_column(
+                        connection, "corporate_action_events", "verification_evidence_json", "TEXT"),
+                ),
             },
         )
 
@@ -364,23 +413,50 @@ class MarketRepository:
 
     def record_exit_eligibility(
         self, *, instrument_id: str, isin: str, symbol: str,
-        decision_date: date, decision_snapshot_id: str, target_session_date: date,
+        decision_date: date, decision_snapshot_id: str, target_session_date: date | None,
+        session_source: str = "declared",
     ) -> bool:
         """Persist a universe-exit eligibility record for one-session exit-only coverage."""
         if (not instrument_id or not isin or not symbol or not decision_snapshot_id
-                or decision_date > target_session_date):
+                or target_session_date is not None and decision_date >= target_session_date
+                or session_source not in {"declared", "observed_market", "pending"}):
             raise DomainValidationError("exit eligibility record is invalid")
         with sqlite_connection(self.path) as connection:
             cursor = connection.execute(
                 """INSERT OR IGNORE INTO universe_exit_eligibility
                    (instrument_id, isin, symbol, decision_date, decision_snapshot_id,
-                    target_session_date, exit_only, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 1, ?)""",
+                    target_session_date, exit_only, created_at, session_source)
+                   VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
                 (instrument_id, isin, symbol, decision_date.isoformat(),
-                 decision_snapshot_id, target_session_date.isoformat(),
-                 datetime.now(UTC).isoformat()),
+                 decision_snapshot_id, target_session_date.isoformat() if target_session_date else None,
+                 datetime.now(UTC).isoformat(), session_source if target_session_date else "pending"),
             )
         return cursor.rowcount == 1
+
+    def resolve_pending_exit_sessions(self) -> int:
+        """Resolve pending targets using observed NSE benchmark sessions only."""
+        with sqlite_connection(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """SELECT instrument_id, decision_snapshot_id, decision_date
+                   FROM universe_exit_eligibility WHERE target_session_date IS NULL""").fetchall()
+            resolved = 0
+            for instrument_id, snapshot_id, decision_day in rows:
+                target = connection.execute(
+                    """SELECT MIN(b.as_of_date) FROM market_bars b
+                       JOIN reference_instruments i ON i.instrument_id=b.instrument_id
+                       WHERE i.exchange='NSE' AND i.symbol='NIFTY 500' AND b.as_of_date>?""",
+                    (decision_day,),
+                ).fetchone()[0]
+                if target is not None:
+                    connection.execute(
+                        """UPDATE universe_exit_eligibility SET target_session_date=?,
+                           session_source='observed_market' WHERE instrument_id=?
+                           AND decision_snapshot_id=? AND target_session_date IS NULL""",
+                        (target, instrument_id, snapshot_id),
+                    )
+                    resolved += 1
+            return resolved
 
     def exit_eligible_instruments(self, *, target_date: date | None = None) -> list[dict[str, object]]:
         """Return instruments that need exit-only price coverage."""
@@ -614,6 +690,21 @@ class MarketRepository:
         return [str(row[0]) for row in rows]
 
 
+    def nifty500_session_dates(self, start_date: date, end_date: date) -> list[str]:
+        """Observed NSE benchmark sessions used for next-open universe exits."""
+        if start_date > end_date:
+            raise DomainValidationError("NIFTY 500 session range is invalid")
+        with sqlite_connection(self.path, read_only=True) as connection:
+            rows = connection.execute(
+                """SELECT DISTINCT b.as_of_date FROM market_bars b
+                   JOIN reference_instruments i ON i.instrument_id=b.instrument_id
+                   WHERE i.exchange='NSE' AND i.symbol='NIFTY 500'
+                   AND b.as_of_date BETWEEN ? AND ? ORDER BY b.as_of_date""",
+                (start_date.isoformat(), end_date.isoformat()),
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
+
     def token_assignments(
         self, provider_token: str, *, exchange: str | None = None, as_of: date | None = None
     ) -> list[dict[str, object]]:
@@ -673,7 +764,8 @@ class MarketRepository:
         ]
 
     def upsert_bars(
-        self, instrument_id: str, bars: Iterable[NormalizedBar], snapshot_id: str
+        self, instrument_id: str, bars: Iterable[NormalizedBar], snapshot_id: str,
+        *, transaction_connection=None,
     ) -> int:
         values = tuple(bars)
         if not values or len({bar.as_of_date for bar in values}) != len(values):
@@ -681,8 +773,10 @@ class MarketRepository:
         if any(bar.instrument_id != instrument_id for bar in values):
             raise DomainValidationError("market bar instrument identity does not match")
         self._validate_bars(values)
-        with sqlite_connection(self.path, row_factory=True) as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with (nullcontext(transaction_connection) if transaction_connection is not None
+              else sqlite_connection(self.path, row_factory=True)) as connection:
+            if transaction_connection is None:
+                connection.execute("BEGIN IMMEDIATE")
             dates = tuple(bar.as_of_date.isoformat() for bar in values)
             existing = connection.execute(
                 "SELECT as_of_date, open, high, low, close, volume FROM market_bars "
@@ -746,33 +840,53 @@ class MarketRepository:
                 if int(row["volume"]) != 0:
                     break
                 zero_run += 1
-            for bar in sorted(values, key=lambda item: item.as_of_date):
-                close = float(bar.close)
+            # Evaluate the resulting stored sequence, not only the incoming
+            # dates. Sparse updates must include intervening stored sessions,
+            # and a corrected historical close can affect its successor.
+            sequence = connection.execute(
+                """SELECT as_of_date, close, volume, snapshot_id FROM market_bars
+                   WHERE instrument_id=? AND as_of_date BETWEEN ? AND ?
+                   ORDER BY as_of_date""", (instrument_id, min(dates), max(dates)),
+            ).fetchall()
+            following = connection.execute(
+                """SELECT as_of_date, close, volume, snapshot_id FROM market_bars
+                   WHERE instrument_id=? AND as_of_date > ?
+                   ORDER BY as_of_date LIMIT 6""", (instrument_id, max(dates)),
+            ).fetchall()
+            identity = connection.execute(
+                "SELECT isin FROM reference_instruments WHERE instrument_id=?", (instrument_id,),
+            ).fetchone()
+            has_traded_volume = not str(identity["isin"]).startswith("INDEX:")
+            for row in [*sequence, *following]:
+                bar_date = str(row["as_of_date"])
+                close = float(row["close"])
                 if preceding_close and abs(close / preceding_close - 1.0) > self.price_gap_threshold:
                     detail = json.dumps(
                         {"expected_close": preceding_close, "actual_close": close,
-                         "source_snapshot_id": snapshot_id},
+                         "source_snapshot_id": row["snapshot_id"],
+                         "validation_snapshot_id": snapshot_id},
                         sort_keys=True, separators=(",", ":"),
                     )
                     connection.execute(
                         """INSERT OR IGNORE INTO data_quality_events
                            (event_id, instrument_id, as_of_date, check_type, severity, detail_json, detected_at)
                            VALUES (?, ?, ?, 'close_gap', 'WARNING', ?, ?)""",
-                        (hashlib.sha256(f"close-gap:{instrument_id}:{bar.as_of_date}:{preceding_close}:{close}".encode()).hexdigest(), instrument_id, bar.as_of_date.isoformat(), detail,
+                        (hashlib.sha256(f"close-gap:{instrument_id}:{bar_date}:{preceding_close}:{close}".encode()).hexdigest(), instrument_id, bar_date, detail,
                          datetime.now(UTC).isoformat()),
                     )
-                zero_run = zero_run + 1 if int(bar.volume) == 0 else 0
-                if zero_run == 6:
+                zero_run = zero_run + 1 if int(row["volume"]) == 0 else 0
+                if has_traded_volume and zero_run == 6:
                     detail = json.dumps(
                         {"consecutive_sessions": zero_run, "actual_volume": 0,
-                         "source_snapshot_id": snapshot_id},
+                         "source_snapshot_id": row["snapshot_id"],
+                         "validation_snapshot_id": snapshot_id},
                         sort_keys=True, separators=(",", ":"),
                     )
                     connection.execute(
                         """INSERT OR IGNORE INTO data_quality_events
                            (event_id, instrument_id, as_of_date, check_type, severity, detail_json, detected_at)
                            VALUES (?, ?, ?, 'zero_volume_streak', 'WARNING', ?, ?)""",
-                        (hashlib.sha256(f"zero-volume:{instrument_id}:{bar.as_of_date}:{zero_run}".encode()).hexdigest(), instrument_id, bar.as_of_date.isoformat(), detail,
+                        (hashlib.sha256(f"zero-volume:{instrument_id}:{bar_date}:{zero_run}".encode()).hexdigest(), instrument_id, bar_date, detail,
                          datetime.now(UTC).isoformat()),
                     )
                 preceding_close = close
@@ -795,11 +909,17 @@ class MarketRepository:
         detail: dict[str, object],
     ) -> bool:
         """Persist one idempotent, operator-visible data-quality observation."""
-        if (not instrument_id or not isinstance(as_of_date, date) or not check_type
-                or severity not in {"INFO", "WARNING", "ERROR"} or not isinstance(detail, dict)):
+        if (not isinstance(instrument_id, str) or not instrument_id.strip()
+                or not isinstance(as_of_date, date) or isinstance(as_of_date, datetime)
+                or not isinstance(check_type, str) or not check_type.strip()
+                or not isinstance(severity, str) or severity not in {"INFO", "WARNING", "ERROR"}
+                or not isinstance(detail, dict)):
             raise DomainValidationError("data quality event is invalid")
-        encoded = json.dumps(detail, sort_keys=True, separators=(",", ":"), default=str)
+        encoded = json.dumps(sanitize_sensitive(detail), sort_keys=True, separators=(",", ":"), default=str)
         with sqlite_connection(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if not connection.execute("SELECT 1 FROM reference_instruments WHERE instrument_id=?", (instrument_id,)).fetchone():
+                raise DomainValidationError("quality event instrument is not registered")
             cursor = connection.execute(
                 """INSERT OR IGNORE INTO data_quality_events
                    (event_id, instrument_id, as_of_date, check_type, severity, detail_json, detected_at)
@@ -813,7 +933,11 @@ class MarketRepository:
         self, *, instrument_id: str | None = None, check_type: str | None = None,
         severity: str | None = None, limit: int = 100, offset: int = 0,
     ) -> list[dict[str, object]]:
-        if not 1 <= limit <= 500 or offset < 0 or (severity is not None and severity not in {"INFO", "WARNING", "ERROR"}):
+        if (isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500
+                or isinstance(offset, bool) or not isinstance(offset, int) or offset < 0
+                or any(value is not None and (not isinstance(value, str) or not value.strip())
+                       for value in (instrument_id, check_type))
+                or (severity is not None and (not isinstance(severity, str) or severity not in {"INFO", "WARNING", "ERROR"}))):
             raise DomainValidationError("quality event filters are invalid")
         clauses: list[str] = []
         args: list[object] = []
@@ -885,8 +1009,46 @@ class MarketRepository:
             )
         return cursor.rowcount
 
+    def _capture_corporate_baseline(self, connection, event) -> dict[str, object] | None:
+        """Preserve selected stored prices without inventing an older price basis."""
+        baseline = json.loads(event["baseline_prices_json"]) if event["baseline_prices_json"] else None
+        if baseline is None:
+            pre = connection.execute("""SELECT as_of_date, close, snapshot_id FROM market_bars
+                WHERE instrument_id=? AND as_of_date<? ORDER BY as_of_date DESC LIMIT 1""",
+                (event["instrument_id"], event["ex_date"])).fetchone()
+            if pre is None:
+                return None
+            revision = connection.execute(
+                "SELECT revision FROM market_history_revisions WHERE instrument_id=?",
+                (event["instrument_id"],)).fetchone()
+            baseline = {"captured_state": event["state"],
+                        "history_revision": str(revision[0] if revision else 0),
+                        "pre": dict(pre), "post": None}
+        if baseline["post"] is None:
+            post = connection.execute("""SELECT as_of_date, open, close, snapshot_id FROM market_bars
+                WHERE instrument_id=? AND as_of_date=?""",
+                (event["instrument_id"], event["ex_date"])).fetchone()
+            if post is not None:
+                baseline["post"] = dict(post)
+        connection.execute("""UPDATE corporate_action_events SET
+            baseline_prices_json=?, baseline_revision=COALESCE(baseline_revision, ?) WHERE event_id=?""",
+            (json.dumps(baseline, sort_keys=True), baseline["history_revision"], event["event_id"]))
+        return baseline
+
+    def preserve_corporate_action_baseline(self, event_id: str) -> dict[str, object]:
+        """Capture the baseline before a provider call can replace stored history."""
+        with sqlite_connection(self.path, row_factory=True) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            event = connection.execute(
+                "SELECT * FROM corporate_action_events WHERE event_id=?", (event_id,)).fetchone()
+            if event is None:
+                raise DomainValidationError("corporate action event not found")
+            self._capture_corporate_baseline(connection, event)
+            return dict(connection.execute(
+                "SELECT * FROM corporate_action_events WHERE event_id=?", (event_id,)).fetchone())
+
     def adjust_corporate_event(self, event_id: str, factor: float) -> int:
-        """Commit price adjustment, revision, invalidation and state as one unit."""
+        """Commit baseline, prices, revision, invalidation and state as one unit."""
         if not math.isfinite(factor) or not 0 < factor < 100:
             raise DomainValidationError("invalid corporate action factor")
         now = datetime.now(UTC).isoformat()
@@ -900,21 +1062,47 @@ class MarketRepository:
             if event["state"] != "DETECTED":
                 raise DomainValidationError("corporate action is not adjustable")
             instrument_id = event["instrument_id"]
-            baseline = connection.execute("SELECT revision FROM market_history_revisions WHERE instrument_id=?", (instrument_id,)).fetchone()
+            baseline = self._capture_corporate_baseline(connection, event)
+            current = connection.execute("""SELECT as_of_date, close FROM market_bars
+                WHERE instrument_id=? AND as_of_date<? ORDER BY as_of_date DESC LIMIT 1""",
+                (instrument_id, event["ex_date"])).fetchone()
+            post = connection.execute("""SELECT close FROM market_bars
+                WHERE instrument_id=? AND as_of_date=?""", (instrument_id, event["ex_date"])).fetchone()
+            if baseline is None or current is None:
+                raise DomainValidationError("no pre-ex-date bars to adjust")
+            evidence = {"source": "stored_history", "factor": str(factor),
+                        "pre_date": current["as_of_date"], "pre_close": current["close"],
+                        "post_close": post["close"] if post else None}
+            if post is None:
+                outcome = "incomplete_ex_date_window"
+            else:
+                pre_close, post_close = Decimal(current["close"]), Decimal(post["close"])
+                observed_gap = abs(post_close / pre_close - 1)
+                adjusted_gap = abs(post_close / (pre_close * Decimal(str(factor))) - 1)
+                evidence.update({"observed_gap_pct": float(observed_gap * 100),
+                                 "adjusted_gap_pct": float(adjusted_gap * 100)})
+                threshold = Decimal(str(self.price_gap_threshold))
+                if observed_gap <= threshold:
+                    outcome = "stored_history_appears_adjusted"
+                elif adjusted_gap > threshold:
+                    outcome = "adjustment_basis_not_confirmed"
+                else:
+                    outcome = None
+            if outcome is not None:
+                self.transition_corporate_action(event_id, "DETECTED", attempt_outcome=outcome,
+                    verification_evidence=evidence, transaction_connection=connection)
+                return 0
             count = connection.execute("""UPDATE market_bars SET
                 open=CAST(CAST(open AS REAL)*? AS TEXT), high=CAST(CAST(high AS REAL)*? AS TEXT),
                 low=CAST(CAST(low AS REAL)*? AS TEXT), close=CAST(CAST(close AS REAL)*? AS TEXT)
                 WHERE instrument_id=? AND as_of_date<?""",
                 (factor, factor, factor, factor, instrument_id, event["ex_date"])).rowcount
-            if not count:
-                raise DomainValidationError("no pre-ex-date bars to adjust")
             connection.execute("""INSERT INTO market_history_revisions VALUES (?, 1, ?)
                 ON CONFLICT(instrument_id) DO UPDATE SET revision=revision+1, updated_at=excluded.updated_at""", (instrument_id, now))
             connection.execute("DELETE FROM market_indicators WHERE instrument_id=?", (instrument_id,))
-            connection.execute("""UPDATE corporate_action_events SET state='SELF_ADJUSTED',
-                applied_factor=?, baseline_revision=?, attempt_count=attempt_count+1,
-                last_attempt_at=?, last_attempt_outcome='self_adjusted', updated_at=? WHERE event_id=?""",
-                (factor, str(baseline[0] if baseline else 0), now, now, event_id))
+            self.transition_corporate_action(event_id, "SELF_ADJUSTED", applied_factor=factor,
+                attempt_outcome="self_adjusted", verification_evidence=evidence,
+                transaction_connection=connection)
             return count
 
     def indicators_for_date(
@@ -1000,40 +1188,45 @@ class MarketRepository:
         *,
         provider: str,
         bar_count: int,
+        coverage_context: str = "regular",
     ) -> None:
         """Record a completed provider request, including valid empty ranges."""
-        if start_date > end_date or not provider.strip() or bar_count < 0:
+        if (start_date > end_date or not provider.strip() or bar_count < 0
+                or coverage_context not in {"regular", "exit_only"}):
             raise DomainValidationError("market fetch coverage is invalid")
         with sqlite_connection(self.path) as connection:
             connection.execute(
                 """INSERT INTO market_fetch_coverage
-                   (instrument_id, start_date, end_date, provider, fetched_at, bar_count)
-                   VALUES (?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(instrument_id, start_date, end_date, provider) DO UPDATE SET
+                   (instrument_id, start_date, end_date, provider, coverage_context, fetched_at, bar_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(instrument_id, start_date, end_date, provider, coverage_context) DO UPDATE SET
                    fetched_at=excluded.fetched_at, bar_count=excluded.bar_count""",
                 (
                     instrument_id,
                     start_date.isoformat(),
                     end_date.isoformat(),
                     provider,
+                    coverage_context,
                     datetime.now(UTC).isoformat(),
                     bar_count,
                 ),
             )
 
     def has_coverage(
-        self, instrument_id: str, start_date: date, end_date: date, provider: str = "kite"
+        self, instrument_id: str, start_date: date, end_date: date, provider: str = "kite",
+        coverage_context: str = "regular",
     ) -> bool:
         """Return whether completed provider windows cover the full calendar range."""
-        if start_date > end_date or not provider.strip():
+        if (start_date > end_date or not provider.strip()
+                or coverage_context not in {"regular", "exit_only"}):
             raise DomainValidationError("market fetch coverage range is invalid")
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
                 """SELECT start_date, end_date FROM market_fetch_coverage
-                   WHERE instrument_id=? AND provider=?
+                   WHERE instrument_id=? AND provider=? AND coverage_context=?
                    AND end_date>=? AND start_date<=?
                    ORDER BY start_date, end_date""",
-                (instrument_id, provider, start_date.isoformat(), end_date.isoformat()),
+                (instrument_id, provider, coverage_context, start_date.isoformat(), end_date.isoformat()),
             ).fetchall()
         covered_through = start_date - timedelta(days=1)
         for row in rows:
@@ -1229,6 +1422,13 @@ class MarketRepository:
                     verified_at, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, NULL, NULL, ?, ?)
                    ON CONFLICT(isin, action_type, ex_date) DO UPDATE SET
+                   instrument_id = COALESCE(corporate_action_events.instrument_id, excluded.instrument_id),
+                   ratio_numerator = CASE WHEN corporate_action_events.state='DETECTED'
+                       THEN COALESCE(excluded.ratio_numerator, corporate_action_events.ratio_numerator)
+                       ELSE corporate_action_events.ratio_numerator END,
+                   ratio_denominator = CASE WHEN corporate_action_events.state='DETECTED'
+                       THEN COALESCE(excluded.ratio_denominator, corporate_action_events.ratio_denominator)
+                       ELSE corporate_action_events.ratio_denominator END,
                    raw_source_json = excluded.raw_source_json,
                    updated_at = excluded.updated_at""",
                 (
@@ -1273,23 +1473,28 @@ class MarketRepository:
         attempt_outcome: str | None = None,
         applied_factor: float | None = None,
         baseline_revision: str | None = None,
+        verification_evidence: dict[str, object] | None = None,
+        transaction_connection=None,
     ) -> bool:
         """Transition a corporate action event to a new state."""
         valid_states = {"DETECTED", "SELF_ADJUSTED", "MONITORING", "VERIFIED", "FAILED"}
         if new_state not in valid_states:
             raise DomainValidationError(f"invalid CA state: {new_state}")
         now = datetime.now(UTC).isoformat()
-        with sqlite_connection(self.path) as connection:
+        with (nullcontext(transaction_connection) if transaction_connection is not None
+              else sqlite_connection(self.path)) as connection:
             cursor = connection.execute(
                 """UPDATE corporate_action_events SET
                    state=?, attempt_count=attempt_count+1,
                    last_attempt_at=?, last_attempt_outcome=?,
                    applied_factor=COALESCE(?, applied_factor),
                    baseline_revision=COALESCE(?, baseline_revision),
+                   verification_evidence_json=COALESCE(?, verification_evidence_json),
                    verified_at=CASE WHEN ?='VERIFIED' THEN ? ELSE verified_at END,
                    updated_at=?
                    WHERE event_id=?""",
                 (new_state, now, attempt_outcome, applied_factor, baseline_revision,
+                 json.dumps(verification_evidence, sort_keys=True) if verification_evidence is not None else None,
                  new_state, now, now, event_id),
             )
         return cursor.rowcount == 1

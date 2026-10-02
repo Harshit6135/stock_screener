@@ -55,3 +55,13 @@ htmlcov/
 .cache/
 
 DONOTUSE*/
+
+# SQLite sidecars and isolated phase acceptance fixtures
+*.db-shm
+*.db-wal
+/.phase-*/
+/.bulk-diagnosis/
+/.universe-repair-checks/
+/.corporate-final-checks/
+/.exit-session-checks/
+/.broker-exit-migration-tests/

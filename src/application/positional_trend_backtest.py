@@ -7,6 +7,7 @@ import json
 import math
 import sqlite3
 from collections import Counter, defaultdict
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -145,69 +146,79 @@ def load_market_cap_universe(database: Path, *, end_date: str) -> tuple[dict, li
 
 
 def load_snapshot_universe(database: Path, *, end_date: str) -> tuple[dict, list[str], dict]:
-    """Load the persisted Nifty 500 snapshot used by current replay input.
+    """Load every known as-of member, with explicit earliest-snapshot fallback.
 
-    This deliberately does not fall back to the retired constituent CSV.  A
-    later as-of replay extension can select a different snapshot per session;
-    the selected snapshot is recorded in the run lineage now.
+    Include one observed session after the requested end solely for exit fills.
+    Membership and eligibility always come from the decision session's snapshot.
     """
     connection = sqlite3.connect(f"file:{database.resolve().as_posix()}?mode=ro", uri=True)
     connection.row_factory = sqlite3.Row
     try:
-        snapshot = connection.execute(
+        snapshots = [dict(row) for row in connection.execute(
             """SELECT snapshot_id, snapshot_date, source_hash FROM universe_snapshots
-               WHERE index_name='NIFTY 500' AND snapshot_date <= ?
-               ORDER BY snapshot_date DESC LIMIT 1""", (end_date,)
-        ).fetchone()
-        if snapshot is None:
+               WHERE index_name='NIFTY 500' ORDER BY snapshot_date""")]
+        if not snapshots:
             raise ValueError("Nifty 500 universe snapshot is unavailable")
-        members = connection.execute(
-            "SELECT isin FROM universe_snapshot_members WHERE snapshot_id=? AND series='EQ'",
-            (snapshot["snapshot_id"],),
-        ).fetchall()
-        isins = [str(row["isin"]) for row in members]
-        if not isins:
-            raise ValueError("Nifty 500 universe snapshot has no EQ members")
-        slots = ",".join("?" for _ in isins)
-        identities = connection.execute(
-            f"""SELECT instrument_id, isin, symbol FROM reference_instruments
-                WHERE exchange='NSE' AND isin IN ({slots})
-                ORDER BY isin, observed_on DESC, symbol""", isins
-        ).fetchall()
-        chosen: dict[str, tuple[str, str]] = {}
+        relevant = [row for row in snapshots if row["snapshot_date"] <= end_date] or snapshots[:1]
+        members = {row["snapshot_id"]: {str(member[0]) for member in connection.execute(
+            "SELECT isin FROM universe_snapshot_members WHERE snapshot_id=?", (row["snapshot_id"],))}
+            for row in relevant}
+        isins = set().union(*members.values())
+        identities = [dict(row) for row in connection.execute(
+            """SELECT instrument_id, isin, symbol FROM reference_instruments
+               WHERE exchange='NSE' ORDER BY isin, observed_on DESC, symbol""")
+            if row["isin"] in isins]
+        chosen = {}
         for row in identities:
-            chosen.setdefault(str(row["isin"]), (str(row["instrument_id"]), str(row["symbol"])))
+            chosen.setdefault(row["isin"], (str(row["instrument_id"]), str(row["symbol"])))
         if not chosen:
             raise ValueError("no snapshot members match NSE reference instruments")
-        histories = {instrument_id: (symbol, []) for instrument_id, symbol in chosen.values()}
-        ids = list(histories)
-        slots = ",".join("?" for _ in ids)
-        sessions: set[str] = set()
+        # Benchmark sessions establish the next session even when an excluded
+        # instrument has a missing open. Never choose a later price for it.
+        benchmark_sessions = [str(row[0]) for row in connection.execute(
+            """SELECT DISTINCT b.as_of_date FROM market_bars b
+               JOIN reference_instruments i ON i.instrument_id=b.instrument_id
+               WHERE i.exchange='NSE' AND i.symbol='NIFTY 500'
+               AND b.as_of_date >= '2021-01-01' ORDER BY b.as_of_date""")]
+        all_sessions = benchmark_sessions or [str(row[0]) for row in connection.execute(
+            "SELECT DISTINCT as_of_date FROM market_bars WHERE as_of_date >= '2021-01-01' ORDER BY as_of_date")]
+        next_session = next((day for day in all_sessions if day > end_date), None)
+        load_end = next_session or end_date
+        sessions = [day for day in all_sessions if day <= load_end]
+        histories = {instrument: (symbol, []) for instrument, symbol in chosen.values()}
         count = 0
         for row in connection.execute(
-            f"""SELECT instrument_id, as_of_date, open, high, low, close, volume
-                FROM market_bars WHERE instrument_id IN ({slots})
-                AND as_of_date BETWEEN '2021-01-01' AND ? ORDER BY instrument_id, as_of_date""",
-            [*ids, end_date],
-        ):
+            """SELECT instrument_id, as_of_date, open, high, low, close, volume, snapshot_id
+               FROM market_bars WHERE as_of_date BETWEEN '2021-01-01' AND ?
+               ORDER BY instrument_id, as_of_date""", (load_end,)):
+            if row["instrument_id"] not in histories:
+                continue
             bar = dict(row)
             instrument_id = str(bar.pop("instrument_id"))
             histories[instrument_id][1].append(bar)
-            sessions.add(str(bar["as_of_date"]))
             count += 1
-        coverage = {
-            "universe_source": "nifty500_snapshot", "universe_snapshot_id": snapshot["snapshot_id"],
-            "snapshot_date": snapshot["snapshot_date"], "universe_sha256": snapshot["source_hash"],
-            "membership_sha256": snapshot["source_hash"],
+        schedule = {}
+        for day in sessions:
+            selected = next((row for row in reversed(relevant) if row["snapshot_date"] <= day), relevant[0])
+            schedule[day] = {"snapshot_id": selected["snapshot_id"],
+                "symbols": sorted(chosen[isin][1] for isin in members[selected["snapshot_id"]] if isin in chosen),
+                "earliest_fallback": day < relevant[0]["snapshot_date"]}
+        membership_hash = hashlib.sha256(json.dumps({"snapshots": relevant,
+            "members": {key: sorted(value) for key, value in members.items()}}, sort_keys=True).encode()).hexdigest()
+        coverage = {"universe_source": "nifty500_snapshot",
+            "universe_snapshot_id": relevant[-1]["snapshot_id"],
+            "snapshot_date": relevant[-1]["snapshot_date"], "universe_sha256": membership_hash,
+            "membership_sha256": membership_hash, "membership_by_day": schedule,
             "included_member_count": len(isins), "matched_isin_count": len(chosen),
             "instruments_with_bars": sum(bool(bars) for _, bars in histories.values()),
             "bar_count": count, "session_count": len(sessions),
-            "first_session": min(sessions) if sessions else None, "last_session": max(sessions) if sessions else None,
-            "missing_isins": sorted(set(isins) - set(chosen)),
-            "historical_membership": "latest_snapshot_at_replay_end_applied_backwards",
-            "corporate_action_adjustment": "not_applied_per_research_scope",
-        }
-        return histories, sorted(sessions), coverage
+            "first_session": min(sessions) if sessions else None,
+            "last_session": max(sessions) if sessions else None,
+            "missing_isins": sorted(isins - chosen.keys()),
+            "historical_membership": "as_of_snapshot_with_earliest_fallback",
+            "exit_only_session": next_session,
+            "corporate_action_adjustment": "stored_provider_history"}
+        return histories, sessions, coverage
     finally:
         connection.close()
 
@@ -249,17 +260,25 @@ def _equity_at_open(cash: float, holdings: dict, bars: dict, day: str,
 
 def simulate(histories: dict, sessions: list[str], *, policy: Policy,
              start_date: str = "2022-01-01", end_date: str | None = None,
-             rules: dict | None = None) -> dict:
+             rules: dict | None = None, membership_by_day: dict | None = None) -> dict:
     policy.validate()
     end_date = end_date or datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
     calendar = [day for day in sessions if start_date <= day <= end_date]
     if not calendar:
         raise ValueError("no market sessions in requested backtest range")
+    next_session = {day: sessions[index + 1] for index, day in enumerate(sessions[:-1])}
+    execution_calendar = list(calendar)
+    extra_session = next_session.get(calendar[-1])
+    if membership_by_day is not None and extra_session is not None:
+        execution_calendar.append(extra_session)
+    if membership_by_day is not None and any(day not in membership_by_day for day in calendar):
+        raise ValueError("as-of universe membership is missing for a replay session")
     bars = {}
     features_by_day = defaultdict(dict)
     for symbol, history in histories.values():
         bars[symbol] = {str(bar["as_of_date"]): bar for bar in history}
-        for item in feature_series(history, sessions, symbol, rules):
+        decision_history = [bar for bar in history if str(bar["as_of_date"]) <= end_date]
+        for item in feature_series(decision_history, [day for day in sessions if day <= end_date], symbol, rules):
             if (start_date <= item["signal_date"] <= end_date
                     and (item["filtered"] or item["exit_signal"])):
                 features_by_day[item["signal_date"]][symbol] = item
@@ -275,12 +294,23 @@ def simulate(histories: dict, sessions: list[str], *, policy: Policy,
     curve: list[dict] = []
     skips = Counter()
     total_fees = 0.0
-    for day in calendar:
+    pending_exit_details = {}
+    exit_records = []
+    holdings_at_end = None
+    fees_at_end = None
+    for day in execution_calendar:
         # Previous close's exits execute before competing entries at today's open.
         for symbol, trigger_day in list(pending_exits.items()):
+            detail = pending_exit_details.get(symbol)
+            if detail is not None and detail["target_execution_session"] != day:
+                continue
             bar = bars[symbol].get(day)
             if bar is None or not valid_bar(bar):
-                skips["exit_waiting_for_valid_open"] += 1
+                if detail is not None:
+                    detail["fill_status"] = "MISSING_OPEN"
+                    skips["missing_target_session_open"] += 1
+                else:
+                    skips["exit_waiting_for_valid_open"] += 1
                 continue
             holding = holdings.pop(symbol)
             price = float(bar["open"])
@@ -300,12 +330,26 @@ def simulate(histories: dict, sessions: list[str], *, policy: Policy,
             trades.append(trade)
             fills.append({"date": day, "symbol": symbol, "side": "SELL", "shares": holding["shares"],
                           "price": price, "fee": fee, "trigger_date": trigger_day})
+            if detail is not None:
+                detail.update({"fill_status": "FILLED", "execution_date": day,
+                               "price_source": bar.get("snapshot_id"), "execution_price": price})
+                fills[-1].update(detail)
+                trades[-1].update(detail)
+                exit_records.append(dict(detail, symbol=symbol))
+                del pending_exit_details[symbol]
             del pending_exits[symbol]
 
+        # The one extra session only settles previously decided exits. Its
+        # price never feeds rankings, entries or the requested period valuation.
+        if day > end_date:
+            continue
         # Every qualifying signal competes in the same ranking, including held names.
         pending_candidates.sort(key=lambda item: (-item["adx14"], -item["adv30"], item["symbol"]))
         for signal in pending_candidates:
             symbol = signal["symbol"]
+            if membership_by_day is not None and symbol not in membership_by_day[day]["symbols"]:
+                skips["outside_as_of_universe"] += 1
+                continue
             holding = holdings.get(symbol)
             if symbol in pending_exits:
                 skips["exiting"] += 1
@@ -376,15 +420,30 @@ def simulate(histories: dict, sessions: list[str], *, policy: Policy,
             if bar is not None and valid_bar(bar):
                 last_price[symbol] = float(bar["close"])
             feature = current_features.get(symbol)
-            if feature and feature["exit_signal"] and symbol not in pending_exits:
+            excluded = (membership_by_day is not None
+                        and symbol not in membership_by_day[day]["symbols"])
+            if (excluded or feature and feature["exit_signal"]) and symbol not in pending_exits:
                 pending_exits[symbol] = day
+                if membership_by_day is not None:
+                    target = next_session.get(day)
+                    pending_exit_details[symbol] = {
+                        "decision_date": day, "target_execution_session": target,
+                        "universe_snapshot_id": membership_by_day[day]["snapshot_id"],
+                        "exit_reason": "universe_exit" if excluded else "daily_signal",
+                        "price_source": None,
+                        "fill_status": "PENDING" if target is not None else "MISSING_SESSION"}
         pending_candidates = [item for symbol, item in current_features.items()
                               if item["filtered"] and symbol not in pending_exits
+                              and (membership_by_day is None or symbol in membership_by_day[day]["symbols"])
                               and (symbol not in holdings or policy.enable_pyramiding)]
         equity = cash + sum(h["shares"] * last_price[s] for s, h in holdings.items())
         curve.append({"date": day, "equity": equity, "cash": cash,
                       "positions": len(holdings)})
+        if day == calendar[-1]:
+            holdings_at_end = deepcopy(holdings)
+            fees_at_end = total_fees
 
+    period_trades = [trade for trade in trades if trade["exit_date"] <= end_date]
     final_equity = curve[-1]["equity"]
     peak = policy.initial_capital
     max_drawdown = 0.0
@@ -404,8 +463,8 @@ def simulate(histories: dict, sessions: list[str], *, policy: Policy,
     daily_returns = [curve[i]["equity"] / curve[i - 1]["equity"] - 1
                      for i in range(1, len(curve))]
     daily_vol = stdev(daily_returns) if len(daily_returns) > 1 else 0.0
-    gains = sum(max(0.0, trade["net_pnl"]) for trade in trades)
-    losses = -sum(min(0.0, trade["net_pnl"]) for trade in trades)
+    gains = sum(max(0.0, trade["net_pnl"]) for trade in period_trades)
+    losses = -sum(min(0.0, trade["net_pnl"]) for trade in period_trades)
     return {"period": {"requested_start": start_date, "requested_end": end_date,
                        "first_session": calendar[0], "last_session": calendar[-1],
                        "session_count": len(calendar)},
@@ -414,23 +473,25 @@ def simulate(histories: dict, sessions: list[str], *, policy: Policy,
                             "total_return": final_equity / policy.initial_capital - 1,
                             "cagr": cagr, "max_drawdown": max_drawdown,
                             "annual_returns": annual_returns,
-                            "closed_trades": len(trades),
-                            "open_positions": len(holdings),
+                            "closed_trades": len(period_trades),
+                            "open_positions": len(holdings_at_end),
                             "pyramid_add_fills": sum(fill["side"] == "PYRAMID_ADD" for fill in fills),
-                            "wins": sum(t["net_pnl"] > 0 for t in trades),
-                            "win_rate": sum(t["net_pnl"] > 0 for t in trades) / len(trades) if trades else None,
-                            "mean_closed_trade_return": mean(t["net_return"] for t in trades) if trades else None,
-                            "median_closed_trade_return": median(t["net_return"] for t in trades) if trades else None,
+                            "wins": sum(t["net_pnl"] > 0 for t in period_trades),
+                            "win_rate": sum(t["net_pnl"] > 0 for t in period_trades) / len(period_trades) if period_trades else None,
+                            "mean_closed_trade_return": mean(t["net_return"] for t in period_trades) if period_trades else None,
+                            "median_closed_trade_return": median(t["net_return"] for t in period_trades) if period_trades else None,
                             "profit_factor": gains / losses if losses else None,
                             "annualized_daily_volatility": daily_vol * math.sqrt(252),
                             "sharpe_zero_risk_free": (mean(daily_returns) / daily_vol * math.sqrt(252)
                                                       if daily_vol > 0 else None),
                             "average_positions": mean(item["positions"] for item in curve),
-                            "total_fees": total_fees},
+                            "total_fees": fees_at_end},
             "execution_skips": dict(skips), "pending_exits": pending_exits,
             "pending_candidates_at_data_end": [item["symbol"] for item in pending_candidates],
-            "open_holdings": holdings, "trades": trades, "fills": fills,
-            "equity_curve": curve}
+            "open_holdings": holdings_at_end, "holdings_after_exit_session": holdings,
+            "exit_records": exit_records + [dict(detail, symbol=symbol)
+                                            for symbol, detail in pending_exit_details.items()],
+            "trades": trades, "fills": fills, "equity_curve": curve}
 
 
 def benchmark_price_return(database: Path, first_session: str, last_session: str) -> dict | None:

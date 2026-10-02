@@ -1,6 +1,6 @@
 # Phase 4: Named Strategies, Both Ranking Patterns and Retirement Cleanup
 
-> Status: Plan only. Implementation requires explicit user approval.
+> Status: Implementation authorized and under review; completion is unproven. See [repair-status.md](repair-status.md).
 > Authority: [Overhaul_Plan.md](../Overhaul_Plan.md).
 > Dependencies: Phase 1 and Phase 2; integrate Phase 3 cache contracts for corporate-action tests.
 > Numbered tasks: 12.

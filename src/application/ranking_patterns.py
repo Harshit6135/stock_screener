@@ -60,7 +60,7 @@ class FactorPercentileRanking(RankingPattern):
             return []
         symbols = symbols or {}
         # Stage B: Compute cross-sectional percentiles per factor
-        percentiles = self._compute_percentiles(features, factor_weights)
+        percentiles = self.compute_percentiles(features, factor_weights)
         # Stage C: Apply weights and rank
         scored: list[dict[str, object]] = []
         for instrument_id, pcts in percentiles.items():
@@ -81,7 +81,7 @@ class FactorPercentileRanking(RankingPattern):
         return scored
 
     @staticmethod
-    def _compute_percentiles(
+    def compute_percentiles(
         features: dict[str, dict[str, object]],
         factor_weights: dict[str, float],
     ) -> dict[str, dict[str, float]]:

@@ -39,8 +39,14 @@ class PortfolioPerformance:
         accounts = self.ledger.accounts()
         account = next((a for a in accounts if a["account_id"] == account_id), None)
         if account and Decimal(account["opening_cash"]) > 0:
-            created_at_str = account.get("created_at")
-            opened_date = date.fromisoformat(created_at_str[:10]) if created_at_str else date.today()
+            # Derive account creation date from earliest ledger event since
+            # the ledger_accounts schema has no created_at column.
+            earliest_date = None
+            for event in events:
+                if event.get("occurred_at"):
+                    earliest_date = date.fromisoformat(event["occurred_at"][:10])
+                    break
+            opened_date = earliest_date if earliest_date else current_date
             flows.append((opened_date, -Decimal(account["opening_cash"])))
 
         for event in events:

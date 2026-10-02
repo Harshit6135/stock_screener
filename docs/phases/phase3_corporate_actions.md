@@ -1,6 +1,6 @@
 # Phase 3: Corporate Actions, Verified Kite Refresh and Indicator Rebuild
 
-> Status: Plan only. Implementation requires explicit user approval.
+> Status: Implementation authorized and under review; completion is unproven. See [repair-status.md](repair-status.md).
 > Authority: [Overhaul_Plan.md](../Overhaul_Plan.md).
 > Dependencies: Phase 1 and Phase 2.
 > Numbered tasks: 10.

@@ -62,6 +62,8 @@ def test_manual_fill_lifecycle(tmp_path):
             "expected_version": 1,
             "direction": "WITHDRAW",
             "amount": "100",
+            "reason": "Investor withdrawal",
+            "occurred_at": "2026-09-02T10:00:00+00:00",
         },
     )
     assert transfer.status_code == 201

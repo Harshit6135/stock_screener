@@ -3,9 +3,10 @@
 import hashlib
 import json
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from src.application.jobs import JobStore
 from src.application.market_repository import MarketRepository
@@ -32,15 +33,24 @@ class MarketRefreshPlanner:
 
     def reconcile(self, payload: dict[str, Any]) -> dict[str, object]:
         """Publish a deterministic daily reference/bar coverage reconciliation."""
-        allowed = {"as_of_date", "source_instruments"}
+        allowed = {"as_of_date", "start_date", "source_instruments"}
         if not isinstance(payload, dict) or set(payload) - allowed or "as_of_date" not in payload:
             raise DomainValidationError("reconciliation requires as_of_date")
         try:
             as_of = date.fromisoformat(str(payload["as_of_date"]))
         except ValueError as exc:
             raise DomainValidationError("reconciliation date must be ISO date") from exc
-        if as_of >= datetime.now(UTC).date():
+        if as_of >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
             raise DomainValidationError("reconciliation requires a completed date")
+        try:
+            start = date.fromisoformat(str(payload.get("start_date", as_of.isoformat())))
+        except ValueError as exc:
+            raise DomainValidationError("reconciliation start date must be ISO date") from exc
+        if start > as_of:
+            raise DomainValidationError("reconciliation date range is invalid")
+        from src.application.session_coverage import CompletedSessionCoverage
+
+        session_coverage = CompletedSessionCoverage(self.repository).read(start, as_of)
         current: list[dict[str, object]] = []
         offset = 0
         while True:
@@ -87,7 +97,7 @@ class MarketRefreshPlanner:
             "tracked_not_in_source": sorted(current_isins - expected_isins) if expected else [],
             "duplicate_symbols": duplicate_symbols,
             "excluded_identities": excluded,
-            "coverage": coverage,
+            "coverage": coverage, "session_coverage": session_coverage,
         }
         artifact_id = hashlib.sha256(json.dumps(report, sort_keys=True, default=str).encode()).hexdigest()
         if self.publisher is not None and not self.publisher.catalog.has(artifact_id):
@@ -112,7 +122,7 @@ class MarketRefreshPlanner:
         reference_by_id = {str(item["instrument_id"]): item for item in catalog}
 
         # Use either active universe members OR snapshot members
-        snapshot = self.repository.universe_snapshot_as_of("NIFTY 500", end)
+        snapshot = self.repository.latest_universe_snapshot("NIFTY 500")
         if snapshot is None:
             raise DomainValidationError("NIFTY 500 snapshot is unavailable")
         members = self.repository.universe_snapshot_members(str(snapshot["snapshot_id"]), limit=1000)
@@ -120,7 +130,7 @@ class MarketRefreshPlanner:
         universe = [item for item in catalog if str(item["isin"]) in member_isins and item["exchange"] == "NSE"]
 
         held_ids = set(self.held_instrument_ids() if self.held_instrument_ids else ())
-        selected_ids = {str(item["instrument_id"]) for item in universe} | held_ids
+        selected_ids = {str(item["instrument_id"]) for item in universe}
 
         # Phase 2 Task 2.9/2.12: include all six benchmark instruments
         for item in catalog:
@@ -128,10 +138,11 @@ class MarketRefreshPlanner:
                 selected_ids.add(str(item["instrument_id"]))
 
         # Phase 2 Task 2.12: include exit-only instruments separately
+        self.repository.resolve_pending_exit_sessions()
         exit_eligible = self.repository.exit_eligible_instruments()
         exit_ids = {str(item["instrument_id"]) for item in exit_eligible}
 
-        instruments = [reference_by_id[item] for item in sorted(selected_ids) if item in reference_by_id]
+        instruments = [reference_by_id[item] for item in sorted(selected_ids | exit_ids | held_ids) if item in reference_by_id]
         jobs: list[int] = []
         excluded: list[dict[str, str]] = []
         blocked: list[dict[str, str]] = []
@@ -157,9 +168,9 @@ class MarketRefreshPlanner:
                 row = {"instrument_id": instrument_id, "reason": "missing_provider_token"}
                 (blocked if is_held else excluded).append(row)
                 continue
-            # Phase 2 Task 2.12: exit-only instruments cannot satisfy buy eligibility
-            if is_exit and not is_held:
-                excluded.append({"instrument_id": instrument_id, "reason": "exit_only"})
+            if instrument_id not in selected_ids:
+                excluded.append({"instrument_id": instrument_id,
+                                 "reason": "exit_only" if is_exit else "outside_snapshot"})
                 continue
             valid_items.append(item)
             
@@ -178,8 +189,36 @@ class MarketRefreshPlanner:
         else:
             scheduled_count = 0
             
+        # Excluded holdings receive exactly their declared exit session, never
+        # the regular request range. An old exit record cannot suppress re-entry.
+        exit_job_ids = []
+        pending_exit_sessions = []
+        for record in exit_eligible:
+            instrument_id = str(record["instrument_id"])
+            if record["target_session_date"] is None:
+                if instrument_id not in selected_ids:
+                    pending_exit_sessions.append({"instrument_id": instrument_id,
+                        "decision_date": record["decision_date"], "status": "missing_session"})
+                continue
+            target = date.fromisoformat(str(record["target_session_date"]))
+            item = reference_by_id.get(instrument_id)
+            if (instrument_id in selected_ids or not start <= target <= end or item is None
+                    or item["exchange"] != "NSE" or not str(item["provider_token"]).strip()):
+                continue
+            job = self.jobs.submit(
+                f"exit-bars:{record['decision_snapshot_id']}:{instrument_id}:{target.isoformat()}",
+                "market.fetch-kite-bars",
+                {"symbol": item["symbol"], "exchange": "NSE",
+                 "start_date": target.isoformat(), "end_date": target.isoformat(),
+                 "exit_only": True},
+                max_attempts=3,
+            )
+            jobs.append(job.job_id)
+            exit_job_ids.append(job.job_id)
         return {
             "start_date": start.isoformat(), "end_date": end.isoformat(),
+            "snapshot_id": snapshot["snapshot_id"], "exit_job_ids": exit_job_ids,
+            "pending_exit_sessions": pending_exit_sessions,
             "scheduled_count": scheduled_count, "job_ids": jobs, "excluded": excluded,
             "blocked_held_positions": sorted(blocked, key=lambda item: item["instrument_id"]),
         }

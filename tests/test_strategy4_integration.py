@@ -1,6 +1,5 @@
 """Strategy 4 artifact freshness, registry contracts and replay/proposal parity."""
 
-import csv
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -43,11 +42,10 @@ def _setup(tmp_path):
         path=database, histories=lambda *_, **__: source,
         session_dates=lambda *_, exchange="NSE": days if exchange == "NSE" else [],
         latest_universe_snapshot=lambda _: {"snapshot_id": "snapshot-a", "snapshot_date": days[-1]},
+        universe_snapshot_as_of=lambda *_: {"snapshot_id": "snapshot-a", "snapshot_date": days[-1]},
         universe_snapshot_members=lambda *_args, **_kwargs: [{"isin": "ISIN-A"}],
     )
-    csv = tmp_path / "nifty500.csv"
-    csv.write_text("Symbol,Series,ISIN Code\nA,EQ,ISIN-A\n")
-    jobs = PositionalTrendJobs(market, publisher, runtime, csv)
+    jobs = PositionalTrendJobs(market, publisher, runtime)
     return jobs, source, runtime, text, publisher, days
 
 
@@ -87,7 +85,7 @@ def test_indicator_rules_reject_invalid_numbers(tmp_path, field, value):
         runtime.definitions.create_from_yaml(yaml.safe_dump(definition))
 
 
-def test_proposals_and_replay_size_competing_entries_after_fees(tmp_path, monkeypatch):
+def test_live_sizing_ignores_costs_and_replay_retains_round_trip_fees(tmp_path, monkeypatch):
     jobs, _, runtime, _, publisher, _ = _setup(tmp_path)
     days = ["2022-01-03", "2022-01-04"]
     bar = {"open": 100, "high": 101, "low": 99, "close": 100, "volume": 2_000_000}
@@ -98,6 +96,12 @@ def test_proposals_and_replay_size_competing_entries_after_fees(tmp_path, monkey
     market = SimpleNamespace(
         session_dates=lambda *_, **__: days,
         bars=lambda *_, **__: [{**bar, "as_of_date": days[1], "snapshot_id": "open-snapshot"}],
+        latest_universe_snapshot=lambda _: {"snapshot_id": "current-snapshot"},
+        universe_snapshot_members=lambda *_, **__: [{"isin": "ISIN-A"}, {"isin": "ISIN-B"}],
+        tracked_instruments=lambda: [
+            {"instrument_id": "A", "isin": "ISIN-A", "exchange": "NSE"},
+            {"instrument_id": "B", "isin": "ISIN-B", "exchange": "NSE"},
+        ],
     )
     signal = publisher.publish_json("research/strategy4-signals", str(uuid4()), {"signals": rows})
     service = SimpleNamespace(read_signals=lambda *_, **__: (signal.artifact_id, {"signals": rows}))
@@ -110,7 +114,15 @@ def test_proposals_and_replay_size_competing_entries_after_fees(tmp_path, monkey
                         lambda history, sessions, symbol, rules: [row for row in rows if row["symbol"] == symbol])
     histories = {symbol: (symbol, [{**bar, "as_of_date": day} for day in days]) for symbol in ("A", "B")}
     result = simulate(histories, days, policy=Policy(initial_capital=10_000), start_date=days[0], end_date=days[1])
-    assert [item["units"] for item in proposal["decisions"]] == [item["shares"] for item in result["fills"]] == [10, 9]
+    assert [item["units"] for item in proposal["decisions"]] == [10, 10]
+    market.latest_universe_snapshot = lambda _: {"snapshot_id": "new-current-snapshot"}
+    market.universe_snapshot_members = lambda *_, **__: [{"isin": "ISIN-A"}]
+    after_removal = actions.generate({"account_id": "paper",
+        "strategy_id": "positional_trend_following", "action_date": days[1]})
+    assert after_removal["proposal_id"] != proposal["proposal_id"]
+    assert [item["instrument_id"] for item in after_removal["decisions"] if item["type"] == "BUY"] == ["A"]
+    assert [item["shares"] for item in result["fills"]] == [10, 9]
+    assert result["performance"]["total_fees"] > 0
 
 
 def test_held_exit_survives_missing_open_and_universe_removal(tmp_path, monkeypatch):
@@ -191,6 +203,13 @@ def test_v4_real_indicators_signals_actions_and_cataloged_backtest_agree(tmp_pat
     sell = services.actions.generate({"account_id": "paper", "strategy_id": "positional_trend_following",
                                       "action_date": sell_day.isoformat()})["decisions"][0]
     assert sell["type"] == "SELL"
+    with pytest.raises(DomainValidationError, match="universe is invalid"):
+        services.actions.generate({"account_id": "paper", "strategy_id": "positional_trend_following",
+            "action_date": sell_day.isoformat(), "universe": "APPLICATION_MCAP500"})
+    with pytest.raises(DomainValidationError, match="universe is invalid"):
+        services.backtests.execute({"strategy_id": "positional_trend_following",
+            "start_date": signal_day.isoformat(), "end_date": sell_day.isoformat(),
+            "universe": "APPLICATION_MCAP500"})
     replay_run = services.backtests.execute({"strategy_id": "positional_trend_following",
                                             "start_date": signal_day.isoformat(),
                                             "end_date": sell_day.isoformat()})

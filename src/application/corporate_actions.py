@@ -8,15 +8,17 @@ import hashlib
 import json
 import logging
 import re
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
+from zoneinfo import ZoneInfo
 
 from src.application.market_repository import MarketRepository
 from src.application.node_cache import IndicatorNodeCache
 from src.application.publication import ArtifactPublisher
+from src.application.sqlite import sqlite_connection
 from src.execution_gateway import Ledger
 from src.market_data import NormalizedBar
 from src.platform_kernel import DomainValidationError
@@ -311,7 +313,7 @@ class CorporateActions:
         from src.application.nse_client import NseClient
         if set(payload) - {"as_of_date"}:
             raise DomainValidationError("corporate action detection payload is invalid")
-        end = date.fromisoformat(str(payload.get("as_of_date") or datetime.now(UTC).date()))
+        end = date.fromisoformat(str(payload.get("as_of_date") or datetime.now(ZoneInfo("Asia/Kolkata")).date()))
         start = (self.market.corporate_action_watermark() or end - timedelta(days=365)) - timedelta(days=7)
         raw = NseClient().corporate_actions(from_date=start.strftime("%d-%m-%Y"), to_date=end.strftime("%d-%m-%Y"))
         records = []
@@ -331,7 +333,7 @@ class CorporateActions:
         return result
 
     # ------------------------------------------------------------------
-    # Phase 3 Task 3.3–3.5: Fetch, temporary adjustment, and retry
+    # Phase 3 Task 3.3Ã¢â‚¬â€œ3.5: Fetch, temporary adjustment, and retry
     # ------------------------------------------------------------------
 
     def compute_adjustment_factor(self, action_type: str, numerator: float, denominator: float) -> float | None:
@@ -369,13 +371,28 @@ class CorporateActions:
         if instrument_id is None:
             return self._fail_event(event_id, "unresolved_instrument")
         ex_date = date.fromisoformat(str(event["ex_date"]))
-        # Get baseline revision before adjustment
-        # Load pre-ex-date bars
+        if ex_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
+            return self._fail_event(event_id, "ex_date_not_completed")
+        # Load pre-ex-date bars; the repository captures their provenance atomically.
         bars = self.market.bars(str(instrument_id), None, ex_date - timedelta(days=1), limit=1000)
         if not bars:
             return self._fail_event(event_id, "no_pre_ex_bars")
         # Apply factor to pre-ex-date OHLC atomically
         adjusted_count = self.market.adjust_corporate_event(event_id, factor)
+        if not adjusted_count:
+            pending = self.market.corporate_action_event(event_id)
+            outcome = str(pending["last_attempt_outcome"])
+            if outcome in {"stored_history_appears_adjusted", "adjustment_basis_not_confirmed",
+                           "incomplete_ex_date_window"}:
+                evidence = json.loads(str(pending["verification_evidence_json"] or "{}"))
+                self.market.record_quality_event(str(instrument_id), ex_date,
+                    "corporate_action_mismatch",
+                    "INFO" if outcome == "stored_history_appears_adjusted" else "WARNING",
+                    {"event_id": event_id, "action_type": str(event["action_type"]),
+                     "state": str(pending["state"]), "outcome": outcome, **evidence})
+            return {"event_id": event_id, "state": str(pending["state"]),
+                    "outcome": outcome, "adjusted_bars": 0,
+                    "instrument_id": str(instrument_id)}
         # Invalidate indicator cache for this instrument
         if self.node_cache is not None:
             self.node_cache.invalidate_instrument(str(instrument_id))
@@ -401,9 +418,16 @@ class CorporateActions:
             )
             return {"event_id": event_id, "state": str(event["state"]), "outcome": "no_provider"}
         ex_date = date.fromisoformat(str(event["ex_date"]))
+        if ex_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
+            self.market.transition_corporate_action(event_id, str(event["state"]),
+                                                   attempt_outcome="ex_date_not_completed")
+            return {"event_id": event_id, "state": str(event["state"]),
+                    "outcome": "ex_date_not_completed"}
+        if str(event["action_type"]) in ADJUSTABLE_TYPES:
+            event = self.market.preserve_corporate_action_baseline(event_id)
         # Fetch fresh bars covering the ex-date window
         try:
-            fresh_bars = fetch_bars_fn(str(instrument_id), date(2021, 1, 1), datetime.now(UTC).date() - timedelta(days=1))
+            fresh_bars = fetch_bars_fn(str(instrument_id), date(2021, 1, 1), datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1))
         except Exception as exc:  # noqa: BLE001 - sanitize provider failures at this boundary
             self.market.transition_corporate_action(
                 event_id, str(event["state"]),
@@ -416,58 +440,137 @@ class CorporateActions:
                 attempt_outcome="empty_fetch",
             )
             return {"event_id": event_id, "state": str(event["state"]), "outcome": "empty_fetch"}
-        # Check for anomaly: compare pre-ex and post-ex bars for >15% discrepancy
+        # Validate the entire provider response before replacing bars or changing state.
+        try:
+            normalized = tuple(sorted((NormalizedBar(
+                str(instrument_id), date.fromisoformat(str(row["as_of_date"])),
+                Decimal(str(row["open"])), Decimal(str(row["high"])),
+                Decimal(str(row["low"])), Decimal(str(row["close"])), row["volume"],
+            ) for row in fresh_bars), key=lambda bar: bar.as_of_date))
+            if len({bar.as_of_date for bar in normalized}) != len(normalized):
+                raise DomainValidationError("duplicate provider dates")
+            if any(bar.as_of_date < date(2021, 1, 1) or bar.as_of_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date()
+                   for bar in normalized):
+                raise DomainValidationError("provider dates outside completed history")
+        except (KeyError, TypeError, ValueError, InvalidOperation, DomainValidationError):
+            self.market.transition_corporate_action(
+                event_id, str(event["state"]), attempt_outcome="invalid_provider_history",
+            )
+            return {"event_id": event_id, "state": str(event["state"]),
+                    "outcome": "invalid_provider_history"}
+        fresh_bars = [{"as_of_date": bar.as_of_date.isoformat(), "open": str(bar.open),
+                      "high": str(bar.high), "low": str(bar.low), "close": str(bar.close),
+                      "volume": bar.volume} for bar in normalized]
+        if not any(row["as_of_date"] == ex_date.isoformat() for row in fresh_bars):
+            self.market.transition_corporate_action(event_id, str(event["state"]),
+                                                   attempt_outcome="incomplete_ex_date_window")
+            return {"event_id": event_id, "state": str(event["state"]),
+                    "outcome": "incomplete_ex_date_window"}
+        # Compare the relevant ex-date, never a later unrelated normal gap.
         action_type = str(event["action_type"])
         if action_type in MONITORED_TYPES:
             if not any(str(b["as_of_date"]) < ex_date.isoformat() for b in fresh_bars) or not any(str(b["as_of_date"]) >= ex_date.isoformat() for b in fresh_bars):
+                self.market.transition_corporate_action(event_id, str(event["state"]),
+                                                       attempt_outcome="incomplete_ex_date_window")
                 return {"event_id": event_id, "state": str(event["state"]), "outcome": "incomplete_ex_date_window"}
             anomaly = self._check_anomaly(fresh_bars, ex_date)
-            if anomaly is None:
-                # Resolved: no anomaly visible, complete monitoring
-                self.market.transition_corporate_action(
-                    event_id, "VERIFIED", attempt_outcome="monitoring_resolved",
-                )
-                return {"event_id": event_id, "state": "VERIFIED", "outcome": "monitoring_resolved"}
-            else:
-                self.market.transition_corporate_action(
-                    event_id, "MONITORING", attempt_outcome=f"anomaly_present:{anomaly:.1f}%",
-                )
-                return {"event_id": event_id, "state": "MONITORING", "outcome": "anomaly_present", "discrepancy_pct": anomaly}
+            state = "VERIFIED" if anomaly is None else "MONITORING"
+            outcome = "monitoring_resolved" if anomaly is None else "anomaly_present"
+            self._persist_provider_history(event_id, str(instrument_id), normalized, state,
+                outcome if anomaly is None else f"anomaly_present:{anomaly:.1f}%")
+            self.market.record_quality_event(
+                str(instrument_id), ex_date, "corporate_action_mismatch",
+                "INFO" if anomaly is None else "WARNING",
+                {"event_id": event_id, "action_type": action_type,
+                 "ex_date": ex_date.isoformat(), "source": "kite",
+                 "state": state, "discrepancy_pct": anomaly,
+                 "threshold_pct": self.market.price_gap_threshold * 100,
+                 "market_revision": self.market.market_history_revision(str(instrument_id))},
+            )
+            result = {"event_id": event_id, "state": state, "outcome": outcome,
+                      "instrument_id": str(instrument_id)}
+            if anomaly is not None:
+                result["discrepancy_pct"] = anomaly
+            return result
         # For BONUS/SPLIT: verify that Kite has adjusted the pre-ex bars
         if action_type in ADJUSTABLE_TYPES:
             pre = [b for b in fresh_bars if str(b["as_of_date"]) < ex_date.isoformat()]
             post = [b for b in fresh_bars if str(b["as_of_date"]) >= ex_date.isoformat()]
             if not pre or not post or self._check_anomaly(fresh_bars, ex_date) is not None:
+                self.market.transition_corporate_action(event_id, str(event["state"]),
+                                                       attempt_outcome="provider_history_not_verified")
                 return {"event_id": event_id, "state": str(event["state"]), "outcome": "provider_history_not_verified"}
             stored = self.market.histories(date(2021, 1, 1), ex_date - timedelta(days=1)).get(str(instrument_id), ([], {}))[0]
-            if stored and min(str(b["as_of_date"]) for b in fresh_bars) > str(stored[0]["as_of_date"]):
+            fetched_dates = {str(row["as_of_date"]) for row in fresh_bars}
+            if any(str(row["as_of_date"]) not in fetched_dates for row in stored):
+                self.market.transition_corporate_action(event_id, str(event["state"]),
+                                                       attempt_outcome="incomplete_provider_history")
                 return {"event_id": event_id, "state": str(event["state"]), "outcome": "incomplete_provider_history"}
-            if event["state"] == "SELF_ADJUSTED" and stored:
-                reference = {str(row["as_of_date"]): Decimal(str(row["close"])) for row in pre}
-                latest_pre = stored[-1]
-                fetched_close = reference.get(str(latest_pre["as_of_date"]))
-                expected_close = Decimal(str(latest_pre["close"]))
-                if fetched_close is None or abs(fetched_close / expected_close - 1) > Decimal("0.02"):
-                    return {"event_id": event_id, "state": "SELF_ADJUSTED", "outcome": "provider_adjustment_not_confirmed"}
-            normalized = tuple(NormalizedBar(str(instrument_id), date.fromisoformat(str(b["as_of_date"])),
-                Decimal(str(b["open"])), Decimal(str(b["high"])), Decimal(str(b["low"])),
-                Decimal(str(b["close"])), int(b["volume"])) for b in fresh_bars)
-            # Replacement is repeat-safe: a crash before the state transition
-            # re-fetches and upserts the same authoritative prices, never factors them.
-            self.market.upsert_bars(str(instrument_id), normalized, f"corporate-action:{event_id}")
-            baseline = event.get("baseline_revision")
-            # Write verified bars and transition
-            self.market.transition_corporate_action(
-                event_id, "VERIFIED",
-                attempt_outcome="verified_with_kite",
-                baseline_revision=str(baseline) if baseline else None,
-            )
-            # Bump revision again after verified replacement
-            self.market.bump_market_history_revision(str(instrument_id))
-            if self.node_cache is not None:
-                self.node_cache.invalidate_instrument(str(instrument_id))
+            baseline = json.loads(str(event["baseline_prices_json"])) if event.get("baseline_prices_json") else None
+            if baseline is None:
+                self.market.transition_corporate_action(event_id, str(event["state"]),
+                                                       attempt_outcome="missing_verification_baseline")
+                return {"event_id": event_id, "state": str(event["state"]),
+                        "outcome": "missing_verification_baseline"}
+            reference = {str(row["as_of_date"]): Decimal(str(row["close"])) for row in pre}
+            selected = baseline["pre"]
+            selected_close = Decimal(str(selected["close"]))
+            fetched_close = reference.get(str(selected["as_of_date"]))
+            expected_close = selected_close
+            factor = None
+            if baseline["captured_state"] == "DETECTED":
+                numerator, denominator = event.get("ratio_numerator"), event.get("ratio_denominator")
+                if numerator is None or denominator is None:
+                    return self._fail_event(event_id, "missing_ratio")
+                factor = self.compute_adjustment_factor(action_type, float(numerator), float(denominator))
+                if factor is None or not 0 < factor < 100:
+                    return self._fail_event(event_id, "invalid_factor")
+                expected_close *= Decimal(str(factor))
+            comparison = "provider_matches_expected_factor"
+            matches = fetched_close is not None and abs(fetched_close / expected_close - 1) <= Decimal("0.02")
+            # Previously smooth stored history is eligible for authoritative verification,
+            # never for another local multiplication. Record the observed unchanged basis.
+            if not matches and baseline["captured_state"] == "DETECTED" and baseline["post"] is not None:
+                stored_post = Decimal(str(baseline["post"]["close"]))
+                if (abs(stored_post / selected_close - 1) <= Decimal(str(self.market.price_gap_threshold))
+                        and fetched_close is not None
+                        and abs(fetched_close / selected_close - 1) <= Decimal("0.02")):
+                    expected_close, matches = selected_close, True
+                    comparison = "provider_matches_existing_smooth_basis"
+            evidence = {"source": "kite", "comparison": comparison,
+                        "baseline_revision": event["baseline_revision"],
+                        "pre_date": selected["as_of_date"], "baseline_close": str(selected_close),
+                        "expected_close": str(expected_close),
+                        "provider_close": str(fetched_close) if fetched_close is not None else None,
+                        "provider_ex_date_close": str(post[0]["close"]),
+                        "factor": str(factor) if factor is not None else None,
+                        "tolerance_pct": 2, "matched": matches}
+            if not matches:
+                self.market.transition_corporate_action(event_id, str(event["state"]),
+                    attempt_outcome="provider_adjustment_not_confirmed", verification_evidence=evidence)
+                self.market.record_quality_event(str(instrument_id), ex_date,
+                    "corporate_action_mismatch", "WARNING", {"event_id": event_id,
+                    "action_type": action_type, "state": str(event["state"]), **evidence})
+                return {"event_id": event_id, "state": str(event["state"]),
+                        "outcome": "provider_adjustment_not_confirmed"}
+            self._persist_provider_history(event_id, str(instrument_id), normalized,
+                                           "VERIFIED", "verified_with_kite", evidence=evidence)
             return {"event_id": event_id, "state": "VERIFIED", "outcome": "verified_with_kite", "instrument_id": str(instrument_id)}
         return {"event_id": event_id, "state": str(event["state"]), "outcome": "no_action_needed"}
+
+    def _persist_provider_history(self, event_id, instrument_id, bars, state, outcome, *, evidence=None):
+        """Commit provider replacement, revisions and event state together."""
+        with sqlite_connection(self.database, row_factory=True) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            self.market.upsert_bars(instrument_id, bars, f"corporate-action:{event_id}",
+                                    transaction_connection=connection)
+            if not self.market.transition_corporate_action(
+                event_id, state, attempt_outcome=outcome, verification_evidence=evidence,
+                transaction_connection=connection,
+            ):
+                raise DomainValidationError("corporate action event disappeared during verification")
+        if self.node_cache is not None:
+            self.node_cache.invalidate_instrument(instrument_id)
 
     def process_actionable(self, fetch_bars_fn: Any = None, context: Any = None) -> dict[str, object]:
         """Phase 3 Task 3.5: Process all actionable corporate actions."""
@@ -479,7 +582,12 @@ class CorporateActions:
             action_type = str(event["action_type"])
             try:
                 if state == "DETECTED" and action_type in ADJUSTABLE_TYPES:
-                    result = self.apply_self_adjustment(event_id, context=context)
+                    result = (self.verify_with_kite(event_id, fetch_bars_fn, context=context)
+                              if fetch_bars_fn is not None else None)
+                    if result is None or (result["state"] == "DETECTED"
+                            and result["outcome"] in {"fetch_failed", "empty_fetch",
+                                "provider_history_not_verified", "incomplete_provider_history"}):
+                        result = self.apply_self_adjustment(event_id, context=context)
                 elif state in ("DETECTED", "SELF_ADJUSTED", "MONITORING"):
                     result = self.verify_with_kite(event_id, fetch_bars_fn, context=context)
                 else:
@@ -507,4 +615,4 @@ class CorporateActions:
         if pre_close <= 0:
             return None
         change_pct = abs((post_open - pre_close) / pre_close) * 100
-        return change_pct if change_pct > ANOMALY_THRESHOLD_PERCENT else None
+        return change_pct if change_pct > self.market.price_gap_threshold * 100 else None

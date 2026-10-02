@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from threading import Lock
 from time import monotonic, sleep
 from typing import Any
@@ -41,24 +41,44 @@ class KiteHistoricalBarsProvider:
     def get_bars(
         self, instrument_id: str, start_date: date, end_date: date
     ) -> tuple[NormalizedBar, ...]:
+        if (not isinstance(instrument_id, str) or not instrument_id.strip()
+                or not isinstance(start_date, date) or not isinstance(end_date, date)
+                or start_date > end_date):
+            raise DomainValidationError("historical provider request is invalid")
+        try:
+            token = int(instrument_id)
+        except ValueError as exc:
+            raise DomainValidationError("historical provider token must be a positive integer") from exc
+        if token <= 0:
+            raise DomainValidationError("historical provider token must be a positive integer")
         self._throttle.wait()
-        records = self.client.historical_data(
-            int(instrument_id), start_date, end_date, interval="day"
-        )
-        return tuple(
-            NormalizedBar(
-                instrument_id=instrument_id,
-                as_of_date=record["date"].date()
-                if hasattr(record["date"], "date")
-                else record["date"],
-                open=Decimal(str(record["open"])),
-                high=Decimal(str(record["high"])),
-                low=Decimal(str(record["low"])),
-                close=Decimal(str(record["close"])),
-                volume=int(record.get("volume", 0)),
-            )
-            for record in records
-        )
+        records = self.client.historical_data(token, start_date, end_date, interval="day")
+        if not isinstance(records, Sequence) or isinstance(records, (str, bytes, bytearray)):
+            raise DomainValidationError("historical provider response must contain records")
+        bars = []
+        seen_dates = set()
+        for record in records:
+            if not isinstance(record, Mapping):
+                raise DomainValidationError("historical provider record is invalid")
+            try:
+                timestamp = record["date"]
+                day = timestamp.date() if isinstance(timestamp, datetime) else timestamp
+                if isinstance(day, str):
+                    day = date.fromisoformat(day)
+                if not isinstance(day, date) or not start_date <= day <= end_date or day in seen_dates:
+                    raise DomainValidationError("historical provider dates are invalid or duplicated")
+                volume = Decimal(str(record["volume"]))
+                if isinstance(record["volume"], bool) or not volume.is_finite() or volume < 0 or volume != volume.to_integral_value():
+                    raise DomainValidationError("historical provider volume must be a non-negative integer")
+                bar = NormalizedBar(instrument_id, day, Decimal(str(record["open"])),
+                    Decimal(str(record["high"])), Decimal(str(record["low"])),
+                    Decimal(str(record["close"])), int(volume))
+            except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
+                raise DomainValidationError("historical provider OHLCV record is invalid") from exc
+            bars.append(bar)
+            seen_dates.add(day)
+        return tuple(sorted(bars, key=lambda bar: bar.as_of_date))
+
 
 
 class KiteInstrumentProvider:
@@ -101,7 +121,7 @@ class KiteQuoteProvider:
 
 
 class KiteStreamingProvider:
-    """Adapt KiteTicker callbacks to the durable, fill-free alert sink."""
+    """Adapt KiteTicker callbacks to a timestamped, fill-free observation sink."""
 
     def __init__(
         self,
@@ -157,7 +177,7 @@ class KiteStreamingProvider:
 
     def _on_connect(self, _ws: object, _response: object) -> None:
         self.ticker.subscribe(list(self.instrument_tokens))
-        mode = getattr(self.ticker, "MODE_LTP", None)
+        mode = getattr(self.ticker, "MODE_FULL", getattr(self.ticker, "MODE_LTP", None))
         if mode is not None:
             self.ticker.set_mode(mode, list(self.instrument_tokens))
         self.connected = True
@@ -167,12 +187,12 @@ class KiteStreamingProvider:
 
     def _on_ticks(self, _ws: object, ticks: Sequence[object]) -> None:
         observations: list[dict[str, object]] = []
-        observed_at = datetime.now(UTC).isoformat()
+        received_at = datetime.now(UTC).isoformat()
         for tick in ticks:
             if not isinstance(tick, dict):
                 continue
             token = tick.get("instrument_token")
-            instrument_id = self.instrument_tokens.get(token) if isinstance(token, int) else None
+            instrument_id = self.instrument_tokens.get(token) if isinstance(token, int) and not isinstance(token, bool) else None
             price = tick.get("last_price")
             if (
                 instrument_id is None
@@ -180,10 +200,17 @@ class KiteStreamingProvider:
                 or not isinstance(price, (str, int, float, Decimal))
             ):
                 continue
+            try:
+                parsed_price = Decimal(str(price))
+            except InvalidOperation:
+                continue
+            if not parsed_price.is_finite() or parsed_price <= 0:
+                continue
+            observed_at = received_at
             timestamp = tick.get("exchange_timestamp") or tick.get("timestamp")
             if isinstance(timestamp, datetime):
-                if timestamp.tzinfo is None:
-                    timestamp = timestamp.replace(tzinfo=UTC)
+                # Kite decodes epoch timestamps with datetime.fromtimestamp,
+                # so a naive value is in the host timezone, not necessarily UTC.
                 observed_at = timestamp.astimezone(UTC).isoformat()
             observations.append(
                 {
@@ -191,6 +218,8 @@ class KiteStreamingProvider:
                     "price": price,
                     "observed_at": observed_at,
                     "source": "kite-stream",
+                    "received_at": received_at,
+                    "exchange_timestamp_available": isinstance(timestamp, datetime),
                 }
             )
         if observations:

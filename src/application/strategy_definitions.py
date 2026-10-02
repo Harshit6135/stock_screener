@@ -130,6 +130,14 @@ class StrategyDefinitions:
         if strategy_kind not in {"factor_score", "event_signal"}:
             raise DomainValidationError("strategy kind is invalid")
         has_indicators = bool(value.get("indicators"))
+        operations = value.get("operations", [])
+        if not isinstance(operations, list) or any(not isinstance(item, dict) for item in operations):
+            raise DomainValidationError("DAG operations must be a list of definitions")
+        # Validate even when the strategy has no DAG. Previously a custom
+        # calculation could publish top-level operations that were never run.
+        if operations and not has_indicators:
+            self._validate_operations(operations, set())
+            raise DomainValidationError("DAG operations require an indicators DAG")
         calculation = value.get("calculation")
         # calculation is optional when a complete DAG (indicators section) is present
         if calculation is not None:

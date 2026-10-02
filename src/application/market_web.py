@@ -19,6 +19,7 @@ def create_market_blueprint(
     repository: MarketRepository, catalog: ArtifactCatalog, poller: IndexQuotePoller | None = None,
     refresh: MarketRefreshPlanner | None = None, actions: CorporateActions | None = None,
     intraday_alerts: IntradayStopAlerts | None = None, stream: IntradayStreamLease | None = None,
+    live_quotes=None, live_stream=None,
 ) -> Blueprint:
     blueprint = Blueprint("market_v2", __name__, url_prefix="/api/v2/market")
 
@@ -113,6 +114,34 @@ def create_market_blueprint(
         except (ValueError, DomainValidationError) as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @blueprint.get("/intraday/quotes")
+    def read_live_quote():
+        if live_quotes is None:
+            return jsonify({"error": "live quote service unavailable"}), 503
+        try:
+            quote = live_quotes.read(request.args.get("account_id", ""),
+                                     request.args.get("instrument_id", ""),
+                                     max_age_seconds=int(request.args.get("max_age_seconds", "60")))
+            return jsonify(quote)
+        except (ValueError, DomainValidationError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
+    @blueprint.post("/intraday/live-stream")
+    def live_stream_command():
+        if live_stream is None:
+            return jsonify({"error": "live stream service unavailable"}), 503
+        body = request.get_json(silent=True)
+        try:
+            if not isinstance(body, dict):
+                raise DomainValidationError("live stream payload must be an object")
+            if body == {"action": "stop"}:
+                return jsonify(live_stream.stop()), 202
+            if set(body) == {"action", "account_id", "instrument_ids"} and body["action"] == "start":
+                return jsonify(live_stream.start(body["account_id"], body["instrument_ids"])), 202
+            raise DomainValidationError("live stream requires start with account_id and instrument_ids, or stop")
+        except DomainValidationError as exc:
+            return jsonify({"error": str(exc)}), 400
+
     @blueprint.get("/intraday/stream")
     def intraday_stream_state():
         if stream is None:
@@ -128,7 +157,7 @@ def create_market_blueprint(
             return jsonify({"error": "stream action must be start, stop, connected, error or heartbeat"}), 400
         try:
             if body["action"] == "stop":
-                return jsonify(stream.stop()), 202
+                return jsonify(live_stream.stop() if live_stream is not None else stream.stop()), 202
             if body["action"] == "heartbeat":
                 if set(body) != {"action"}:
                     raise DomainValidationError("stream heartbeat fields are invalid")

@@ -1,74 +1,101 @@
 import pytest
+from decimal import Decimal
+from datetime import date, datetime, UTC
+
 from src.execution_gateway.risk_guard import (
     RiskGuardLimits,
     PortfolioRiskConfig,
-    RiskGuardValidator,
-    ProposedOrder,
 )
+from src.application.managed_risk import ManagedRiskGuard
+from src.execution_gateway.ledger import Ledger
+from src.application.market_repository import MarketRepository
+from src.platform_kernel import DomainValidationError, Money
+
+
+def _setup_guard(tmp_path, limits=None, opening_cash=100000):
+    """Common setup: database with ledger, market (creates all universe tables), and guard."""
+    db = str(tmp_path / "system.db")
+    ledger = Ledger(db)
+    ledger.open_account("acc1", Money(Decimal(opening_cash)))
+    # MarketRepository.__init__ creates universe_snapshot_members and
+    # reference_instruments tables required by _sector().
+    market = MarketRepository(db)
+    config = PortfolioRiskConfig(db)
+    if limits:
+        config.update_limits(limits)
+
+    class FakeMarket:
+        """Wraps real MarketRepository but stubs bars() for instruments without data."""
+        def __init__(self, real):
+            self._real = real
+        def bars(self, instrument_id, **kwargs):
+            return [{"close": "100"}]
+        def instrument_by_id(self, instrument_id):
+            return self._real.instrument_by_id(instrument_id)
+
+    guard = ManagedRiskGuard(db, ledger, FakeMarket(market), config, None)
+    return db, ledger, config, guard
 
 
 def test_portfolio_risk_config(tmp_path):
     db_path = tmp_path / "system.db"
     config = PortfolioRiskConfig(db_path)
-    
+
     version, limits = config.get_limits()
     assert version == 1
     assert limits.max_positions is None
-    
+
     new_version = config.update_limits(RiskGuardLimits(max_positions=5, max_concentration=0.2))
     assert new_version == 2
-    
+
     version, limits = config.get_limits()
     assert version == 2
     assert limits.max_positions == 5
     assert limits.max_concentration == 0.2
 
 
-def test_risk_guard_validator():
-    limits = RiskGuardLimits(
-        max_positions=3,
-        min_reserve_cash=1000,
-        max_order_value=5000,
-        max_concentration=0.5,
-        max_heat=0.02
-    )
-    
-    # Starting with 1 holding, cash 6000
-    # Total equity = 6000 + 4000 = 10000
-    holdings = {
-        "inst1": {"units": 100, "value": 4000, "stop": 35} 
-        # Risk = 4000 - (35*100) = 500. Heat = 500 / 10000 = 0.05 (Fails heat max 0.02, but this is pre-existing)
-    }
-    
-    validator = RiskGuardValidator(limits, 6000, holdings, [])
-    
-    # 1. Order value exceeds 5000
-    orders1 = [ProposedOrder("inst2", "BUY", 100, 60)] # 6000
-    violations1 = validator.validate_orders(orders1)
-    assert any("exceeds max 5000" in v for v in violations1)
-    
-    # 2. Reserve cash below 1000
-    orders2 = [ProposedOrder("inst2", "BUY", 100, 55)] # 5500, cash will be 500 < 1000
-    violations2 = validator.validate_orders(orders2)
-    assert any("below minimum reserve 1000" in v for v in violations2)
-    
-    # 3. Max positions exceeded
-    holdings3 = {
-        "inst1": {"units": 100, "value": 1000},
-        "inst2": {"units": 100, "value": 1000},
-        "inst3": {"units": 100, "value": 1000},
-    }
-    validator3 = RiskGuardValidator(limits, 10000, holdings3, [])
-    orders3 = [ProposedOrder("inst4", "BUY", 10, 10)]
-    violations3 = validator3.validate_orders(orders3)
-    assert any("Projected positions 4 exceeds max 3" in v for v in violations3)
-    
-    # 4. Heat exceeded
-    limits4 = RiskGuardLimits(max_heat=0.02)
-    holdings4 = {}
-    validator4 = RiskGuardValidator(limits4, 10000, holdings4, [])
-    
-    # Buy 100 @ 50 = 5000 (Equity 10000). Stop at 40 -> Risk = 1000. Heat = 1000/10000 = 0.1 > 0.02
-    orders4 = [ProposedOrder("inst4", "BUY", 100, 50, stop_price=40)]
-    violations4 = validator4.validate_orders(orders4)
-    assert any("Heat for inst4 (10.00%) exceeds max 2.00%" in v for v in violations4)
+def test_managed_risk_guard_max_positions(tmp_path):
+    """ManagedRiskGuard enforces max_positions using real ledger state."""
+    db, ledger, config, guard = _setup_guard(tmp_path, RiskGuardLimits(max_positions=1))
+
+    # First BUY fits within max_positions=1.
+    guard.validate("acc1", [{"instrument_id": "i1", "side": "BUY", "units": 1, "execution_price": "100"}])
+
+    # Record a fill so the position is held.
+    from src.portfolio_accounting import Fill, FillSide
+    from src.platform_kernel import Quantity
+    ledger.record_fills("acc1", "k1", 0, [
+        Fill("i1", date(2026, 1, 1), FillSide.BUY, Quantity(1), Money(Decimal(100)),
+             executed_at=datetime(2026, 1, 1, tzinfo=UTC)),
+    ])
+
+    # Second BUY for a different instrument should fail.
+    with pytest.raises(DomainValidationError, match="maximum positions exceeded"):
+        guard.validate("acc1", [{"instrument_id": "i2", "side": "BUY", "units": 1, "execution_price": "100"}])
+
+
+def test_managed_risk_guard_max_order_value(tmp_path):
+    """ManagedRiskGuard enforces max_order_value."""
+    _, _, _, guard = _setup_guard(tmp_path, RiskGuardLimits(max_order_value=5000))
+
+    with pytest.raises(DomainValidationError, match="maximum order value exceeded"):
+        guard.validate("acc1", [{"instrument_id": "i1", "side": "BUY", "units": 100, "execution_price": "100"}])
+
+
+def test_managed_risk_guard_min_reserve_cash(tmp_path):
+    """ManagedRiskGuard enforces min_reserve_cash."""
+    _, _, _, guard = _setup_guard(tmp_path, RiskGuardLimits(min_reserve_cash=500), opening_cash=1000)
+
+    with pytest.raises(DomainValidationError, match="insufficient unreserved cash"):
+        guard.validate("acc1", [{"instrument_id": "i1", "side": "BUY", "units": 8, "execution_price": "100"}])
+
+
+def test_managed_risk_guard_writes_valuation_snapshot(tmp_path):
+    """Validate writes a daily valuation snapshot for drawdown/loss guards."""
+    _, ledger, _, guard = _setup_guard(tmp_path)
+
+    guard.validate("acc1", [])
+
+    snapshots = ledger.valuations("acc1")
+    assert len(snapshots) >= 1
+    assert "equity" in snapshots[0]["payload"]

@@ -193,7 +193,7 @@ def create_portfolio_blueprint(ledger: Ledger, market: MarketRepository, risk_re
         if not isinstance(body, dict) or set(body) - {
             "idempotency_key", "expected_version", "direction", "amount", "occurred_at", "reason"
         } or not {"idempotency_key", "expected_version", "direction", "amount", "reason"}.issubset(body):
-            return jsonify({"error": "idempotency_key, expected_version, direction and amount are required"}), 400
+            return jsonify({"error": "idempotency_key, expected_version, direction, amount and reason are required"}), 400
         try:
             key = body["idempotency_key"]
             expected = body["expected_version"]

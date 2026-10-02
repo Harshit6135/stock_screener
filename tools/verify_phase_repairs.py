@@ -8,18 +8,20 @@ from __future__ import annotations
 import ast
 import sys
 import tempfile
-from datetime import date, timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.application.composition import ApplicationServices
-from src.application.portfolio_web import create_portfolio_blueprint
 from flask import Flask
+
+from src.application.composition import ApplicationServices
 from src.application.market_repository import TrackedInstrument
 from src.application.portfolio_sync import PortfolioSync
+from src.application.portfolio_web import create_portfolio_blueprint
 from src.application.sqlite import sqlite_connection
 from src.execution_gateway.broker import BrokerOrderService
 from src.execution_gateway.kite_accounts import KiteAccounts
@@ -63,7 +65,7 @@ def main():
         print("CONFIRMED: fresh application composition, live execution disabled")
         if app.broker_orders.execution_controls()["enabled"]:
             raise RuntimeError("Live execution unexpectedly enabled")
-        today = date.today()
+        today = datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1)
         app.market.upsert_instruments([TrackedInstrument("share", "ISIN-ONE", "ONE", "NSE", "123", today)])
         member = {"isin": "ISIN-ONE", "symbol": "ONE", "company_name": "One", "industry": "Technology", "series": "EQ"}
         app.market.create_universe_snapshot(snapshot_id="membership", index_name="NIFTY 500", snapshot_date=today,
@@ -127,7 +129,7 @@ def main():
         web = Flask("repair-probes")
         web.register_blueprint(create_portfolio_blueprint(app.ledger, app.market, app.actions.risk_projection, app.actions.risk_config))
         client = web.test_client()
-        response = client.get(f"/api/v2/portfolio/accounts/{result['ledger_account_id']}/valuation?as_of_date={today.isoformat()}")
+        response = client.get(f"/api/v2/portfolio/accounts/{result['ledger_account_id']}/valuation?as_of_date={datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()}")
         if response.status_code != 200 or response.get_json()["holdings"][0]["acquisition_date"] != first.isoformat():
             raise RuntimeError("Portfolio valuation/API acquisition contract failed")
         print("CONFIRMED: valuation API renders imported dates and explicit unavailable day-P&L basis")

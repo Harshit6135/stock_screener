@@ -11,10 +11,12 @@ except by an explicit administrative wipe.
 from __future__ import annotations
 
 import json
+import math
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 from src.application.sqlite import migrate_sqlite, sqlite_connection
+from src.platform_kernel import DomainValidationError
 
 
 class IndicatorNodeCache:
@@ -55,6 +57,12 @@ class IndicatorNodeCache:
             },
         )
 
+    @staticmethod
+    def _require_revisions(market_revision: str, implementation_revision: str) -> None:
+        if (not isinstance(market_revision, str) or not market_revision.strip()
+                or not isinstance(implementation_revision, str) or not implementation_revision.strip()):
+            raise DomainValidationError("cache requires market and implementation revisions")
+
     # ------------------------------------------------------------------
     # Single-value operations
     # ------------------------------------------------------------------
@@ -65,10 +73,11 @@ class IndicatorNodeCache:
         instrument_id: str,
         as_of_date: date,
         *,
-        market_revision: str | None = None,
-        implementation_revision: str | None = None,
+        market_revision: str,
+        implementation_revision: str,
     ) -> float | None:
         """Return a cached scalar value, or ``None`` if absent."""
+        self._require_revisions(market_revision, implementation_revision)
         with sqlite_connection(self.database, read_only=True, row_factory=True) as conn:
             sql = "SELECT value_json FROM indicator_node_cache WHERE node_hash=? AND instrument_id=? AND as_of_date=?"
             args: list[object] = [node_hash, instrument_id, as_of_date.isoformat()]
@@ -91,10 +100,17 @@ class IndicatorNodeCache:
         value: float,
         source_snapshot_id: str,
         *,
-        market_revision: str = "",
-        implementation_revision: str = "",
+        market_revision: str,
+        implementation_revision: str,
     ) -> None:
         """Insert or replace a single cached value."""
+        self._require_revisions(market_revision, implementation_revision)
+        try:
+            finite = math.isfinite(float(value))
+        except (TypeError, ValueError):
+            finite = False
+        if not finite:
+            raise DomainValidationError("cache value must be finite")
         now = datetime.now(UTC).isoformat()
         with sqlite_connection(self.database) as conn:
             conn.execute(
@@ -131,13 +147,14 @@ class IndicatorNodeCache:
         start_date: date,
         end_date: date,
         *,
-        market_revision: str | None = None,
-        implementation_revision: str | None = None,
+        market_revision: str,
+        implementation_revision: str,
     ) -> dict[str, float]:
         """Return cached values for one node + instrument over a date range.
 
         Returns ``{iso_date_string: value}`` for each cached row.
         """
+        self._require_revisions(market_revision, implementation_revision)
         with sqlite_connection(self.database, read_only=True, row_factory=True) as conn:
             sql = """SELECT as_of_date, value_json FROM indicator_node_cache
                      WHERE node_hash=? AND instrument_id=? AND as_of_date BETWEEN ? AND ?"""
@@ -157,13 +174,17 @@ class IndicatorNodeCache:
         start_date: date,
         end_date: date,
         *,
-        revisions: dict[str, str] | None = None,
-        implementation_revision: str | None = None,
+        revisions: dict[str, str],
+        implementation_revision: str,
     ) -> dict[str, dict[str, dict[str, float]]]:
         """Return cached values for multiple nodes across all instruments.
 
         Returns ``{node_hash: {instrument_id: {iso_date: value}}}``.
         """
+        if not isinstance(revisions, dict) or not isinstance(implementation_revision, str) or not implementation_revision.strip():
+            raise DomainValidationError("bulk cache requires market and implementation revisions")
+        for revision in revisions.values():
+            self._require_revisions(revision, implementation_revision)
         if not node_hashes:
             return {}
         result: dict[str, dict[str, dict[str, float]]] = {h: {} for h in node_hashes}
@@ -184,9 +205,9 @@ class IndicatorNodeCache:
             for row in rows:
                 nh = str(row["node_hash"])
                 iid = str(row["instrument_id"])
-                if revisions is not None and str(row["market_revision"]) != revisions.get(iid):
+                if str(row["market_revision"]) != revisions.get(iid):
                     continue
-                if implementation_revision is not None and str(row["implementation_revision"]) != implementation_revision:
+                if str(row["implementation_revision"]) != implementation_revision:
                     continue
                 day = str(row["as_of_date"])
                 result.setdefault(nh, {}).setdefault(iid, {})[day] = float(
@@ -200,8 +221,8 @@ class IndicatorNodeCache:
         values: dict[str, dict[str, float]],
         source_snapshot_id: str,
         *,
-        market_revisions: dict[str, str] | None = None,
-        implementation_revision: str = "",
+        market_revisions: dict[str, str],
+        implementation_revision: str,
     ) -> int:
         """Bulk insert cached values for one node across instruments and dates.
 
@@ -219,12 +240,22 @@ class IndicatorNodeCache:
         int
             Number of rows written.
         """
+        if not isinstance(market_revisions, dict) or not isinstance(implementation_revision, str) or not implementation_revision.strip():
+            raise DomainValidationError("bulk cache requires market and implementation revisions")
+        for instrument_id in values:
+            self._require_revisions(market_revisions.get(instrument_id), implementation_revision)
         if not values:
             return 0
         now = datetime.now(UTC).isoformat()
         rows: list[tuple[str, str, str, str, str, str, str, str]] = []
         for instrument_id, series in values.items():
             for day, value in series.items():
+                try:
+                    finite = math.isfinite(float(value))
+                except (TypeError, ValueError):
+                    finite = False
+                if not finite:
+                    raise DomainValidationError("cache value must be finite")
                 rows.append((
                     node_hash,
                     instrument_id,
@@ -232,7 +263,7 @@ class IndicatorNodeCache:
                     json.dumps(value),
                     source_snapshot_id,
                     now,
-                    (market_revisions or {}).get(instrument_id, ""),
+                    market_revisions[instrument_id],
                     implementation_revision,
                 ))
         with sqlite_connection(self.database) as conn:
@@ -256,9 +287,10 @@ class IndicatorNodeCache:
         self,
         node_hash: str,
         instrument_id: str,
-        dates: set[str],
+        dates: set[str], *, market_revision: str, implementation_revision: str,
     ) -> bool:
-        """Return whether all requested dates are cached for this node + instrument."""
+        """Return whether all requested dates match both cache identities."""
+        self._require_revisions(market_revision, implementation_revision)
         if not dates:
             return True
         sorted_dates = sorted(dates)
@@ -266,8 +298,10 @@ class IndicatorNodeCache:
             rows = conn.execute(
                 """SELECT as_of_date FROM indicator_node_cache
                    WHERE node_hash = ? AND instrument_id = ?
+                   AND market_revision = ? AND implementation_revision = ?
                    AND as_of_date BETWEEN ? AND ?""",
-                (node_hash, instrument_id, sorted_dates[0], sorted_dates[-1]),
+                (node_hash, instrument_id, market_revision, implementation_revision,
+                 sorted_dates[0], sorted_dates[-1]),
             ).fetchall()
         cached = {str(row["as_of_date"]) for row in rows}
         return dates.issubset(cached)

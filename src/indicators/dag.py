@@ -27,7 +27,12 @@ import pandas as pd
 
 from src.platform_kernel import DomainValidationError
 
-from .registry import IndicatorSpec, PandasTaAdapter
+from .registry import (
+    IndicatorSpec,
+    PandasTaAdapter,
+    provider_output_role,
+    selected_indicator_output,
+)
 
 # ---------------------------------------------------------------------------
 # Primitive field names that are directly available from OHLCV / benchmark data
@@ -143,6 +148,10 @@ class DagGraph:
         """Ensure every input reference points to a declared node or primitive field."""
         known = set(self._nodes) | PRIMITIVE_FIELDS
         for node in self._nodes.values():
+            if node.provider == "built_in" and node.function not in APPROVED_OPERATIONS:
+                raise DomainValidationError(
+                    f"DAG node '{node.node_id}' uses unsupported operation '{node.function}'"
+                )
             for _, ref in node.inputs:
                 if ref not in known:
                     raise DomainValidationError(
@@ -245,7 +254,8 @@ class DagGraph:
                     "parameters": list(node.parameters),
                     # This identifies a selected output of a multi-output
                     # provider without incorporating its local node name.
-                    "output_key": node.output_key,
+                    "output_selector": selected_indicator_output(node.function, node.output_key)
+                    if node.provider == "pandas_ta" else None,
                 },
                 sort_keys=True,
                 separators=(",", ":"),
@@ -476,13 +486,20 @@ class DagExecutor:
         if len(spec.outputs) == 1:
             return frame.iloc[:, 0]
 
-        # Multi-output indicator: match by output_key or first column
-        for col in frame.columns:
-            col_lower = str(col).lower()
-            if node.output_key.lower() in col_lower or node.function.lower() in col_lower:
-                return frame[col]
-        # Fall back to first column
-        return frame.iloc[:, 0]
+        # Semantic output roles and provider column prefixes share the same
+        # selector as graph hashes. A local alias cannot choose a wrong column
+        # merely because every provider column contains the function name.
+        selector = selected_indicator_output(node.function, node.output_key)
+        selector = selector or spec.outputs[0]
+        matching = [col for col in frame.columns
+                    if provider_output_role(node.function, str(col)) == selector]
+        if len(matching) != 1 or any(
+            sum(provider_output_role(node.function, str(col)) == role for col in frame.columns) != 1
+            for role in spec.outputs
+        ):
+            raise DomainValidationError(f"indicator '{node.function}' returned an unexpected output schema")
+        return frame[matching[0]]
+
 
     def _execute_operation(
         self, node: DagNode, results: dict[str, pd.Series]

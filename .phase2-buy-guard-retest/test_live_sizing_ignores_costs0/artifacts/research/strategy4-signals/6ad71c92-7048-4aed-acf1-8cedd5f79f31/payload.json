@@ -1,0 +1,1 @@
+{"signals":[{"adv30":200000000,"adx14":39,"close":100,"exit_signal":false,"filtered":true,"initial_stop_anchor":90,"instrument_id":"A","rank":1,"signal_date":"2022-01-03","symbol":"A"},{"adv30":200000000,"adx14":38,"close":100,"exit_signal":false,"filtered":true,"initial_stop_anchor":90,"instrument_id":"B","rank":2,"signal_date":"2022-01-03","symbol":"B"}]}

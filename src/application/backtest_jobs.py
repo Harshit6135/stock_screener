@@ -7,8 +7,9 @@ import json
 import logging
 
 logger = logging.getLogger("screener." + __name__)
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
@@ -81,6 +82,48 @@ class BacktestJobs:
         ):
             digest.update(path.read_bytes())
         return digest.hexdigest()
+
+    def _momentum_membership_plan(self, start: date, end: date):
+        """Resolve dated membership and exact observed next opens for exclusions."""
+        snapshots = []
+        offset = 0
+        while True:
+            page = self.market.list_universe_snapshots("NIFTY 500", limit=500, offset=offset)
+            snapshots.extend(page)
+            if len(page) < 500:
+                break
+            offset += len(page)
+        snapshots.sort(key=lambda row: str(row["snapshot_date"]))
+        if not snapshots:
+            raise DomainValidationError("Momentum replay requires a NIFTY 500 snapshot")
+        # Before the first stored snapshot, use the documented earliest fallback.
+        usable = [row for row in snapshots if str(row["snapshot_date"]) <= end.isoformat()]
+        if not usable:
+            usable = [snapshots[0]]
+        members = {str(row["snapshot_id"]): {
+            str(member["isin"]) for member in self.market.universe_snapshot_members(
+                str(row["snapshot_id"]), limit=1000)
+        } for row in usable}
+        transitions = []
+        for older, newer in pairwise(usable):
+            removed = members[str(older["snapshot_id"])] - members[str(newer["snapshot_id"])]
+            if removed and start <= date.fromisoformat(str(newer["snapshot_date"])) <= end:
+                transitions.append((newer, removed))
+        targets = []
+        if transitions:
+            observed = [date.fromisoformat(value) for value in self.market.nifty500_session_dates(
+                date.fromisoformat(str(transitions[0][0]["snapshot_date"])),
+                end + timedelta(days=30))]
+            for snapshot, removed in transitions:
+                decision_day = date.fromisoformat(str(snapshot["snapshot_date"]))
+                target = next((day for day in observed if day > decision_day), None)
+                if target is None:
+                    raise DomainValidationError(
+                        f"next observed NIFTY 500 session is unavailable after {decision_day}"
+                    )
+                targets.append((target, decision_day, str(snapshot["snapshot_id"]), removed))
+        extra_date = next((target for target, _, _, _ in targets if target > end), None)
+        return usable, members, targets, extra_date
 
     def _revision(self, category: str, identifier: str, payload: dict[str, object]) -> str:
         revision_id = str(uuid5(NAMESPACE_URL, f"{category}:{identifier}"))
@@ -224,16 +267,35 @@ class BacktestJobs:
             "1.0.0", slippage_bps=slippage_bps, fee_bps=fee_bps, tax_bps=tax_bps,
         )
         weeks = self.research.ranking_weeks(strategy_id)
-        histories = self.market.histories(start, end)
+        snapshots, snapshot_members, exit_targets, extra_date = self._momentum_membership_plan(start, end)
+        histories = self.market.histories(start, extra_date or end)
+        identity_by_id = {instrument_id: identity for instrument_id, (_, identity) in histories.items()}
+        exit_events: dict[date, dict[str, dict[str, str]]] = {}
+        for target, decision_day, snapshot_id, removed_isins in exit_targets:
+            for instrument_id, identity in identity_by_id.items():
+                if identity["exchange"] != "NSE" or str(identity["isin"]) not in removed_isins:
+                    continue
+                exit_events.setdefault(target, {})[instrument_id] = {
+                    "decision_date": decision_day.isoformat(),
+                    "universe_snapshot_id": snapshot_id,
+                    "market_revision": self.market.market_history_revision(instrument_id),
+                }
+        membership_hash = hashlib.sha256(json.dumps([
+            (row["snapshot_id"], row["snapshot_date"], sorted(snapshot_members[str(row["snapshot_id"])]))
+            for row in snapshots
+        ], sort_keys=True).encode()).hexdigest()
         by_date: dict[date, dict[str, MarketBar]] = {}
+        extra_bars: dict[str, MarketBar] = {}
         upstream_ids: set[str] = set()
         for instrument_id, (bars, identity) in histories.items():
             if data_basis == "CORPORATE_ACTION_ADJUSTED":
                 adjusted = self.corporate_actions.adjusted_bars(instrument_id, start, end)["bars"]
                 bars = [{**raw, **value} for raw, value in zip(bars, adjusted, strict=True)]
+            if identity["exchange"] != "NSE":
+                continue
             for bar in bars:
                 day = date.fromisoformat(str(bar["as_of_date"]))
-                by_date.setdefault(day, {})[instrument_id] = MarketBar(
+                market_bar = MarketBar(
                     instrument_id,
                     day,
                     _decimal(bar["open"], "open"),
@@ -242,13 +304,25 @@ class BacktestJobs:
                     _decimal(bar["close"], "close"),
                     int(str(bar["volume"])),
                 )
-                upstream_ids.add(str(bar["snapshot_id"]))
+                if day <= end:
+                    by_date.setdefault(day, {})[instrument_id] = market_bar
+                elif day == extra_date:
+                    extra_bars[instrument_id] = market_bar
+                if day <= end or day == extra_date:
+                    upstream_ids.add(str(bar["snapshot_id"]))
+                    if instrument_id in exit_events.get(day, {}):
+                        exit_events[day][instrument_id]["price_snapshot_id"] = str(bar["snapshot_id"])
         if not by_date:
             raise DomainValidationError("backtest has no market sessions")
         steps: list[BacktestStep] = []
         risk_cache: dict[date, dict[str, dict[str, object]]] = {}
         missing_atr_candidates = 0
         for day in sorted(by_date):
+            prior_snapshots = [row for row in snapshots if str(row["snapshot_date"]) < day.isoformat()]
+            effective_snapshot = prior_snapshots[-1] if prior_snapshots else snapshots[0]
+            active_isins = snapshot_members[str(effective_snapshot["snapshot_id"])]
+            eligible_ids = {instrument_id for instrument_id, identity in identity_by_id.items()
+                            if identity["exchange"] == "NSE" and str(identity["isin"]) in active_isins}
             prior = [week for week in weeks if week < day]
             if not prior:
                 raise DomainValidationError("backtest has no prior completed weekly ranking")
@@ -273,17 +347,21 @@ class BacktestJobs:
                 )
                 for item in ranking
                 if str(item["instrument_id"]) in by_date[day]
+                and str(item["instrument_id"]) in eligible_ids
             )
-            if not candidates:
+            if not candidates and any(str(item["instrument_id"]) in eligible_ids
+                                      for item in ranking):
                 raise DomainValidationError("backtest has no tradable ranked candidates")
             missing_atr_candidates += sum(candidate.atr is None for candidate in candidates)
-            steps.append(BacktestStep(day, candidates, by_date[day], regime_by_date.get(day, "RISK_ON")))
+            steps.append(BacktestStep(day, candidates, by_date[day],
+                regime_by_date.get(day, "RISK_ON"), exit_events.get(day, {})))
         policy_payload = {
             "max_positions": max_positions,
             "exit_score": str(policy.exit_score),
             "max_position_fraction": str(policy.max_position_fraction),
             "swap_buffer": str(policy.swap_buffer),
             "strategy_revision_id": strategy_revision["revision_id"],
+            "universe_membership_hash": membership_hash,
             "slippage_bps": str(slippage_bps),
             "fee_bps": str(fee_bps),
             "tax_bps": str(tax_bps),
@@ -348,6 +426,8 @@ class BacktestJobs:
             manifest,
             fill_model,
             tuple(cash_flows),
+            BacktestStep(extra_date, (), extra_bars, universe_exits=exit_events.get(extra_date, {}))
+            if extra_date is not None and exit_events.get(extra_date) else None,
         )
         artifact = self.publisher.publish_json(
             "runs/backtests",
@@ -403,10 +483,10 @@ class BacktestJobs:
         if "include_be" in payload and not isinstance(payload["include_be"], bool):
             raise DomainValidationError("include_be must be boolean")
         universe = payload.get("universe", "SNAPSHOT_NIFTY500")
-        if not isinstance(universe, str) or universe not in {"SNAPSHOT_NIFTY500", "APPLICATION_MCAP500"}:
+        if universe != "SNAPSHOT_NIFTY500":
             raise DomainValidationError("Strategy 4 universe is invalid")
         if payload.get("include_be", False):
-            raise DomainValidationError("BE rows are unavailable for snapshot and market-cap universes")
+            raise DomainValidationError("BE rows are unavailable for snapshot universe replay")
         try:
             start, end = date.fromisoformat(str(payload["start_date"])), date.fromisoformat(str(payload["end_date"]))
         except (TypeError, ValueError) as exc:
@@ -415,11 +495,10 @@ class BacktestJobs:
             raise DomainValidationError("Strategy 4 backtest requires completed dates within 10 years")
         if self.positional_trend is None:
             raise DomainValidationError("Strategy 4 service is unavailable")
-        settings = self.research.runtime.portfolio_policy("strategy4")
+        settings = self.research.runtime.portfolio_policy("positional_trend_following")
         from src.application.positional_trend_backtest import Policy as Strategy4Policy
         from src.application.positional_trend_backtest import (
             benchmark_price_return,
-            load_market_cap_universe,
             load_snapshot_universe,
             simulate,
         )
@@ -437,10 +516,7 @@ class BacktestJobs:
         policy = Strategy4Policy(capital, positions, order_cap, risk, adv_cap, costs, False)
         try:
             policy.validate()
-            if universe == "APPLICATION_MCAP500":
-                histories, sessions, coverage = load_market_cap_universe(self.database, end_date=end.isoformat())
-            elif universe == "SNAPSHOT_NIFTY500":
-                histories, sessions, coverage = load_snapshot_universe(self.database, end_date=end.isoformat())
+            histories, sessions, coverage = load_snapshot_universe(self.database, end_date=end.isoformat())
             instrument_ids = tuple(histories)
             if not instrument_ids:
                 raise DomainValidationError("Strategy 4 universe has no matched market history")
@@ -449,24 +525,25 @@ class BacktestJobs:
                     "SELECT instrument_id, as_of_date, snapshot_id FROM market_bars "
                     f"WHERE instrument_id IN ({','.join('?' for _ in instrument_ids)}) "
                     "AND as_of_date BETWEEN '2021-01-01' AND ? ORDER BY instrument_id, as_of_date",
-                    (*instrument_ids, end.isoformat()),
+                    (*instrument_ids, coverage.get("exit_only_session") or end.isoformat()),
                 ).fetchall()
             market_snapshot_hash = hashlib.sha256(
                 json.dumps([tuple(row) for row in source_rows], separators=(",", ":")).encode()
             ).hexdigest()
-            signal_rules = self.research.runtime.signal_rules("strategy4")
+            signal_rules = self.research.runtime.signal_rules("positional_trend_following")
             result = simulate(histories, sessions, policy=policy,
                               start_date=start.isoformat(), end_date=end.isoformat(),
-                              rules=signal_rules)
+                              rules=signal_rules,
+                              membership_by_day=coverage.get("membership_by_day"))
         except (ValueError, OSError) as exc:
             raise DomainValidationError(f"Strategy 4 backtest could not load or simulate: {exc}") from exc
-        revision = self.research.runtime.revision("strategy4")
+        revision = self.research.runtime.revision("positional_trend_following")
         first, last = result["period"]["first_session"], result["period"]["last_session"]
         result.update({"strategy_id": "positional_trend_following", "strategy_revision_id": revision["revision_id"],
                        "strategy_definition_hash": revision["definition_hash"], "data": coverage,
                        "benchmark": benchmark_price_return(self.database, first, last),
-                       "limitations": ["current constituent membership applied retrospectively",
-                                       "stored OHLCV without corporate-action adjustment",
+                       "limitations": ["earliest snapshot used only before recorded membership history",
+                                       "stored provider OHLCV adjustment basis",
                                        "daily OHLCV cannot verify opening fill availability or upper circuits",
                                        "exploratory replay; Phase 1 advancement gate is not enforced",
                                        "open holdings marked to latest stored close; not forcibly sold",
@@ -486,9 +563,10 @@ class BacktestJobs:
             {"symbol": symbol, "shares": holding["shares"]}
             for symbol, holding in result["open_holdings"].items()
         ]
+        instrument_by_symbol = {symbol: instrument_id for instrument_id, (symbol, _) in histories.items()}
         result["fills"] = [
             {**fill, "as_of_date": fill["date"], "decision_type": fill["side"],
-             "instrument_id": fill["symbol"], "units": fill["shares"],
+             "instrument_id": instrument_by_symbol[fill["symbol"]], "units": fill["shares"],
              "side": "BUY" if fill["side"] == "BUY" else "SELL"}
             for fill in result["fills"]
         ]

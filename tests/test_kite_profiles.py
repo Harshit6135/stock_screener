@@ -49,6 +49,12 @@ def test_profile_pages_are_isolated_and_market_data_worker_has_no_portfolio_cred
         app.extensions["screener_services"].worker.handlers["market.fetch-kite-bars"].__self__
     )
     assert not hasattr(market_jobs, "portfolio_credentials")
+    assert not hasattr(market_jobs, "nse_csv_path")
+    assert not hasattr(market_jobs, "bse_csv_path")
+    handlers = app.extensions["screener_services"].worker.handlers
+    assert "reference.sync-snapshot-instruments" in handlers
+    assert "reference.sync-kite-instruments" not in handlers
+    assert "reference.enrich-day0-universe" not in handlers
     assert Path(TestConfig.PORTFOLIO_KITE_ACCESS_TOKEN_PATH).exists() is False
 
 

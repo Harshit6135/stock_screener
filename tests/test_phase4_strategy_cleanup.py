@@ -1,15 +1,10 @@
 """Phase 4 Task 4.12: Named strategies, ranking patterns and retirement cleanup tests."""
 
-from datetime import date, timedelta
 from pathlib import Path
-from types import SimpleNamespace
-from uuid import uuid4
 
 import pytest
 
-from src.application.catalog import ArtifactCatalog
-from src.application.market_repository import MarketRepository, TrackedInstrument
-from src.application.publication import ArtifactPublisher
+from src.application.market_repository import MarketRepository
 from src.application.ranking_patterns import (
     DirectSignalRanking,
     FactorPercentileRanking,
@@ -26,9 +21,7 @@ from src.application.strategy_runtime import (
     resolve_strategy_id,
 )
 from src.indicators.registry import PandasTaAdapter
-from src.market_data import NormalizedBar
-from src.platform_kernel import ArtifactStore, DomainValidationError
-
+from src.platform_kernel import DomainValidationError
 
 # ─── Task 4.1: Strategy identity mapping ───
 
@@ -304,9 +297,12 @@ def test_lineage_immutable_on_rewrite(tmp_path):
     database = tmp_path / "system.db"
     research = ResearchJobs(database, MarketRepository(database), None)
     research.record_lineage("art-1", "momentum", "rev-1", indicator_code_hash="hash1")
-    research.record_lineage("art-1", "momentum", "rev-1", indicator_code_hash="hash2")
-    lineage = research.read_lineage("art-1")
-    assert lineage["indicator_code_hash"] == "hash2"  # INSERT OR REPLACE
+    before = research.read_lineage("art-1")
+    research.record_lineage("art-1", "momentum", "rev-1", indicator_code_hash="hash1")
+    assert research.read_lineage("art-1") == before
+    with pytest.raises(DomainValidationError, match="immutable"):
+        research.record_lineage("art-1", "momentum", "rev-1", indicator_code_hash="hash2")
+    assert research.read_lineage("art-1") == before
 
 
 # ─── Task 4.7: Factor stages A/B/C ───
@@ -353,6 +349,7 @@ def test_pipeline_default_strategies_include_both_retained_branches(tmp_path):
     jobs = JobStore(tmp_path / "system.db")
     pipelines = ResearchPipelineJobs(tmp_path / "system.db", jobs)
     pipeline = pipelines.submit({"as_of_date": "2026-09-11"})
+    assert pipeline["strategies"] == ["momentum", "positional_trend_following"]
     claimed = jobs.claim_next("test-worker")
     assert claimed is not None
     assert claimed.payload["strategies"] == ["momentum"]

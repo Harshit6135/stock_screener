@@ -89,6 +89,18 @@ class ActionJobs:
             },
         )
 
+    def _current_buy_members(self) -> tuple[str, set[str]]:
+        """Use the latest immutable NSE snapshot for all live BUY proposals."""
+        snapshot = self.market.latest_universe_snapshot("NIFTY 500")
+        if snapshot is None:
+            raise DomainValidationError("NIFTY 500 snapshot is unavailable for BUY eligibility")
+        snapshot_id = str(snapshot["snapshot_id"])
+        member_isins = {str(row["isin"]) for row in
+                        self.market.universe_snapshot_members(snapshot_id, limit=1000)}
+        eligible_ids = {str(row["instrument_id"]) for row in self.market.tracked_instruments()
+                        if row["exchange"] == "NSE" and str(row["isin"]) in member_isins}
+        return snapshot_id, eligible_ids
+
     def _generate_strategy4(self, payload: dict[str, Any]) -> dict[str, object]:
         """Create a reviewable next-open proposal from the prior close's S4 signals."""
         if self.positional_trend is None:
@@ -108,18 +120,14 @@ class ActionJobs:
             raise DomainValidationError("action_date must be an ISO date") from exc
         if action_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
             raise DomainValidationError("portfolio action date must be completed")
-        sessions = sorted({
-            day
-            for exchange in ("NSE", "BSE")
-            for day in self.market.session_dates(action_date - timedelta(days=14), action_date,
-                                                 exchange=exchange)
-        })
+        sessions = sorted(self.market.session_dates(
+            action_date - timedelta(days=14), action_date, exchange="NSE"))
         prior_sessions = [day for day in sessions if day < action_date.isoformat()]
         if not prior_sessions or not sessions or sessions[-1] != action_date.isoformat():
             raise DomainValidationError("Strategy 4 action date requires a prior and current stored session")
         signal_date = date.fromisoformat(prior_sessions[-1])
         universe = payload.get("universe", "SNAPSHOT_NIFTY500")
-        if not isinstance(universe, str) or universe not in {"SNAPSHOT_NIFTY500", "APPLICATION_MCAP500"}:
+        if universe != "SNAPSHOT_NIFTY500":
             raise DomainValidationError("Strategy 4 universe is invalid")
         signal_entry = self.positional_trend.read_signals(signal_date, str(universe))
         if signal_entry is None:
@@ -128,8 +136,8 @@ class ActionJobs:
         if signal_entry is None:
             raise DomainValidationError("prior Strategy 4 signal artifact could not be created")
         signal_artifact_id, signal_payload = signal_entry
-        revision = self.research.runtime.revision("strategy4")
-        settings = self.research.runtime.portfolio_policy("strategy4")
+        revision = self.research.runtime.revision("positional_trend_following")
+        settings = self.research.runtime.portfolio_policy("positional_trend_following")
         positions = payload.get("max_positions", int(settings["max_positions"]))
         if isinstance(positions, bool) or not isinstance(positions, int) or not 1 <= positions <= 50:
             raise DomainValidationError("Strategy 4 max_positions must be between 1 and 50")
@@ -149,6 +157,10 @@ class ActionJobs:
         if account is None:
             raise DomainValidationError("portfolio account does not exist")
         projection = self.ledger.projection(account_id)
+        if any(row["filtered"] for row in signal_payload["signals"]):
+            universe_snapshot_id, buy_members = self._current_buy_members()
+        else:
+            universe_snapshot_id, buy_members = None, set()
         signal_rows = {str(item["instrument_id"]): item for item in signal_payload["signals"]}
         held: dict[str, int] = {}
         for lot in projection.open_lots:
@@ -163,7 +175,7 @@ class ActionJobs:
 
             histories = self.market.histories(date(2021, 1, 1), signal_date,
                                                instrument_ids=set(held))
-            rules = self.research.runtime.signal_rules("strategy4")
+            rules = self.research.runtime.signal_rules("positional_trend_following")
             for instrument_id, (history, identity) in histories.items():
                 if instrument_id not in held:
                     continue
@@ -192,6 +204,8 @@ class ActionJobs:
         requested_ids = set(held) | {str(row["instrument_id"]) for row in signal_payload["signals"] if row["filtered"]}
         bars = {}
         source_ids = {signal_artifact_id, str(revision["revision_id"])} | held_source_ids
+        if universe_snapshot_id is not None:
+            source_ids.add(universe_snapshot_id)
         for instrument_id in requested_ids:
             rows = self.market.bars(instrument_id, action_date, action_date, limit=1)
             if rows and valid_bar(rows[-1]):
@@ -232,6 +246,9 @@ class ActionJobs:
                             key=lambda row: (int(row.get("rank") or 10**9), str(row["symbol"])))
         for row in candidates:
             instrument_id = str(row["instrument_id"])
+            if instrument_id not in buy_members:
+                skipped.append({"instrument_id": instrument_id, "reason": "outside_current_universe"})
+                continue
             bar = bars.get(instrument_id)
             if instrument_id in exited_ids:
                 skipped.append({"instrument_id": instrument_id, "reason": "exited_this_session"})
@@ -462,10 +479,11 @@ class ActionJobs:
             snapshot_ids.add(str(bar["snapshot_id"]))
         if not bars:
             raise DomainValidationError("action date has no market bars")
-        eligible = [item for item in ranked if Decimal(str(item["score"])) > 0]
-        if len(eligible) < positions or any(
-            str(item["instrument_id"]) not in bars for item in eligible[:positions]
-        ):
+        universe_snapshot_id, buy_members = self._current_buy_members()
+        snapshot_ids.add(universe_snapshot_id)
+        eligible = [item for item in ranked if Decimal(str(item["score"])) > 0
+                    and str(item["instrument_id"]) in buy_members]
+        if any(str(item["instrument_id"]) not in bars for item in eligible[:positions]):
             raise DomainValidationError("top-ranked action candidate is missing a market bar")
         stale_buy_skipped: list[dict[str, object]] = []
         sector_skipped: list[dict[str, object]] = []
@@ -933,6 +951,9 @@ class ActionJobs:
         held: dict[str, int] = {}
         for lot in projection.open_lots:
             held[lot.instrument_id] = held.get(lot.instrument_id, 0) + lot.remaining_units.units
+        buy_members = self._current_buy_members()[1] if any(
+            isinstance(entry, dict) and entry.get("side") == "BUY" for entry in entries
+        ) else set()
         decisions: list[dict[str, object]] = []
         buy_total = Decimal(0)
         sell_total = Decimal(0)
@@ -952,6 +973,8 @@ class ActionJobs:
                 raise DomainValidationError(f"manual {side} for {symbol} has invalid price")
             identity = self.market.instrument(symbol, exchange)
             instrument_id = str(identity["instrument_id"])
+            if side == "BUY" and instrument_id not in buy_members:
+                raise DomainValidationError(f"manual BUY for {symbol} is outside the current NSE snapshot")
             if side == "BUY" and not self.market.bars(instrument_id, date.min, action_date - timedelta(days=1), limit=1000):
                 raise DomainValidationError(f"manual BUY for {symbol} lacks a required prior bar")
             if side == "SELL" and entry["units"] > held.get(instrument_id, 0):
@@ -1176,6 +1199,11 @@ class ActionJobs:
         proposal = self.proposal(proposal_id)
         if proposal["status"] != "PENDING":
             raise DomainValidationError("action proposal is not pending")
+        if action == "APPROVED":
+            buy_ids = {str(item["instrument_id"]) for item in proposal["decisions"]
+                       if item.get("type") in {"BUY", "PYRAMID_ADD"}}
+            if buy_ids and not buy_ids <= self._current_buy_members()[1]:
+                raise DomainValidationError("BUY proposal contains a stock outside the current NSE snapshot")
         if action == "APPROVED" and self.risk_guard:
             self.risk_guard.validate(str(proposal["account_id"]), proposal["decisions"],
                 int(proposal["expected_ledger_version"]), reservation_id=f"proposal:{proposal_id}", proposal_id=proposal_id)

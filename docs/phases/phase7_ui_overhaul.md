@@ -1,6 +1,6 @@
 # Phase 7: Carbon Emerald UI, Complete API Wiring and Functional Acceptance
 
-> Status: Plan only. Implementation requires explicit user approval.
+> Status: Implementation authorized and under review; completion is unproven. See [repair-status.md](repair-status.md).
 > Authority: [Overhaul_Plan.md](../Overhaul_Plan.md).
 > Dependencies: All backend phases 1–6.
 > Numbered tasks: 19.

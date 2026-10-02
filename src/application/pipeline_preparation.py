@@ -1,6 +1,8 @@
 """Sequential, checkpointed manual data prerequisites; never executes trades."""
 from datetime import date, timedelta
 
+from src.application.market_jobs import PHASE2_BENCHMARK_SYMBOLS
+from src.application.session_coverage import CompletedSessionCoverage
 from src.platform_kernel import DomainValidationError
 
 
@@ -25,7 +27,7 @@ class PipelinePreparation:
         members = self.market.universe_snapshot_members(snapshot_id, limit=1000)
         isins = {row["isin"] for row in members}
         instruments = [row for row in self.market.tracked_instruments()
-            if row["exchange"] == "NSE" and (row["isin"] in isins or str(row["isin"]).startswith("INDEX:"))]
+            if row["exchange"] == "NSE" and (row["isin"] in isins or row["symbol"] in PHASE2_BENCHMARK_SYMBOLS)]
         # Full warm-up for newly tracked members; provider coverage handles reuse.
         cursor = min(start - timedelta(days=900), date(2021, 1, 1))
         batches = []
@@ -38,9 +40,12 @@ class PipelinePreparation:
                 raise DomainValidationError("market history prerequisite contains failed instruments")
             batches.append(result)
             cursor = chunk_end + timedelta(days=1)
+        context.checkpoint(progress={"stage": "quality", "snapshot_id": snapshot_id,
+            "message": "Checking completed benchmark sessions against historical membership"})
+        quality = CompletedSessionCoverage(self.market).record(start, end)
         context.checkpoint(progress={"stage": "indicators", "snapshot_id": snapshot_id})
         indicators = self.research.rebuild_indicators({"start_date": start.isoformat(), "end_date": end.isoformat()}, context)
-        reconciliation = self.refresh.reconcile({"as_of_date": end.isoformat(), "source_instruments": members})
+        reconciliation = self.refresh.reconcile({"as_of_date": end.isoformat(), "start_date": start.isoformat(), "source_instruments": members})
         return {"snapshot_id": snapshot_id, "snapshot_fallback": snapshot.get("earliest_fallback", False),
             "collection": collection, "corporate_detection": detection, "corporate_processing": actions,
-            "market_batches": len(batches), "indicators": indicators, "reconciliation": reconciliation}
+            "market_batches": len(batches), "quality": quality, "indicators": indicators, "reconciliation": reconciliation}

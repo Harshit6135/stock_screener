@@ -42,7 +42,10 @@ class KiteAccounts:
                     )""",
                     """CREATE UNIQUE INDEX IF NOT EXISTS strategy_portfolios_ledger 
                        ON strategy_portfolios(ledger_account_id)"""
-                )
+                ),
+                2: (
+                    "ALTER TABLE kite_accounts ADD COLUMN session_status TEXT NOT NULL DEFAULT 'EXPIRED'",
+                ),
             }
         )
 
@@ -55,12 +58,13 @@ class KiteAccounts:
             connection.execute("BEGIN IMMEDIATE")
             connection.execute(
                 """INSERT INTO kite_accounts 
-                   (broker_account_id, account_name, api_key, api_secret, created_at) 
-                   VALUES (?, ?, ?, ?, ?)
+                   (broker_account_id, account_name, api_key, api_secret, created_at, session_status) 
+                   VALUES (?, ?, ?, ?, ?, 'EXPIRED')
                    ON CONFLICT(broker_account_id) DO UPDATE SET
                    account_name=excluded.account_name,
                    access_token=CASE WHEN api_key=excluded.api_key AND api_secret=excluded.api_secret THEN access_token ELSE NULL END,
                    validated_at=CASE WHEN api_key=excluded.api_key AND api_secret=excluded.api_secret THEN validated_at ELSE NULL END,
+                   session_status=CASE WHEN api_key=excluded.api_key AND api_secret=excluded.api_secret THEN session_status ELSE 'EXPIRED' END,
                    api_key=excluded.api_key, api_secret=excluded.api_secret""",
                 (broker_account_id, account_name, api_key, api_secret, now)
             )
@@ -69,7 +73,7 @@ class KiteAccounts:
         """Returns account summaries (no secrets)."""
         with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
-                "SELECT broker_account_id, account_name, broker_user_id, created_at, validated_at FROM kite_accounts"
+                "SELECT broker_account_id, account_name, broker_user_id, created_at, validated_at, session_status FROM kite_accounts"
             ).fetchall()
             return [dict(row) for row in rows]
 
@@ -93,7 +97,7 @@ class KiteAccounts:
         now = datetime.now(UTC).isoformat()
         with sqlite_connection(self.database) as connection:
             connection.execute(
-                "UPDATE kite_accounts SET access_token=?, broker_user_id=?, validated_at=? WHERE broker_account_id=?",
+                "UPDATE kite_accounts SET access_token=?, broker_user_id=?, validated_at=?, session_status='ACTIVE' WHERE broker_account_id=?",
                 (access_token, broker_user_id, now, broker_account_id)
             )
 
@@ -159,6 +163,11 @@ class KiteAccounts:
         try:
             profile = self.client(broker_account_id).profile()
         except Exception as exc:
+            with sqlite_connection(self.database) as connection:
+                connection.execute(
+                    "UPDATE kite_accounts SET session_status='EXPIRED' WHERE broker_account_id=?",
+                    (broker_account_id,)
+                )
             raise DomainValidationError("selected broker session is expired or unavailable") from exc
         self.update_session(broker_account_id, credentials["access_token"], str(profile["user_id"]))
         return {"broker_account_id": broker_account_id, "broker_user_id": str(profile["user_id"])}

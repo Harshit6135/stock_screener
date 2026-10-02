@@ -117,6 +117,7 @@ class BacktestStep:
     candidates: tuple[Candidate, ...]
     bars: Mapping[str, MarketBar]
     regime: str = "RISK_ON"
+    universe_exits: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -129,6 +130,10 @@ class SimulatedFill:
     side: str
     fee: Decimal
     currency: str
+    decision_date: date | None = None
+    universe_snapshot_id: str | None = None
+    price_snapshot_id: str | None = None
+    market_revision: str | None = None
 
 
 @dataclass(frozen=True)
@@ -261,11 +266,18 @@ class BacktestResult:
         }
 
     @property
+    def period_fills(self) -> tuple[SimulatedFill, ...]:
+        if not self.equity_curve:
+            return self.fills
+        end_date = self.equity_curve[-1][0]
+        return tuple(fill for fill in self.fills if fill.as_of_date <= end_date)
+
+    @property
     def completed_trades(self) -> tuple[dict[str, object], ...]:
         """FIFO close pairs, excluding positions still open at the report end."""
         lots: dict[str, list[dict[str, object]]] = defaultdict(list)
         trades: list[dict[str, object]] = []
-        for fill in self.fills:
+        for fill in self.period_fills:
             if fill.side == "BUY":
                 lots[fill.instrument_id].append(
                     {
@@ -315,9 +327,9 @@ class BacktestResult:
     @property
     def trade_counts(self) -> dict[str, int]:
         return {
-            "buy": sum(fill.side == "BUY" for fill in self.fills),
-            "sell": sum(fill.side == "SELL" for fill in self.fills),
-            "pyramid": sum(fill.decision_type == DecisionType.PYRAMID_ADD for fill in self.fills),
+            "buy": sum(fill.side == "BUY" for fill in self.period_fills),
+            "sell": sum(fill.side == "SELL" for fill in self.period_fills),
+            "pyramid": sum(fill.decision_type == DecisionType.PYRAMID_ADD for fill in self.period_fills),
         }
 
     @property
@@ -328,7 +340,7 @@ class BacktestResult:
             flags.append("sharpe_above_5")
         if metrics["max_drawdown"] == 0 and len(self.equity_curve) > 2:
             flags.append("zero_drawdown")
-        if not self.fills:
+        if not self.period_fills:
             flags.append("no_fills")
         if len(self.final_state.holdings) == 1 and self.final_state.holdings:
             flags.append("single_position_concentration")
@@ -385,6 +397,8 @@ class BacktestResult:
             "fingerprint": self.manifest.fingerprint,
             "decisions": [asdict(item) for item in self.decisions],
             "fills": [asdict(item) for item in self.fills],
+            "post_period_exit_fills": [asdict(item) for item in self.fills
+                                       if self.equity_curve and item.as_of_date > self.equity_curve[-1][0]],
             "equity_curve": [{"date": item[0], "value": item[1]} for item in self.equity_curve],
             "metrics": self.metrics,
             "annual_returns": self.annual_returns,
@@ -408,6 +422,7 @@ _SELLS = {
     DecisionType.STOP_LOSS,
     DecisionType.HARD_STOP,
     DecisionType.SCORE_EXIT,
+    DecisionType.UNIVERSE_EXIT,
 }
 
 
@@ -418,6 +433,7 @@ def run(
     manifest: BacktestRunManifest | None = None,
     fill_model: FillModelRevision | None = None,
     cash_flows: tuple[tuple[date, Decimal], ...] = (),
+    settlement_step: BacktestStep | None = None,
 ) -> BacktestResult:
     dates = tuple(step.as_of_date for step in steps)
     if dates != tuple(sorted(dates)) or len(dates) != len(set(dates)):
@@ -432,6 +448,9 @@ def run(
         raise DomainValidationError("backtest fill model does not match its manifest")
     if any(day < dates[0] or day > dates[-1] for day, _ in cash_flows) if dates else cash_flows:
         raise DomainValidationError("backtest cash flows must be within the replay range")
+    if settlement_step is not None and (not dates or settlement_step.as_of_date <= dates[-1]
+                                        or not settlement_step.universe_exits):
+        raise DomainValidationError("exit-only settlement must follow the replay period")
     fill_model = fill_model or FillModelRevision(uuid4(), "1.0.0")
     state = initial_state
     all_decisions: list[Decision] = []
@@ -478,6 +497,13 @@ def run(
             if (rebalance or policy.mid_week_buy) and step.regime == "RISK_ON"
             else ()
         )
+        missing_exit_bars = set(step.universe_exits) & {
+            holding.instrument_id for holding in state.holdings
+        } - set(step.bars)
+        if missing_exit_bars:
+            raise DomainValidationError(
+                f"missing declared universe-exit open for {', '.join(sorted(missing_exit_bars))}"
+            )
         decisions, state = evaluate(
             state,
             policy,
@@ -486,10 +512,13 @@ def run(
             fill_model.execution_assumptions(),
             is_rebalance_day=rebalance,
             score_candidates=step.candidates,
+            forced_universe_exits=frozenset(step.universe_exits),
         )
         all_decisions.extend(decisions)
         for decision in decisions:
             if decision.instrument_id and decision.units and decision.execution_price:
+                exit_context = (step.universe_exits.get(decision.instrument_id, {})
+                                if decision.type == DecisionType.UNIVERSE_EXIT else {})
                 fills.append(
                     SimulatedFill(
                         step.as_of_date,
@@ -500,6 +529,11 @@ def run(
                         "SELL" if decision.type in _SELLS else "BUY",
                         decision.fee.amount,
                         decision.execution_price.currency,
+                        date.fromisoformat(exit_context["decision_date"])
+                        if exit_context.get("decision_date") else None,
+                        exit_context.get("universe_snapshot_id"),
+                        exit_context.get("price_snapshot_id"),
+                        exit_context.get("market_revision"),
                     )
                 )
         value = state.cash.amount
@@ -510,6 +544,34 @@ def run(
                 raise DomainValidationError(f"missing valuation bar for {holding.instrument_id}")
             value += close * holding.units.units
         equity_curve.append((step.as_of_date, value))
+
+    if settlement_step is not None:
+        waiting = set(settlement_step.universe_exits) & {
+            holding.instrument_id for holding in state.holdings
+        }
+        missing = waiting - set(settlement_step.bars)
+        if missing:
+            raise DomainValidationError(
+                f"missing declared universe-exit open for {', '.join(sorted(missing))}"
+            )
+        settlement_decisions, _ = evaluate(
+            state, policy, (), settlement_step.bars,
+            fill_model.execution_assumptions(), is_rebalance_day=False,
+            score_candidates=(), forced_universe_exits=frozenset(waiting),
+        )
+        for decision in settlement_decisions:
+            if decision.instrument_id not in waiting or not decision.units or not decision.execution_price:
+                continue
+            context = settlement_step.universe_exits[decision.instrument_id]
+            all_decisions.append(decision)
+            fills.append(SimulatedFill(
+                settlement_step.as_of_date, decision.type, decision.instrument_id,
+                decision.units.units, decision.execution_price.amount, "SELL",
+                decision.fee.amount, decision.execution_price.currency,
+                date.fromisoformat(context["decision_date"]),
+                context.get("universe_snapshot_id"), context.get("price_snapshot_id"),
+                context.get("market_revision"),
+            ))
 
     return BacktestResult(
         manifest.run_id if manifest else uuid4(),

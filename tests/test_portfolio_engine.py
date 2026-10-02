@@ -261,3 +261,58 @@ def test_vacancy_buy_sizes_from_total_equity_and_is_capped_by_cash():
     buy = next(decision for decision in decisions if decision.type == DecisionType.BUY)
     assert buy.units == Quantity(500)
     assert next_state.cash == Money(0)
+
+
+def test_explicit_universe_exit_uses_declared_next_open_and_retains_decision_lineage():
+    first = date(2026, 1, 2)
+    target = date(2026, 1, 5)
+    state = PortfolioState(Money("0"), (
+        Holding("OLD", Quantity(2), Money("100"), Money("90"), Decimal(80)),
+    ))
+    context = {"decision_date": first.isoformat(), "universe_snapshot_id": "removed-snapshot",
+               "price_snapshot_id": "exit-bar", "market_revision": "7"}
+    result = run(state, PortfolioPolicy(1, Decimal(40)), (
+        BacktestStep(first, (Candidate("OLD", Decimal(80)),),
+                     {"OLD": MarketBar("OLD", first, 100, 101, 99, 100)}),
+        BacktestStep(target, (), {"OLD": MarketBar("OLD", target, 110, 111, 109, 110)},
+                     universe_exits={"OLD": context}),
+    ))
+    exit_fill = result.fills[-1]
+    assert exit_fill.decision_type == DecisionType.UNIVERSE_EXIT
+    assert exit_fill.side == "SELL" and exit_fill.price == Decimal(110)
+    assert exit_fill.decision_date == first and exit_fill.as_of_date == target
+    assert (exit_fill.universe_snapshot_id, exit_fill.price_snapshot_id,
+            exit_fill.market_revision) == ("removed-snapshot", "exit-bar", "7")
+    assert result.equity_curve[0][1] == Decimal(200)
+    protective = run(state, PortfolioPolicy(1, Decimal(40)), (
+        BacktestStep(first, (Candidate("OLD", Decimal(80)),),
+                     {"OLD": MarketBar("OLD", first, 100, 101, 99, 100)}),
+        BacktestStep(target, (), {"OLD": MarketBar("OLD", target, 80, 81, 79, 80)},
+                     universe_exits={"OLD": context}),
+    ))
+    assert protective.fills[-1].decision_type == DecisionType.HARD_STOP
+    assert protective.fills[-1].price == Decimal(80)
+
+
+def test_post_period_universe_exit_does_not_change_period_valuation():
+    first = date(2026, 1, 2)
+    target = date(2026, 1, 5)
+    state = PortfolioState(Money("0"), (
+        Holding("OLD", Quantity(2), Money("100"), Money("90"), Decimal(80)),
+    ))
+    period = (BacktestStep(first, (Candidate("OLD", Decimal(80)),),
+                           {"OLD": MarketBar("OLD", first, 100, 101, 99, 100)}),)
+    settlement = BacktestStep(target, (), {"OLD": MarketBar("OLD", target, 110, 111, 109, 110)},
+        universe_exits={"OLD": {"decision_date": first.isoformat(),
+            "universe_snapshot_id": "removed-snapshot", "price_snapshot_id": "exit-bar",
+            "market_revision": "7"}})
+    result = run(state, PortfolioPolicy(1, Decimal(40)), period,
+                 settlement_step=settlement)
+    assert len(result.equity_curve) == 1
+    assert result.equity_curve[0][1] == Decimal(200)
+    assert result.metrics["total_return"] == Decimal(0)
+    assert result.trade_counts["sell"] == 0
+    assert result.fills[-1].as_of_date == target
+    with pytest.raises(DomainValidationError, match="missing declared universe-exit open"):
+        run(state, PortfolioPolicy(1, Decimal(40)), period,
+            settlement_step=BacktestStep(target, (), {}, universe_exits=settlement.universe_exits))

@@ -1,6 +1,7 @@
 # Phase 1: DAG Correctness, Cache Identity, Structured Logging and Quality
 
-> Status: Implemented and reviewed on 2026-09-28. See exit evidence below.
+> Status: Under acceptance review. Additional quality/redaction repairs verified
+> on 2026-09-29; all exit criteria are not yet certified. See repair-status.md.
 > Authority: [Overhaul_Plan.md](../Overhaul_Plan.md).
 > Dependencies: None; coordinate shared market migrations with Phase 2.
 > Numbered tasks: 12.
@@ -166,3 +167,19 @@ New modules are identified at their introduction; phase-specific test files are 
   without a reported failure in this environment, but its final process summary
   was truncated by the execution environment. This is recorded as an execution
   limitation, not substituted as completion evidence.
+
+
+## Defined-task follow-up — 2026-09-29
+
+[Repair status](repair-status.md) records additional evidence for tasks 1.7–1.10:
+stored-sequence quality checks, historical successor checks, applicable benchmark
+volume rules, credential redaction in logs/errors/quality details, real event API
+cursor continuation and quality API filters/pagination. Full suite: 379 passed;
+final quality-detail refinement: 19 targeted checks passed. The original 47-test
+selection above is historical evidence, not proof that remaining acceptance work
+is complete. Completed-session membership and benchmark coverage, consistent progress
+fields, all approved operation execution, real multi-output selection, strict
+revision-gated cache reads, fresh-store migrations, quality warnings retained
+in research, and SSE continuation now have direct behavioral checks. The
+2026-10-01 full suite passed **440 tests**. The task and exit checkboxes remain
+open pending the complete criterion-by-criterion audit; see repair-status.md.

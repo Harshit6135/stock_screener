@@ -79,6 +79,34 @@ _SPECS = (
 )
 
 
+_PROVIDER_OUTPUT_PREFIXES = {
+    "macd": {"macd": "macd", "macdh": "histogram", "macds": "signal"},
+    "bbands": {"bbl": "lower", "bbm": "mid", "bbu": "upper", "bbb": "bandwidth", "bbp": "percent"},
+    "adx": {"adx": "adx", "dmp": "dmp", "dmn": "dmn"},
+}
+
+
+def selected_indicator_output(function: str, output_key: str) -> str | None:
+    """Resolve declared semantic/provider output names; aliases keep the default."""
+    spec = next((item for item in _SPECS if item.key == function), None)
+    if spec is None or len(spec.outputs) == 1:
+        return None
+    key = output_key.lower()
+    for role in spec.outputs:
+        if key == role or key.endswith(("_" + role, "." + role)):
+            return role
+    prefix = key.split("_", 1)[0]
+    return _PROVIDER_OUTPUT_PREFIXES[function].get(prefix, spec.outputs[0])
+
+
+def provider_output_role(function: str, column: str) -> str | None:
+    """Map a named pandas_ta output column to its declared semantic role."""
+    prefixes = _PROVIDER_OUTPUT_PREFIXES.get(function)
+    if prefixes is None:
+        return None
+    return prefixes.get(column.split("_", 1)[0].lower())
+
+
 class PandasTaAdapter:
     """Stable, validated boundary around the installed ``pandas_ta`` package."""
 

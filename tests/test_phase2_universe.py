@@ -49,7 +49,8 @@ def test_daily_collection_reuses_snapshot_without_a_second_download(tmp_path):
             )
 
     client = Client()
-    job = UniverseJobs(MarketRepository(tmp_path / "market.db"), client)
+    job = UniverseJobs(MarketRepository(tmp_path / "market.db"), client,
+                       collection_date=lambda: date(2026, 1, 2))
     first = job.download_nifty500_constituents({"snapshot_date": "2026-01-02"})
     second = job.download_nifty500_constituents({"snapshot_date": "2026-01-02"})
     assert first["status"] == "stored"

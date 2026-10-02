@@ -44,6 +44,7 @@ class ManagedRiskGuard:
     def validate(self, account_id, orders, expected_version=None, *, reservation_id=None, proposal_id=""):
         # Immediate lock serializes concurrent approval/submission reservations
         # with ledger and configuration writes in the shared SQLite store.
+        _result = None
         with sqlite_connection(self.database, row_factory=True) as connection:
             connection.execute("BEGIN IMMEDIATE")
             current = connection.execute("SELECT COALESCE(MAX(version),0) FROM ledger_events WHERE account_id=?", (account_id,)).fetchone()[0]
@@ -144,7 +145,23 @@ class ManagedRiskGuard:
                     ON CONFLICT(reservation_id) DO UPDATE SET orders_json=excluded.orders_json,
                     ledger_version=excluded.ledger_version, config_version=excluded.config_version, status='ACTIVE'""",
                     (reservation_id, account_id, proposal_id, json.dumps(orders), current, config_version))
-            return {"ledger_version": current, "config_version": config_version}
+            # Capture equity/cash for post-transaction snapshot.
+            _snap_equity, _snap_cash = equity, cash
+            _snap_current, _snap_config = current, config_version
+            _result = {"ledger_version": current, "config_version": config_version}
+        # Persist today's valuation snapshot so daily-loss and drawdown
+        # guards have prior-day evidence on subsequent validations.
+        # Written outside the IMMEDIATE transaction to avoid lock contention.
+        if _result is not None:
+            try:
+                today = trading_date()
+                snapshot_id = f"guard:{account_id}:{today.isoformat()}"
+                snap_payload = {"equity": str(_snap_equity), "cash": str(_snap_cash),
+                                "ledger_version": _snap_current, "config_version": _snap_config}
+                self.ledger.save_valuation(account_id, snapshot_id, today, snap_payload)
+            except Exception:
+                pass  # best-effort; snapshot already exists or DB unavailable
+            return _result
 
     def _sector(self, connection, instrument):
         row = connection.execute("""SELECT m.industry FROM universe_snapshot_members m
