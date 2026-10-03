@@ -19,9 +19,9 @@ databases. Existing application databases and credentials were not inspected.
 Follow-up evidence on the same working tree:
 
 - DAG/cache/jobs/migration selection: **47 passed**, 1.90 seconds, using
-  `tests/test_phase1_dag_fixes.py`, `tests/test_dag_executor.py`,
-  `tests/test_node_cache.py`, `tests/test_durable_jobs.py`, and
-  `tests/test_sqlite_migrations.py`.
+  `tests/domains/indicators/test_dag.py`, `tests/domains/indicators/test_dag_executor.py`,
+  `tests/domains/indicators/test_node_cache.py`, `tests/gates/test_durable_jobs.py`, and
+  `tests/platform_kernel/test_sqlite_migrations.py`.
 - `tools/verify_phase_repairs.py` completed successfully with its disposable
   store and fake broker. It confirms only the probes it exercises and explicitly
   excludes pending replay, reconciliation and browser workflows.
@@ -40,7 +40,9 @@ Follow-up evidence on the same working tree:
 | 6: Risk and returns | Versioned limits, durable reservations, managed ledger projection, external cash flows and imported-cost XIRR exist. | Review aggregate managed-account scope, pending/partial-fill reservation transitions, broker buying power, flow-adjusted guards and unavailable valuation inputs with behavior tests. Current valuation explicitly returns unavailable day-P&L for setup-day imports and leaves entry stops unset. Two baseline capital-flow tests omit the now-required reason. The positional action/replay sizing test expects fees in live sizing, contrary to the plan's live-cost exclusion; preserve separate live/backtest expectations. |
 | 7: UI | Eight pages, theme assets and API/SSE scripts exist; route tests pass. | Home creates a generic empty ledger rather than providing account-scoped broker authentication and selected/all-quantity import. Reconciliation-review and capital-transfer controls are missing. Settings exposes risk JSON and revision readback but not the complete editable strategy/cash workflow. Route rendering is insufficient evidence for browser interaction, keyboard/mobile behavior, both themes and stream lifecycle. README links deleted documents and describes retired NSE/BSE/fixed-universe behavior. |
 
-## Baseline failures
+## Baseline failures (recorded on 2026-09-29)
+
+The test identifiers below are the historical paths and names from that baseline run; subsequent file moves do not change the recorded result.
 
 1. `test_broker_execution.py::test_kite_gateway_fails_closed_on_kill_switch_and_allowlists`
 2. `test_market_coverage.py::test_refresh_schedules_only_fixed_universe_holdings_and_benchmark`
@@ -49,7 +51,7 @@ Follow-up evidence on the same working tree:
 5. `test_parity_assessment.py::test_pipeline_enforces_market_data_and_child_bar_jobs`
 6. `test_phase2_behavioral.py::TestRefreshPlannerPhase2::test_refresh_includes_all_six_benchmarks`
 7. `test_phase2_behavioral.py::TestRefreshPlannerPhase2::test_refresh_excludes_exit_only_instruments`
-8. `test_phase3_corporate_actions.py::TestKiteVerification::test_verify_transitions_self_adjusted_to_verified`
+8. `test_corporate_actions.py::TestKiteVerification::test_verify_transitions_self_adjusted_to_verified`
 9. `test_phase5_portfolio.py::test_account_scoped_setup_and_reconciliation`
 10. `test_portfolio_performance.py::test_calculate_xirr`
 11. `test_portfolio_web.py::test_manual_fill_lifecycle`

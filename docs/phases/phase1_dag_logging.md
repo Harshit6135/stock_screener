@@ -28,7 +28,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 1.1: Record interfaces and migration baseline
 
-**Files:** src/indicators/dag.py; src/indicators/registry.py; src/application/strategy_definitions.py; src/application/sqlite.py; src/application/market_repository.py; tests/test_sqlite_migrations.py.
+**Files:** src/domains/indicators/dag.py; src/domains/indicators/registry.py; src/gates/strategy_definitions.py; src/platform_kernel/sqlite.py; src/application/market_repository.py; tests/platform_kernel/test_sqlite_migrations.py.
 
 1. List supported executor operations and every YAML/compiled-DAG consumer.
 2. Record contiguous migration versions per namespace; allocate Phase 1 market migrations before Phase 2 additions. Never edit an applied version.
@@ -38,7 +38,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 1.2: Unify approved-operation validation
 
-**Files:** src/indicators/dag.py; src/application/strategy_definitions.py.
+**Files:** src/domains/indicators/dag.py; src/gates/strategy_definitions.py.
 
 1. Remove operations without working handlers from APPROVED_OPERATIONS after auditing retained strategy usage.
 2. Replace the local _OPERATIONS set with the canonical import; update YAML and compiled-definition validation.
@@ -48,7 +48,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 1.3: Expose public parameter validation
 
-**Files:** src/indicators/registry.py; src/indicators/dag.py; tests/test_dag_executor.py.
+**Files:** src/domains/indicators/registry.py; src/domains/indicators/dag.py; tests/domains/indicators/test_dag_executor.py.
 
 1. Rename _validate_parameters to validate_parameters.
 2. Update adapter-internal calls, DAG calls and tests through repository-wide reference search.
@@ -58,7 +58,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 1.4: Compute graph-aware recursive hashes
 
-**Files:** src/indicators/dag.py; src/application/strategy_runtime.py.
+**Files:** src/domains/indicators/dag.py; src/application/strategy_runtime.py.
 
 1. Validate references/cycles before computing hashes in topological order.
 2. Hash provider/function/normalized parameters plus named dependency hashes or primitive field identities. Preserve argument roles and output selection.
@@ -91,7 +91,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 1.7: Add per-module loggers and redaction
 
-**Files:** run.py; src/application/security.py; src/application/market_jobs.py; src/application/research_jobs.py; src/application/pipeline_jobs.py; src/application/action_jobs.py; src/application/backtest_jobs.py; src/indicators/dag.py.
+**Files:** run.py; src/application/security.py; src/application/market_jobs.py; src/application/research_jobs.py; src/application/pipeline_jobs.py; src/application/action_jobs.py; src/application/backtest_jobs.py; src/domains/indicators/dag.py.
 
 1. Use screener.<module> loggers and configure formatting once at startup.
 2. Replace application debug prints while keeping intentional CLI output.
@@ -132,7 +132,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 1.11: Add behavioral DAG, cache and quality tests
 
-**Files:** tests/test_phase1_dag_fixes.py; tests/test_dag_executor.py; tests/test_node_cache.py; tests/test_durable_jobs.py.
+**Files:** tests/domains/indicators/test_dag.py; tests/domains/indicators/test_dag_executor.py; tests/domains/indicators/test_node_cache.py; tests/gates/test_durable_jobs.py.
 
 1. Execute real operations; cover canonical validation, public adapter API and graph hash equivalence/transitive invalidation.
 2. Test cache input revision mismatch, repeat fetch reuse, progress cancellation/reconnect and quality persistence.

@@ -137,7 +137,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 6.11: Verify risk, stops and return integration
 
-**Files:** tests/test_phase6_risk.py; tests/test_atr_exit_rules.py; tests/test_intraday_alerts.py; tests/test_portfolio_web.py; tests/test_broker_execution.py.
+**Files:** tests/execution_gateway/test_risk_guard.py; integration_tests/application/test_managed_risk.py; tests/portfolio_engine/test_atr_exit_rules.py; tests/test_intraday_alerts.py; integration_tests/gates/test_portfolio_web.py; integration_tests/execution_gateway/test_broker_execution.py; integration_tests/gates/test_broker_web.py.
 
 1. Cover each configured guard, managed-only scope, minimum-period overrides, Choice A intraday timing, daily AMO, reservations and correct account/strategy.
 2. Cover imported original-date XIRR, no internal trade double count, day P&L, flow-adjusted risk and transfer idempotency.

@@ -123,7 +123,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 3.10: Add behavioral verification
 
-**Files:** tests/test_phase3_corporate_actions.py; tests/test_corporate_actions.py; tests/test_artifact_lineage.py; tests/test_node_cache.py.
+**Files:** tests/application/test_corporate_actions.py; integration_tests/gates/test_corporate_actions.py; integration_tests/application/test_artifact_lineage.py; tests/domains/indicators/test_node_cache.py.
 
 1. Cover parsing/dates/null reference, watermark overlap, actual fetch, once-only local update, retries/failures/atomic replacement.
 2. Cover rights/demerger no-local-update, automatic monitoring resolution, no anomaly exclusion, no double adjustment and frozen saved outputs.

@@ -34,7 +34,7 @@ dev = [
 
 [project.scripts]
 screener = "run:main"
-screener-ops = "src.application.cli:main"
+screener-ops = "src.gates.cli:main"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
@@ -75,6 +75,7 @@ skip = [".git", ".venv", "migrations"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
+addopts = ["--import-mode=importlib"]
 
 [tool.ruff]
 line-length = 100

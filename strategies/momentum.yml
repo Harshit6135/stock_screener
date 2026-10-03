@@ -4,7 +4,6 @@ strategy:
   name: Momentum Quality
   version: 1.2.0
   description: Multi-factor momentum strategy using instrument-level technical features.
-  legacy_id: strategy1
 
 calculation:
   instrument_implementation: custom.momentum_quality_features

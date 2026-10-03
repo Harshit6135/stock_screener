@@ -151,7 +151,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 4.12: Verify named strategies and rankings
 
-**Files:** tests/test_phase4_strategy_cleanup.py; retained strategy/ranking/pipeline/replay tests.
+**Files:** tests/application/test_strategy_runtime.py; tests/application/test_composition.py; tests/application/test_research_jobs.py; tests/application/test_pipeline_jobs.py; tests/gates/test_strategy_definitions.py; retained strategy/ranking/pipeline/replay tests.
 
 1. Test migration restart, named worker/API dispatch, removed output cleanup, both patterns and stage reuse/invalidation.
 2. Retain/rename protective stop and positional trend tests; do not improve pass rate by deleting retained failures.

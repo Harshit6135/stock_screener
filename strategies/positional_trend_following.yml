@@ -5,7 +5,6 @@ strategy:
   version: 1.0.0
   description: Daily event strategy using Donchian breakouts, ADX and Supertrend.
   kind: event_signal
-  legacy_id: strategy4
 
 calculation:
   instrument_implementation: custom.positional_trend_features

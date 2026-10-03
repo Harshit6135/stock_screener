@@ -1,0 +1,220 @@
+import logging
+import os
+from pathlib import Path
+
+from flask import Flask, jsonify
+from waitress import serve  # type: ignore[import-untyped]
+
+from src.domains.execution import KiteAuthService, load_kite_credentials
+from src.domains.indicators import PandasTaAdapter
+from src.gates.composition import ApplicationServices
+from src.gates.http.actions import create_actions_blueprint
+from src.gates.http.backtest import create_backtest_blueprint
+from src.gates.http.broker import create_broker_blueprint
+from src.gates.http.dashboard import create_dashboard_blueprint
+from src.gates.http.indicators import create_indicators_blueprint
+from src.gates.http.kite_accounts import create_kite_accounts_blueprint
+from src.gates.http.kite_auth import create_kite_auth_blueprint
+from src.gates.http.market import create_market_blueprint
+from src.gates.http.operations import create_operations_blueprint
+from src.gates.http.pipeline import create_pipeline_blueprint
+from src.gates.http.portfolio import create_portfolio_blueprint
+from src.gates.http.positional_trend import create_positional_trend_blueprint
+from src.gates.http.reference import create_reference_blueprint
+from src.gates.http.research import create_research_blueprint
+from src.gates.http.strategies import create_strategies_blueprint
+from src.gates.http.universe import create_universe_blueprint
+from src.gates.http.wiki import create_wiki_blueprint
+from src.gates.operations import sqlite_ready
+from src.gates.runtime import RuntimeConfig
+from src.gates.security import RedactingLogFilter
+from src.gates.workflows.index_poller import BackgroundIndexPoller
+
+
+def configure_logging() -> None:
+    """Configure the application logger once, without exposing payload values."""
+    logger = logging.getLogger("screener")
+    if logger.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.addFilter(RedactingLogFilter())
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    logger.addHandler(handler)
+    logger.setLevel(os.environ.get("SCREENER_LOG_LEVEL", "INFO").upper())
+
+
+def create_app(config_class=RuntimeConfig):
+    """Build the backend-only composition layer.
+
+    Domain state is held in durable application stores, not Flask-SQLAlchemy
+    metadata.  Database creation is performed by reviewed store migrations,
+    never by a web-process-wide ``create_all`` side effect.
+    """
+    configure_logging()
+    app = Flask(__name__, root_path=str(Path(__file__).resolve().parents[2]))
+    app.config.from_object(config_class)
+    data_directory = Path(app.config["DATA_DIRECTORY"])
+    if not data_directory.is_absolute():
+        data_directory = Path.cwd() / data_directory
+    data_directory.mkdir(parents=True, exist_ok=True)
+    app.config["DATA_DIRECTORY"] = data_directory
+
+    def resolved_token_path(config_key: str, default: str) -> Path:
+        path = Path(app.config.get(config_key, default))
+        return path if path.is_absolute() else Path.cwd() / path
+
+    market_data_token_path = resolved_token_path(
+        "MARKET_DATA_KITE_ACCESS_TOKEN_PATH", "access_token.txt"
+    )
+    portfolio_token_path = resolved_token_path(
+        "PORTFOLIO_KITE_ACCESS_TOKEN_PATH", "portfolio_access_token.txt"
+    )
+    market_data_credentials = load_kite_credentials(app.config, profile="market_data")
+    portfolio_credentials = load_kite_credentials(app.config, profile="portfolio")
+    services = ApplicationServices.create(
+        data_directory,
+        market_data_kite_credentials=market_data_credentials,
+        market_data_kite_token_path=market_data_token_path,
+        portfolio_kite_credentials=portfolio_credentials,
+        portfolio_kite_token_path=portfolio_token_path,
+        portfolio_live_execution=bool(app.config.get("PORTFOLIO_KITE_LIVE_EXECUTION", False)),
+    )
+    app.extensions["screener_services"] = services
+    app.register_blueprint(create_dashboard_blueprint())
+    app.register_blueprint(create_wiki_blueprint())
+    app.register_blueprint(
+        create_operations_blueprint(
+            services.jobs,
+            services.worker.handlers.keys(),
+            worker=services.worker,
+            background_worker=services.background_worker,
+        )
+    )
+    app.register_blueprint(
+        create_reference_blueprint(services.artifacts, services.market, services.publisher)
+    )
+    app.register_blueprint(create_universe_blueprint(services.market, services.jobs))
+    app.register_blueprint(
+        create_market_blueprint(
+            services.market,
+            services.catalog,
+            services.index_poller,
+            services.market_refresh,
+            services.intraday_alerts,
+            services.intraday_stream,
+            services.live_quotes,
+            services.live_stream,
+        )
+    )
+    app.register_blueprint(
+        create_research_blueprint(services.artifacts, services.research, services.jobs)
+    )
+    app.register_blueprint(create_pipeline_blueprint(services.pipelines))
+    app.register_blueprint(
+        create_positional_trend_blueprint(services.positional_trend, services.jobs)
+    )
+    app.register_blueprint(create_indicators_blueprint(PandasTaAdapter()))
+    app.register_blueprint(create_strategies_blueprint(services.strategies))
+    app.register_blueprint(
+        create_portfolio_blueprint(
+            services.ledger,
+            services.market,
+            services.actions.risk_projection,
+            services.broker_orders.risk_config,
+        )
+    )
+    app.register_blueprint(create_broker_blueprint(services.broker_orders))
+    app.register_blueprint(
+        create_kite_accounts_blueprint(services.kite_accounts, services.portfolio_sync)
+    )
+    app.register_blueprint(create_backtest_blueprint(services.backtests, services.artifacts))
+    app.register_blueprint(create_actions_blueprint(services.actions))
+
+    app.register_blueprint(
+        create_kite_auth_blueprint(
+            KiteAuthService(market_data_credentials, market_data_token_path)
+            if market_data_credentials is not None
+            else None,
+            KiteAuthService(portfolio_credentials, portfolio_token_path)
+            if portfolio_credentials is not None
+            else None,
+        )
+    )
+
+    @app.get("/health/live")
+    def liveness():
+        """Process liveness only; provider connectivity is intentionally excluded."""
+        return jsonify({"status": "ok"}), 200
+
+    @app.get("/health/ready")
+    def readiness():
+        """Readiness requires the durable operations store to accept a query."""
+        if not sqlite_ready(
+            app.extensions["screener_services"].database,
+            (
+                "catalog",
+                "ops",
+                "ledger",
+                "market_data",
+                "reference_data",
+                "research",
+                "strategy_definitions",
+                "backtest",
+                "actions",
+                "research_pipeline",
+            ),
+        ):
+            return jsonify({"status": "not-ready"}), 503
+        return jsonify({"status": "ready"}), 200
+
+    return app
+
+
+def main() -> None:
+    """Run the local production WSGI server."""
+    import logging
+
+    # Waitress's internal logs
+    logging.getLogger("waitress").setLevel(logging.INFO)
+
+    host = os.environ.get("SCREENER_HOST", "127.0.0.1")
+    if (
+        host not in {"127.0.0.1", "::1", "localhost"}
+        and os.environ.get("SCREENER_ALLOW_NETWORK_BIND") != "true"
+    ):
+        raise RuntimeError(
+            "non-loopback binding requires SCREENER_ALLOW_NETWORK_BIND=true and a TLS-capable reverse proxy"
+        )
+    print("Initializing application services...", flush=True)
+
+    app = create_app()
+    services = app.extensions.get("screener_services")
+    if (
+        os.environ.get("SCREENER_RUN_WORKER", "true").lower() in {"1", "true", "yes"}
+        and services is not None
+        and services.background_worker is not None
+    ):
+        # A research range job already performs vectorized bulk work. Multiple
+        # local workers only add SQLite contention and duplicate memory use.
+        services.background_worker.concurrency = 1
+        services.background_worker.start()
+
+    # Keep index quotes current during the NSE session without requiring a UI action.
+    index_poller = None
+    if services.market_jobs.credentials is not None:
+        index_poller = BackgroundIndexPoller(services.index_poller)
+        index_poller.start()
+
+    print(f"Serving Waitress on http://{host}:5000 ...", flush=True)
+    waitress_threads = max(1, int(os.environ.get("SCREENER_WAITRESS_THREADS", "8")))
+    serve(
+        app,
+        host=host,
+        port=5000,
+        threads=waitress_threads,
+        channel_timeout=600,  # keep SSE connections alive up to 10 min
+    )
+
+
+if __name__ == "__main__":
+    main()

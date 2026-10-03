@@ -65,3 +65,4 @@ DONOTUSE*/
 /.corporate-final-checks/
 /.exit-session-checks/
 /.broker-exit-migration-tests/
+.pytest*

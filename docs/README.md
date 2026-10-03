@@ -10,6 +10,9 @@ rendered in a repository, static documentation site, or future in-app wiki.
 - [Wiki index](wiki/README.md) — task-oriented system reference.
 - [Overhaul plan](Overhaul_Plan.md) — approved architecture and delivery intent.
 - [Phase plans and evidence](phases/README.md) — implementation work by phase.
+- [Domain and gates restructuring plan](architecture/domain-gates-restructure-plan.md) — target ownership, dependency rules, and migration sequence.
+- [Restructure migration manifest](architecture/restructure-migration-manifest.md) — current move status, compatibility surfaces, and verification evidence.
+- [Source file inventory](src-file-inventory.md) — current Python imports and declared responsibilities.
 
 ## Documentation rules
 

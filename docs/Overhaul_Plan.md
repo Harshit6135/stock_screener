@@ -237,18 +237,18 @@ def parse_corporate_action(subject: str) -> dict:
 
 ### Bugs to Fix
 
-**4.1: 8 unimplemented operations** in `APPROVED_OPERATIONS` ([dag.py L36-42](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/indicators/dag.py#L36-L42)):
+**4.1: 8 unimplemented operations** in `APPROVED_OPERATIONS` ([dag.py L36-42](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/domains/indicators/dag.py#L36-L42)):
 - `percentile`, `rank`, `z_score`, `sector_z_score`, `modifier`, `all`, `any`, `not`
 - Either implement or remove from `APPROVED_OPERATIONS`
 
-**4.2: `_OPERATIONS` desync** between [strategy_definitions.py L29-36](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/strategy_definitions.py#L29-L36) and [dag.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/indicators/dag.py):
+**4.2: `_OPERATIONS` desync** between [strategy_definitions.py L29-36](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/gates/strategy_definitions.py#L29-L36) and [dag.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/domains/indicators/dag.py):
 - Missing `abs`, `pct_change`, `ewm_mean` in `_OPERATIONS`
 - **Fix**: Define `APPROVED_OPERATIONS` once in `dag.py`, import in `strategy_definitions.py`
 
-**4.3: Private method access** ([dag.py L414](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/indicators/dag.py#L414)):
+**4.3: Private method access** ([dag.py L414](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/domains/indicators/dag.py#L414)):
 - `self._adapter._validate_parameters` — expose as public method
 
-**4.4: Content hash uses node IDs, not content hashes** ([dag.py L91-108](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/indicators/dag.py#L91-L108)):
+**4.4: Content hash uses node IDs, not content hashes** ([dag.py L91-108](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/domains/indicators/dag.py#L91-L108)):
 - Hash should recursively include input nodes' content hashes for true content-addressed deduplication
 - Actual DagNode inputs are named reference tuples and the dataclass is frozen. Resolve dependencies in the validated graph, hash topologically, preserve argument roles/primitive identities and update cache consumers; do not treat input references as child objects or mutate the frozen hash property.
 
@@ -267,7 +267,7 @@ def parse_corporate_action(subject: str) -> dict:
 - Remove references from: `_indicator_set()`, pipeline default strategies, worker handlers
 - Retain **Momentum strategy** (factor_score) and **Positional trend following strategy** (event_signal), including runtime, action generation, replay and test coverage.
 - Remove only benchmark-relative momentum and early momentum active definitions/wiring/code/tests after auditing shared dependencies; retire persisted revisions explicitly. Remove their historical backtesting data/results as well. Inventory database runs, artifacts/reports, strategy-specific output directories and UI/catalog references; delete only outputs attributable to these removed strategies. Retain shared market history and both retained strategies' outputs.
-- Use descriptive retained-strategy names throughout UI, docs, configuration, APIs, jobs and tests. Use canonical IDs `momentum` and `positional_trend_following`. Migrate numbered IDs and corresponding configuration/job/API/test/file references to these names. Rewrite retained references consistently and preserve existing event/revision/artifact identity and integrity; no numbered runtime identity remains after migration. Existing numbered paths below are migration source references only.
+- Use descriptive retained-strategy names throughout UI, docs, configuration, APIs, jobs, tools, and tests. Use canonical IDs `momentum` and `positional_trend_following`; remove numbered aliases and outputs. Start from a fresh database and regenerate artifacts as needed. No previous strategy, database, or artifact identity must be preserved.
 
 ### Ranking Patterns (Derived from `kind`)
 - `factor_score` → **FactorPercentileRanking**: indicators → percentiles → weighted score → rank
@@ -570,11 +570,11 @@ Checks:
 | [composition.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/composition.py) `bse_csv_path` | Remove parameter |
 | [composition.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/composition.py) `sync-bse-instruments` handler | Remove |
 | [positional_trend_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/positional_trend_jobs.py) BSE fallback | Remove |
-| [research_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/research_jobs.py) `_indicator_set()` | Remove retired benchmark-relative momentum wiring; preserve both retained strategies |
+| [research.py](../src/gates/workflows/research.py) `_indicator_set()` | Remove retired benchmark-relative momentum wiring; preserve both retained strategies |
 | [pipeline_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/pipeline_jobs.py) L85 default strategies | Use migrated names `momentum` and `positional_trend_following` throughout pipeline strategy selection |
 | [run.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/run.py) L65 `bse_csv_path=` | Remove |
-| [dag.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/indicators/dag.py) `APPROVED_OPERATIONS` | Fix unimplemented ops |
-| [strategy_definitions.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/strategy_definitions.py) `_OPERATIONS` | Import from `dag.py` |
+| [dag.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/domains/indicators/dag.py) `APPROVED_OPERATIONS` | Fix unimplemented ops |
+| [strategy_definitions.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/gates/strategy_definitions.py) `_OPERATIONS` | Import from `dag.py` |
 | [corporate_actions.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/corporate_actions.py) | Rewrite: NSE API detect → Kite re-fetch flow |
 
 ---

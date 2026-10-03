@@ -193,7 +193,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 5.16: Verify account, import, reconciliation and AMO flows
 
-**Files:** tests/test_phase5_portfolio.py; tests/test_portfolio_accounting.py; tests/test_jobs_ledger_backtesting.py; tests/test_kite_profiles.py; tests/test_broker_execution.py.
+**Files:** integration_tests/execution_gateway/test_kite_accounts.py; tests/portfolio_accounting/test_portfolio_accounting.py; tests/portfolio_accounting/test_opening_position_projection.py; tests/execution_gateway/test_ledger.py; integration_tests/execution_gateway/test_ledger_opening_positions.py; tests/backtesting/test_backtesting.py; integration_tests/gates/test_portfolio_sync.py; tests/execution_gateway/test_kite_profiles.py; integration_tests/gates/test_kite_profile_isolation.py; integration_tests/gates/test_kite_auth_callback.py; integration_tests/execution_gateway/test_broker_execution.py; integration_tests/gates/test_broker_web.py.
 
 1. Cover fresh/upgraded account links, local credential ignore/redaction, empty/full import, dates/cost/cash, derived stops and imported FIFO sale.
 2. Cover verified/unknown reconciliation, split/bonus accounting, AMO variety, normalized actual fills, partial/duplicate/unknown submissions and account isolation.

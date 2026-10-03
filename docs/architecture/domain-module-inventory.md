@@ -1,6 +1,6 @@
 # Source and domain ownership inventory
 
-Read-only inventory for the proposed `src/domains/` and `src/gates/` architecture. No source modules are moved by this report.
+Historical ownership inventory for the `src/domains/` and `src/gates/` restructure. The current file-by-file source listing is generated in `docs/src-file-inventory.md`; migration outcomes are recorded in the log below.
 
 ## Proposed structural rules
 
@@ -15,53 +15,51 @@ Read-only inventory for the proposed `src/domains/` and `src/gates/` architectur
 | Current package | Proposed destination | Initial responsibility |
 | --- | --- | --- |
 | `src/platform_kernel` | stays at `src/platform_kernel` | shared contracts, value types, artifact storage primitives; no domain behavior |
-| `src/market_data` | `src/domains/market_data` | bars, providers, market history, calendars, universe/market snapshots |
-| `src/reference_data` | `src/domains/reference_data` | instrument/reference snapshots, aliases, calendars, corporate-action reference types |
-| `src/indicators` | `src/domains/indicators` | indicator contracts, registry, DAG, custom feature calculations |
-| `src/strategies` | `src/domains/strategies` | strategy definitions, ranking, strategy runtime and signals |
-| `src/backtesting` | `src/domains/backtesting` | replay models and backtest engine |
-| `src/portfolio_engine` | `src/domains/portfolio_engine` | portfolio decision rules and policy |
-| `src/portfolio_accounting` | `src/domains/portfolio_accounting` | fills, accounting events and projections |
-| `src/execution_gateway` | `src/domains/execution` | broker gateway, order/ledger/account operations, execution risk |
-| `src/application` | split between `src/gates` and domain packages | currently mixes routes, composition, persistence, job handlers and domain services |
+| `src/market_data` | moved to `src/domains/market_data` | bars, providers, market history, calendars, market snapshots |
+| `src/reference_data` | moved to `src/domains/reference_data` | instrument/reference snapshots, aliases, calendars, corporate-action reference types |
+| `src/indicators` | retired Step 93; implementation in `src/domains/indicators` | indicator contracts, registry, DAG, custom feature calculations |
+| `src/strategies` | retired Step 93; implementation in `src/domains/strategies` | strategy definitions, ranking, runtime contracts and signals |
+| `src/backtesting` | Removed Step 78; `src/domains/backtesting` owns replay models/engine and run records | Internal callers use the curated domain package |
+| `src/portfolio_engine` | moved to `src/domains/portfolio_engine` | portfolio decision rules and policy |
+| `src/portfolio_accounting` | moved to `src/domains/portfolio_accounting` | fills, accounting events and projections |
+| `src/execution_gateway` | retired in Step 94 | order persistence moved to execution; cross-domain broker orchestration moved to gates |
+| `src/application` | retired in Step 92 | its former route/composition/workflow and domain responsibilities are now assigned to gates or domain packages |
 
 ## Gateways required by current cross-domain workflows
 
 | Current code path | Current interaction | Proposed ownership |
 | --- | --- | --- |
-| `application/action_jobs.py` | combines market, positional strategy, research, ledger, portfolio decisions, accounting, SQLite and publication | split: action proposal / execution orchestration in `gates`; only stable calculations and policies move to their owning domain |
-| `application/backtest_jobs.py` | combines backtesting API with market repository, research, corporate actions, persistence and publication | gate job handler coordinates domains; replay calculation stays in `domains/backtesting` |
-| `application/corporate_actions.py` | market history, corporate-action lifecycle, ledger, indicator cache and publication | gate workflow coordinates market data, accounting and indicators; move pure corporate-action types/rules to `domains/reference_data` or market domain after function audit |
-| `application/pipeline_jobs.py`, `pipeline_preparation.py` | coordinates strategies, market refresh, universe, corporate actions and research | gates job/workflow orchestration |
-| `application/portfolio_sync.py` | coordinates broker account, ledger, market repository and portfolio inputs | gate workflow coordinates execution and portfolio domains |
-| `execution_gateway/broker.py` | has a runtime import of `application.market_repository` for current membership checks | replace repository dependency with an injected membership contract supplied by a gate; execution domain must not import market domain |
-| `indicators/custom/__init__.py` | imports positional trend feature logic from `application` | move the signal calculation into `domains/strategies`; indicator custom registry consumes a contract/callable without importing the strategy package |
+| `gates/workflows/portfolio_actions.py` | combines market, positional strategy, research, ledger, portfolio decisions, accounting and publication | proposal persistence belongs to `domains/portfolio_engine`; gate workflow owns cross-domain coordination |
+| `gates/workflows/backtesting.py` | coordinates replay, market/research/corporate-action services and publication through public APIs | run storage and replay engine belong to `domains/backtesting`; research and Strategy 4 input-loader seams remain to review |
+| `gates/workflows/corporate_actions.py` | market history, corporate-action lifecycle, ledger, indicator cache and publication | gate workflow coordinates market data, accounting and indicators; pure corporate-action types/rules are a candidate for extraction after function audit |
+| `gates/workflows/research_pipeline.py`, `pipeline_preparation.py` | coordinates strategies, market refresh, universe, corporate actions and research | gates job/workflow orchestration |
+| `gates/workflows/portfolio_sync.py` | coordinates broker account, ledger, market repository and portfolio inputs | gate workflow coordinates execution and portfolio domains |
+| `domains/execution/order_repository.py`, `gates/workflows/broker_orders.py` | order state is execution-owned; market membership and cross-domain approval/risk work are gate-owned | Completed Step 94 |
+| `domains/indicators/`, `domains/strategies/` | independent feature and strategy signal APIs | consolidated from legacy roots; gate runtime composes them without domain-to-domain imports |
 
-## Current domain-to-application dependency violations
+## Domain dependency boundary status
 
-These edges must be resolved before moving whole packages. They are listed individually in the full inventory as well.
+The recursive architecture check currently reports zero domain-to-application, domain-to-gate, cross-domain, or kernel violations. The former findings below have been retired by the owner moves recorded in Steps 72–94; the exact live boundary rule is maintained in `tests/architecture/test_import_boundaries.py`.
 
-| Importing module | Current application dependency | Planned seam |
+| Former importing module | Former dependency | Resolution |
 | --- | --- | --- |
-| `execution_gateway/broker.py` | `kite_auth.KiteCredentials`, `sqlite`, and runtime `market_repository.MarketRepository` | move execution credential contract/auth to execution; make SQLite infrastructure neutral; inject a membership-check contract through gates |
-| `execution_gateway/kite_accounts.py` | `sqlite` and `strategy_runtime.RETAINED_STRATEGIES` | neutralize SQLite dependency; move strategy ID contract to strategy domain or pass allowed IDs into account binding logic |
-| `execution_gateway/ledger.py` | `sqlite` | move SQLite connection/migration primitives to a neutral storage boundary |
-| `execution_gateway/risk_guard.py` | `sqlite` | same neutral storage seam |
-| `indicators/custom/__init__.py` | `application.positional_trend.feature_series` | move signal feature ownership to strategies and make indicator registration consume an explicit callable/contract without importing a domain |
+| `domains/execution/order_repository.py`, `gates/workflows/broker_orders.py` | schema/events remain execution-owned; gate composes market, account, portfolio, and risk APIs | Completed Step 94 |
+| `domains/execution/accounts.py` | Strategy IDs enter through the constructor from the public strategies contract; no direct domain import remains | Completed Step 89 |
+| `indicators/custom/__init__.py` | application positional-trend feature | Legacy indicators root removed in Step 93; active indicator/strategy APIs are domain-owned |
 
 ## Mixed-responsibility file review
 
 | Current file | Responsibilities found in its symbols | Proposed treatment |
 | --- | --- | --- |
-| `application/market_repository.py` (1,524 lines) | instruments/universe snapshots, exit eligibility, market bars/coverage, indicators, index quotes, corporate-action event state | split by persistence aggregate into sibling repository modules under `domains/market_data`; keep transaction/schema helpers in platform storage boundary |
-| `application/action_jobs.py` (1,331 lines) | proposal generation, policy comparison, risk projections, manual/amend flows, proposal/event reads, decision and execution processing | keep cross-domain use-case handlers in gates; extract only pure portfolio policy or execution rules after ownership review |
-| `application/research_jobs.py` (1,425 lines) | research artifact builds, indicator/range rebuilds, ranking/revision workflows and persisted job handling | separate research domain calculations from gate job handlers and publication/persistence adapters |
-| `application/market_jobs.py` (485 lines) | Kite client and market fetches, provider history, instrument sync, index quotes and stop-alert dispatch | provider adapter belongs to market-data/execution boundary; job dispatch and alert coordination belongs in gates |
+| `application/market_repository.py` | `gates/repositories.py` plus domain-owned repositories | Five-line compatibility facade removed Step 74; composite queries stay in gates, and table writes/read models are split by owner. |
+| `gates/workflows/portfolio_actions.py` (moved Step 76) | proposal generation, policy comparison, risk projections, manual/amend flows, artifact/ledger/market coordination | gate-owned coordinator; proposal persistence and lifecycle reads live in portfolio_engine |
+| `gates/workflows/research.py` | market/runtime input loading, artifact publication, and cross-domain research job coordination; persistence moved Step 82 and pure ranking/anomaly calculations moved Step 83 | coordinator moved from application in Step 84; keep reusable calculations and research table SQL in the research domain |
+| `application/market_jobs.py` (485 lines) | Kite client and market fetches, provider history, instrument sync, index quotes and stop-alert dispatch | moved to `gates/workflows/market_jobs.py`; durable handler and cross-domain coordination |
 | `application/corporate_actions.py` (618 lines) | provider date/ratio parsing, event classification/detection, adjustment math, ledger updates, publication, cache invalidation | split parsing/pure adjustment logic from cross-domain event processing; the latter is a gate workflow |
-| `application/backtest_jobs.py` (804 lines) | request validation, replay dispatch, stress/walk-forward/attribution, persisted result listing/deletion | calculation stays in backtesting; persistence and job orchestration stay in gates |
+| `gates/workflows/backtesting.py` | request validation, replay dispatch, stress/walk-forward/attribution and cross-domain coordination moved Step 79; run persistence extracted Step 77 | run index and replay engine in `domains/backtesting`; further calculations and legacy loader/service seams remain candidates |
 | `application/market_web.py` (304 lines) | market routes plus corporate-action, quote, refresh and stream endpoints | split into gate route modules by external resource; routes remain adapters and call gate use cases |
-| `application/strategy_runtime.py` | strategy catalog/legacy ID mapping, persistence-backed definitions, indicator DAG evaluation and ranking calculations | split pure strategy definitions/evaluation into `domains/strategies`; keep persistence orchestration at gate or strategy repository boundary |
-| `application/positional_trend_backtest.py` | SQLite/CSV loading, universe selection, policy model, simulation and benchmark reading | move simulation to `domains/backtesting`; input loading becomes a repository/provider adapter; CLI entry belongs in gates/tools |
+| `gates/strategy_runtime.py` | cross-domain strategy definitions, indicator DAG execution, and implementation registry | moved to the interaction layer in Step 81; canonical identifier rules remain in `domains/strategies/identity.py` |
+| `domains/strategies/positional_trend_backtest.py`, `gates/workflows/positional_trend_backtest_inputs.py` | Strategy 4 policy/replay and CSV/market-history input assembly | Simulation is strategies-owned; composite readers are gate-owned pending further repository API adoption; CLI entry belongs in tools |
 | `application/index_poller.py` | quote polling state, scheduling, exchange-open checks and background thread | market quote polling belongs to market-data service; generic thread lifecycle/job scheduling belongs in gates |
 | `application/kite_auth.py` | credentials/config loading, Kite client protocol and token-file login lifecycle | move broker-specific auth to `domains/execution`; keep environment/config assembly at gates |
 | `application/liquidity.py` | JSON validation/decoding plus mapping domain inputs to liquidity snapshot and publishing it | decoding/request boundary belongs in gates; universe calculation stays in `domains/reference_data` |
@@ -70,1665 +68,650 @@ These edges must be resolved before moving whole packages. They are listed indiv
 
 ## Application module-by-module ownership proposal
 
+The initial inventory contained 62 application modules; 51 remain after moving SQLite, session coverage, ranking patterns, portfolio performance, node cache, operations, release gates, strategy definitions, and the strategies, dashboard, and reference HTTP adapters.
+
+### Migration progress
+
+| File moved | New location | Import updates |
+| --- | --- | --- |
+| `application/sqlite.py` | `platform_kernel/sqlite.py` | Updated 31 source, test, and tool files to import `src.platform_kernel.sqlite`. |
+| `application/session_coverage.py` | `gates/session_coverage.py` | Updated market refresh, pipeline preparation, and coverage tests; benchmark symbols are now injected. |
+| `application/ranking_patterns.py` | `domains/strategies/ranking_patterns.py` | Moved with ranking tests to the strategies domain. |
+| `application/portfolio_performance.py` | `domains/portfolio_accounting/portfolio_performance.py` | Moved with its focused test; uses a ledger protocol rather than importing execution. |
+| `application/node_cache.py` | `domains/indicators/node_cache.py` | Cache and focused test now mirror the indicators domain. |
+| `application/operations.py` | `gates/operations.py` | Moved with operations and CLI tests to gates. |
+| `application/release_gates.py` | `gates/release_gates.py` | Moved with release-gate and worker tests to gates. |
+| `application/strategy_definitions.py` | `gates/strategy_definitions.py` | Updated application/test imports; focused test moved to `tests/gates/test_strategy_definitions.py`. |
+| `application/strategies_web.py` | `gates/strategies_web.py` | Updated `run.py` blueprint registration; no dedicated test module exists. |
+| `application/dashboard_web.py` | `gates/dashboard_web.py` | Updated `run.py`; app integration test moved to `integration_tests/gates/test_dashboard_web.py`. |
+| `application/reference_web.py` | `gates/reference_web.py` | Updated `run.py` and test imports; both API tests moved to `integration_tests/gates/`. |
+| `indicators/registry.py` | `domains/indicators/registry.py` | Updated source and test imports; no dedicated registry test module exists. |
+| `indicators/dag.py` | `domains/indicators/dag.py` | Updated source/test imports; focused unit test moved to `tests/domains/indicators/test_dag_executor.py`. |
+| `indicators/api.py` | `domains/indicators/api.py` | Updated the legacy facade and test imports; existing coverage remains in broader research/strategy tests. |
+| `indicators/custom/relative_strength.py` | `domains/indicators/relative_strength.py` | Flattened custom calculations into the indicators domain; updated registry and backtest code-hash references. |
+| `indicators/custom/momentum_quality.py` | `domains/indicators/momentum_quality.py`, `domains/strategies/momentum_quality.py`, `gates/momentum_quality.py` | Split raw indicator calculation, factor scoring, and cross-domain composition; focused integration test moved to `integration_tests/gates/test_momentum_quality.py`. |
+
+
 Destinations below are provisional. “Split” means assign functions/classes individually after reviewing call graphs; it is not an instruction to move the entire current file. Domain destinations are siblings directly under `src/domains/<domain>/`, following the existing package layout.
 
 | Current module | Proposed owner | Notes / function-level split candidate |
 | --- | --- | --- |
-| `application/__init__.py` | gates public facade | Export only gate-facing API if needed; avoid exporting domain internals. |
-| `application/action_jobs.py` | gates workflow | Cross-domain proposal, risk, ledger and execution orchestration. Extract only pure policy/decision functions to portfolio or execution after call-graph review. |
+| `application/__init__.py` | removed | Empty compatibility package removed in Step 92 after repository-wide caller audit. |
+| `gates/workflows/portfolio_actions.py` | gates workflow | Proposal storage moved to `domains/portfolio_engine/proposal_store.py` Step 75; remaining orchestration crosses market, research, accounting, execution, and artifacts. |
 | `application/actions_web.py` | gates HTTP | Request/response adapter for action workflows. |
-| `application/backtest_jobs.py` | gates workflow + backtesting | Job lifecycle, persistence and domain coordination in gates; replay/stress/walk-forward/attribution calculations in backtesting. |
+| `gates/workflows/backtesting.py` | gates workflow | `BacktestRunStore` and replay engine are in `domains/backtesting`; two transitional legacy imports remain. |
 | `application/backtest_web.py` | gates HTTP | Request/response adapter. |
 | `application/broker_web.py` | gates HTTP | Request/response adapter for execution domain. |
-| `application/catalog.py` | platform storage boundary | Artifact catalog persistence; check whether it belongs beside platform artifact storage rather than a domain. |
-| `application/cli.py` | gates CLI | External command parsing and service invocation. |
+| `application/catalog.py` | artifacts | Unused compatibility facade removed after catalog ownership moved to `domains/artifacts`. |
+| `application/cli.py` | `gates/cli.py` | Unused re-export removed Step 73; configured CLI imports gates directly. |
 | `application/composition.py` | gates composition | Sole cross-domain construction/wiring point; keep as traceable root. |
 | `application/corporate_actions.py` | split: reference-data/market rules + gates workflow | Date/ratio parsing, classification and adjustment math are domain candidates; broker verification, ledger, cache invalidation and publication coordination stay in gates. |
-| `application/dashboard_web.py` | gates HTTP | Dashboard route and template adapter. |
+| `gates/dashboard_web.py` | gates HTTP | Dashboard route and template adapter. |
 | `application/exchange_calendar.py` | reference data | Persisted trading-session calendar; reconcile with existing `reference_data.ExchangeCalendar` and keep one canonical contract. |
 | `application/index_poller.py` | split: market data + gates | Quote/polling state and market-open semantics belong with market data; background thread lifecycle/job submission belongs in gates. |
 | `application/indicators_web.py` | gates HTTP | Adapter for indicator catalogue/calculation API. |
 | `application/ingestion.py` | market data | Provider-bar normalization/publication path; ensure no gate-only dependencies remain. |
 | `application/intraday_alerts.py` | split: execution/market domain + gates | Pure stop/alert eligibility and state model may belong to execution; dispatch, job context, and artifact publication coordination stay in gates. |
 | `application/intraday_stream.py` | split: market data + gates | Stream lease/state contract versus worker/process lifecycle. |
-| `application/jobs.py` | gates job infrastructure | Durable job state/claim/cancel API used by gate handlers; move shared SQLite primitives out first. |
+| `application/jobs.py` | `domains/operations/jobs.py` | Unused re-export removed Step 73; package-level exports remain domain-backed. |
 | `application/kite_accounts_web.py` | gates HTTP | Adapter for execution account workflows. |
-| `application/kite_auth.py` | execution | Kite credential value object and broker authentication/token protocol; environment-specific credential loading remains in gates. |
+| `domains/execution/accounts.py` | execution | `KiteAccounts` moved from the legacy gateway in Step 89; allowed strategy IDs are injected through a constructor contract. |
 | `application/kite_web.py` | gates HTTP | Login/session routes. |
 | `application/liquidity.py` | split: reference data + gates | Payload decoding/validation and artifact publication at gates; mapping to `LiquidityUniversePolicy` and pure universe generation in reference data. |
 | `application/live_quotes.py` | market data / execution contract | Quote store and stream adapter; separate generic quote state from Kite-specific stream/provider connection. |
-| `application/managed_risk.py` | portfolio/execution | Risk calculations and guard policy; reconcile with `execution_gateway/risk_guard.py` and `portfolio_engine` before deciding canonical owner. |
+| `gates/workflows/managed_risk.py` | portfolio_engine and execution | Cross-domain risk guard; reservation persistence now belongs to `domains/portfolio_engine/risk_reservations.py`, while the gate keeps the shared ledger/market/config transaction. |
 | `application/market_jobs.py` | split: market data + gates | Provider calls and market normalization belong with market data; durable job handlers, alert dispatch and multi-service orchestration stay in gates. |
 | `application/market_refresh.py` | split: market data + gates | Refresh planning policy versus JobStore scheduling/reconciliation orchestration. |
 | `application/market_repository.py` | market data | Split instrument/universe, price/coverage/index, and corporate-action persistence into sibling repository modules; retain one migration/schema ownership strategy. |
 | `application/market_web.py` | gates HTTP | Split routes by resource (market, corporate actions, quotes/stream, refresh) while keeping Flask concerns in gates. |
-| `application/node_cache.py` | indicators | Persistent indicator-node cache; move persistence dependency to a neutral storage boundary. |
+| `domains/indicators/node_cache.py` | indicators | Moved in step 5; persistent cache uses the shared platform SQLite layer. |
 | `application/nse_client.py` | market data / reference data | NSE transport/download adapter; assign response parsing to the domain that owns each payload. |
-| `application/operations.py` | platform storage boundary | SQLite backup/restore/readiness operations; keep operational command wiring in gates. |
-| `application/payloads.py` | split by payload contract | Assign each payload class to its owning domain API; leave HTTP/job envelope parsing in gates. |
-| `application/pipeline_jobs.py` | gates workflow | Job handler and pipeline lifecycle coordinating strategy and market services. |
+| `gates/operations.py` | gates | SQLite backup/restore/readiness utilities used by CLI and release checks. |
+| `gates/payloads.py` | gate request and job payload parsing | Moved from application in Step 84; move only independently reusable business policy to domain APIs. |
+| `gates/workflows/research_pipeline.py` | gates workflow | Job handler and pipeline lifecycle coordinating strategy and market services. |
 | `application/pipeline_preparation.py` | gates workflow | Multi-domain preparation/synchronization coordinator. |
 | `application/pipeline_web.py` | gates HTTP | Request/response adapter. |
-| `application/portfolio_performance.py` | portfolio accounting | XIRR and portfolio performance calculations; verify against existing accounting projection semantics. |
 | `application/portfolio_sync.py` | gates workflow | Coordinates broker accounts, ledger and market data; no domain-to-domain imports. |
 | `application/portfolio_web.py` | gates HTTP | Request/response adapter; move reusable typed validation to portfolio contracts only if domain-owned. |
-| `application/positional_trend_backtest.py` | split: backtesting + gates/tool entry | Simulation and benchmark calculations in backtesting; SQLite/CSV loading via adapters; CLI wiring in gates/tools. |
+| `domains/strategies/positional_trend_backtest.py`, `gates/workflows/positional_trend_backtest_inputs.py` | strategies + gates input adapter | Strategy 4 policy/replay moved Step 80; database/CSV input assembly moved to the gate and is a candidate for public repository APIs. |
 | `application/positional_trend_jobs.py` | gates workflow | Durable job handlers coordinating strategy and market-data services. |
 | `application/positional_trend_web.py` | gates HTTP | Request/response adapter. |
-| `application/positional_trend.py` | strategies | Signal/feature calculations; remove the current indicator-to-application import by exposing a strategy-owned public contract. |
-| `application/providers.py` | split: market data + execution | Historical/instrument/quote providers belong with market data; streaming provider may be execution-specific. Keep provider implementations out of domain rules. |
-| `application/publication.py` | platform storage boundary / gates | Artifact publication state coordination; separate generic store/catalog protocol from workflow-specific publish calls. |
-| `application/ranking_patterns.py` | strategies | Ranking pattern implementations and selector. |
-| `application/reference_web.py` | gates HTTP | Request/response adapter. |
-| `application/release_gates.py` | gates/release tooling | Operational parity/restore checks; likely lives with release tooling, not a product domain. |
-| `application/research_jobs.py` | gates workflow + indicators/strategies | Persisted job orchestration stays in gates; pure feature/ranking computations go to the owning existing domain APIs. |
+| `application/positional_trend.py` | `domains/strategies/positional_trend.py` | Unused re-export removed Step 73; calculation owner already resides in strategies. |
+| `domains/execution/streaming_provider.py` | execution | Account-scoped Kite tick adapter moved from application in Step 87; stream process lifecycle and quote/alert coordination remain gate-owned. |
+| `application/publication.py` | artifacts | Unused compatibility facade removed after publication ownership moved to `domains/artifacts`. |
+| `domains/strategies/ranking_patterns.py` | strategies | Moved in step 1; ranking pattern implementations and selector. |
+| `gates/reference_web.py` | gates HTTP | Request/response adapter. |
+| `gates/release_gates.py` | gates/release tooling | Moved in step 3; operational parity/restore checks, not a product domain. |
+| `gates/workflows/research.py` | gates workflow + public research/indicator/strategy APIs | Research schema and table persistence moved to `domains/research/repository.py` in Step 82; pure ranking/anomaly calculations moved to `domains/research/calculations.py` in Step 83; workflow coordinator moved here in Step 84. |
 | `application/research_web.py` | gates HTTP | Request/response adapter. |
 | `application/runs.py` | split: backtesting + gates | Backtest result mapping belongs with backtesting; publication call remains a gate/storage operation. |
 | `application/runtime.py` | gates configuration | Environment/config loading only; no domain policy. |
-| `application/security.py` | gates/platform boundary | Request/log/error redaction utilities; place according to whether they are transport-specific or truly shared primitives. |
-| `application/session_coverage.py` | market data | Completed-session coverage model/query. |
-| `application/sqlite.py` | platform storage boundary | Shared SQLite connection/migration helpers; move before repositories and gateways to remove current imports back into application. |
-| `application/strategies_web.py` | gates HTTP | Request/response adapter. |
-| `application/strategy_definitions.py` | strategies | Persisted strategy definition/revision operations; keep repository dependency explicit. |
-| `application/strategy_runtime.py` | split: strategies + indicators + gates | Strategy ID migration/catalog belongs with strategies; DAG/feature execution belongs with indicators; persistence-backed orchestration stays in gates. |
+| `application/security.py` | `platform_kernel/security.py`, `gates/security.py` | Unused re-export removed Step 73; implementation owners already exist. |
+| `gates/strategies_web.py` | gates HTTP | Request/response adapter. |
+| `gates/strategy_definitions.py` | gates | Persistence-backed YAML/revision workflow validating strategy definitions against the indicator domain. |
+| `gates/strategy_runtime.py` | gates runtime | StrategyRuntime moved in Step 81; strategy IDs and definitions are domain-owned, while indicator execution is consumed through the public indicators API. |
 | `application/universe_jobs.py` | split: reference/market data + gates | CSV provider parsing and exit/universe domain policy versus durable job orchestration. |
 | `application/universe_web.py` | gates HTTP | Request/response adapter. |
 | `application/web.py` | gates HTTP | Generic durable-job HTTP/SSE adapter. |
 | `application/wiki_web.py` | gates HTTP | Documentation page adapter. |
-| `application/worker.py` | gates job infrastructure | Generic worker lifecycle and handler dispatch; should depend on job contracts, not domain code. |
-
-The removed the removed application YFinance adapter was not included: repository-wide search found no callers, and the documented YFinance enrichment path had already been retired. The `yfinance` provenance strings in fixtures are data labels, not imports of the adapter.
-
-## Full Python-file inventory
-
-Imports include imports inside functions/classes as well as module-level imports. Symbols list module-level functions/classes/constants; class methods are listed under their class. This is an AST inventory, not a claim that every symbol should move with its file.
-
-### `src/__init__.py` — 5 lines
-
-**Imports**
-- None
-
-**Module-level symbols**
-- None
-
-### `src/application/__init__.py` — 33 lines
-
-**Imports**
-- L3: `from .catalog import ArtifactCatalog`
-- L4: `from .jobs import JobExecutionContext, JobStatus, JobStore`
-- L5: `from .liquidity import publish_liquidity_universe`
-- L6: `from .operations import sqlite_backup, sqlite_ready, sqlite_restore`
-- L7: `from .publication import ArtifactPublisher`
-- L8: `from .release_gates import compare_execution_events, dashboard_visual_contract, next_tradable_session, restore_drill`
-- L14: `from .runs import publish_backtest_result`
-- L15: `from .worker import JobWorker`
-
-**Module-level symbols**
-- None
-
-### `src/application/action_jobs.py` — 1331 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import hashlib`
-- L6: `import json`
-- L7: `import logging`
-- L10: `from datetime import UTC, date, datetime, time, timedelta`
-- L11: `from decimal import Decimal, InvalidOperation`
-- L12: `from pathlib import Path`
-- L13: `from typing import Any, cast`
-- L14: `from uuid import NAMESPACE_URL, uuid5`
-- L15: `from zoneinfo import ZoneInfo`
-- L17: `from src.application.market_repository import MarketRepository`
-- L18: `from src.application.positional_trend import valid_bar`
-- L19: `from src.application.publication import ArtifactPublisher`
-- L20: `from src.application.research_jobs import ResearchJobs`
-- L21: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L22: `from src.execution_gateway import Ledger`
-- L23: `from src.platform_kernel import DomainValidationError, Money, QualityStatus, Quantity`
-- L24: `from src.portfolio_accounting import Fill, FillSide`
-- L25: `from src.portfolio_engine import Candidate, DecisionType, Holding, MarketBar, PortfolioPolicy, PortfolioState, evaluate`
-- L174: `from src.application.positional_trend import feature_series`
-- L340: `from src.application.strategy_runtime import resolve_strategy_id`
-
-**Module-level symbols**
-- constant `_BUY_TYPES` (L35)
-- constant `_EXECUTION_POLICY_VERSION` (L36)
-- constant `_DEFAULT_PYRAMID_FRACTION` (L37)
-- constant `_EXECUTION_POLICY` (L38)
-- class `ActionJobs` (L51): `__init__` L52, `_current_buy_members` L92, `_generate_strategy4` L104, `generate` L332, `compare_execution_policy` L838, `risk_projection` L884, `update_risk_projection` L895, `create_manual` L928, `generate_midweek_stop` L1027, `amend` L1033, `_recover_projection` L1067, `_recover_manual_projection` L1104, `proposal` L1144, `_decode` L1154, `proposals` L1159, `action_dates` L1171, `events` L1179, `decide` L1196, `process` L1233
-
-### `src/application/actions_web.py` — 165 lines
-
-**Imports**
-- L3: `from datetime import date`
-- L5: `from flask import Blueprint, jsonify, request`
-- L7: `from src.application.action_jobs import ActionJobs`
-- L8: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `create_actions_blueprint` (L11)
-
-### `src/application/backtest_jobs.py` — 804 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import hashlib`
-- L6: `import json`
-- L7: `import logging`
-- L10: `from datetime import UTC, date, datetime, timedelta`
-- L11: `from decimal import Decimal, InvalidOperation`
-- L12: `from itertools import pairwise`
-- L13: `from pathlib import Path`
-- L14: `from typing import Any`
-- L15: `from uuid import NAMESPACE_URL, UUID, uuid4, uuid5`
-- L17: `from src.application.corporate_actions import CorporateActions`
-- L18: `from src.application.market_repository import MarketRepository`
-- L19: `from src.application.publication import ArtifactPublisher`
-- L20: `from src.application.research_jobs import ResearchJobs`
-- L21: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L22: `from src.backtesting import BacktestRunManifest, BacktestStep, FillModelRevision, run`
-- L23: `from src.platform_kernel import DomainValidationError, Money, QualityStatus`
-- L24: `from src.portfolio_engine import Candidate, MarketBar, PortfolioPolicy, PortfolioState`
-- L499: `from src.application.positional_trend_backtest import Policy as Strategy4Policy`
-- L500: `from src.application.positional_trend_backtest import benchmark_price_return, load_snapshot_universe, simulate`
-
-**Module-level symbols**
-- function `_decimal` (L27)
-- class `BacktestJobs` (L39): `__init__` L40, `_code_revision` L72, `_momentum_membership_plan` L86, `_revision` L128, `execute` L139, `_execute_strategy4` L472, `stress` L610, `walk_forward` L633, `attribute` L684, `runs` L780, `run_artifact_id` L789, `delete_run` L798
-
-### `src/application/backtest_web.py` — 57 lines
-
-**Imports**
-- L3: `from flask import Blueprint, jsonify, request`
-- L5: `from src.application.backtest_jobs import BacktestJobs`
-- L6: `from src.platform_kernel import ArtifactStore, DomainValidationError`
-
-**Module-level symbols**
-- function `create_backtest_blueprint` (L9)
-
-### `src/application/broker_web.py` — 80 lines
-
-**Imports**
-- L3: `from flask import Blueprint, jsonify, request`
-- L5: `from src.execution_gateway import BrokerOrderService`
-- L6: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `create_broker_blueprint` (L9)
-
-### `src/application/catalog.py` — 290 lines
-
-**Imports**
-- L3: `import json`
-- L4: `import sqlite3`
-- L5: `from pathlib import Path`
-- L7: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L8: `from src.platform_kernel import ArtifactManifest, DomainValidationError`
-
-**Module-level symbols**
-- class `ArtifactCatalog` (L11): `__init__` L12, `_connect` L61, `register` L64, `set_publication_state` L119, `has` L133, `is_missing` L142, `summaries` L149, `mark_missing` L177, `set_status` L184, `artifacts` L197, `recovery_state` L211, `supersede` L225, `invalidation_plan` L263, `record_invalidation` L268, `_invalidation_plan` L278
-
-### `src/application/cli.py` — 93 lines
-
-**Imports**
-- L3: `import argparse`
-- L4: `import json`
-- L5: `from pathlib import Path`
-- L7: `from .composition import ApplicationServices`
-- L8: `from .index_poller import IndexQuotePoller`
-- L9: `from .intraday_stream import IntradayStreamLease`
-- L10: `from .jobs import JobStore`
-- L11: `from .kite_auth import load_kite_credentials`
-- L12: `from .operations import sqlite_backup, sqlite_ready, sqlite_restore`
-- L13: `from .pipeline_jobs import ResearchPipelineJobs`
-- L14: `from .runtime import RuntimeConfig`
-
-**Module-level symbols**
-- function `main` (L17)
-
-### `src/application/composition.py` — 221 lines
-
-**Imports**
-- L3: `import os`
-- L4: `from dataclasses import dataclass`
-- L5: `from pathlib import Path`
-- L6: `from typing import Any`
-- L8: `from src.application.action_jobs import ActionJobs`
-- L9: `from src.application.backtest_jobs import BacktestJobs`
-- L10: `from src.application.catalog import ArtifactCatalog`
-- L11: `from src.application.corporate_actions import CorporateActions`
-- L12: `from src.application.index_poller import IndexQuotePoller`
-- L13: `from src.application.intraday_alerts import IntradayStopAlerts`
-- L14: `from src.application.intraday_stream import IntradayStreamLease`
-- L15: `from src.application.jobs import JobStore`
-- L16: `from src.application.kite_auth import KiteCredentials`
-- L17: `from src.application.liquidity import publish_liquidity_universe`
-- L18: `from src.application.live_quotes import LiveQuotes, LiveQuoteStream`
-- L19: `from src.application.managed_risk import ManagedRiskGuard`
-- L20: `from src.application.market_jobs import KiteMarketJobs`
-- L21: `from src.application.market_refresh import MarketRefreshPlanner`
-- L22: `from src.application.market_repository import MarketRepository`
-- L23: `from src.application.node_cache import IndicatorNodeCache`
-- L24: `from src.application.pipeline_jobs import ResearchPipelineJobs`
-- L25: `from src.application.pipeline_preparation import PipelinePreparation`
-- L26: `from src.application.portfolio_sync import PortfolioSync`
-- L27: `from src.application.positional_trend_jobs import PositionalTrendJobs`
-- L28: `from src.application.publication import ArtifactPublisher`
-- L29: `from src.application.research_jobs import ResearchJobs`
-- L30: `from src.application.strategy_definitions import StrategyDefinitions`
-- L31: `from src.application.strategy_runtime import StrategyRuntime`
-- L32: `from src.application.universe_jobs import UniverseJobs`
-- L33: `from src.application.worker import BackgroundWorker, JobWorker`
-- L34: `from src.execution_gateway import BrokerOrderService, KiteExecutionGateway, Ledger`
-- L35: `from src.execution_gateway.kite_accounts import KiteAccounts`
-- L36: `from src.execution_gateway.risk_guard import PortfolioRiskConfig`
-- L37: `from src.indicators.registry import PandasTaAdapter`
-- L38: `from src.platform_kernel import ArtifactStore, SqliteArtifactStore`
-
-**Module-level symbols**
-- class `ApplicationServices` (L42): `create` L74
-
-### `src/application/corporate_actions.py` — 618 lines
-
-**Imports**
-- L7: `import hashlib`
-- L8: `import json`
-- L9: `import logging`
-- L10: `import re`
-- L11: `from datetime import date, datetime, timedelta`
-- L12: `from decimal import Decimal, InvalidOperation`
-- L13: `from pathlib import Path`
-- L14: `from typing import Any`
-- L15: `from uuid import NAMESPACE_URL, uuid5`
-- L16: `from zoneinfo import ZoneInfo`
-- L18: `from src.application.market_repository import MarketRepository`
-- L19: `from src.application.node_cache import IndicatorNodeCache`
-- L20: `from src.application.publication import ArtifactPublisher`
-- L21: `from src.application.sqlite import sqlite_connection`
-- L22: `from src.execution_gateway import Ledger`
-- L23: `from src.market_data import NormalizedBar`
-- L24: `from src.platform_kernel import DomainValidationError`
-- L313: `from src.application.nse_client import NseClient`
-
-**Module-level symbols**
-- constant `ANOMALY_THRESHOLD_PERCENT` (L29)
-- constant `ADJUSTABLE_TYPES` (L32)
-- constant `MONITORED_TYPES` (L34)
-- constant `ALL_CA_TYPES` (L35)
-- constant `_NSE_DATE_PATTERNS` (L38)
-- constant `_MONTH_MAP` (L44)
-- class `CorporateActions` (L50): `__init__` L51, `record` L66, `_qualify_dependents` L96, `adjusted_bars` L116, `liquidation_plan` L149, `normalize_nse_date` L178, `parse_ratio` L206, `classify_action_type` L234, `detect_events` L251, `detect_job` L311, `compute_adjustment_factor` L339, `apply_self_adjustment` L354, `verify_with_kite` L403, `_persist_provider_history` L561, `process_actionable` L575, `_fail_event` L600, `_check_anomaly` L607
-
-### `src/application/dashboard_web.py` — 60 lines
-
-**Imports**
-- L7: `from datetime import datetime, timedelta`
-- L8: `from zoneinfo import ZoneInfo`
-- L10: `from flask import Blueprint, redirect, render_template`
-
-**Module-level symbols**
-- function `create_dashboard_blueprint` (L13)
-
-### `src/application/exchange_calendar.py` — 88 lines
-
-**Imports**
-- L8: `from __future__ import annotations`
-- L10: `from datetime import date`
-- L11: `from pathlib import Path`
-- L13: `from src.application.sqlite import sqlite_connection`
-
-**Module-level symbols**
-- class `TradingCalendar` (L16): `__init__` L19, `sessions` L22, `is_trading_day` L60, `last_session` L70
-
-### `src/application/index_poller.py` — 128 lines
-
-**Imports**
-- L3: `import logging`
-- L4: `import threading`
-- L5: `from datetime import UTC, datetime, timedelta`
-- L6: `from pathlib import Path`
-- L7: `from zoneinfo import ZoneInfo`
-- L9: `from src.application.jobs import JobStore`
-- L10: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L11: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- class `IndexQuotePoller` (L16): `__init__` L17, `state` L30, `set_enabled` L35, `set_interval` L40, `tick` L47, `reconcile` L66, `record_error` L79
-- function `market_is_open` (L89)
-- class `BackgroundIndexPoller` (L95): `__init__` L98, `start` L104, `stop` L113, `_run` L116
-
-### `src/application/indicators_web.py` — 23 lines
-
-**Imports**
-- L3: `from flask import Blueprint, jsonify`
-- L5: `from src.indicators.registry import PandasTaAdapter`
-- L6: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `create_indicators_blueprint` (L9)
-
-### `src/application/ingestion.py` — 81 lines
-
-**Imports**
-- L3: `import hashlib`
-- L4: `import json`
-- L5: `from collections.abc import Iterable`
-- L6: `from dataclasses import asdict`
-- L7: `from datetime import UTC, datetime`
-- L9: `from src.application.publication import ArtifactPublisher`
-- L10: `from src.application.security import sanitize_sensitive`
-- L11: `from src.market_data import NormalizedBar`
-- L12: `from src.platform_kernel import ArtifactManifest, DomainValidationError, QualityStatus`
-- L35: `from uuid import uuid4`
-
-**Module-level symbols**
-- function `ingest_market_bars` (L15)
-
-### `src/application/intraday_alerts.py` — 84 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import hashlib`
-- L6: `import json`
-- L7: `from datetime import UTC, datetime`
-- L8: `from decimal import Decimal, InvalidOperation`
-- L9: `from pathlib import Path`
-- L10: `from uuid import NAMESPACE_URL, uuid5`
-- L12: `from src.application.publication import ArtifactPublisher`
-- L13: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L14: `from src.execution_gateway import Ledger`
-- L15: `from src.platform_kernel import DomainValidationError, QualityStatus`
-
-**Module-level symbols**
-- class `IntradayStopAlerts` (L18): `__init__` L19, `ingest` L30, `read` L79
-
-### `src/application/intraday_stream.py` — 102 lines
-
-**Imports**
-- L3: `from datetime import UTC, datetime`
-- L4: `from pathlib import Path`
-- L6: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L7: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- class `IntradayStreamLease` (L10): `__init__` L11, `state` L28, `start` L35, `stop` L48, `connected` L57, `mark_error` L80, `heartbeat` L91
-
-### `src/application/jobs.py` — 647 lines
-
-**Imports**
-- L3: `import hashlib`
-- L4: `import json`
-- L5: `import math`
-- L6: `import sqlite3`
-- L7: `from collections.abc import Collection`
-- L8: `from dataclasses import dataclass`
-- L9: `from datetime import UTC, datetime, timedelta`
-- L10: `from enum import Enum`
-- L11: `from pathlib import Path`
-- L12: `from typing import Any`
-- L13: `from uuid import uuid4`
-- L15: `from src.application.security import sanitize_sensitive`
-- L16: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L17: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- class `JobStatus` (L20)
-- class `Job` (L29)
-- class `JobExecutionContext` (L45): `__init__` L53, `checkpoint` L60, `heartbeat` L91, `cancelled` L94
-- class `JobStore` (L98): `__init__` L99, `_connect` L103, `_initialize` L106, `_now` L136, `_payload` L140, `_row` L149, `submit` L166, `get` L234, `status_counts` L243, `active` L274, `queued_by_kind` L285, `cancel_kinds` L294, `claim_next` L346, `transition` L404, `complete` L410, `fail` L435, `request_cancel` L472, `requeue_expired_running` L495, `retry_failed` L531, `heartbeat` L556, `_require_claim` L579, `_cancel_claimed` L585, `emit` L610, `events_after` L620, `_append` L640
-
-### `src/application/kite_accounts_web.py` — 71 lines
-
-**Imports**
-- L2: `from flask import Blueprint, jsonify, request`
-- L3: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `create_kite_accounts_blueprint` (L6)
-
-### `src/application/kite_auth.py` — 108 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import os`
-- L6: `from collections.abc import Callable`
-- L7: `from dataclasses import dataclass`
-- L8: `from pathlib import Path`
-- L9: `from tempfile import NamedTemporaryFile`
-- L10: `from typing import Any, Protocol`
-- L12: `from kiteconnect import KiteConnect`
-- L47: `from local_secrets import KITE_API_KEY, KITE_API_SECRET`
-
-**Module-level symbols**
-- class `KiteClient` (L15): `login_url` L16, `generate_session` L18
-- class `KiteCredentials` (L22)
-- function `load_kite_credentials` (L27)
-- class `KiteAuthService` (L61): `__init__` L64, `token_exists` L75, `login_url` L80, `exchange_request_token` L83, `_write_access_token` L94
-
-### `src/application/kite_web.py` — 143 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import logging`
-- L6: `import time`
-- L7: `from html import escape`
-- L9: `from flask import Blueprint, Response, jsonify, redirect, request, session, url_for`
-- L10: `from flask.typing import ResponseReturnValue`
-- L11: `from kiteconnect.exceptions import KiteException`
-- L13: `from src.application.kite_auth import KiteAuthService`
-
-**Module-level symbols**
-- constant `_SESSION_STARTED_AT` (L15)
-- constant `_SESSION_TTL_SECONDS` (L16)
-- constant `_LOGGER` (L17)
-- function `create_kite_auth_blueprint` (L20)
-
-### `src/application/liquidity.py` — 155 lines
-
-**Imports**
-- L3: `from datetime import date`
-- L4: `from decimal import Decimal, InvalidOperation`
-- L5: `from typing import Any`
-- L6: `from uuid import UUID`
-- L8: `from src.application.publication import ArtifactPublisher`
-- L9: `from src.market_data import NormalizedBar`
-- L10: `from src.platform_kernel import ArtifactManifest, DomainValidationError`
-- L11: `from src.reference_data import Instrument, LiquidityUniversePolicy, build_liquidity_universe`
-
-**Module-level symbols**
-- function `publish_liquidity_universe` (L14)
-- function `_policy` (L33)
-- function `_instrument` (L60)
-- function `_bar` (L70)
-- function `_mapping` (L99)
-- function `_list` (L105)
-- function `_only_keys` (L111)
-- function `_string` (L116)
-- function `_integer` (L122)
-- function `_decimal` (L128)
-- function `_date` (L140)
-- function `_uuid` (L149)
-
-### `src/application/live_quotes.py` — 186 lines
-
-**Imports**
-- L3: `from datetime import UTC, datetime`
-- L4: `from decimal import Decimal, InvalidOperation`
-- L5: `from pathlib import Path`
-- L6: `from threading import RLock`
-- L7: `from zoneinfo import ZoneInfo`
-- L9: `from kiteconnect import KiteTicker`
-- L11: `from src.application.providers import KiteStreamingProvider`
-- L12: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L13: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- class `LiveQuotes` (L16): `__init__` L17, `ingest` L29, `read` L65, `execution_quote` L92
-- class `LiveQuoteStream` (L99): `__init__` L102, `start` L108, `_ingest` L167, `stop` L180
-
-### `src/application/managed_risk.py` — 191 lines
-
-**Imports**
-- L2: `from __future__ import annotations`
-- L4: `import json`
-- L5: `from datetime import datetime`
-- L6: `from decimal import Decimal`
-- L7: `from zoneinfo import ZoneInfo`
-- L9: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L10: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `decimal` (L13)
-- function `trading_date` (L23)
-- class `ManagedRiskGuard` (L27): `__init__` L28, `release` L40, `validate` L44, `_sector` L166, `_performance_limits` L172
-
-### `src/application/market_jobs.py` — 485 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import logging`
-- L8: `from datetime import UTC, date, datetime, timedelta`
-- L9: `from decimal import Decimal, InvalidOperation`
-- L10: `from pathlib import Path`
-- L11: `from typing import Any`
-- L12: `from uuid import NAMESPACE_URL, uuid4, uuid5`
-- L14: `from kiteconnect import KiteConnect`
-- L15: `from kiteconnect.exceptions import KiteException`
-- L16: `from requests.exceptions import RequestException`
-- L18: `from src.application.ingestion import ingest_market_bars`
-- L19: `from src.application.intraday_alerts import IntradayStopAlerts`
-- L20: `from src.application.kite_auth import KiteCredentials`
-- L21: `from src.application.market_repository import MarketRepository, TrackedInstrument`
-- L22: `from src.application.providers import KiteHistoricalBarsProvider`
-- L23: `from src.application.publication import ArtifactPublisher`
-- L24: `from src.application.security import sanitize_error`
-- L25: `from src.market_data import NormalizedBar`
-- L26: `from src.platform_kernel import DomainValidationError`
-- L378: `import concurrent.futures`
-
-**Module-level symbols**
-- constant `NSE_INDEX_SYMBOLS` (L28)
-- constant `PHASE2_BENCHMARK_SYMBOLS` (L31)
-- class `KiteMarketJobs` (L34): `__init__` L35, `_client` L50, `_cached_kite_nse_dump` L63, `corporate_history` L72, `sync_snapshot_instruments` L86, `fetch_index_quotes` L155, `fetch_intraday_stop_alerts` L214, `_current_history_isins` L248, `_history_context` L255, `fetch_bars` L276, `fetch_bulk_bars` L376
-
-### `src/application/market_refresh.py` — 224 lines
-
-**Imports**
-- L3: `import hashlib`
-- L4: `import json`
-- L5: `from collections.abc import Callable`
-- L6: `from datetime import date, datetime`
-- L7: `from pathlib import Path`
-- L8: `from typing import Any`
-- L9: `from zoneinfo import ZoneInfo`
-- L11: `from src.application.jobs import JobStore`
-- L12: `from src.application.market_repository import MarketRepository`
-- L13: `from src.application.publication import ArtifactPublisher`
-- L14: `from src.platform_kernel import DomainValidationError`
-- L51: `from src.application.session_coverage import CompletedSessionCoverage`
-
-**Module-level symbols**
-- constant `PHASE2_BENCHMARK_SYMBOLS` (L17)
-- class `MarketRefreshPlanner` (L22): `__init__` L23, `reconcile` L34, `schedule` L107
-
-### `src/application/market_repository.py` — 1524 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import hashlib`
-- L6: `import json`
-- L7: `import math`
-- L8: `from collections.abc import Iterable`
-- L9: `from contextlib import nullcontext`
-- L10: `from dataclasses import dataclass`
-- L11: `from datetime import UTC, date, datetime, timedelta`
-- L12: `from decimal import Decimal`
-- L13: `from pathlib import Path`
-- L14: `from uuid import uuid4`
-- L16: `from src.application.security import sanitize_sensitive`
-- L17: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L18: `from src.market_data import NormalizedBar`
-- L19: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- class `TrackedInstrument` (L23)
-- function `_ensure_market_column` (L33)
-- class `MarketRepository` (L40): `__init__` L41, `upsert_instruments` L278, `universe_snapshot` L313, `latest_universe_snapshot` L321, `universe_snapshot_as_of` L329, `universe_snapshot_members` L349, `list_universe_snapshots` L360, `create_universe_snapshot` L370, `universe_snapshot_diff` L401, `record_exit_eligibility` L414, `resolve_pending_exit_sessions` L436, `exit_eligible_instruments` L461, `is_exit_only` L475, `instruments` L484, `tracked_instruments` L499, `instrument` L518, `instrument_by_id` L529, `universe_members` L536, `universe_build_state` L543, `active_universe_members` L550, `upsert_universe_members` L557, `replace_universe_members` L587, `delete_bars_after` L651, `latest_market_date` L670, `session_dates` L678, `nifty500_session_dates` L693, `token_assignments` L708, `token_history` L741, `upsert_bars` L766, `_validate_bars` L896, `record_quality_event` L907, `quality_events` L932, `market_history_revision` L957, `market_history_revisions` L965, `bump_market_history_revision` L978, `apply_price_factor` L992, `_capture_corporate_baseline` L1012, `preserve_corporate_action_baseline` L1038, `adjust_corporate_event` L1050, `indicators_for_date` L1108, `indicator_series` L1119, `upsert_indicators` L1137, `bars` L1162, `record_fetch_coverage` L1183, `has_coverage` L1215, `coverage` L1243, `histories` L1282, `upsert_index_quotes` L1332, `index_quotes` L1374, `index_quote_history` L1381, `upsert_corporate_action_event` L1405, `actionable_corporate_events` L1452, `corporate_action_event` L1463, `transition_corporate_action` L1471, `corporate_action_watermark` L1502, `advance_corporate_action_watermark` L1510
-
-### `src/application/market_web.py` — 304 lines
-
-**Imports**
-- L3: `import json`
-- L4: `from datetime import UTC, date, datetime, timedelta`
-- L6: `from flask import Blueprint, Response, jsonify, request`
-- L8: `from src.application.catalog import ArtifactCatalog`
-- L9: `from src.application.corporate_actions import CorporateActions`
-- L10: `from src.application.index_poller import IndexQuotePoller`
-- L11: `from src.application.intraday_alerts import IntradayStopAlerts`
-- L12: `from src.application.intraday_stream import IntradayStreamLease`
-- L13: `from src.application.market_refresh import MarketRefreshPlanner`
-- L14: `from src.application.market_repository import MarketRepository`
-- L15: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `create_market_blueprint` (L18)
-
-### `src/application/node_cache.py` — 339 lines
-
-**Imports**
-- L11: `from __future__ import annotations`
-- L13: `import json`
-- L14: `import math`
-- L15: `from datetime import UTC, date, datetime`
-- L16: `from pathlib import Path`
-- L18: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L19: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- class `IndicatorNodeCache` (L22): `__init__` L31, `_require_revisions` L61, `get` L70, `put` L95, `get_series` L143, `get_bulk` L171, `put_bulk` L218, `has_coverage` L286, `cached_node_hashes` L309, `row_count` L317, `invalidate_instrument` L331
-
-### `src/application/nse_client.py` — 87 lines
+| `application/worker.py` | `domains/operations/worker.py` | Unused re-export removed Step 73; package-level exports remain domain-backed. |
+
+The removed application YFinance adapter was not included: repository-wide search found no callers, and the documented YFinance enrichment path had already been retired. The `yfinance` provenance strings in fixtures are data labels, not imports of the adapter.
+
+## Live Python source inventory
+
+The earlier inline AST listing was removed because repeated owner moves made it stale. The current import/symbol inventory is regenerated from the live worktree at [`docs/src-file-inventory.md`](../src-file-inventory.md). Current ownership and exact migration status are in [`restructure-migration-manifest.md`](restructure-migration-manifest.md); the module-by-module candidate map above remains the planning reference.
+
+## Migration log
+
+### Step 5 — indicator node cache
+
+- Moved `src/application/node_cache.py` to `src/domains/indicators/node_cache.py`.
+- Updated application composition and corporate-action callers plus DAG/corporate-action tests to import the domain API.
+- Moved the dedicated cache test to `tests/domains/indicators/test_node_cache.py`.
+- AST parsing succeeded for the module, callers, and test. Tests were not run.
+
+### Step 6 — strategy definitions
+
+- Moved `src/application/strategy_definitions.py` to `src/gates/strategy_definitions.py`; the module coordinates persisted strategy revisions with indicator validation APIs.
+- Updated all application and test imports to `src.gates.strategy_definitions`.
+- Moved the dedicated module test to `tests/gates/test_strategy_definitions.py`; broader phase and integration tests remain in place with updated imports.
+- Static AST parsing and stale-path checks passed. Tests were not run.
+
+### Step 7 — strategies HTTP adapter
+
+- Moved `src/application/strategies_web.py` to `src/gates/strategies_web.py`.
+- Updated `run.py` to register the blueprint from its new location.
+- No dedicated test module existed to relocate.
+- Static AST parsing and stale-path checks passed. Tests were not run.
+
+### Step 8 — dashboard HTTP adapter
+
+- Moved `src/application/dashboard_web.py` to `src/gates/dashboard_web.py`.
+- Updated `run.py` to register the dashboard blueprint from `src.gates`.
+- Moved the app-level dashboard integration test to `integration_tests/gates/test_dashboard_web.py` and added `integration_tests` to pytest discovery.
+- Static AST parsing and stale-path checks passed. Tests were not run.
+
+### Step 9 — reference HTTP adapter
+
+- Moved `src/application/reference_web.py` to `src/gates/reference_web.py`; the module exposes reference reads and snapshot publication over HTTP.
+- Updated `run.py` and test imports to use `src.gates.reference_web`.
+- Moved both route/repository integration test modules to `integration_tests/gates/` with their existing `test_` basenames.
+- Static AST parsing and stale-path checks passed. Tests were not run.
+
+### Step 10 — indicator registry
+
+- Moved `src/indicators/registry.py` to `src/domains/indicators/registry.py`; the approved catalogue and pandas_ta adapter are indicator-domain responsibilities.
+- Updated direct imports in source and tests, including the existing DAG module’s registry dependency.
+- No dedicated registry test module existed; existing DAG/strategy tests retain their basenames and locations until their corresponding source modules move.
+- Static AST parsing and stale-path checks passed. Tests were not run.
+
+### Step 11 — indicator DAG engine
+
+- Moved `src/indicators/dag.py` to `src/domains/indicators/dag.py`; graph validation, hashing, and vectorized execution remain one indicator-domain responsibility.
+- Moved its focused unit test to `tests/domains/indicators/test_dag_executor.py`.
+- Updated source and test imports, and retained the legacy `src.indicators` package facade while the remaining indicator modules move.
+- Updated the `src.domains.indicators` public exports and source inventory.
+- Static AST parsing and stale-path checks passed. Tests were not run.
+
+### Step 12 — indicator definitions and feature API
+
+- Moved `src/indicators/api.py` to `src/domains/indicators/api.py`; revisions, configurations, feature values, and snapshots are indicator-domain contracts.
+- Updated the legacy `src.indicators` facade and existing test imports to use the domain API.
+- Added the API types and calculation function to the public exports of `src.domains.indicators`.
+- Existing tests combine indicator API behavior with strategy/research assertions; no unrelated mixed test file was moved.
+- Static AST parsing and stale-path checks passed. Tests were not run.
+
+### Step 13 — relative-strength calculations
+
+- Moved `src/indicators/custom/relative_strength.py` to `src/domains/indicators/relative_strength.py`, keeping indicator calculations at the domain root.
+- Updated the custom implementation registry and the backtest code-revision input path.
+- Exported the four relative-strength calculation functions from `src.domains.indicators`.
+- No dedicated test module existed; current fallback/registry behavior is covered through broader workflows.
+- Static AST parsing and stale-path checks passed. Tests were not run.
+
+### Step 14 — split momentum-quality responsibilities
+
+- Split the mixed `src/indicators/custom/momentum_quality.py` responsibilities: raw indicator generation moved to `src/domains/indicators/momentum_quality.py`, scoring rules to `src/domains/strategies/momentum_quality.py`, and their composition to `src/gates/momentum_quality.py`.
+- Updated the implementation registry, research caller, strategy package exports, and backtest code-revision inputs.
+- Renamed and moved the focused cross-domain test to `integration_tests/gates/test_momentum_quality.py`.
+- AST parsing passed across 169 Python files and stale source-path checks passed. Tests were not run.
+### Step 15 — platform-kernel contract tests
+
+- Moved `tests/test_platform_kernel.py` to `tests/platform_kernel/test_platform_kernel.py` to mirror the `src/platform_kernel/` package.
+- The four focused unit tests and their imports were unchanged; pytest discovers nested `tests/` packages through the configured test path.
+- Tests were not run.
+
+### Step 16 — platform-kernel artifact-store tests
+
+- Moved `tests/test_sqlite_artifact_store.py` to `tests/platform_kernel/test_sqlite_artifact_store.py`; the test primarily verifies the platform kernel's SQLite artifact store.
+- The file contents are unchanged. Its catalog/publisher setup remains in the same focused boundary test.
+- Tests were not run.
+
+### Step 17 — platform-kernel SQLite migration tests
+
+- Moved `tests/test_sqlite_migrations.py` to `tests/platform_kernel/test_sqlite_migrations.py`; its cases cover namespaced schema migration behavior in `src/platform_kernel/sqlite.py`.
+- The file contents and imports are unchanged.
+- Tests were not run.
+
+### Step 18 — portfolio-accounting projection test
+
+- Moved `tests/test_portfolio_accounting.py` to `tests/portfolio_accounting/test_portfolio_accounting.py`, mirroring the current `src/portfolio_accounting/` package.
+- Its single FIFO projection unit test and imports are unchanged.
+- Tests were not run.
+
+### Step 19 — portfolio-engine unit tests
+
+- Moved `tests/test_portfolio_engine.py` to `tests/portfolio_engine/test_portfolio_engine.py`, mirroring the current `src/portfolio_engine/` package.
+- Kept its 15 decision-engine tests together; two also use the backtesting runner to verify portfolio behavior across steps. Imports and test contents are unchanged.
+- Tests were not run.
+
+### Step 20 — split mixed jobs, ledger, and backtesting tests
+
+- Replaced `tests/test_jobs_ledger_backtesting.py` with three focused unit-test modules: `tests/application/test_jobs.py`, `tests/domains/portfolio_accounting/test_ledger.py`, and `tests/backtesting/test_backtesting.py`.
+- Preserved all four test functions and their names; each now imports only the APIs it exercises.
+- Tests were not run.
+
+### Step 21 — portfolio HTTP integration test
+
+- Moved `tests/test_portfolio_web.py` to `integration_tests/gates/test_portfolio_web.py`; it exercises Flask routes together with the execution ledger and market repository.
+- The ownership inventory assigns `application/portfolio_web.py` to the gates HTTP layer. Test contents and imports are unchanged.
+- Tests were not run.
+
+### Step 22 — split broker execution and HTTP integration tests
+
+- Split `tests/test_broker_execution.py` into `integration_tests/gates/test_broker_execution.py` for six broker-service/gateway cases and `integration_tests/gates/test_broker_web.py` for the Flask route case.
+- Preserved all seven test functions and names. Shared local fixtures are kept within each focused test module.
+- Tests were not run.
+
+### Step 23 — portfolio-engine ATR exit tests
+
+- Moved `tests/test_atr_exit_rules.py` to `tests/portfolio_engine/test_atr_exit_rules.py`, matching its `src.portfolio_engine` dependency.
+- The six focused tests and local fixtures were unchanged.
+- Tests were not run.
+
+### Step 24 — split phase-five portfolio tests by owner
+
+- Split `tests/test_phase5_portfolio.py` into `integration_tests/execution/test_kite_accounts.py`, `tests/portfolio_accounting/test_opening_position_projection.py`, `integration_tests/portfolio_accounting/test_ledger_opening_positions.py`, and `integration_tests/gates/test_portfolio_sync.py`.
+- Preserved all four test function names. Updated the strategy fixture path for its new nested location.
+- Tests were not run.
+
+### Step 25 — indicator DAG/cache regression tests
+
+- Split `tests/test_phase1_dag_fixes.py` by source responsibility: graph identity coverage is in `tests/domains/indicators/test_dag.py`, and cache revision coverage is in `tests/domains/indicators/test_node_cache.py`.
+- The recursive DAG hash and cache revision tests were unchanged.
+- Tests were not run.
+
+### Step 26 — architecture import-boundary test
+
+- Moved `tests/test_import_boundaries.py` to `tests/architecture/test_import_boundaries.py`; it checks dependency rules across multiple domain packages.
+- Updated its source-root calculation for the nested test location; the rule and assertions are unchanged.
+- Tests were not run.
+
+### Step 27 — application shell integration test
+
+- Moved `tests/test_application_shell.py` to `integration_tests/test_application_shell.py`; it creates the full app through root-level `run.create_app()` and checks the shell's HTTP endpoints.
+- Its single test and import remain unchanged.
+- Tests were not run.
+
+### Step 28 — cross-domain artifact-lineage integration tests
+
+- Moved `tests/test_artifact_lineage.py` to `integration_tests/application/test_artifact_lineage.py`; its cases combine artifact storage, catalog invalidation, and market/reference snapshots.
+- The three test functions, names, and imports remain unchanged.
+- Tests were not run.
+
+### Step 29 — corporate-actions workflow integration tests
+
+- Moved `tests/test_corporate_actions.py` to `integration_tests/gates/test_corporate_actions.py`; its cases coordinate corporate-action processing with market persistence, publication, and accounting.
+- Preserved all four test functions, names, and imports. Updated the Phase 3 file list.
+- Tests were not run.
+
+### Step 30 — durable jobs unit tests
+
+- Moved `tests/test_durable_jobs.py` to `tests/gates/test_durable_jobs.py`, alongside the existing worker tests and matching the planned gate ownership of durable job infrastructure.
+- Its two job-store/worker unit tests and imports are unchanged.
+- Tests were not run.
+
+### Step 31 — index-poller scheduling integration tests
+
+- Moved `tests/test_index_poller.py` to `integration_tests/gates/test_index_poller.py`; it verifies persisted poller intent, durable job submission/reconciliation, and error recording across the planned market/gate seam.
+- Preserved all three test functions, names, and imports.
+- Tests were not run.
+
+### Step 32 — split market-provider adapter tests by owner
+
+- Split `tests/test_market_provider_adapters.py` into `tests/market_data/test_market_provider_adapters.py`, `tests/domains/execution/test_streaming_provider.py`, and `integration_tests/gates/test_market_jobs.py`.
+- The market adapter module retains the original basename. All four test functions and names are preserved; provider fakes remain local to the module that uses them.
+- Tests were not run.
+
+### Step 33 — split Kite profile and authentication tests
+
+- Split `tests/test_kite_profiles.py` into `tests/domains/execution/test_kite_profiles.py`, `integration_tests/gates/test_kite_profile_isolation.py`, and `integration_tests/gates/test_kite_auth_callback.py`.
+- Preserved all three test functions and names; only the credential-selection case remains a unit test, while full-app and HTTP callback cases are integration tests.
+- Tests were not run.
+
+### Step 34 — market-data ingestion integration test
+
+- Moved `tests/test_ingestion.py` to `integration_tests/market_data/test_ingestion.py`; it exercises ingestion across normalized market data, the artifact store, catalog, and publisher.
+- Preserved its test function, name, imports, and assertions. Updated documentation references to the new path.
+- Tests were not run.
+
+### Step 35 — split live-quote persistence, provider, and stream tests
+
+- Split `tests/test_live_quotes.py` into `tests/market_data/test_live_quotes.py` for quote validation/persistence and `integration_tests/gates/test_live_quote_stream.py` for stream lifecycle and HTTP behavior.
+- Moved the provider timestamp case into the existing `tests/domains/execution/test_streaming_provider.py` module. Preserved all eight test functions and names.
+- Tests were not run.
+
+### Step 36 — indicator DAG operation tests
+
+- Moved `tests/test_phase1_dag_operations.py` to `tests/domains/indicators/test_dag.py`, matching the DAG executor and registry APIs it covers.
+- Preserved the parameterized approved-operation cases, manifest test, and imports. Updated documentation references to the new path.
+- Tests were not run.
+
+### Step 37 — indicator DAG output tests
+
+- Moved `tests/test_phase1_dag_output.py` to `tests/domains/indicators/test_dag_output.py`, matching the DAG executor and registry APIs it verifies.
+- Split `tests/test_phase1_acceptance.py` across application startup integration coverage, strategy-definition gate validation, indicator registry validation, and DAG graph identity coverage.
+- Split `tests/test_phase4_strategy_cleanup.py` by strategy runtime, application composition, research persistence, and pipeline scheduling ownership; combined the exact retained-strategy and seed-idempotence assertions.
+- Preserved the output-selection, cache-identity, and invalid-operation tests with their existing names and imports. Updated documentation references.
+- Tests were not run.
+
+### Step 38 — split Phase 1 progress and coverage tests
+
+- Split `tests/test_phase1_progress_coverage.py` into `integration_tests/gates/test_session_coverage.py`, `tests/gates/test_job_progress.py`, `integration_tests/gates/test_market_jobs.py`, `integration_tests/gates/test_pipeline_preparation.py`, and `integration_tests/gates/test_operations_progress.py`.
+- Preserved all twelve test functions and names; grouped shared fixtures with the cases they support.
+- Tests were not run.
+
+### Step 39 — split market coverage API, workflow, and repository tests
+
+- Split `tests/test_market_coverage.py` into `integration_tests/gates/test_market_coverage.py`, `integration_tests/gates/test_market_refresh.py`, and `tests/market_data/test_fetch_coverage.py`.
+- Preserved all six test functions and names; each module now covers either HTTP, refresh workflow, or market-repository coverage persistence.
+- Tests were not run.
+
+### Step 40 — reference-data liquidity-universe tests
+
+- Moved `tests/test_liquidity_universe.py` to `tests/reference_data/test_liquidity_universe.py`, matching `src.reference_data` and its liquidity policy/snapshot builder.
+- Preserved all four test functions and names, including the artifact serialization assertion. Updated documentation references.
+- Tests were not run.
+
+### Step 41 — liquidity-universe job integration test
+
+- Moved `tests/test_liquidity_universe_job.py` to `integration_tests/gates/test_liquidity_universe_job.py`; the test submits and runs the composed job, then verifies its cataloged reference-data artifact.
+- Preserved its helper, test function, name, and assertions. Updated documentation references.
+- Tests were not run.
+
+### Step 42 — publication recovery integration test
+
+- Moved `tests/test_publication_recovery.py` to `integration_tests/application/test_publication_recovery.py`; it verifies recovery across the artifact store, catalog, and publisher.
+- Preserved its single test function, name, and assertions. Updated documentation references.
+
+### Step 43 — shared redaction helpers
+
+- Moved structured-value, error, and text redaction helpers from `src/application/security.py` to `src/platform_kernel/security.py`.
+- Moved the logging filter to `src/gates/security.py`; log-handler setup remains at the application entry point.
+- Updated runtime callers and tests to use the owning module. `src/application/security.py` was a compatibility facade at this checkpoint; it was removed when `src/application` was retired in Step 92.
+- Focused redaction, regression, and recursive architecture tests passed (37 tests). Full-suite verification was pending at this migration checkpoint; see the later Steps 84–94 evidence and current final-validation status.
+
+### Step 44 — operations CLI entry point
+
+- Moved the existing `screener-ops` command implementation to `src/gates/cli.py` and changed the package script to `src.gates.cli:main`.
+- At this checkpoint, the old `src.application.cli:main` path was temporarily preserved while CLI tests moved to the gate entry point; the facade was subsequently removed in Step 92.
+- At this migration checkpoint, CLI imports were being moved into gates; Steps 72–94 later retired the application package and its transition entries.
+- Existing CLI tests and the recursive import-boundary checks passed after the move.
+
+### Step 45 — recursive dependency checks and migration manifest
+
+- Replaced the top-level-only import scan with recursive AST checks over target domains, `platform_kernel`, and gates, including relative and `TYPE_CHECKING` imports plus dynamic-import auditing.
+- Added file/import-specific transitional exceptions with reasons and a test that fails on stale allowlist entries.
+- Added `docs/architecture/restructure-migration-manifest.md` with current source ownership, compatibility routes/jobs/CLI/schema namespaces, moved test paths, and baseline evidence.
+- Regenerated `docs/src-file-inventory.md` from the current AST while preserving its existing ownership and hotspot review.
+- Tests were not run.
+
+### Step 46 — gates entry points and HTTP adapters
+
+- Moved application composition and runtime configuration to `src/gates/composition.py` and `src/gates/runtime.py`.
+- Moved the Flask factory and Waitress/background lifecycle to `src/gates/app.py`; root `run.py` now re-exports `configure_logging`, `create_app`, and `main` as the stable launcher.
+- Moved the dashboard, wiki, operations, and resource API blueprints to `src/gates/http/`; updated source, test, integration-test, and tool imports. Adjusted template/wiki roots to preserve repository asset resolution.
+- Updated `screener-ops` to `src.gates.cli:main`. Existing application route/composition/runtime import references were removed in this batch.
+- Static syntax parsing and source import searches passed. Tests were not run.
+
+### Step 47 — consolidate pure domain packages
+
+- Moved `market_data`, `reference_data`, `portfolio_engine`, and `portfolio_accounting` into `src/domains/` and updated callers across source, tools, and tests.
+- Merged the existing `PortfolioPerformance` service into the consolidated accounting package exports.
+- Superseded by Step 78: backtesting now receives a portfolio-engine port and the implementation lives under `src/domains/backtesting`; the gate adapter supplies concrete engine types.
+- Regenerated `docs/src-file-inventory.md` from the current 104 source modules. Full-suite verification was pending at this migration checkpoint; later verification status is recorded in the migration manifest.
+
+### Step 48 — operations domain
+
+- Moved durable job records, event cursors, leases, and local worker execution to `src/domains/operations/`.
+- Added curated package exports; updated in-repository callers to import jobs and workers from that public API.
+- Retained `src/application/jobs.py` and `worker.py` as narrow compatibility facades pending the external-caller audit.
+- Moved the job store and worker unit tests to `tests/domains/operations/` and removed now-obsolete gate-to-application allowlist entries.
+- AST parsing reports 107 source modules with no syntax errors. Tests were not run.
+
+### Step 49 — artifacts domain
+
+- Moved SQLite artifact catalog and recoverable publication implementations to `src/domains/artifacts/`.
+- Updated gates, workflows, tests, and tools to use the curated artifact package API. Kept narrow application re-export facades for external compatibility.
+- Removed four now-obsolete gate-to-application transition entries; table namespace and artifact payload behavior are unchanged by the move.
+- Tests were not run after the relocation.
+
+### Step 50 — strategy contracts and positional signals
+
+- Moved strategy revision/snapshot contracts into `src/domains/strategies/api.py`; `src/strategies` now provides compatibility exports.
+- Moved positional-trend feature and signal calculations into `src/domains/strategies/positional_trend.py` and updated source, tests, and tools.
+- Moved cross-domain custom implementation registration into `src/gates/indicator_implementations.py`; gates now wire indicator and strategy calculations through their public packages.
+- Updated source-hash paths and removed the obsolete gate import exception for `src.indicators.custom`.
+- AST parsing covers 113 source modules with no syntax errors; all 48 declared transition entries match observed imports. Tests were not run.
+
+### Step 51 — calendar and NSE provider ownership
+
+- Moved the observed-session `TradingCalendar` to `src/domains/market_data/calendar.py` and exported it from market data's public package.
+- Moved the NSE constituent/corporate-action HTTP client and URL constants to `src/domains/reference_data/nse_provider.py` and exported the supported adapter.
+- Updated application workflows and the portfolio HTTP gate to use the domain packages; removed the resolved calendar exception.
+- AST analysis covered 115 Python files including `run.py`, with zero syntax errors, zero direct cross-domain imports, and 47 exact transitional imports all observed. Tests were not run.
+
+### Step 52 — positional-trend gate workflow
+
+- Moved `PositionalTrendJobs` into `src/gates/workflows/positional_trend.py`, where it sequences market membership, strategy-owned signals, strategy runtime, and artifact publication.
+- Updated composition, the HTTP adapter, and tests to the new workflow location; kept the former application module as a one-class compatibility facade.
+- Removed its two resolved gate-to-application exceptions. Static parsing covered 117 files including `run.py`, with zero syntax errors and 45 of 45 transitional imports observed. Tests were not run.
+
+### Step 52 — expose calculation APIs to gate workflows
+
+- Exported the approved indicator calculations through `src.domains.indicators.api` and strategy signal/ranking calculations through `src.domains.strategies.api`.
+- Updated the gate implementation registry and positional-trend workflow to import only those public API modules; the architecture test previously found direct imports of private indicator/strategy modules.
+- Corrected a malformed import placement in the newly added positional-trend workflow discovered by the recursive AST parser.
+- Recursive architecture tests passed (4 tests), positional-trend contract/integration tests passed (17 tests), and the final full unit/integration suite passed (453 tests).
+
+### Step 53 — market repository ownership and quote extraction
+
+- Moved `MarketRepository` and `TrackedInstrument` into the market-data domain and updated callers to its public API; the old application module now forwards imports.
+- Extracted current/historical index quote operations into `src/domains/market_data/index_quotes.py` while preserving the `MarketRepository` surface and legacy schema migration sequence.
+- Removed five gate-to-application repository exceptions. Static AST analysis covered 119 files, including `run.py`, found zero syntax errors or direct cross-domain imports, and matched all 40 remaining transition entries. Tests were not run.
+- The main repository still aggregates instruments, universes, market history, indicators, and corporate-action state. Split these stores by owning domain before Phase 3 is complete.
+
+### Step 54 — instrument and universe repository extraction
+
+- Moved `TrackedInstrument` and identity/token/universe/exit-eligibility persistence methods into `src/domains/market_data/universe_repository.py`.
+- Composed the new repository concern and index quote concern into `MarketRepository`, preserving its callable surface and central historical migration setup.
+- AST audit covers 120 files including `run.py`, with zero syntax errors or direct cross-domain imports and all 40 declared transition entries observed. Tests were not run.
+
+### Step 55 — market history repository extraction
+
+- Moved market bars, sessions, revisions, quality events, indicators, and fetch coverage into `src/domains/market_data/history_repository.py`.
+- Moved token assignment/history read methods to the existing universe repository concern.
+- `MarketRepository` composes history, universe, and index-quote concerns without changing its constructor, public method surface, or the historical `market` schema migration.
+- AST audit covers 123 Python files including `run.py`, with zero syntax errors or direct cross-domain imports and all 40 declared transition entries observed. The current source inventory contains 122 modules under `src/`. Tests have not been rerun since the repository extractions.
+
+### Step 53 — strategy definition persistence ownership
+
+- Moved YAML normalization, strategy validation, and the SQLite strategy definition/revision repository to `src/domains/strategies/definitions.py`.
+- Replaced direct indicator/gate imports in the strategies domain with an injected `StrategyDefinitionValidator` contract.
+- Added `src/gates/strategy_validation.py` to adapt the indicator API and custom implementation registry; kept `src/gates/strategy_definitions.py` as a compatibility composition facade.
+- Focused strategy-definition, Strategy 4, account and architecture tests passed (16). The full unit/integration suite passed (453 tests in 102.41s). Ruff checks passed for the moved domain and adapter files.
+
+### Step 56 — reference-data repository ownership and gate composition
+
+- Moved instrument identity, token observation, reference snapshot, and token lookup persistence to `src/domains/reference_data/repository.py`.
+- Moved active-universe membership, exit-eligibility, corporate-action event state, and its watermark out of the market-data repository into the reference-data repository; removed the market-data compatibility mixin.
+- Kept the market-session/reference-eligibility join and atomic corporate-event/market-bar adjustments in `src/gates/repositories.py`, which composes the public market and reference repositories while preserving the existing aggregate API. Legacy `market` SQLite migrations remain in their existing versioned sequence.
+- AST and import-boundary checks pass (124 Python files parsed, zero syntax errors, zero cross-domain imports, zero boundary violations, all 40 transitions current). Smoke checks covered reference instruments, active-universe membership, market bars, corporate events, transitions, and watermarks. No pytest run after this change.
+
+### Step 57 — owner schema and market/reference gate seams
+
+- Added `src/domains/reference_data/schema.py` with a namespaced owner migration for reference identities, tokens, universes, and corporate-action records. `ReferenceDataRepository` can now initialize those tables independently. The historical `market` migration remains for compatibility; its series-column step is idempotent so either initialization order works.
+- Moved composite coverage/history/session readers and `TradingCalendar` into gates; market-history writes receive equity/index classification from the gate, and quality-event validation relies on the table foreign key while preserving its domain error.
+- Moved the atomic corporate-action / market-bar operations into the gate repository aggregate. Market-data runtime repositories no longer query reference-owned tables.
+- Static AST and recursive boundary audits pass (125 files including `run.py`, zero syntax errors/violations, all 40 tracked transitions current). Smoke checks covered both migration initialization orders, composite reads, calendar sessions, quality validation, and corporate-action adjustment. Pytest was not run after this change. Owner migration and duplicate DDL separation for market data remain.
+- Added `tests/reference_data/test_repository_migrations.py` for independent reference initialization and reference-first/legacy-market upgrade order. Ruff and AST parsing pass; pytest has not been run.
+
+### Step 58 — market-data owner schema migration
+
+- Added `src/domains/market_data/schema.py` with its own `market_data` namespace/version 1 for bars, index quotes/history, indicators, market-history revisions, quality events, and fetch coverage.
+- Fresh repositories now initialize through `reference_data` and `market_data` owner migrations only; they do not create the legacy `market` namespace. When that legacy namespace exists, `MarketRepository` completes its historical migrations before applying owner migrations idempotently.
+- Moved the old 17-version mixed mapping into `src/domains/market_data/legacy_schema.py` as the existing-database bridge. Added market-owner and legacy-upgrade regression tests; the legacy fixture upgrades from v10 and asserts retained reference rows plus final migration versions.
+- Manual smoke verification passed for fresh owner-only initialization and legacy v10 upgrade to v17 followed by both owners. AST parsing covers 129 Python files including `run.py` and both migration tests. Recursive import-boundary checks found zero violations and all 40 transitions current; focused Ruff passes. Pytest was not run. Removing duplicate DDL from the bridge after the upgrade window remains outstanding.
+
+### Step 59 — corporate-action gate workflow
+
+- Moved the cross-domain `CorporateActions` implementation from `src/application/corporate_actions.py` to `src/gates/workflows/corporate_actions.py`; the old module now re-exports the class and threshold constant as a compatibility facade.
+- Updated composition, market HTTP, and backtest coordination to use the gate workflow. Moved its behavioral tests to `tests/gates` and updated integration tests. Removed the two gate-to-application exceptions. The workflow consumes a narrow ledger protocol and does not import the execution package.
+- Recursive architecture audit reports zero violations and matches all 38 declared transitional imports. Focused Ruff passes on the workflow, facade, callers, and tests. Pytest was not run.
+
+### Step 60 — liquidity-universe gate workflow
+
+- Moved the liquidity job's payload validation, reference-domain model construction, and artifact publication from `src/application/liquidity.py` to `src/gates/workflows/liquidity_universe.py`. `src/domains/reference_data` retains the standalone liquidity policy and snapshot calculation; the old application module is a compatibility facade.
+- Updated composition to import the gate workflow and removed its exact application transition. The existing integration job contract remains under `integration_tests/gates`.
+- Recursive architecture audit reports zero violations and matches all 37 declared transitions. Focused Ruff and AST checks pass; pytest was not run.
+
+### Step 61 — retire unused application compatibility shims
+
+- Removed four compatibility-only application files after a recursive production, test, integration, and tool caller audit found no imports: corporate actions, exchange calendar, NSE client, and positional-trend jobs.
+- Their implementations remain at `src/gates/workflows/corporate_actions.py`, `src/gates/workflows/trading_calendar.py`, `src/domains/reference_data/nse_provider.py`, and `src/gates/workflows/positional_trend.py`, respectively. The migration manifest records each removed path and its owner.
+
+### Step 62 — universe snapshot gate workflow
+
+- Moved `UniverseJobs` and its focused unit test to the gates workflow/test trees. Composition and behavioral fixtures now import the gate path; the old application module was removed after auditing all source, test, integration, and tool callers.
+- Provider, domain contracts, and reference persistence remain in `src/domains/reference_data`; coordination with market-session evidence and exit eligibility is owned by `src/gates/workflows/universe.py`.
+- Focused Ruff passes. Pytest was not run.
+
+### Step 63 — portfolio sync gate workflow
+
+- Moved account-scoped setup and reconciliation into `src/gates/workflows/portfolio_sync.py`, with execution/accounting access expressed as injected protocols. Updated composition, integration, and audit-tool imports and removed the old application file.
+- Published retained strategy IDs through `src/domains/strategies/api.py`; both application strategy runtime and execution account linking now consume that contract.
+- Focused Ruff passes. Pytest was not run.
+
+### Step 64 — market refresh gate workflow
+
+- Moved the bounded refresh and reconciliation planner to `src/gates/workflows/market_refresh.py`; updated composition, market HTTP, integration, and behavioral imports and removed the application source after a caller audit.
+- Scheduling and held-position coordination remain in gates; market coverage and session reads remain behind their owning domain/gate interfaces.
+- Recursive boundary audit reports zero violations with all 33 transitions observed; AST, exact inventory coverage, and focused Ruff pass. Pytest was not run.
+
+### Step 65 — pipeline preparation workflow and market index contract
+
+- Moved manual prerequisite sequencing to `src/gates/workflows/pipeline_preparation.py`, updated composition and integration imports, and retired the old application module after caller audit.
+- Centralized the stable NSE index symbol set in `src/domains/market_data` and kept the prior phase-named constant as an application compatibility alias.
+- Recursive boundary audit reports zero violations with all 32 transitions observed; AST, exact inventory coverage, focused Ruff, and gate workflow import smoke pass. Pytest was not run.
+
+### Step 66 — index-poller gate lifecycle
+
+- Moved durable index-quote scheduling, lease state, and background lifecycle into `src/gates/workflows/index_poller.py`; updated app startup, CLI, HTTP, composition, and integration imports and removed the application implementation.
+- Preserved the existing `index_poller` schema namespace and version sequence while recording gate ownership of that scheduler state.
+- Recursive boundary audit reports zero violations with all 28 transitions observed; AST, exact inventory coverage, focused Ruff, and workflow import smoke pass. Pytest was not run.
+
+### Step 67 — intraday stream gate lifecycle
+
+- Moved the durable intraday stream lease into `src/gates/workflows/intraday_stream.py`; updated CLI, composition, HTTP, and regression/integration imports and removed the application implementation.
+- Preserved the `intraday_stream` migration namespace and schema versions while assigning lifecycle state and control to gates.
+- Recursive boundary audit reports zero violations with all 25 transitions observed; AST, exact inventory coverage, focused Ruff, and workflow import smoke pass. Pytest was not run.
+
+### Step 68 — live quote, stop alert, and stream ownership
+
+- Moved account-scoped live quote validation, persistence, and freshness decisions into `src/domains/market_data/live_quotes.py`; retained the `live_quotes` schema namespace/version and exposed `LiveQuotes` through the market-data API.
+- Moved durable fill-free ATR stop evaluation and alert persistence into `src/domains/portfolio_accounting/intraday_alerts.py`. The domain consumes narrow ledger, risk-projection, and alert-publication ports rather than importing execution/artifact implementations.
+- Moved the live stream controller to `src/gates/workflows/live_quote_stream.py`; routes and composition use market-data, portfolio-accounting, and gate APIs. The Kite streaming adapter remains in the mixed application provider module for a separately reviewed provider migration.
+- Split alert verification into `tests/portfolio_accounting/test_intraday_alerts.py` and `integration_tests/gates/test_intraday_alerts.py`; the stream lease HTTP lifecycle regression now lives with stream gate integration tests. Removed the two unused application shims after a caller audit.
+- Refreshed the current AST inventory and exact transition allowlist. Recursive boundary checks report zero violations and observe all 23 declared transitions; AST parsing covers 224 source, test, integration, tool, and entry files. Focused Ruff and composition/workflow import smoke checks pass. Pytest was not run.
+
+### Step 69 — market provider adapter ownership
+
+- Moved rate-limited historical-bar, instrument-list, and quote adapters to `src/domains/market_data/providers.py` and exported them through the public market-data API. They retain injected clients, validation, throttling, and normalization behavior.
+- Updated market jobs and adapter/throttle callers to use the domain owner. `src/domains/market_data/providers.py` owns historical/instrument/quote adapters; the account-scoped stream provider moved to `src/domains/execution/streaming_provider.py` in Step 87.
+- Updated the source inventory and provider ownership plan. Pytest was not run; verification is recorded in the restructure migration manifest.
+
+### Step 70 — market job and ingestion workflows
+
+- Moved `KiteMarketJobs` to `src/gates/workflows/market_jobs.py`; composition registers its methods directly as durable handlers. Provider reads, repository writes, coverage, artifact publication, and alert polling are coordinated at the gate boundary.
+- Moved `ingest_market_bars` to `src/gates/workflows/market_ingestion.py` and relocated its integration test under `integration_tests/gates`.
+- Updated all production and test callers, removed the two application implementations, and retired the exact composition-to-application transition. Composition binding and raw-to-normalized lineage smoke checks pass; zero boundary violations remain with 22 transitions. Pytest was not run.
+
+### Step 71 — retire unused artifact facades
+
+- Removed the five-line `src/application/catalog.py` and `src/application/publication.py` wrappers after recursive source, test, integration, tool, and entry-point searches found no remaining imports.
+- Callers already use the public `src.domains.artifacts` API; schema ownership and publication behavior are unchanged. The current source inventory and manifest reflect the removed paths.
+
+
+### Step 72 — execution authentication ownership
+
+- Moved Kite authentication and credential handling into `src/domains/execution`; app, CLI, composition, HTTP, and execution adapters consume the curated domain API.
+- The service preserves the existing profile isolation and atomic token replacement. The broker adapter remains under `src/execution_gateway` for a later cohesive execution-gateway migration.
+
+### Step 73 — remove unused application re-exports
+
+- Removed five unused module-level wrappers after confirming no production, test, integration, tool, or entry-point callers. The operations, security, strategy, and CLI capabilities remain in their canonical owners.
+- Package-level operations exports and the stable `run.py` entry point remain available.
+
+### Step 74 — remove market repository re-export
+
+- Removed the unused application wrapper. Cross-domain composite reads remain gate-owned; domain table owners remain under their own repositories. The retired path is still asserted by the boundary regression.
+
+### Step 75 — portfolio proposal persistence ownership
+
+- Added the portfolio-engine-owned `PortfolioProposalStore` for the existing `actions` schema. `ActionJobs` delegates proposal reads, writes, recovery projection, event writes, and pending decisions to it.
+- The processing path injects the caller-owned SQLite transaction into the store so ledger-version validation and proposal status/event changes retain their prior transaction boundary. Remaining cross-domain orchestration is still in the legacy coordinator.
+
+### Step 76 — move portfolio action coordination to gates
+
+- Moved the cross-domain ActionJobs coordinator into `gates/workflows/portfolio_actions.py` after proposal persistence became a portfolio-engine capability. Updated composition, routes, and integration/regression callers.
+- Strategy ID alias rules and signal helper exports are now discoverable through `domains/strategies`; the remaining legacy strategy runtime retains compatibility exports.
+
+### Step 77 — backtest run persistence ownership
+
+- Moved versioned `backtest_runs` schema and its index operations into `domains/backtesting`. Application orchestration now delegates run insert, list, artifact lookup, and delete to `BacktestRunStore`.
+- Kept normal duplicate rejection and Strategy 4 insert-if-missing behavior distinct. Remaining replay coordination and calculations are not yet moved.
+
+### Step 77 — backtest run persistence ownership
+
+- Added `domains/backtesting.BacktestRunStore` for the existing version-1 table and index operations; `BacktestJobs` delegates run persistence/query operations to that owner.
+- Replay coordination moved to `src/gates/workflows/backtesting.py` in Step 79; domain-owned persistence and simulation are described in later entries.
+
+### Step 78 — consolidate backtesting engine under its domain
+
+- Moved the replay/result module into `domains/backtesting/simulation.py`, composed it with the public domain API and run store, and deleted the old package after moving all internal imports.
+
+### Step 78 — invert replay’s portfolio dependency
+
+- The backtesting domain now defines a neutral `PortfolioEnginePort` and owns its execution-assumptions DTO. `gates/backtesting_adapter.py` supplies portfolio-engine evaluation and translates those values. No backtesting-domain module imports portfolio-engine code.
+- Replay regressions inject the same adapter at the edge.
+
+
+### Step 79 — move backtesting workflow coordination to gates
+
+- Moved the replay job coordinator to `gates/workflows/backtesting.py`; its persistence and simulation dependencies are now backtesting-domain APIs, with market history identities read through the market-data owner.
+- The remaining research service and Strategy 4 input-loader imports are recorded as exact transitional seams.
+
+
+### Step 80 — Strategy 4 simulation and input ownership
+
+- Strategy 4 policy and next-open replay now live in the strategies domain; the mixed CSV/SQLite loader module was split into a gate-owned composite input adapter and the strategies implementation.
+- Production backtest and CLI callers use the new domain/gate paths. The adapter’s direct cross-owner SQL remains a future move to market/reference repository contracts.
+
+
+### Step 81 — move StrategyRuntime composition to gates
+
+- The strategy runtime now resides under `src/gates`, where it coordinates public strategy and indicator contracts with gate-owned implementation adapters. Canonical identity rules remain in the strategies domain.
+- Composition and research/pipeline consumers use the new gate path; the exact composition transition to the legacy application module is retired.
+
+
+### Step 82 — research schema and persistence ownership
+
+- Research table migrations and SQL access now live in `src/domains/research/repository.py`. `ResearchJobs` delegates score/ranking projections, percentile cache, and lineage persistence while retaining workflow/API behavior.
+- The `research` namespace and migration sequence are unchanged. At this migration checkpoint, the application class still mixed research calculations, artifact reads/publication, and job orchestration; these responsibilities were later split into research-owned modules and `gates/workflows/research.py`.
+
+### Step 83 — research calculations
+
+- Pure sector scoring, correlation/clustering, anomaly statistics, and weekly score aggregation are owned by `domains/research/calculations.py` and re-exported by `domains/research`.
+- `ResearchJobs` coordinates market history, strategy runtime, artifact publication, research repository projections, and durable job work in `gates/workflows/research.py`.
+
+
+### Step 84 — move research orchestration into gates
+
+- `ResearchJobs` now lives in `gates/workflows/research.py`, with range-command parsing in `gates/payloads.py`. Composition, HTTP, backtesting, portfolio actions, and tests use the gate-owned workflow.
+- The workflow calls public APIs for research, indicators, and strategies; calculations and research persistence remain in the research domain. The composition’s strategy seed path and indicator implementation hash path were adjusted for the new module depth.
+
+
+### Step 85 — research pipeline persistence and coordination
+
+- The research domain owns the unchanged `research_pipeline` schema namespace, migrations, pipeline identity records, and stage-job pointers. The gates workflow owns date validation, trading-session resolution, child-job orchestration, deferred advancement, retries, cancellation, and status aggregation.
+
+
+### `src/domains/portfolio_engine/risk_reservations.py` — 78 lines
 
 **Imports**
 - L3: `from __future__ import annotations`
-- L5: `import csv`
-- L6: `import io`
-- L7: `import json`
-- L9: `import requests`
-- L11: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- constant `NIFTY_500_URL` (L13)
-- constant `NSE_CA_URL` (L14)
-- constant `NSE_BASE_URL` (L15)
-- class `NseClient` (L18): `__init__` L19, `_ensure_nse_cookies` L24, `nifty_500_csv` L34, `corporate_actions` L55
-
-### `src/application/operations.py` — 60 lines
-
-**Imports**
-- L3: `import sqlite3`
-- L4: `from contextlib import closing`
-- L5: `from pathlib import Path`
-- L7: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `sqlite_backup` (L10)
-- function `sqlite_restore` (L31)
-- function `sqlite_ready` (L41)
-
-### `src/application/payloads.py` — 202 lines
-
-**Imports**
-- L9: `from __future__ import annotations`
-- L11: `from dataclasses import dataclass`
-- L12: `from datetime import date`
-- L13: `from typing import Any`
-- L15: `from src.platform_kernel import DomainValidationError`
-- L48: `from src.application.strategy_runtime import REMOVED_STRATEGIES`
-- L193: `from src.application.strategy_runtime import REMOVED_STRATEGIES`
-
-**Module-level symbols**
-- class `RebuildRangePayload` (L19): `from_dict` L29, `validate` L46
-- class `RebuildIndicatorsPayload` (L73): `from_dict` L81
-- class `FetchBarsPayload` (L110): `from_dict` L118
-- class `BacktestPayload` (L135): `from_dict` L145
-- class `RebuildMultiYearPayload` (L164): `from_dict` L172, `validate` L189
-
-### `src/application/pipeline_jobs.py` — 420 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import hashlib`
-- L6: `import json`
-- L7: `import logging`
-- L10: `from datetime import UTC, date, datetime, timedelta`
-- L11: `from pathlib import Path`
-- L12: `from typing import Any`
-- L13: `from uuid import NAMESPACE_URL, uuid5`
-- L14: `from zoneinfo import ZoneInfo`
-- L16: `from src.application.jobs import JobStatus, JobStore`
-- L17: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L18: `from src.application.strategy_definitions import StrategyDefinitions`
-- L19: `from src.application.strategy_runtime import StrategyRuntime`
-- L20: `from src.indicators.registry import PandasTaAdapter`
-- L21: `from src.platform_kernel import DomainValidationError`
-- L117: `from src.application.exchange_calendar import TradingCalendar`
-
-**Module-level symbols**
-- constant `_CALCULATION_REVISION` (L23)
-- class `ResearchPipelineJobs` (L26): `__init__` L27, `_request` L58, `_market_sessions` L115, `submit` L127, `_defer_advance` L215, `advance` L237, `retry_stage` L307, `cancel` L322, `status` L346, `_pipeline` L406, `_stages` L415
-
-### `src/application/pipeline_preparation.py` — 51 lines
-
-**Imports**
-- L2: `from datetime import date, timedelta`
-- L4: `from src.application.market_jobs import PHASE2_BENCHMARK_SYMBOLS`
-- L5: `from src.application.session_coverage import CompletedSessionCoverage`
-- L6: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- class `PipelinePreparation` (L9): `__init__` L10, `run` L14
-
-### `src/application/pipeline_web.py` — 44 lines
-
-**Imports**
-- L3: `from flask import Blueprint, jsonify, request`
-- L5: `from src.application.pipeline_jobs import ResearchPipelineJobs`
-- L6: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `create_pipeline_blueprint` (L9)
-
-### `src/application/portfolio_performance.py` — 91 lines
-
-**Imports**
-- L3: `from datetime import date`
-- L4: `from decimal import Decimal`
-- L5: `from math import isfinite`
-- L6: `from typing import Any`
-- L8: `from src.execution_gateway import Ledger`
-- L9: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `calculate_xirr` (L11)
-- class `PortfolioPerformance` (L29): `__init__` L30, `calculate_xirr` L33, `calculate_drawdown` L79
-
-### `src/application/portfolio_sync.py` — 130 lines
-
-**Imports**
-- L8: `from __future__ import annotations`
-- L10: `import hashlib`
-- L11: `import json`
-- L12: `from datetime import UTC, date, datetime`
-- L13: `from decimal import Decimal`
-- L14: `from pathlib import Path`
-- L15: `from typing import Any`
-- L17: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L18: `from src.execution_gateway.kite_accounts import KiteAccounts`
-- L19: `from src.execution_gateway.ledger import Ledger`
-- L20: `from src.platform_kernel import DomainValidationError, Money, Quantity`
-- L21: `from src.portfolio_accounting import Fill, FillSide, OpeningPosition`
-- L46: `from src.application.strategy_runtime import RETAINED_STRATEGIES`
-
-**Module-level symbols**
-- class `PortfolioSync` (L24): `__init__` L25, `setup` L41, `reconcile` L113
-
-### `src/application/portfolio_web.py` — 450 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import json`
-- L6: `from datetime import date, datetime`
-- L7: `from decimal import Decimal, InvalidOperation`
-- L8: `from zoneinfo import ZoneInfo`
-- L10: `from flask import Blueprint, Response, jsonify, request`
-- L12: `from src.application.market_repository import MarketRepository`
-- L13: `from src.execution_gateway import Ledger`
-- L14: `from src.platform_kernel import DomainValidationError, Money, Quantity`
-- L15: `from src.portfolio_accounting import Fill, FillSide`
-- L27: `from src.application.portfolio_performance import PortfolioPerformance`
-- L58: `from src.execution_gateway.risk_guard import RiskGuardLimits`
-- L268: `from datetime import timedelta`
-- L270: `from src.application.exchange_calendar import TradingCalendar`
-- L308: `import hashlib`
-- L309: `import json`
-
-**Module-level symbols**
-- function `_money` (L18)
-- function `create_portfolio_blueprint` (L30)
-
-### `src/application/positional_trend.py` — 166 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import math`
-- L6: `from collections import deque`
-
-**Module-level symbols**
-- function `valid_bar` (L9)
-- constant `_DEFAULT_RULES` (L17)
-- function `_segment_features` (L25)
-- function `feature_series` (L142)
-- function `signal_series` (L165)
-
-### `src/application/positional_trend_backtest.py` — 525 lines
-
-**Imports**
-- L2: `from __future__ import annotations`
-- L4: `import csv`
-- L5: `import hashlib`
-- L6: `import json`
-- L7: `import math`
-- L8: `import sqlite3`
-- L9: `from collections import Counter, defaultdict`
-- L10: `from copy import deepcopy`
-- L11: `from dataclasses import asdict, dataclass`
-- L12: `from datetime import date, datetime`
-- L13: `from pathlib import Path`
-- L14: `from statistics import mean, median, stdev`
-- L15: `from zoneinfo import ZoneInfo`
-- L17: `from src.application.positional_trend import feature_series, valid_bar`
-
-**Module-level symbols**
-- function `load_data` (L20)
-- function `load_market_cap_universe` (L95)
-- function `load_snapshot_universe` (L148)
-- class `Policy` (L227): `validate` L236
-- function `_equity_at_open` (L250)
-- function `simulate` (L261)
-- function `benchmark_price_return` (L497)
-
-### `src/application/positional_trend_jobs.py` — 187 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import hashlib`
-- L6: `import json`
-- L7: `from datetime import date, datetime`
-- L8: `from pathlib import Path`
-- L9: `from uuid import NAMESPACE_URL, uuid5`
-- L10: `from zoneinfo import ZoneInfo`
-- L12: `from src.application.positional_trend import feature_series`
-- L13: `from src.application.sqlite import sqlite_connection`
-- L14: `from src.platform_kernel import DomainValidationError, QualityStatus`
-- L115: `from src.application.ranking_patterns import ranking_pattern_for`
-
-**Module-level symbols**
-- class `PositionalTrendJobs` (L17): `__init__` L23, `_members` L26, `_histories` L46, `_input_fingerprint` L50, `input_fingerprint` L63, `build_signals` L69, `build_range` L157, `read_signals` L168
-
-### `src/application/positional_trend_web.py` — 52 lines
-
-**Imports**
-- L3: `from datetime import date`
-- L5: `from flask import Blueprint, jsonify, request`
-- L7: `from src.application.jobs import JobStore`
-- L8: `from src.application.positional_trend_jobs import PositionalTrendJobs`
-- L9: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `create_positional_trend_blueprint` (L12)
-
-### `src/application/providers.py` — 226 lines
-
-**Imports**
-- L3: `from collections.abc import Callable, Mapping, Sequence`
-- L4: `from datetime import UTC, date, datetime`
-- L5: `from decimal import Decimal, InvalidOperation`
-- L6: `from threading import Lock`
-- L7: `from time import monotonic, sleep`
-- L8: `from typing import Any`
-- L10: `from src.market_data import NormalizedBar`
-- L11: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- class `_ProviderThrottle` (L14): `__init__` L15, `wait` L23
-- class `KiteHistoricalBarsProvider` (L31): `__init__` L32, `get_bars` L41
-- class `KiteInstrumentProvider` (L84): `__init__` L85, `get_instruments` L96
-- class `KiteQuoteProvider` (L103): `__init__` L104, `get_quote` L114
-- class `KiteStreamingProvider` (L123): `__init__` L126, `start` L155, `stop` L167, `_on_connect` L178, `_on_close` L185, `_on_ticks` L188
-
-### `src/application/publication.py` — 80 lines
-
-**Imports**
-- L3: `from typing import Any`
-- L5: `from src.application.catalog import ArtifactCatalog`
-- L6: `from src.platform_kernel import ArtifactManifest, ArtifactStore, DomainValidationError, QualityStatus`
-
-**Module-level symbols**
-- class `ArtifactPublisher` (L14): `__init__` L15, `publish_json` L19, `recover` L46
-
-### `src/application/ranking_patterns.py` — 190 lines
-
-**Imports**
-- L7: `from __future__ import annotations`
-- L9: `import hashlib`
-- L10: `import json`
-- L11: `import logging`
-- L12: `from abc import ABC, abstractmethod`
-- L13: `from collections import defaultdict`
-
-**Module-level symbols**
-- class `RankingPattern` (L18): `pattern_name` L23, `rank` L27
-- class `FactorPercentileRanking` (L38): `pattern_name` L48, `rank` L51, `compute_percentiles` L84, `percentile_fingerprint` L119
-- class `DirectSignalRanking` (L136): `pattern_name` L144, `rank` L147
-- function `ranking_pattern_for` (L184)
-
-### `src/application/reference_web.py` — 234 lines
-
-**Imports**
-- L3: `import hashlib`
-- L4: `import json`
-- L5: `from datetime import UTC, date, datetime`
-- L6: `from decimal import Decimal, InvalidOperation`
-- L8: `from flask import Blueprint, jsonify, request`
-- L10: `from src.application.market_repository import MarketRepository`
-- L11: `from src.application.publication import ArtifactPublisher`
-- L12: `from src.platform_kernel import ArtifactStore, DomainValidationError`
-
-**Module-level symbols**
-- function `create_reference_blueprint` (L15)
-
-### `src/application/release_gates.py` — 94 lines
-
-**Imports**
-- L8: `from __future__ import annotations`
-- L10: `import hashlib`
-- L11: `from collections.abc import Iterable`
-- L12: `from datetime import date`
-- L13: `from pathlib import Path`
-- L14: `from typing import Any`
-- L16: `from src.application.operations import sqlite_backup, sqlite_ready, sqlite_restore`
-- L17: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `next_tradable_session` (L20)
-- function `compare_execution_events` (L28)
-- function `restore_drill` (L61)
-- function `dashboard_visual_contract` (L85)
-
-### `src/application/research_jobs.py` — 1425 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import hashlib`
-- L6: `import json`
-- L7: `import logging`
-- L10: `from collections import defaultdict`
-- L11: `from datetime import UTC, date, datetime, timedelta`
-- L12: `from importlib.metadata import version`
-- L13: `from pathlib import Path`
-- L14: `from statistics import mean, pstdev`
-- L15: `from time import perf_counter`
-- L16: `from typing import Any, cast`
-- L17: `from uuid import NAMESPACE_URL, uuid4, uuid5`
-- L19: `from src.application.jobs import JobExecutionContext`
-- L20: `from src.application.market_repository import MarketRepository`
-- L21: `from src.application.publication import ArtifactPublisher`
-- L22: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L23: `from src.application.strategy_definitions import StrategyDefinitions`
-- L24: `from src.application.strategy_runtime import StrategyRuntime`
-- L25: `from src.indicators.custom import momentum_quality_from_indicators, momentum_quality_indicator_series, relative_strength_feature_series`
-- L30: `from src.indicators.registry import PandasTaAdapter`
-- L31: `from src.platform_kernel import DomainValidationError, QualityStatus`
-- L127: `from src.application.strategy_runtime import resolve_strategy_id`
-- L140: `from src.application.payloads import RebuildIndicatorsPayload`
-- L166: `import pandas as pd`
-- L168: `from src.indicators.dag import DagExecutor, DagGraph`
-- L174: `import hashlib`
-- L279: `from src.application.payloads import RebuildRangePayload`
-- L440: `from src.application.ranking_patterns import ranking_pattern_for`
-- L883: `from src.application.strategy_runtime import REMOVED_STRATEGIES, resolve_strategy_id`
-- L1106: `from src.application.strategy_runtime import REMOVED_STRATEGIES, resolve_strategy_id`
-- L1325: `from datetime import UTC, datetime`
-- L1393: `from datetime import UTC, datetime`
-
-**Module-level symbols**
-- class `ResearchJobs` (L34): `__init__` L35, `_indicator_set` L125, `calculate_day` L133, `rebuild_indicators` L136, `rebuild_range` L276, `_factor_multiplier` L591, `sector_normalize` L608, `correlations` L711, `anomalies` L805, `_calculate_day` L882, `rank_week` L1105, `top_rankings` L1209, `all_rankings` L1222, `ranking_weeks` L1234, `read_snapshot` L1245, `upsert_percentile_snapshot` L1309, `read_percentile_snapshot` L1352, `record_lineage` L1379, `read_lineage` L1418
-
-### `src/application/research_web.py` — 198 lines
-
-**Imports**
-- L3: `import hashlib`
-- L4: `import json`
-- L5: `from datetime import date`
-- L7: `from flask import Blueprint, jsonify, request`
-- L9: `from src.application.jobs import JobStore`
-- L10: `from src.application.research_jobs import ResearchJobs`
-- L11: `from src.platform_kernel import ArtifactStore, DomainValidationError`
-
-**Module-level symbols**
-- function `create_research_blueprint` (L14)
-
-### `src/application/runs.py` — 18 lines
-
-**Imports**
-- L3: `from src.application.publication import ArtifactPublisher`
-- L4: `from src.backtesting import BacktestResult`
-- L5: `from src.platform_kernel import ArtifactManifest`
-
-**Module-level symbols**
-- function `publish_backtest_result` (L8)
-
-### `src/application/runtime.py` — 31 lines
-
-**Imports**
-- L3: `import os`
-- L4: `from pathlib import Path`
-
-**Module-level symbols**
-- class `RuntimeConfig` (L7)
-
-### `src/application/security.py` — 75 lines
-
-**Imports**
-- L3: `import logging`
-- L4: `import re`
-- L5: `import traceback`
-- L6: `from collections.abc import Mapping, Sequence`
-- L7: `from typing import Any`
-- L9: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- constant `_SENSITIVE_KEYS` (L11)
-- constant `_SENSITIVE_SUFFIXES` (L23)
-- constant `_REDACTED` (L24)
-- function `_is_sensitive_key` (L27)
-- function `sanitize_sensitive` (L32)
-- function `sanitize_error` (L44)
-- constant `_SECRET_ASSIGNMENT` (L51)
-- function `sanitize_text` (L59)
-- class `RedactingLogFilter` (L64): `filter` L67
-
-### `src/application/session_coverage.py` — 91 lines
-
-**Imports**
-- L3: `from bisect import bisect_right`
-- L4: `from collections import defaultdict`
-- L5: `from datetime import date, datetime, timedelta`
-- L6: `from zoneinfo import ZoneInfo`
-- L8: `from src.application.market_refresh import PHASE2_BENCHMARK_SYMBOLS`
-- L9: `from src.application.sqlite import sqlite_connection`
-- L10: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- class `CompletedSessionCoverage` (L13): `__init__` L14, `read` L18, `record` L85
-
-### `src/application/sqlite.py` — 71 lines
-
-**Imports**
-- L3: `import sqlite3`
-- L4: `from collections.abc import Callable, Iterator, Mapping, Sequence`
-- L5: `from contextlib import contextmanager`
-- L6: `from pathlib import Path`
-- L8: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `sqlite_connection` (L14)
-- function `migrate_sqlite` (L45)
-
-### `src/application/strategies_web.py` — 44 lines
-
-**Imports**
-- L3: `from flask import Blueprint, jsonify, request`
-- L5: `from src.application.strategy_definitions import StrategyDefinitions`
-- L6: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `create_strategies_blueprint` (L9)
-
-### `src/application/strategy_definitions.py` — 260 lines
-
-**Imports**
-- L8: `from __future__ import annotations`
-- L10: `import hashlib`
-- L11: `import json`
-- L12: `import math`
-- L13: `import re`
-- L14: `from datetime import UTC, datetime`
-- L15: `from pathlib import Path`
-- L16: `from typing import Any`
-- L17: `from uuid import NAMESPACE_URL, uuid5`
-- L19: `import yaml`
-- L21: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L22: `from src.indicators.custom import CUSTOM_IMPLEMENTATIONS`
-- L23: `from src.indicators.dag import APPROVED_OPERATIONS, DagGraph`
-- L24: `from src.indicators.registry import PandasTaAdapter`
-- L25: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- constant `_STATUSES` (L27)
-- constant `_SEMVER` (L28)
-- class `StrategyDefinitions` (L30): `__init__` L31, `create_from_yaml` L46, `get` L75, `revisions` L82, `active` L87, `active_revisions` L95, `activate` L102, `_decode` L116, `_validate` L121, `_validate_operations` L243
-
-### `src/application/strategy_runtime.py` — 199 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `from collections.abc import Mapping, Sequence`
-- L6: `from pathlib import Path`
-- L7: `from typing import Any, cast`
-- L9: `import pandas as pd`
-- L11: `from src.application.strategy_definitions import StrategyDefinitions`
-- L12: `from src.indicators.custom import CROSS_SECTION_IMPLEMENTATIONS, INSTRUMENT_IMPLEMENTATIONS, INSTRUMENT_SERIES_IMPLEMENTATIONS, BenchmarkImplementation, InstrumentImplementation`
-- L19: `from src.indicators.dag import DagExecutor, DagGraph`
-- L20: `from src.indicators.registry import PandasTaAdapter`
-- L21: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- constant `LEGACY_STRATEGY_MAP` (L24)
-- constant `NAMED_TO_LEGACY` (L28)
-- constant `REMOVED_STRATEGIES` (L29)
-- constant `RETAINED_STRATEGIES` (L30)
-- function `resolve_strategy_id` (L33)
-- class `StrategyRuntime` (L38): `__init__` L39, `seed` L43, `revision` L59, `strategy_ids` L69, `factor_weights` L75, `strategy_kind` L81, `signal_rules` L85, `benchmark` L92, `portfolio_policy` L97, `compute` L104, `compute_series` L119, `_compute_dag_series` L144, `cross_section` L177, `factor_multiplier` L184
-
-### `src/application/universe_jobs.py` — 134 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import csv`
-- L6: `import hashlib`
-- L7: `import io`
-- L8: `from datetime import date, datetime, timedelta`
-- L9: `from typing import Any`
-- L10: `from uuid import NAMESPACE_URL, uuid5`
-- L11: `from zoneinfo import ZoneInfo`
-- L13: `from src.application.exchange_calendar import TradingCalendar`
-- L14: `from src.application.market_repository import MarketRepository`
-- L15: `from src.application.nse_client import NseClient`
-- L16: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- class `UniverseJobs` (L19): `__init__` L22, `download_nifty500_constituents` L27, `_record_exit_eligibility` L60, `detect_universe_exits` L93, `_parse` L121
-
-### `src/application/universe_web.py` — 61 lines
-
-**Imports**
-- L3: `from datetime import UTC, date, datetime`
-- L5: `from flask import Blueprint, jsonify, request`
-- L7: `from src.application.jobs import JobStore`
-- L8: `from src.application.market_repository import MarketRepository`
-- L9: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `create_universe_blueprint` (L12)
-
-### `src/application/web.py` — 163 lines
-
-**Imports**
-- L7: `import json`
-- L8: `import time`
-- L9: `from collections.abc import Collection`
-- L10: `from pathlib import Path`
-- L12: `from flask import Blueprint, Response, jsonify, request, stream_with_context`
-- L14: `from src.application.jobs import Job, JobStore`
-- L15: `from src.application.worker import BackgroundWorker, JobWorker`
-- L16: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- function `_job_response` (L19)
-- function `create_operations_blueprint` (L36)
-
-### `src/application/wiki_web.py` — 43 lines
-
-**Imports**
-- L3: `from pathlib import Path`
-- L5: `from flask import Blueprint, jsonify, render_template`
-
-**Module-level symbols**
-- constant `_WIKI_DIRECTORY` (L8)
-- constant `_PAGES` (L9)
-- function `create_wiki_blueprint` (L20)
-
-### `src/application/worker.py` — 140 lines
-
-**Imports**
-- L3: `import inspect`
-- L4: `import logging`
-- L5: `import threading`
-- L6: `from collections.abc import Callable, Mapping`
-- L7: `from datetime import UTC, datetime`
-- L8: `from typing import Any`
-- L10: `from src.application.jobs import Job, JobExecutionContext, JobStore`
-- L11: `from src.application.security import sanitize_error`
-- L12: `from src.platform_kernel import DomainValidationError`
-
-**Module-level symbols**
-- class `JobWorker` (L17): `__init__` L23, `run_once` L28
-- class `BackgroundWorker` (L65): `__init__` L68, `start` L81, `stop` L97, `is_alive` L103, `status` L106, `_run_loop` L127
-
-### `src/backtesting/__init__.py` — 19 lines
-
-**Imports**
-- L3: `from .api import BacktestResult, BacktestRunManifest, BacktestStep, FillModelRevision, SimulatedFill, run`
-
-**Module-level symbols**
-- None
-
-### `src/backtesting/api.py` — 586 lines
-
-**Imports**
-- L3: `import hashlib`
-- L4: `import json`
-- L5: `import re`
-- L6: `from collections import defaultdict`
-- L7: `from collections.abc import Mapping`
-- L8: `from dataclasses import asdict, dataclass, field`
-- L9: `from datetime import date`
-- L10: `from decimal import Decimal`
-- L11: `from uuid import UUID, uuid4`
-- L13: `from src.platform_kernel import ArtifactManifest, ArtifactStore, DomainValidationError, freeze_value`
-- L19: `from src.portfolio_engine import Candidate, Decision, DecisionType, ExecutionAssumptions, MarketBar, PortfolioPolicy, PortfolioState, evaluate`
-
-**Module-level symbols**
-- constant `_SEMVER` (L30)
-- class `FillModelRevision` (L34): `__post_init__` L43, `execution_assumptions` L66
-- class `BacktestRunManifest` (L71): `__post_init__` L83, `fingerprint` L96
-- class `BacktestStep` (L115)
-- class `SimulatedFill` (L124)
-- class `BacktestResult` (L140): `_xirr` L152, `metrics` L181, `period_fills` L269, `completed_trades` L276, `annual_returns` L314, `trade_counts` L328, `sanity_flags` L336, `publish` L349, `upstream_ids` L362, `to_payload` L371
-- constant `_SELLS` (L419)
-- function `run` (L429)
-
-### `src/execution_gateway/__init__.py` — 6 lines
-
-**Imports**
-- L3: `from .broker import BrokerExecutionGateway, BrokerOrderService, KiteExecutionGateway`
-- L4: `from .ledger import Ledger`
-
-**Module-level symbols**
-- None
-
-### `src/execution_gateway/broker.py` — 473 lines
-
-**Imports**
-- L3: `from __future__ import annotations`
-- L5: `import json`
-- L6: `from collections.abc import Iterable`
-- L7: `from datetime import UTC, date, datetime`
-- L8: `from decimal import Decimal`
-- L9: `from pathlib import Path`
-- L10: `from typing import Protocol`
-- L11: `from uuid import NAMESPACE_URL, uuid4, uuid5`
-- L13: `from kiteconnect import KiteConnect`
-- L15: `from src.application.kite_auth import KiteCredentials`
-- L16: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L17: `from src.platform_kernel import DomainValidationError, Money, Quantity`
-- L18: `from src.portfolio_accounting import Fill, FillSide`
-- L20: `from .ledger import Ledger`
-- L334: `from src.application.market_repository import MarketRepository`
-
-**Module-level symbols**
-- class `BrokerExecutionGateway` (L23): `submit_order` L24, `order_status` L25
-- class `KiteExecutionGateway` (L28): `__init__` L31, `arm` L50, `disarm` L54, `controls` L57, `_client` L65, `_order_tag` L86, `submit_order` L95, `order_status` L115, `find_order` L133
-- class `BrokerOrderService` (L142): `__init__` L143, `execution_controls` L180, `create_basket` L189, `basket` L223, `submit_basket` L231, `create_intent` L241, `get` L288, `prepare_proposal` L295, `_assert_current_buy_membership` L331, `submit` L346, `reconcile` L390, `manual_fill` L431, `_post_fill_once` L450, `_event` L472
-
-### `src/execution_gateway/kite_accounts.py` — 182 lines
-
-**Imports**
-- L3: `from datetime import UTC, datetime`
-- L5: `from kiteconnect import KiteConnect`
-- L7: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L8: `from src.platform_kernel import DomainValidationError`
-- L105: `from src.application.strategy_runtime import RETAINED_STRATEGIES`
-
-**Module-level symbols**
-- class `KiteAccounts` (L11): `__init__` L14, `_initialize` L19, `register_account` L52, `list_accounts` L72, `get_credentials` L80, `update_session` L91, `link_portfolio` L104, `get_portfolio` L117, `binding` L128, `client` L135, `login_url` L143, `authenticate` L147, `validate` L161, `portfolio_inputs` L175
-
-### `src/execution_gateway/ledger.py` — 566 lines
-
-**Imports**
-- L3: `import hashlib`
-- L4: `import json`
 - L5: `import sqlite3`
-- L6: `from collections.abc import Iterable`
-- L7: `from contextlib import nullcontext`
-- L8: `from datetime import UTC, date, datetime`
-- L9: `from decimal import Decimal`
-- L10: `from pathlib import Path`
-- L12: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L13: `from src.platform_kernel import DomainValidationError, Money, Quantity`
-- L14: `from src.portfolio_accounting import AccountingEvent, Fill, FillSide, OpeningPosition, project`
-- L196: `import hashlib`
-- L516: `from decimal import Decimal`
-- L518: `from src.portfolio_accounting.api import Quantity`
+- L6: `from pathlib import Path`
+- L8: `from src.platform_kernel.sqlite import migrate_sqlite`
 
 **Module-level symbols**
-- class `Ledger` (L17): `__init__` L18, `_connect` L22, `_initialize` L25, `open_account` L62, `record_fills` L74, `import_opening_positions` L178, `record_cash_transfer` L247, `projection` L322, `open_instrument_ids` L325, `projection_at` L333, `journal` L359, `save_valuation` L407, `valuations` L431, `accounts` L445, `events` L456, `_fill_event` L483, `_opening_position_event` L499, `_parse_accounting_event` L511, `_event_fill` L530, `_execution_time` L546, `_cash_balance` L552
+- class `RiskReservationRepository` (L11): __init__ L14, active_for_account L32, upsert L42, release L70
 
-### `src/execution_gateway/risk_guard.py` — 90 lines
 
-**Imports**
-- L3: `import json`
-- L4: `from dataclasses import dataclass`
-- L5: `from datetime import UTC, datetime`
-- L6: `from math import isfinite`
-- L7: `from typing import Any`
-- L9: `from src.application.sqlite import migrate_sqlite, sqlite_connection`
-- L10: `from src.platform_kernel import DomainValidationError`
+### Step 86 — portfolio risk orchestration and reservation ownership
 
-**Module-level symbols**
-- class `RiskGuardLimits` (L14): `__post_init__` L25
-- class `PortfolioRiskConfig` (L42): `__init__` L43, `_initialize` L47, `get_limits` L64, `update_limits` L74
+- `portfolio_engine` owns the unchanged risk-reservation schema and row persistence; `gates/workflows/managed_risk.py` owns the cross-domain risk check. The repository executes against the guard’s active SQLite connection so ledger, limits, and reservations stay in one transaction.
 
-### `src/indicators/__init__.py` — 21 lines
-
-**Imports**
-- L3: `from .api import FeatureSnapshot, FeatureValue, IndicatorConfiguration, IndicatorRevision, compute_feature`
-- L10: `from .dag import DagExecutor, DagGraph, DagNode`
-
-**Module-level symbols**
-- None
-
-### `src/indicators/api.py` — 149 lines
-
-**Imports**
-- L3: `import hashlib`
-- L4: `import json`
-- L5: `import re`
-- L6: `from collections.abc import Mapping`
-- L7: `from dataclasses import asdict, dataclass, field`
-- L8: `from datetime import date`
-- L9: `from decimal import Decimal`
-- L10: `from uuid import UUID, uuid4`
-- L12: `from src.platform_kernel import ArtifactManifest, ArtifactStore, DomainValidationError, freeze_value`
-
-**Module-level symbols**
-- constant `_SEMVER` (L14)
-- class `IndicatorRevision` (L18): `__post_init__` L27, `definition_hash` L41
-- class `IndicatorConfiguration` (L58): `create` L65
-- class `FeatureValue` (L81): `__post_init__` L85
-- class `FeatureSnapshot` (L93): `publish` L100
-- function `compute_feature` (L117)
-
-### `src/indicators/custom/__init__.py` — 77 lines
-
-**Imports**
-- L3: `from collections.abc import Callable, Sequence`
-- L4: `from typing import Any`
-- L6: `from src.application.positional_trend import feature_series as positional_trend_feature_series`
-- L8: `from .momentum_quality import momentum_quality_feature_series, momentum_quality_features, momentum_quality_from_indicators, momentum_quality_indicator_series`
-- L14: `from .relative_strength import relative_strength_factor_series, relative_strength_factors, relative_strength_feature_series, relative_strength_features`
-
-**Module-level symbols**
-- function `positional_trend_features` (L22)
-- function `positional_trend_series` (L28)
-- constant `INSTRUMENT_IMPLEMENTATIONS` (L44)
-- constant `INSTRUMENT_SERIES_IMPLEMENTATIONS` (L49)
-- constant `CROSS_SECTION_IMPLEMENTATIONS` (L54)
-- constant `CUSTOM_IMPLEMENTATIONS` (L57)
-
-### `src/indicators/custom/momentum_quality.py` — 199 lines
-
-**Imports**
-- L8: `from __future__ import annotations`
-- L10: `import math`
-- L11: `from collections.abc import Sequence`
-- L12: `from typing import Any`
-- L14: `import pandas as pd`
-
-**Module-level symbols**
-- constant `_MOMENTUM_RSI_WEIGHT` (L16)
-- constant `_MOMENTUM_PPO_WEIGHT` (L17)
-- constant `_MOMENTUM_PPO_HISTOGRAM_WEIGHT` (L18)
-- constant `_MOMENTUM_PURE_WEIGHT` (L19)
-- function `_goldilocks` (L22)
-- function `_rsi_regime` (L34)
-- function `_percent_b_score` (L46)
-- function `_value` (L56)
-- function `momentum_quality_indicator_series` (L61)
-- function `momentum_quality_from_indicators` (L151)
-- function `momentum_quality_feature_series` (L191)
-- function `momentum_quality_features` (L196)
-
-### `src/indicators/custom/relative_strength.py` — 220 lines
-
-**Imports**
-- L8: `from __future__ import annotations`
-- L10: `import math`
-- L11: `from collections.abc import Sequence`
-- L12: `from typing import Any, cast`
-- L14: `import pandas as pd`
-
-**Module-level symbols**
-- function `_finite` (L17)
-- function `_clip` (L25)
-- function `relative_strength_feature_series` (L29)
-- function `relative_strength_features` (L150)
-- function `relative_strength_factors` (L160)
-- function `relative_strength_factor_series` (L208)
-
-### `src/indicators/dag.py` — 652 lines
-
-**Imports**
-- L13: `from __future__ import annotations`
-- L15: `import hashlib`
-- L16: `import json`
-- L17: `import logging`
-- L20: `import math`
-- L21: `from collections import defaultdict, deque`
-- L22: `from collections.abc import Mapping, Sequence`
-- L23: `from dataclasses import dataclass`
-- L24: `from typing import Any`
-- L26: `import pandas as pd`
-- L28: `from src.platform_kernel import DomainValidationError`
-- L30: `from .registry import IndicatorSpec, PandasTaAdapter, provider_output_role, selected_indicator_output`
-- L463: `import pandas_ta`
-
-**Module-level symbols**
-- constant `PRIMITIVE_FIELDS` (L40)
-- constant `APPROVED_OPERATIONS` (L45)
-- class `DagNode` (L59): `__post_init__` L88, `input_refs` L95, `content_hash` L100
-- class `DagGraph` (L124): `__init__` L131, `nodes` L144, `_validate_references` L147, `_topological_sort` L161, `execution_order` L192, `max_warmup` L196, `unique_content_hashes` L225, `content_hash` L235, `_compute_content_hashes` L242, `to_dict` L270, `from_dict` L286, `from_yaml_sections` L303
-- class `DagExecutor` (L371): `__init__` L378, `execute` L381, `_execute_node` L429, `_execute_pandas_ta` L441, `_execute_operation` L504
-- function `_interpolate_piecewise` (L635)
-
-### `src/indicators/registry.py` — 184 lines
-
-**Imports**
-- L7: `from __future__ import annotations`
-- L9: `import importlib.metadata`
-- L10: `import math`
-- L11: `from collections.abc import Callable, Mapping`
-- L12: `from dataclasses import dataclass`
-- L13: `from enum import StrEnum`
-- L14: `from typing import Any`
-- L16: `import pandas as pd`
-- L18: `from src.platform_kernel import DomainValidationError`
-- L117: `import pandas_ta`
-
-**Module-level symbols**
-- class `IndicatorProvider` (L21)
-- class `SupportStatus` (L27)
-- class `IndicatorSpec` (L37): `catalogue_item` L49
-- constant `_SPECS` (L70)
-- constant `_PROVIDER_OUTPUT_PREFIXES` (L82)
-- function `selected_indicator_output` (L89)
-- function `provider_output_role` (L102)
-- class `PandasTaAdapter` (L110): `__init__` L115, `catalogue` L124, `spec` L127, `calculate` L133, `_validate_series` L160, `validate_parameters` L169
-
-### `src/market_data/__init__.py` — 17 lines
-
-**Imports**
-- L3: `from .api import AdjustmentBasis, MarketDataSnapshot, NormalizedBar, publish_raw_snapshot, publish_snapshot`
-
-**Module-level symbols**
-- None
-
-### `src/market_data/api.py` — 126 lines
-
-**Imports**
-- L3: `from collections.abc import Iterable, Mapping`
-- L4: `from dataclasses import asdict, dataclass`
-- L5: `from datetime import date`
-- L6: `from decimal import Decimal`
-- L7: `from enum import Enum`
-- L8: `from uuid import UUID, uuid4`
-- L10: `from src.platform_kernel import ArtifactManifest, ArtifactStore, DomainValidationError, QualityStatus`
-
-**Module-level symbols**
-- class `AdjustmentBasis` (L18)
-- class `NormalizedBar` (L25): `__post_init__` L35
-- class `MarketDataSnapshot` (L59): `__post_init__` L66
-- function `publish_raw_snapshot` (L78)
-- function `publish_snapshot` (L100)
-
-### `src/platform_kernel/__init__.py` — 41 lines
-
-**Imports**
-- L7: `from .api import ArtifactManifest, ArtifactStore, Broker, CommandMetadata, DomainValidationError, FrozenDict, HistoricalBarsProvider, InstrumentProvider, LiveQuoteProvider, Money, QualityStatus, Quantity, SqliteArtifactStore, VersionedReference, freeze_value`
-
-**Module-level symbols**
-- None
-
-### `src/platform_kernel/api.py` — 31 lines
-
-**Imports**
-- L3: `from .artifacts import ArtifactManifest, ArtifactStore, QualityStatus, SqliteArtifactStore`
-- L4: `from .contracts import CommandMetadata, FrozenDict, Money, Quantity, VersionedReference, freeze_value`
-- L12: `from .errors import DomainValidationError`
-- L13: `from .ports import Broker, HistoricalBarsProvider, InstrumentProvider, LiveQuoteProvider`
-
-**Module-level symbols**
-- None
-
-### `src/platform_kernel/artifacts.py` — 338 lines
-
-**Imports**
-- L3: `import hashlib`
-- L4: `import json`
-- L5: `import os`
-- L6: `import shutil`
-- L7: `import sqlite3`
-- L8: `import zlib`
-- L9: `from contextlib import closing`
-- L10: `from dataclasses import asdict, dataclass`
-- L11: `from datetime import UTC, datetime`
-- L12: `from enum import Enum`
-- L13: `from pathlib import Path`
-- L14: `from tempfile import mkdtemp`
-- L15: `from typing import Any`
-- L17: `from .errors import DomainValidationError`
-
-**Module-level symbols**
-- class `QualityStatus` (L20)
-- class `ArtifactManifest` (L30)
-- class `ArtifactStore` (L40): `__init__` L43, `_parts` L49, `_encode` L56, `publish_json` L61, `read_json` L107, `recover_staging` L142, `manifests` L151, `artifact_locations` L159, `quarantine` L169, `is_published` L182
-- class `SqliteArtifactStore` (L190): `__init__` L193, `_connect` L216, `publish_json` L223, `read_json` L266, `recover_staging` L301, `manifests` L304, `artifact_locations` L307, `has_payloads` L314, `quarantine` L322, `is_published` L333
-
-### `src/platform_kernel/contracts.py` — 101 lines
-
-**Imports**
-- L7: `from dataclasses import dataclass`
-- L8: `from decimal import Decimal, InvalidOperation`
-- L9: `from typing import Any, NewType`
-- L10: `from uuid import UUID`
-- L12: `from .errors import DomainValidationError`
-
-**Module-level symbols**
-- class `FrozenDict` (L17): `_immutable` L20, `__copy__` L31, `__deepcopy__` L34
-- function `freeze_value` (L38)
-- function `_finite_decimal` (L49)
-- class `Money` (L60): `__post_init__` L66
-- class `Quantity` (L74): `__post_init__` L79
-- class `VersionedReference` (L85)
-- class `CommandMetadata` (L93): `__post_init__` L99
-
-### `src/platform_kernel/errors.py` — 5 lines
-
-**Imports**
-- None
-
-**Module-level symbols**
-- class `DomainValidationError` (L4)
-
-### `src/platform_kernel/ports.py` — 23 lines
-
-**Imports**
-- L3: `from collections.abc import Sequence`
-- L4: `from datetime import date`
-- L5: `from typing import Protocol`
-
-**Module-level symbols**
-- class `HistoricalBarsProvider` (L8): `get_bars` L9
-- class `InstrumentProvider` (L14): `get_instruments` L15
-- class `LiveQuoteProvider` (L18): `get_quote` L19
-- class `Broker` (L22): `submit` L23
-
-### `src/portfolio_accounting/__init__.py` — 5 lines
-
-**Imports**
-- L3: `from .api import Fill, FillSide, Lot, PortfolioProjection, project, OpeningPosition, AccountingEvent`
-
-**Module-level symbols**
-- None
-
-### `src/portfolio_accounting/api.py` — 147 lines
-
-**Imports**
-- L3: `from collections.abc import Iterable`
-- L4: `from dataclasses import dataclass, field`
-- L5: `from datetime import UTC, date, datetime`
-- L6: `from decimal import Decimal`
-- L7: `from enum import Enum`
-- L8: `from typing import Union`
-- L10: `from src.platform_kernel import DomainValidationError, Money, Quantity`
-
-**Module-level symbols**
-- class `FillSide` (L13)
-- class `Fill` (L19): `__post_init__` L30
-- class `OpeningPosition` (L47): `__post_init__` L55
-- class `Lot` (L64)
-- class `PortfolioProjection` (L72)
-- function `project` (L78)
-
-### `src/portfolio_engine/__init__.py` — 25 lines
-
-**Imports**
-- L3: `from .api import Candidate, Decision, DecisionType, ExecutionAssumptions, Holding, MarketBar, PortfolioPolicy, PortfolioState, evaluate`
-
-**Module-level symbols**
-- None
-
-### `src/portfolio_engine/api.py` — 542 lines
-
-**Imports**
-- L8: `from collections.abc import Mapping, Sequence`
-- L9: `from dataclasses import dataclass, field, replace`
-- L10: `from datetime import date`
-- L11: `from decimal import ROUND_DOWN, Decimal`
-- L12: `from enum import Enum`
-- L14: `from src.platform_kernel import DomainValidationError, Money, Quantity`
-
-**Module-level symbols**
-- class `DecisionType` (L17)
-- function `_amount` (L29)
-- class `MarketBar` (L35): `__post_init__` L44
-- class `Holding` (L56): `__post_init__` L64
-- class `Candidate` (L71): `__post_init__` L78
-- class `PortfolioPolicy` (L94): `__post_init__` L108
-- class `ExecutionAssumptions` (L141): `__post_init__` L148
-- class `PortfolioState` (L160): `__post_init__` L164
-- class `Decision` (L173)
-- function `_sell_decision` (L182)
-- function `_with_costs` (L221)
-- function `_execution_price` (L250)
-- function `_volume_cap` (L256)
-- function `evaluate` (L262)
-
-### `src/reference_data/__init__.py` — 39 lines
-
-**Imports**
-- L3: `from .api import CorporateAction, CorporateActionSnapshot, ExchangeCalendar, FundamentalSnapshot, Instrument, InstrumentAlias, LiquidityUniverseMember, LiquidityUniversePolicy, LiquidityUniverseSnapshot, UniverseExclusionReason, UniverseSnapshot, build_liquidity_universe, publish_alias_snapshot, publish_calendar_snapshot, publish_instrument_snapshot, resolve_alias`
-
-**Module-level symbols**
-- None
-
-### `src/reference_data/api.py` — 492 lines
-
-**Imports**
-- L3: `from collections.abc import Iterable, Mapping`
-- L4: `from dataclasses import asdict, dataclass`
-- L5: `from datetime import date`
-- L6: `from decimal import Decimal`
-- L7: `from enum import Enum`
-- L8: `from typing import Protocol`
-- L9: `from uuid import UUID, uuid4`
-- L11: `from src.platform_kernel import ArtifactManifest, ArtifactStore, DomainValidationError, QualityStatus, freeze_value`
-
-**Module-level symbols**
-- class `Instrument` (L21): `__post_init__` L27
-- class `InstrumentAlias` (L33): `__post_init__` L41
-- class `UniverseSnapshot` (L54): `create` L61, `publish` L69
-- class `UniverseExclusionReason` (L82)
-- class `LiquidityBar` (L93): `instrument_id` L97, `as_of_date` L100, `open` L103, `high` L106, `low` L109, `close` L112, `volume` L115, `traded_value` L118
-- class `LiquidityUniversePolicy` (L122): `__post_init__` L137
-- class `LiquidityUniverseMember` (L156): `__post_init__` L165
-- class `LiquidityUniverseSnapshot` (L187): `__post_init__` L194, `instrument_ids` L205, `to_payload` L208, `publish` L228
-- function `build_liquidity_universe` (L236)
-- function `_is_flat_ohlc` (L325)
-- function `_median` (L330)
-- class `CorporateAction` (L339): `__post_init__` L345
-- class `ExchangeCalendar` (L351): `__post_init__` L356, `is_trading_day` L365, `next_trading_day` L368, `sessions_between` L371
-- class `CorporateActionSnapshot` (L378): `publish` L383
-- class `FundamentalSnapshot` (L398): `__post_init__` L404, `publish` L409
-- function `publish_alias_snapshot` (L422)
-- function `publish_calendar_snapshot` (L444)
-- function `resolve_alias` (L453)
-- function `publish_instrument_snapshot` (L472)
-
-### `src/strategies/__init__.py` — 23 lines
-
-**Imports**
-- L3: `from .api import PercentileSnapshot, PortfolioPolicyRevision, RankingMember, RankingSnapshot, ScoreSnapshot, StrategyRevision, build_research_snapshots, rank_feature_values`
-
-**Module-level symbols**
-- None
-
-### `src/strategies/api.py` — 363 lines
-
-**Imports**
-- L3: `import hashlib`
-- L4: `import json`
-- L5: `import re`
-- L6: `from collections.abc import Mapping`
-- L7: `from dataclasses import dataclass`
-- L8: `from datetime import date`
-- L9: `from decimal import Decimal`
-- L10: `from enum import Enum`
-- L11: `from uuid import UUID, uuid4`
-- L13: `from src.platform_kernel import ArtifactManifest, ArtifactStore, DomainValidationError, freeze_value`
-
-**Module-level symbols**
-- constant `_SEMVER` (L15)
-- class `RevisionStatus` (L18)
-- class `PortfolioPolicyRevision` (L28): `__post_init__` L35
-- class `StrategyRevision` (L52): `__post_init__` L62, `definition_hash` L86
-- class `RankingMember` (L102): `__post_init__` L111
-- class `PercentileSnapshot` (L123): `__post_init__` L131, `publish` L136
-- class `ScoreSnapshot` (L154): `__post_init__` L161, `publish` L166
-- class `RankingSnapshot` (L182): `create` L191, `publish` L234
-- function `build_research_snapshots` (L266)
-- function `rank_feature_values` (L353)
-
+- Step 87 moved the account-scoped Kite stream adapter into execution, exposed it through the execution API, and removed the unreferenced run-publication and liquidity application facades after a full caller audit. Steps 88–90 moved portfolio risk configuration, broker accounts, and the broker provider adapter to their owners. Step 91 moved the ledger implementation to portfolio accounting while preserving the package-level compatibility export; that compatibility package was retired in Step 94. Step 92 removed the empty application package after a caller audit. Step 93 removed the unused top-level indicators and strategies facades after caller audits. Step 94 moved broker persistence to execution, orchestration to gates, and removed the final legacy execution package.
+- Step 88 moved risk-limit validation and persistence into `portfolio_engine`, preserving its migration namespace/version and retiring the old execution-gateway risk-guard module. Step 89 moved Kite account/session persistence into execution while injecting the supported strategy-ID contract from composition.

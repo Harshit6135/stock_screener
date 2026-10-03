@@ -80,7 +80,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 2.6: Resolve universe members against Kite
 
-**Files:** src/application/market_jobs.py; src/application/providers.py.
+**Files:** src/application/market_jobs.py; `KiteStreamingProvider` is now in `src/domains/execution/streaming_provider.py`.
 
 1. Replace CSV-filtered sync input with selected snapshot members.
 2. Cache Kite NSE instrument dump per collection day; match actual tradingsymbol/series metadata without EQ-only filtering.
@@ -198,7 +198,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 2.17: Add Phase 2 behavioral tests
 
-**Files:** tests/test_phase2_universe.py; tests/test_reference_tokens.py; tests/test_market_coverage.py; tests/test_research_pipeline_jobs.py.
+**Files:** tests/application/test_market_repository.py; tests/application/test_universe_jobs.py; integration_tests/gates/test_reference_tokens.py; integration_tests/gates/test_market_coverage.py; integration_tests/gates/test_market_refresh.py; tests/market_data/test_fetch_coverage.py; tests/test_research_pipeline_jobs.py.
 
 1. Cover snapshot reuse/concurrency/as-of selection, source failure, series transitions, unresolved tokens, six indices, backfill/incremental fetch.
 2. Cover every refresh entry point, excluded held-stock exception, compulsory proposal and no future exit-price use in decisions.

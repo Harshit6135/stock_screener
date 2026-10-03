@@ -206,7 +206,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 ## Task 7.18: Write functional route/API/browser coverage
 
-**Files:** tests/test_phase7_ui.py; tests/test_dashboard_web.py; tests/test_portfolio_web.py; browser validation.
+**Files:** integration_tests/gates/test_dashboard_web.py; integration_tests/application/test_market_web.py; integration_tests/gates/test_portfolio_web.py; browser validation.
 
 1. Test every page/legacy redirect and required API payload/ownership/error contract with mocked backend data.
 2. Cover dark/light persistence, keyboard/modal flow, mobile layout, charts, both ranking patterns, day-0 none/import, sync review and AMO status.
