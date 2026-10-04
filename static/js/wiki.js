@@ -4,7 +4,7 @@
   const content = document.getElementById("wiki-content");
   async function show(slug) {
     try {
-      const page = await Screener.api(`/api/v2/wiki/pages/${encodeURIComponent(slug)}`);
+      const page = await Screener.api(`/api/wiki/pages/${encodeURIComponent(slug)}`);
       title.textContent = page.title;
       content.textContent = page.content;
       history.replaceState(null, "", `#${slug}`);
@@ -12,7 +12,7 @@
   }
   document.addEventListener("DOMContentLoaded", async () => {
     try {
-      const result = await Screener.api("/api/v2/wiki/pages");
+      const result = await Screener.api("/api/wiki/pages");
       list.replaceChildren(...result.pages.map(page => {
         const button = document.createElement("button");
         button.className = "secondary"; button.textContent = page.title;

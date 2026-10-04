@@ -222,7 +222,7 @@ def main():
         )
         client = web.test_client()
         response = client.get(
-            f"/api/v2/portfolio/accounts/{result['ledger_account_id']}/valuation?as_of_date={datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()}"
+            f"/api/portfolio/accounts/{result['ledger_account_id']}/valuation?as_of_date={datetime.now(ZoneInfo('Asia/Kolkata')).date().isoformat()}"
         )
         if (
             response.status_code != 200

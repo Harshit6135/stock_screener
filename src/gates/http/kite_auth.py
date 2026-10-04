@@ -28,7 +28,7 @@ def create_kite_auth_blueprint(
     def home() -> ResponseReturnValue:
         if market_data_service is not None and not market_data_service.token_exists:
             return redirect(url_for("kite_auth.authorization_page"))
-        return redirect(url_for("dashboard_v2.dashboard"))
+        return redirect(url_for("dashboard.home"))
 
     @blueprint.get("/integrations/kite")
     def authorization_page() -> Response:
@@ -69,7 +69,7 @@ def create_kite_auth_blueprint(
 <button id=authorize {disabled}>Authorize Kite for today</button><p id=status></p></main>
 <script>
 document.getElementById('authorize').addEventListener('click', async () => {{
-  const response = await fetch('/api/v2/integrations/kite/{profile}/authorize', {{
+  const response = await fetch('/api/integrations/kite/{profile}/authorize', {{
     method: 'POST'
   }});
   if (!response.ok) {{ document.getElementById('status').textContent = 'Authorization could not start.'; return; }}
@@ -79,7 +79,7 @@ document.getElementById('authorize').addEventListener('click', async () => {{
             mimetype="text/html",
         )
 
-    @blueprint.post("/api/v2/integrations/kite/<profile>/authorize")
+    @blueprint.post("/api/integrations/kite/<profile>/authorize")
     def start_authorization(profile: str) -> ResponseReturnValue:
         service = _service_for(profile)
         return _start_authorization(service, profile)
@@ -89,6 +89,11 @@ document.getElementById('authorize').addEventListener('click', async () => {{
             return jsonify({"error": f"Kite {profile} credentials are not configured"}), 503
         session[f"{_SESSION_STARTED_AT}:{profile}"] = time.time()
         return jsonify({"authorization_url": service.login_url()})
+
+    @blueprint.get("/integrations/kite/callback")
+    def market_data_callback() -> Response:
+        """Support the registered shared market-data callback URL."""
+        return _callback("market-data", market_data_service)
 
     @blueprint.get("/integrations/kite/<profile>/callback")
     def profile_callback(profile: str) -> Response:
@@ -128,6 +133,6 @@ document.getElementById('authorize').addEventListener('click', async () => {{
                 f"{escape(guidance)}",
                 status=502,
             )
-        return redirect(url_for("dashboard_v2.dashboard"))
+        return redirect(url_for("dashboard.home"))
 
     return blueprint

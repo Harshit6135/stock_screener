@@ -2,7 +2,7 @@
 
 ## API conventions
 
-The browser uses JSON APIs under `/api/v2`. Read requests return a bounded
+The browser uses JSON APIs under `/api`. Read requests return a bounded
 read model. Commands validate their whole payload and return an error object on
 failure; callers must use HTTP status plus `error`, not a truthy body alone.
 
@@ -25,8 +25,8 @@ and ignore late responses belonging to a prior account context.
 
 ## Index data
 
-`GET /api/v2/market/indices/quotes` returns cached quote readbacks with
-freshness. `GET /api/v2/market/indices/history?sessions=30` returns a bounded
+`GET /api/market/indices/quotes` returns cached quote readbacks with
+freshness. `GET /api/market/indices/history?sessions=30` returns a bounded
 history suitable for a sparkline; it is not an unbounded tick archive.
 
 ## Data integrity principles

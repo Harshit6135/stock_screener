@@ -95,7 +95,7 @@ def test_generated_strategy_proposal_cannot_create_synthetic_portfolio_fill(tmp_
     app = Flask(__name__)
     app.register_blueprint(create_actions_blueprint(services.actions))
     client = app.test_client()
-    path = f"/api/v2/actions/proposals/{proposal['proposal_id']}"
+    path = f"/api/actions/proposals/{proposal['proposal_id']}"
     assert client.get(path).status_code == 200
     assert client.post(f"{path}/process").status_code == 409
     assert client.post(f"{path}/approve").json["status"] == "APPROVED"
@@ -128,7 +128,7 @@ def test_execution_policy_parity_is_protected_immutable_and_readable(tmp_path):
     app = Flask(__name__)
     app.register_blueprint(create_actions_blueprint(services.actions))
     client = app.test_client()
-    endpoint = "/api/v2/actions/execution-policy-parity"
+    endpoint = "/api/actions/execution-policy-parity"
     assert client.post(endpoint, json={"v3_policy": baseline}).status_code == 201
     response = client.post(endpoint, json={"v3_policy": baseline})
     assert response.status_code == 201

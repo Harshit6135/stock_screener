@@ -11,7 +11,7 @@ from flask import Blueprint, render_template
 
 
 def create_dashboard_blueprint() -> Blueprint:
-    blueprint = Blueprint("dashboard_v2", __name__, template_folder="../../../templates")
+    blueprint = Blueprint("dashboard", __name__, template_folder="../../../templates")
 
     def page(template_name: str, **context: object):
         return render_template(template_name, **context)

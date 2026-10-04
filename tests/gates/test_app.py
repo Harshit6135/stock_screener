@@ -22,7 +22,7 @@ def test_fresh_app_initializes_current_owner_schemas_and_readback(tmp_path):
     namespaces = {namespace for namespace, _ in rows}
     assert {"market_data", "reference_data", "indicator_node_cache", "ops", "research"} <= namespaces
     assert "market" not in namespaces
-    assert app.test_client().get("/api/v2/market/quality-events").status_code == 200
+    assert app.test_client().get("/api/market/quality-events").status_code == 200
 
 
 def test_backend_shell_exposes_only_new_api_and_health(tmp_path):
@@ -37,12 +37,12 @@ def test_backend_shell_exposes_only_new_api_and_health(tmp_path):
     assert client.get("/health/live").status_code == 200
     assert client.get("/health/ready").status_code == 200
     assert client.get("/").status_code == 200
-    assert client.post("/api/v2/operations/jobs", json={"fingerprint": "run-1"}).status_code == 400
+    assert client.post("/api/operations/jobs", json={"fingerprint": "run-1"}).status_code == 400
     created = client.post(
-        "/api/v2/operations/jobs",
+        "/api/operations/jobs",
         json={"fingerprint": "run-1", "kind": "system.echo", "payload": {"value": 1}},
     )
     assert created.status_code == 202
     assert (
-        client.get("/api/v2/reference/liquidity-universes/not-a-real-artifact").status_code == 404
+        client.get("/api/reference/liquidity-universes/not-a-real-artifact").status_code == 404
     )

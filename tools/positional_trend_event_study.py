@@ -55,7 +55,7 @@ def run(database: Path, universe_csv: Path, *, seed: int = 4, replicates: int = 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--database", type=Path, default=ROOT / "instance/system.db")
+    parser.add_argument("--database", type=Path, default=ROOT / "instance/stock_screener.db")
     parser.add_argument("--universe-csv", type=Path, default=ROOT / "ind_nifty500list.csv")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=4)

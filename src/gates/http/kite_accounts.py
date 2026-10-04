@@ -4,7 +4,7 @@ from src.platform_kernel import DomainValidationError
 
 
 def create_kite_accounts_blueprint(accounts, sync) -> Blueprint:
-    blueprint = Blueprint("kite_accounts_v2", __name__, url_prefix="/api/v2/broker-accounts")
+    blueprint = Blueprint("kite_accounts", __name__, url_prefix="/api/broker-accounts")
 
     @blueprint.get("")
     def list_accounts():

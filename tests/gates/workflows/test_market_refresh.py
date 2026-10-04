@@ -52,7 +52,7 @@ def test_refresh_schedules_snapshot_members_and_benchmark_with_managed_exclusion
     records = (
         TrackedInstrument("member", "IN0000000001", "MEMBER", "NSE", "1", observed_on),
         TrackedInstrument("outside", "IN0000000002", "OUTSIDE", "NSE", "2", observed_on),
-        TrackedInstrument("holding", "IN0000000003", "HOLDING", "BSE", "3", observed_on),
+        TrackedInstrument("holding", "IN0000000003", "HOLDING", "NSE", "3", observed_on),
         TrackedInstrument("blocked", "IN0000000004", "BLOCKED", "NSE", "", observed_on),
         TrackedInstrument("benchmark", "INDEX:NIFTY 500", "NIFTY 500", "NSE", "5", observed_on),
     )

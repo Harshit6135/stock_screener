@@ -12,7 +12,7 @@ from src.platform_kernel import ArtifactStore, DomainValidationError
 
 
 def create_research_blueprint(store: ArtifactStore, research: ResearchJobs, jobs: JobStore | None = None) -> Blueprint:
-    blueprint = Blueprint("research_v2", __name__, url_prefix="/api/v2/research")
+    blueprint = Blueprint("research", __name__, url_prefix="/api/research")
 
     categories = {
         "percentiles": "research/percentiles",

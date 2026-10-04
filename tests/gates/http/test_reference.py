@@ -30,33 +30,33 @@ def test_token_lookup_uses_dated_assignments_and_flags_ambiguity(tmp_path):
     app = Flask(__name__)
     app.register_blueprint(create_reference_blueprint(ArtifactStore(tmp_path), repository))
     client = app.test_client()
-    old = client.get("/api/v2/reference/tokens/10?as_of=2026-01-01").json
+    old = client.get("/api/reference/tokens/10?as_of=2026-01-01").json
     assert [item["instrument_id"] for item in old["assignments"]] == ["a"]
     assert old["ambiguous"] is False
-    current = client.get("/api/v2/reference/tokens/10?as_of=2026-01-02").json
+    current = client.get("/api/reference/tokens/10?as_of=2026-01-02").json
     assert [item["instrument_id"] for item in current["assignments"]] == ["b"]
     assert current["assignments"][0]["observed_on"] == "2026-01-02"
-    assert client.get("/api/v2/reference/tokens/10?as_of=invalid").status_code == 400
-    assert client.get("/api/v2/reference/tokens/10?exchange=INVALID").status_code == 400
-    history = client.get("/api/v2/reference/instruments/a/token-history").json
+    assert client.get("/api/reference/tokens/10?as_of=invalid").status_code == 400
+    assert client.get("/api/reference/tokens/10?exchange=INVALID").status_code == 400
+    history = client.get("/api/reference/instruments/a/token-history").json
     assert [row["provider_token"] for row in history["observations"]] == ["30", "10", "9"]
     assert [row["changed"] for row in history["observations"]] == [True, True, False]
     assert history["observations"][0]["previous_token"] == "10"
     assert (
-        client.get("/api/v2/reference/instruments/a/token-history?limit=1&offset=1").json[
+        client.get("/api/reference/instruments/a/token-history?limit=1&offset=1").json[
             "observations"
         ][0]["provider_token"]
         == "10"
     )
-    assert client.get("/api/v2/reference/instruments/missing/token-history").status_code == 404
-    assert client.get("/api/v2/reference/instruments/a/token-history?limit=501").status_code == 400
+    assert client.get("/api/reference/instruments/missing/token-history").status_code == 404
+    assert client.get("/api/reference/instruments/a/token-history?limit=501").status_code == 400
     repository.upsert_instruments(
-        [TrackedInstrument("c", "INC", "CCC", "BSE", "10", date(2026, 1, 2))]
+        [TrackedInstrument("c", "INC", "CCC", "NSE", "10", date(2026, 1, 2))]
     )
-    assert client.get("/api/v2/reference/tokens/10").json["ambiguous"] is True
+    assert client.get("/api/reference/tokens/10").json["ambiguous"] is True
     assert [
         item["instrument_id"]
-        for item in client.get("/api/v2/reference/tokens/10?exchange=NSE").json["assignments"]
+        for item in client.get("/api/reference/tokens/10?exchange=NSE").json["assignments"]
     ] == ["b"]
 
 
@@ -110,7 +110,7 @@ def test_reference_api_reads_checksum_verified_liquidity_universe(tmp_path):
     completed = services.worker.run_once()
     assert completed is not None and completed.result is not None
     response = app.test_client().get(
-        f"/api/v2/reference/liquidity-universes/{completed.result['artifact_id']}"
+        f"/api/reference/liquidity-universes/{completed.result['artifact_id']}"
     )
     assert job.job_id == completed.job_id
     assert response.status_code == 200
@@ -133,18 +133,18 @@ def test_reference_api_publishes_macro_snapshot(tmp_path):
     )
     client = app.test_client()
     body = {"as_of_date": "2026-09-10", "values": {"vix": "18.5"}}
-    assert client.post("/api/v2/reference/macro-indicators", json=body).status_code == 201
-    response = client.post("/api/v2/reference/macro-indicators", json=body)
+    assert client.post("/api/reference/macro-indicators", json=body).status_code == 201
+    response = client.post("/api/reference/macro-indicators", json=body)
     assert response.status_code == 201
     artifact_id = response.json["artifact_id"]
     _, stored = publisher.store.read_json("reference/macro-indicators", artifact_id)
     assert stored["values"]["vix"] == "18.5"
     cap = client.post(
-        "/api/v2/reference/market-capitalization",
+        "/api/reference/market-capitalization",
         json={"as_of_date": "2026-09-10", "values": {"instrument-a": "5000000000"}},
     )
     fundamentals = client.post(
-        "/api/v2/reference/fundamentals",
+        "/api/reference/fundamentals",
         json={
             "as_of_date": "2026-09-10",
             "values": {"instrument-a": {"eps": "12.5", "debt_equity": "0.4"}},
@@ -152,7 +152,7 @@ def test_reference_api_publishes_macro_snapshot(tmp_path):
     )
     assert cap.status_code == fundamentals.status_code == 201
     free_float = client.post(
-        "/api/v2/reference/market-capitalization",
+        "/api/reference/market-capitalization",
         json={
             "as_of_date": "2026-09-10",
             "values": {"instrument-b": {"market_cap": "1000", "free_float": "0.25"}},
@@ -171,7 +171,7 @@ def test_reference_api_publishes_macro_snapshot(tmp_path):
         ]["instrument-a"]["eps"]
         == "12.5"
     )
-    readback = client.get(f"/api/v2/reference/fundamentals/{fundamentals.json['artifact_id']}")
+    readback = client.get(f"/api/reference/fundamentals/{fundamentals.json['artifact_id']}")
     assert readback.status_code == 200
     assert readback.json["artifact"]["category"] == "reference/fundamentals"
-    assert client.get("/api/v2/reference/fundamentals/missing").status_code == 404
+    assert client.get("/api/reference/fundamentals/missing").status_code == 404

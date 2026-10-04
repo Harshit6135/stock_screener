@@ -34,6 +34,8 @@ class ReferenceDataRepository:
 
     def upsert_instruments(self, records: Iterable[TrackedInstrument]) -> int:
         instruments = tuple(records)
+        if any(item.exchange != "NSE" for item in instruments):
+            raise DomainValidationError("only NSE instruments are supported")
         if len({item.instrument_id for item in instruments}) != len(instruments):
             raise DomainValidationError("instrument snapshot contains duplicate identities")
         with sqlite_connection(self.path, row_factory=True) as connection:
@@ -287,10 +289,10 @@ class ReferenceDataRepository:
     ) -> list[dict[str, object]]:
         if not 1 <= limit <= 500 or offset < 0:
             raise DomainValidationError("instrument pagination is invalid")
-        sql = "SELECT * FROM reference_instruments"
+        sql = "SELECT * FROM reference_instruments WHERE exchange='NSE'"
         parameters: list[object] = []
         if symbol is not None:
-            sql += " WHERE symbol = ?"
+            sql += " AND symbol = ?"
             parameters.append(symbol)
         sql += " ORDER BY exchange, symbol LIMIT ? OFFSET ?"
         parameters.extend((limit, offset))
@@ -300,24 +302,14 @@ class ReferenceDataRepository:
     def tracked_instruments(self) -> list[dict[str, object]]:
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
-                """SELECT * FROM (
-                       SELECT i.*, ROW_NUMBER() OVER (
-                           PARTITION BY CASE WHEN i.isin LIKE 'INDEX:%'
-                                             THEN i.isin ELSE i.isin END
-                           ORDER BY CASE WHEN i.isin LIKE 'INDEX:%' AND i.exchange='NSE' THEN 0
-                                         WHEN i.isin NOT LIKE 'INDEX:%' AND i.exchange='NSE' THEN 0
-                                         ELSE 1 END,
-                                    i.exchange, i.symbol, i.instrument_id
-                       ) AS preferred_row
-                       FROM reference_instruments i
-                   )
-                   WHERE preferred_row = 1
-                   ORDER BY exchange, symbol, instrument_id"""
+                "SELECT * FROM reference_instruments WHERE exchange='NSE' "
+                "ORDER BY symbol, instrument_id"
             ).fetchall()
         return [dict(row) for row in rows]
 
     def instrument(self, symbol: str, exchange: str = "NSE") -> dict[str, object]:
-
+        if exchange != "NSE":
+            raise DomainValidationError("only NSE instruments are supported")
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
                 "SELECT * FROM reference_instruments WHERE symbol = ? AND exchange = ?",
@@ -330,7 +322,8 @@ class ReferenceDataRepository:
     def instrument_by_id(self, instrument_id: str) -> dict[str, object] | None:
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             row = connection.execute(
-                "SELECT * FROM reference_instruments WHERE instrument_id=?", (instrument_id,)
+                "SELECT * FROM reference_instruments WHERE instrument_id=? AND exchange='NSE'",
+                (instrument_id,),
             ).fetchone()
         return dict(row) if row is not None else None
 
@@ -338,15 +331,17 @@ class ReferenceDataRepository:
         self, provider_token: str, *, exchange: str | None = None, as_of: date | None = None
     ) -> list[dict[str, object]]:
         """Resolve a token using each identity's last observation as of a date."""
-        if not provider_token.strip() or (exchange is not None and exchange not in {"NSE", "BSE"}):
+        if not provider_token.strip() or (exchange is not None and exchange != "NSE"):
             raise DomainValidationError("token lookup is invalid")
+        exchange = "NSE"
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
                 """WITH latest AS (
-                       SELECT instrument_id, MAX(observed_on) AS observed_on
-                       FROM reference_token_observations
-                       WHERE (? IS NULL OR observed_on <= ?)
-                       GROUP BY instrument_id
+                       SELECT o.instrument_id, MAX(o.observed_on) AS observed_on
+                       FROM reference_token_observations o
+                       JOIN reference_instruments r ON r.instrument_id=o.instrument_id
+                       WHERE r.exchange='NSE' AND (? IS NULL OR o.observed_on <= ?)
+                       GROUP BY o.instrument_id
                    )
                    SELECT i.instrument_id, i.isin, i.symbol AS current_symbol,
                           i.exchange AS current_exchange,
@@ -355,13 +350,12 @@ class ReferenceDataRepository:
                    JOIN reference_token_observations o
                      ON o.instrument_id = l.instrument_id AND o.observed_on = l.observed_on
                    JOIN reference_instruments i ON i.instrument_id = l.instrument_id
-                   WHERE o.provider_token = ? AND (? IS NULL OR i.exchange = ?)
+                   WHERE o.provider_token = ? AND i.exchange = ?
                    ORDER BY i.exchange, i.symbol, i.instrument_id""",
                 (
                     as_of.isoformat() if as_of else None,
                     as_of.isoformat() if as_of else None,
                     provider_token,
-                    exchange,
                     exchange,
                 ),
             ).fetchall()
@@ -377,9 +371,11 @@ class ReferenceDataRepository:
             rows = connection.execute(
                 """SELECT observed_on, provider_token, previous_token
                    FROM (
-                       SELECT observed_on, provider_token,
-                              LAG(provider_token) OVER (ORDER BY observed_on) AS previous_token
-                       FROM reference_token_observations WHERE instrument_id = ?
+                       SELECT o.observed_on, o.provider_token,
+                              LAG(o.provider_token) OVER (ORDER BY o.observed_on) AS previous_token
+                       FROM reference_token_observations o
+                       JOIN reference_instruments i ON i.instrument_id=o.instrument_id
+                       WHERE o.instrument_id = ? AND i.exchange='NSE'
                    ) ORDER BY observed_on DESC LIMIT ? OFFSET ?""",
                 (instrument_id, limit, offset),
             ).fetchall()

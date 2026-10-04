@@ -9,7 +9,7 @@ from src.platform_kernel import DomainValidationError
 
 
 def create_actions_blueprint(actions: ActionJobs) -> Blueprint:
-    blueprint = Blueprint("actions_v2", __name__, url_prefix="/api/v2/actions")
+    blueprint = Blueprint("actions", __name__, url_prefix="/api/actions")
 
     @blueprint.get("/proposals")
     def proposals():

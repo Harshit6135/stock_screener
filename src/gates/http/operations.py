@@ -39,9 +39,9 @@ def create_operations_blueprint(
     worker: JobWorker | None = None,
     background_worker: BackgroundWorker | None = None,
 ) -> Blueprint:
-    """Create the v2 operations API over a local durable :class:`JobStore`."""
+    """Create the operations API over a local durable :class:`JobStore`."""
     jobs = job_database if isinstance(job_database, JobStore) else JobStore(job_database)
-    blueprint = Blueprint("operations_v2", __name__, url_prefix="/api/v2/operations")
+    blueprint = Blueprint("operations", __name__, url_prefix="/api/operations")
 
     @blueprint.post("/jobs")
     def submit_job():
@@ -71,7 +71,7 @@ def create_operations_blueprint(
     def get_job(job_id: int):
         try:
             job = jobs.get(job_id)
-            events = jobs.events_after(job_id)
+            events = jobs.recent_events(job_id)
             progress = next(
                 (item for item in reversed(events) if item["event_type"] == "progress"),
                 None,

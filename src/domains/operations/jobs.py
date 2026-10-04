@@ -564,6 +564,32 @@ class JobStore:
             self._append(connection, job_id, "retry_requested", {})
         return self.get(job_id)
 
+    def retry_cancelled(self, job_id: int) -> Job:
+        """Requeue one cooperatively cancelled job after explicit operator action."""
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT status FROM ops_jobs WHERE job_id = ?", (job_id,)
+            ).fetchone()
+            if row is None:
+                raise DomainValidationError("job does not exist")
+            if JobStatus(row["status"]) != JobStatus.CANCELLED:
+                raise DomainValidationError("only cancelled jobs can be retried")
+            connection.execute(
+                """UPDATE ops_jobs SET status=?, attempts=0, next_attempt_at=NULL,
+                   last_error=NULL, result_json=NULL, cancel_requested=0,
+                   lease_until=NULL, lease_owner=NULL, claim_token=NULL, updated_at=?
+                   WHERE job_id=?""",
+                (JobStatus.QUEUED.value, self._now(), job_id),
+            )
+            self._append(
+                connection,
+                job_id,
+                "retry_requested",
+                {"from_status": JobStatus.CANCELLED.value},
+            )
+        return self.get(job_id)
+
     def heartbeat(self, job_id: int, claim_token: str, lease_seconds: int = 60) -> Job:
         if lease_seconds < 1:
             raise DomainValidationError("worker lease is invalid")
@@ -646,6 +672,27 @@ class JobStore:
                 "created_at": row["created_at"],
             }
             for row in rows
+        ]
+
+    def recent_events(self, job_id: int, limit: int = 500) -> list[dict[str, Any]]:
+        """Return the most recent event window in chronological order."""
+        if not 1 <= limit <= 500:
+            raise DomainValidationError("event limit is invalid")
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT event_id, event_type, payload_json, created_at
+                   FROM ops_job_events WHERE job_id=?
+                   ORDER BY event_id DESC LIMIT ?""",
+                (job_id, limit),
+            ).fetchall()
+        return [
+            {
+                "event_id": row["event_id"],
+                "event_type": row["event_type"],
+                "payload": json.loads(row["payload_json"]),
+                "created_at": row["created_at"],
+            }
+            for row in reversed(rows)
         ]
 
     def _append(

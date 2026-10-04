@@ -85,7 +85,7 @@ def compare(database: Path, universe_csv: Path, *, include_be: bool,
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--database", type=Path, default=ROOT / "instance/system.db")
+    parser.add_argument("--database", type=Path, default=ROOT / "instance/stock_screener.db")
     parser.add_argument("--start", default="2022-01-01")
     parser.add_argument("--end", default=datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat())
     parser.add_argument("--output-dir", type=Path, default=ROOT / "backtesting_results")

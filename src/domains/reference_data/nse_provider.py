@@ -11,7 +11,7 @@ import requests
 from src.platform_kernel import DomainValidationError
 
 NIFTY_500_URL = "https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv"
-NSE_CA_URL = "https://www.nseindia.com/api/corporate-actions"
+NSE_CA_URL = "https://www.nseindia.com/api/corporates-corporateActions"
 NSE_BASE_URL = "https://www.nseindia.com"
 
 
@@ -33,7 +33,15 @@ class NseClient:
 
     def nifty_500_csv(self) -> tuple[str, bytes]:
         try:
-            response = self.session.get(NIFTY_500_URL, timeout=self.timeout_seconds)
+            response = self.session.get(
+                NIFTY_500_URL,
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Accept": "text/csv,application/octet-stream,*/*",
+                    "Referer": "https://www.niftyindices.com/",
+                },
+                timeout=self.timeout_seconds,
+            )
             response.raise_for_status()
         except requests.RequestException as exc:
             raise DomainValidationError("NSE constituent download failed") from exc

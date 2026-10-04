@@ -21,7 +21,7 @@ rejection unless the real execution has been independently verified.
 
 ## A job appears stuck
 
-Read `/api/v2/operations/worker/status`, then inspect job events with the last
+Read `/api/operations/worker/status`, then inspect job events with the last
 cursor. Check cancellation status and lease ownership before starting another
 worker. A duplicate worker can create confusing contention rather than faster
 completion.

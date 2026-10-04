@@ -88,17 +88,17 @@ def test_completed_coverage_uses_membership_and_retains_missing_stock(tmp_path):
     assert audit.read(DAY, date(2026, 1, 9))["status"] == "COMPLETE"
 
 
-def test_calendar_never_uses_unrelated_or_bse_bars_as_session_proof(tmp_path):
+def test_calendar_never_uses_unrelated_bars_as_session_proof(tmp_path):
     market, _ = setup_market(tmp_path)
     market.upsert_instruments(
         [
             TrackedInstrument("stock", "IN0000000001", "STOCK", "NSE", "1", DAY),
-            TrackedInstrument("bse", "INDEX:BSE", "NIFTY 500", "BSE", "2", DAY),
+            TrackedInstrument("other", "OTHER:INDEX", "OTHER INDEX", "NSE", "2", DAY),
         ]
     )
     seed_snapshot(market, "first", DAY, [("IN0000000001", "STOCK")])
     seed_bars(market, "stock", [DAY])
-    seed_bars(market, "bse", [DAY])
+    seed_bars(market, "other", [DAY])
     report = CompletedSessionCoverage(market, NSE_INDEX_SYMBOLS, lambda: date(2026, 1, 9)).read(
         DAY, DAY
     )

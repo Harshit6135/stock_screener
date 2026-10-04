@@ -7,7 +7,7 @@ from src.platform_kernel import DomainValidationError
 
 
 def create_strategies_blueprint(strategies: StrategyDefinitions) -> Blueprint:
-    blueprint = Blueprint("strategies_v2", __name__, url_prefix="/api/v2/strategies")
+    blueprint = Blueprint("strategies", __name__, url_prefix="/api/strategies")
 
     @blueprint.post("/revisions")
     def create_revision():

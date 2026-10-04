@@ -7,7 +7,7 @@ from src.platform_kernel import ArtifactStore, DomainValidationError
 
 
 def create_backtest_blueprint(jobs: BacktestJobs, store: ArtifactStore) -> Blueprint:
-    blueprint = Blueprint("backtests_v2", __name__, url_prefix="/api/v2/backtests")
+    blueprint = Blueprint("backtests", __name__, url_prefix="/api/backtests")
 
     @blueprint.get("/runs")
     def list_runs():

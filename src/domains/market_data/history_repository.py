@@ -173,6 +173,51 @@ class MarketHistoryRepositoryMixin:
                 return True
         return False
 
+    def missing_coverage_ranges(
+        self,
+        instrument_id: str,
+        start_date: date,
+        end_date: date,
+        provider: str = "kite",
+        coverage_context: str = "regular",
+    ) -> tuple[tuple[date, date], ...]:
+        """Return only calendar intervals not covered by completed provider requests."""
+        if (
+            start_date > end_date
+            or not provider.strip()
+            or coverage_context not in {"regular", "exit_only"}
+        ):
+            raise DomainValidationError("market fetch coverage range is invalid")
+        with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
+            rows = connection.execute(
+                """SELECT start_date, end_date FROM market_fetch_coverage
+                   WHERE instrument_id=? AND provider=? AND coverage_context=?
+                   AND end_date>=? AND start_date<=?
+                   ORDER BY start_date, end_date""",
+                (
+                    instrument_id,
+                    provider,
+                    coverage_context,
+                    start_date.isoformat(),
+                    end_date.isoformat(),
+                ),
+            ).fetchall()
+        missing: list[tuple[date, date]] = []
+        cursor = start_date
+        for row in rows:
+            covered_start = max(start_date, date.fromisoformat(str(row["start_date"])))
+            covered_end = min(end_date, date.fromisoformat(str(row["end_date"])))
+            if covered_end < cursor:
+                continue
+            if covered_start > cursor:
+                missing.append((cursor, covered_start - timedelta(days=1)))
+            cursor = max(cursor, covered_end + timedelta(days=1))
+            if cursor > end_date:
+                break
+        if cursor <= end_date:
+            missing.append((cursor, end_date))
+        return tuple(missing)
+
 
     def indicator_series(
         self, indicator_set: str, start_date: date, end_date: date
@@ -363,6 +408,45 @@ class MarketHistoryRepositoryMixin:
                     "quality event instrument is not registered"
                 ) from exc
         return cursor.rowcount == 1
+
+    def resolve_quality_events(
+        self,
+        instrument_id: str,
+        as_of_date: date,
+        check_type: str,
+        resolution: dict[str, object],
+    ) -> int:
+        """Attach resolution evidence to matching ERROR quality events."""
+        if (
+            not isinstance(instrument_id, str)
+            or not instrument_id.strip()
+            or not isinstance(as_of_date, date)
+            or isinstance(as_of_date, datetime)
+            or not isinstance(check_type, str)
+            or not check_type.strip()
+            or not isinstance(resolution, dict)
+        ):
+            raise DomainValidationError("quality event resolution is invalid")
+        with sqlite_connection(self.path, row_factory=True) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """SELECT event_id, detail_json FROM data_quality_events
+                   WHERE instrument_id=? AND as_of_date=? AND check_type=? AND severity='ERROR'""",
+                (instrument_id, as_of_date.isoformat(), check_type),
+            ).fetchall()
+            for row in rows:
+                detail = json.loads(row["detail_json"])
+                detail["disposition"] = "resolved"
+                detail["resolution"] = sanitize_sensitive(resolution)
+                connection.execute(
+                    """UPDATE data_quality_events SET severity='WARNING', detail_json=?
+                       WHERE event_id=?""",
+                    (
+                        json.dumps(detail, sort_keys=True, separators=(",", ":"), default=str),
+                        row["event_id"],
+                    ),
+                )
+        return len(rows)
 
 
     def upsert_bars(

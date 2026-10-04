@@ -61,7 +61,7 @@ class ResearchJobs:
     def _indicator_set(strategy_id: str, benchmark_name: str | None) -> str:
         """Stable raw-input namespace; weights and score rules never belong here."""
         if strategy_id == "momentum":
-            return "momentum:quality-v2"
+            return "momentum:quality"
         raise DomainValidationError(
             f"strategy '{strategy_id}' has no raw-indicator cache definition"
         )
@@ -499,6 +499,31 @@ class ResearchJobs:
                     ).hexdigest(),
                 )
             )
+            # A range rebuild can contain more than a million factor values.  Do
+            # not resolve the active revision for every value: its immutable
+            # definition is already available for this job.
+            definition = cast(dict[str, Any], revision["definition"])
+            modifiers_by_factor = {
+                str(factor): modifier
+                for modifier in definition.get("score", {}).get("factor_modifiers", [])
+                for factor in modifier["factors"]
+            }
+
+            def factor_multiplier(factor: str, values: dict[str, object]) -> float:
+                modifier = modifiers_by_factor.get(factor)
+                if modifier is None:
+                    return 1.0
+                observed = float(values[str(modifier["input"])])
+                for rule in modifier["rules"]:
+                    threshold = float(rule["value"])
+                    if (
+                        rule["operator"] == "less_than" and observed < threshold
+                    ) or (
+                        rule["operator"] == "greater_than" and observed > threshold
+                    ):
+                        return float(rule["multiplier"])
+                return float(modifier["default"])
+
             total_scored = 0
             score_rows: list[tuple[object, ...]] = []
             for index, session in enumerate(sessions, start=1):
@@ -507,7 +532,7 @@ class ResearchJobs:
                     initial = sum(
                         percentiles_by_date[day][instrument_id][factor]
                         * weight
-                        * self.runtime.factor_multiplier(strategy_id, factor, values)
+                        * factor_multiplier(factor, values)
                         for factor, weight in factor_weights.items()
                     )
                     penalty = float(values["penalty"])

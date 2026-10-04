@@ -133,8 +133,8 @@ class MarketRefreshPlanner:
         exchange = payload.get("exchange")
         if exchange is not None and exchange != "NSE":
             raise DomainValidationError("market refresh exchange is invalid")
-        if start > end or (end - start).days > 365:
-            raise DomainValidationError("market refresh range must be at most 365 days")
+        if start > end or (end - start).days > 1999:
+            raise DomainValidationError("market refresh range must be at most 2000 calendar days")
 
         # Phase 2 Task 2.12: intersect refresh with snapshot members + benchmark set
         catalog = self.repository.tracked_instruments()

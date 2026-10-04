@@ -195,10 +195,19 @@ class CorporateActions:
     def detect_job(self, payload: dict[str, object], context=None) -> dict[str, object]:
         """Adapt durable job payloads to normalized NSE source records."""
         from src.domains.reference_data import NseClient
-        if set(payload) - {"as_of_date"}:
+        if set(payload) - {"as_of_date", "start_date"}:
             raise DomainValidationError("corporate action detection payload is invalid")
         end = date.fromisoformat(str(payload.get("as_of_date") or datetime.now(ZoneInfo("Asia/Kolkata")).date()))
-        start = (self.market.corporate_action_watermark() or end - timedelta(days=365)) - timedelta(days=7)
+        try:
+            start = (
+                date.fromisoformat(str(payload["start_date"]))
+                if payload.get("start_date")
+                else (self.market.corporate_action_watermark() or end - timedelta(days=365)) - timedelta(days=7)
+            )
+        except ValueError as exc:
+            raise DomainValidationError("corporate action detection dates must be ISO dates") from exc
+        if start > end:
+            raise DomainValidationError("corporate action detection start_date must not follow end_date")
         raw = NseClient().corporate_actions(from_date=start.strftime("%d-%m-%Y"), to_date=end.strftime("%d-%m-%Y"))
         records = []
         for row in raw:
@@ -456,11 +465,27 @@ class CorporateActions:
         if self.node_cache is not None:
             self.node_cache.invalidate_instrument(instrument_id)
 
-    def process_actionable(self, fetch_bars_fn: Any = None, context: Any = None) -> dict[str, object]:
-        """Phase 3 Task 3.5: Process all actionable corporate actions."""
+    def process_actionable(
+        self,
+        fetch_bars_fn: Any = None,
+        context: Any = None,
+        event_ids: set[str] | None = None,
+    ) -> dict[str, object]:
+        """Process actionable corporate actions, optionally from one fresh batch only."""
         events = self.market.actionable_corporate_events()
+        if event_ids is not None:
+            events = [event for event in events if str(event["event_id"]) in event_ids]
         results: list[dict[str, object]] = []
-        for event in events:
+        for index, event in enumerate(events, start=1):
+            if context is not None and (index == 1 or index % 25 == 0 or index == len(events)):
+                context.checkpoint(
+                    progress={
+                        "stage": "corporate_action_process",
+                        "current": index - 1,
+                        "total": len(events),
+                        "message": "Processing detected corporate actions",
+                    }
+                )
             event_id = str(event["event_id"])
             state = str(event["state"])
             action_type = str(event["action_type"])

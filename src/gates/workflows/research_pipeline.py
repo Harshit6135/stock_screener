@@ -21,7 +21,7 @@ from src.gates.strategy_runtime import StrategyRuntime
 from src.platform_kernel import DomainValidationError
 from src.platform_kernel.sqlite import sqlite_connection
 
-_CALCULATION_REVISION = "snapshot-prerequisites-v2"
+_CALCULATION_REVISION = "snapshot-prerequisites"
 
 
 class ResearchPipelineJobs:
@@ -59,8 +59,8 @@ class ResearchPipelineJobs:
                 end_date = date.fromisoformat(str(payload["end_date"]))
         except ValueError as exc:
             raise DomainValidationError("pipeline dates must be ISO dates") from exc
-        if start_date > end_date or (end_date - start_date).days > 365:
-            raise DomainValidationError("pipeline date range must be at most 365 days")
+        if start_date > end_date:
+            raise DomainValidationError("pipeline start_date must not follow end_date")
         if end_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
             raise DomainValidationError("research pipeline requires completed dates")
         strategies_value = payload.get("strategies", ["momentum", "positional_trend_following"])
@@ -305,7 +305,7 @@ class ResearchPipelineJobs:
         return self.status(pipeline_id)
 
     def retry_stage(self, pipeline_id: str, stage_name: str) -> dict[str, object]:
-        """Retry one failed pipeline stage and leave every other stage intact."""
+        """Retry one failed or cancelled pipeline stage, leaving others intact."""
         pipeline = self._pipeline(pipeline_id)
         stage = next(
             (item for item in self._stages(pipeline_id) if item["stage_name"] == stage_name),
@@ -313,7 +313,12 @@ class ResearchPipelineJobs:
         )
         if stage is None:
             raise DomainValidationError("pipeline stage was not found")
-        job = self.jobs.retry_failed(int(stage["job_id"]))
+        stage_job_id = int(stage["job_id"])
+        stage_job = self.jobs.get(stage_job_id)
+        if stage_job.status == JobStatus.CANCELLED:
+            job = self.jobs.retry_cancelled(stage_job_id)
+        else:
+            job = self.jobs.retry_failed(stage_job_id)
         return self.status(str(pipeline["pipeline_id"])) | {
             "retried_stage": stage_name,
             "job": job.job_id,

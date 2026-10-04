@@ -25,7 +25,7 @@ def create_market_blueprint(
     live_quotes: LiveQuotes | None = None,
     live_stream=None,
 ) -> Blueprint:
-    blueprint = Blueprint("market_v2", __name__, url_prefix="/api/v2/market")
+    blueprint = Blueprint("market", __name__, url_prefix="/api/market")
 
     @blueprint.get("/quality-events")
     def quality_events():
@@ -278,8 +278,8 @@ def create_market_blueprint(
             )
             limit = int(request.args.get("limit", "400"))
             exchange = request.args.get("exchange", "NSE")
-            if exchange not in {"NSE", "BSE"}:
-                raise DomainValidationError("exchange must be NSE or BSE")
+            if exchange != "NSE":
+                raise DomainValidationError("exchange must be NSE")
             instrument = repository.instrument(symbol, exchange)
             return jsonify(
                 {

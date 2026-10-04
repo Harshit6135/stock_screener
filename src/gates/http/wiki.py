@@ -18,17 +18,17 @@ _PAGES = {
 
 
 def create_wiki_blueprint() -> Blueprint:
-    blueprint = Blueprint("wiki_v2", __name__)
+    blueprint = Blueprint("wiki", __name__)
 
     @blueprint.get("/wiki")
     def wiki_page():
         return render_template("wiki.html", active_page="wiki")
 
-    @blueprint.get("/api/v2/wiki/pages")
+    @blueprint.get("/api/wiki/pages")
     def pages():
         return jsonify({"pages": [{"slug": slug, "title": title} for slug, title in _PAGES.items()]})
 
-    @blueprint.get("/api/v2/wiki/pages/<slug>")
+    @blueprint.get("/api/wiki/pages/<slug>")
     def read_page(slug: str):
         title = _PAGES.get(slug)
         if title is None:

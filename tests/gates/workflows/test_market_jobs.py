@@ -253,8 +253,8 @@ class TestBenchmarkSet:
         assert PHASE2_BENCHMARK_SYMBOLS == expected
 
 
-class TestBseRemoval:
-    def test_direct_and_bulk_bse_history_requests_fail_before_provider_access(self, tmp_path):
+class TestUnsupportedExchange:
+    def test_direct_and_bulk_unsupported_exchange_requests_fail_before_provider_access(self, tmp_path):
         market = MarketRepository(tmp_path / "system.db")
         publisher = ArtifactPublisher(
             ArtifactStore(tmp_path / "artifacts"), ArtifactCatalog(tmp_path / "system.db")
@@ -264,7 +264,7 @@ class TestBseRemoval:
             jobs.fetch_bars(
                 {
                     "symbol": "OLD",
-                    "exchange": "BSE",
+                    "exchange": "OTHER",
                     "start_date": "2026-01-01",
                     "end_date": "2026-01-01",
                 }
@@ -272,7 +272,7 @@ class TestBseRemoval:
         with pytest.raises(DomainValidationError, match="supported exchange"):
             jobs.fetch_bulk_bars(
                 {
-                    "items": [{"symbol": "OLD", "exchange": "BSE"}],
+                    "items": [{"symbol": "OLD", "exchange": "OTHER"}],
                     "start_date": "2026-01-01",
                     "end_date": "2026-01-01",
                 },

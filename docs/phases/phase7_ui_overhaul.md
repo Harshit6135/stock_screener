@@ -28,7 +28,7 @@ New modules are identified at their introduction; phase-specific test files are 
 **Files:** run.py; src/application/dashboard_web.py; src/application/portfolio_web.py; src/application/broker_web.py; src/application/pipeline_web.py; templates/; static/.
 
 1. Map every active widget/action to owning endpoint/request/response; compare old dashboard feature mapping in master.
-2. Record current /api/v2/portfolio/accounts/{account_id}/valuation, /summary, /valuation/history, /journal, /ticker and /ticker/stream contracts.
+2. Record current /api/portfolio/accounts/{account_id}/valuation, /summary, /valuation/history, /journal, /ticker and /ticker/stream contracts.
 3. Identify old inline HTML/scripts and dependencies; do not assume /holdings, /equity-curve or browser WebSocket endpoints exist.
 
 **Acceptance:** Per-page API matrix includes actual auth/role requirements and all features.
@@ -91,7 +91,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 **Files:** static/js/index_carousel.js (new); src/application/market_web.py; templates/home.html.
 
-1. Read /api/v2/market/indices/quotes and add bounded historical index readback for last 30 trading sessions.
+1. Read /api/market/indices/quotes and add bounded historical index readback for last 30 trading sessions.
 2. Render six cards with LTP/change/freshness plus sparklines, auto-scroll and pause-on-hover/focus.
 3. Quote polling reads existing live cache; use stable identity and preserve empty/error/stale states.
 4. Clean up timers/listeners on navigation; do not invent a browser WebSocket payload.

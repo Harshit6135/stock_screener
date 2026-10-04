@@ -25,9 +25,9 @@ def test_retired_fact_based_corporate_action_routes_are_not_mounted(tmp_path):
     )
     client = app.test_client()
 
-    assert client.post("/api/v2/market/corporate-actions", json={}).status_code == 404
-    assert client.post("/api/v2/market/corporate-actions/liquidation-plan", json={}).status_code == 404
-    assert client.get("/api/v2/market/bars/ABC/adjusted?end=2026-09-01").status_code == 404
+    assert client.post("/api/market/corporate-actions", json={}).status_code == 404
+    assert client.post("/api/market/corporate-actions/liquidation-plan", json={}).status_code == 404
+    assert client.get("/api/market/bars/ABC/adjusted?end=2026-09-01").status_code == 404
 
 
 def test_index_history_is_bounded_and_read_only(tmp_path):
@@ -54,10 +54,10 @@ def test_index_history_is_bounded_and_read_only(tmp_path):
         create_market_blueprint(repository, ArtifactCatalog(tmp_path / "artifacts"))
     )
     client = app.test_client()
-    response = client.get("/api/v2/market/indices/history?sessions=30")
+    response = client.get("/api/market/indices/history?sessions=30")
     assert response.status_code == 200
     assert response.json["history"][0]["last_price"] == "25000"
-    assert client.get("/api/v2/market/indices/history?sessions=31").status_code == 400
+    assert client.get("/api/market/indices/history?sessions=31").status_code == 400
 
 
 def test_intraday_alerts_have_sse_readback(tmp_path):
@@ -105,7 +105,7 @@ def test_intraday_alerts_have_sse_readback(tmp_path):
     app.register_blueprint(
         create_market_blueprint(MarketRepository(database), catalog, intraday_alerts=alerts)
     )
-    response = app.test_client().get("/api/v2/market/intraday/stop-alerts/stream?account_id=paper")
+    response = app.test_client().get("/api/market/intraday/stop-alerts/stream?account_id=paper")
     assert response.status_code == 200
     assert response.mimetype == "text/event-stream"
     assert b"event: stop-alert" in response.data
@@ -119,7 +119,7 @@ def test_coverage_api_paginates_and_reports_latest_cataloged_source(tmp_path):
     observed_on = date(2026, 1, 6)
     market.upsert_instruments(
         (
-            TrackedInstrument("bse-empty", "IN0000000001", "AAA", "BSE", "10", observed_on),
+            TrackedInstrument("nse-empty", "IN0000000001", "AAA", "NSE", "10", observed_on),
             TrackedInstrument("nse-bars", "IN0000000002", "BBB", "NSE", "20", observed_on),
         )
     )
@@ -138,12 +138,12 @@ def test_coverage_api_paginates_and_reports_latest_cataloged_source(tmp_path):
     app = Flask(__name__)
     app.register_blueprint(create_market_blueprint(market, catalog))
     client = app.test_client()
-    first_page = client.get("/api/v2/market/coverage?limit=1").json
+    first_page = client.get("/api/market/coverage?limit=1").json
     assert first_page["limit"] == 1
     assert first_page["coverage"][0]["symbol"] == "AAA"
     assert first_page["coverage"][0]["bar_count"] == 0
     assert first_page["coverage"][0]["latest_source_artifact"] is None
-    second_page = client.get("/api/v2/market/coverage?limit=1&offset=1").json
+    second_page = client.get("/api/market/coverage?limit=1&offset=1").json
     covered = second_page["coverage"][0]
     assert covered["symbol"] == "BBB"
     assert covered["earliest_date"] == "2026-01-02"
@@ -155,13 +155,13 @@ def test_coverage_api_paginates_and_reports_latest_cataloged_source(tmp_path):
         "status": "QUALIFIED",
     }
     assert (
-        client.get("/api/v2/market/coverage?symbol=BBB&exchange=NSE").json["coverage"][0][
+        client.get("/api/market/coverage?symbol=BBB&exchange=NSE").json["coverage"][0][
             "instrument_id"
         ]
         == "nse-bars"
     )
-    assert client.get("/api/v2/market/coverage?exchange=INVALID").status_code == 400
-    assert client.get("/api/v2/market/coverage?limit=501").status_code == 400
+    assert client.get("/api/market/coverage?exchange=INVALID").status_code == 400
+    assert client.get("/api/market/coverage?limit=501").status_code == 400
 
 
 def stream_services(tmp_path, alerts=None):
@@ -213,7 +213,7 @@ def test_live_stream_api_and_quote_ping(tmp_path):
         )
     )
     client = app.test_client()
-    path = "/api/v2/market/intraday/"
+    path = "/api/market/intraday/"
     assert (
         client.post(
             path + "live-stream",
@@ -295,7 +295,7 @@ def test_quality_readback_filters_and_pagination(tmp_path):
     app = Flask(__name__)
     app.register_blueprint(create_market_blueprint(market, ArtifactCatalog(market.path)))
     client = app.test_client()
-    path = "/api/v2/market/quality-events"
+    path = "/api/market/quality-events"
     filtered = client.get(path + "?instrument_id=stock&check_type=missing_bar&severity=WARNING")
     assert filtered.status_code == 200
     assert len(filtered.json["quality_events"]) == 1

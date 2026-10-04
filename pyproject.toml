@@ -1,7 +1,7 @@
 [project]
 name = "stock-screener"
 version = "3.0.0"
-description = "Multi-factor momentum screening and portfolio management for NSE/BSE stocks"
+description = "Multi-factor momentum screening and portfolio management for NSE stocks"
 authors = [
     {name = "Yash Bhargava", email = "yashbhargava.code@gmail.com"},
     {name = "Harshit Garg", email = "harshitgarg.0196@gmail.com"}

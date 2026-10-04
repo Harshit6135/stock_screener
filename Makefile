@@ -24,10 +24,10 @@ security:
 	poetry run bandit -q -r src run.py
 
 backup:
-	poetry run screener-ops backup-sqlite instance/system.db backups/system.db
+	poetry run screener-ops backup-sqlite instance/stock_screener.db backups/stock_screener.db
 
 restore:
-	poetry run screener-ops restore-sqlite backups/system.db instance/restored-system.db
+	poetry run screener-ops restore-sqlite backups/stock_screener.db instance/restored-stock_screener.db
 
 worker:
 	poetry run screener-ops work-once instance

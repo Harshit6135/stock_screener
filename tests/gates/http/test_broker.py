@@ -24,7 +24,7 @@ def test_execution_controls_readback_is_operator_protected(tmp_path):
     app = Flask(__name__)
     app.register_blueprint(create_broker_blueprint(orders))
     client = app.test_client()
-    assert client.get("/api/v2/portfolio/execution-controls").status_code == 200
-    response = client.get("/api/v2/portfolio/execution-controls")
+    assert client.get("/api/portfolio/execution-controls").status_code == 200
+    response = client.get("/api/portfolio/execution-controls")
     assert response.status_code == 200
     assert response.json["gateway"] == "FakeBroker"

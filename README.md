@@ -19,7 +19,7 @@ Or use the repository virtual environment:
 ```
 
 Open `http://127.0.0.1:5000/app`. The default database is
-`instance/system.db`.
+`instance/stock_screener.db`.
 
 ## Documentation
 

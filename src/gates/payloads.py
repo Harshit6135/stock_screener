@@ -47,7 +47,6 @@ class RebuildRangePayload:
         """Raise if the payload contents violate business rules."""
         if (
             self.start_date > self.end_date
-            or (self.end_date - self.start_date).days > 365
             or not self.trading_dates
             or self.trading_dates != tuple(sorted(set(self.trading_dates)))
             or any(d < self.start_date or d > self.end_date for d in self.trading_dates)

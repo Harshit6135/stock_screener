@@ -28,10 +28,10 @@ active execution paths.
 
 Universe endpoints:
 
-- `GET /api/v2/universe/snapshots?index_name=NIFTY%20500&limit=100&offset=0`
-- `GET /api/v2/universe/members?snapshot_id=<id>`
-- `GET /api/v2/universe/diff?from_snapshot_id=<id>&to_snapshot_id=<id>`
-- `POST /api/v2/universe/refresh` with optional `snapshot_date`
+- `GET /api/universe/snapshots?index_name=NIFTY%20500&limit=100&offset=0`
+- `GET /api/universe/members?snapshot_id=<id>`
+- `GET /api/universe/diff?from_snapshot_id=<id>&to_snapshot_id=<id>`
+- `POST /api/universe/refresh` with optional `snapshot_date`
 
 ## Indicator DAG and cache identity
 
@@ -47,16 +47,16 @@ invalidates stale cache values transactionally.
 
 ## Rankings
 
-Use `GET /api/v2/research/ranking-weeks?strategy_id=<id>` to discover weeks,
-then `GET /api/v2/research/rankings?strategy_id=<id>&week_end=YYYY-MM-DD`.
+Use `GET /api/research/ranking-weeks?strategy_id=<id>` to discover weeks,
+then `GET /api/research/rankings?strategy_id=<id>&week_end=YYYY-MM-DD`.
 The response contains returned members only; consumers should retain source
 artifact/lineage fields and render anomaly flags rather than silently removing
 rows.
 
 ## Backtests
 
-`GET /api/v2/backtests/runs` lists saved reports and
-`GET /api/v2/backtests/runs/<run_id>` reads one immutable report. A UI refresh,
+`GET /api/backtests/runs` lists saved reports and
+`GET /api/backtests/runs/<run_id>` reads one immutable report. A UI refresh,
 new market download, or later replay must not rewrite a saved report. If a
 next-session opening bar is unavailable, show the reported diagnostic instead
 of claiming a made-up exit.

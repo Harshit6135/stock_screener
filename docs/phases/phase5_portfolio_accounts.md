@@ -184,7 +184,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 **Files:** src/application/portfolio_web.py; src/application/kite_accounts_web.py; src/application/broker_web.py; run.py.
 
-1. Preserve existing /api/v2/portfolio/accounts/{account_id}/valuation, /summary, /valuation/history, /journal, /events, /cash-transfers and ticker/stream interfaces.
+1. Preserve existing /api/portfolio/accounts/{account_id}/valuation, /summary, /valuation/history, /journal, /events, /cash-transfers and ticker/stream interfaces.
 2. Add broker-account login/list/status and day-0 setup/sync/discrepancy-review routes in owning blueprints.
 3. Use POST for imports/sync/review mutations; validate explicit account/strategy and return structured errors.
 4. Wire factories/services and document real payloads for Phase 7 scripts; no secrets in browser payloads.

@@ -17,7 +17,7 @@ from src.gates.composition import ApplicationServices
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--database", type=Path, default=ROOT / "instance/system.db")
+    parser.add_argument("--database", type=Path, default=ROOT / "instance/stock_screener.db")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--start-date", default="2022-01-01")
     parser.add_argument("--end-date", default=datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat())

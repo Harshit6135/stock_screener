@@ -223,14 +223,14 @@ class MarketRepository(MarketDataRepository, ReferenceDataRepository):
             raise DomainValidationError("market coverage pagination is invalid")
         if symbol is not None and not symbol.strip():
             raise DomainValidationError("market coverage symbol is invalid")
-        if exchange is not None and exchange not in {"NSE", "BSE"}:
+        if exchange is not None and exchange != "NSE":
             raise DomainValidationError("market coverage exchange is invalid")
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
                 """WITH page AS (
                        SELECT instrument_id, isin, symbol, exchange, observed_on
                        FROM reference_instruments
-                       WHERE (? IS NULL OR symbol = ?) AND (? IS NULL OR exchange = ?)
+                       WHERE exchange='NSE' AND (? IS NULL OR symbol = ?)
                        ORDER BY exchange, symbol, instrument_id LIMIT ? OFFSET ?
                    )
                    SELECT i.instrument_id, i.isin, i.symbol, i.exchange,
@@ -245,7 +245,7 @@ class MarketRepository(MarketDataRepository, ReferenceDataRepository):
                             WHERE b.instrument_id = i.instrument_id
                             ORDER BY as_of_date DESC LIMIT 1) AS latest_snapshot_id
                     FROM page i ORDER BY i.exchange, i.symbol, i.instrument_id""",
-                (symbol, symbol, exchange, exchange, limit, offset),
+                (symbol, symbol, limit, offset),
             ).fetchall()
         return [dict(row) for row in rows]
     def histories(
@@ -281,10 +281,9 @@ class MarketRepository(MarketDataRepository, ReferenceDataRepository):
                        SELECT i.*,
                               ROW_NUMBER() OVER (
                                   PARTITION BY i.isin
-                                  ORDER BY CASE WHEN i.exchange='NSE' THEN 0 ELSE 1 END,
-                                           i.symbol, i.instrument_id
+                                  ORDER BY i.symbol, i.instrument_id
                               ) AS preferred_row
-                       FROM reference_instruments i
+                       FROM reference_instruments i WHERE i.exchange='NSE'
                    )
                    SELECT b.*, i.symbol, i.exchange, i.isin
                    FROM market_bars b JOIN preferred_instruments i
@@ -327,15 +326,15 @@ class MarketRepository(MarketDataRepository, ReferenceDataRepository):
         self, start_date: date, end_date: date, *, exchange: str = "NSE"
     ) -> list[str]:
         """Return the stored exchange sessions in a date range."""
-        if start_date > end_date or exchange not in {"NSE", "BSE"}:
+        if start_date > end_date or exchange != "NSE":
             raise DomainValidationError("market session range is invalid")
         with sqlite_connection(self.path, read_only=True) as connection:
             rows = connection.execute(
                 """SELECT DISTINCT b.as_of_date FROM market_bars b
                    JOIN reference_instruments i ON i.instrument_id=b.instrument_id
-                   WHERE i.exchange=? AND b.as_of_date BETWEEN ? AND ?
+                   WHERE i.exchange='NSE' AND b.as_of_date BETWEEN ? AND ?
                    ORDER BY b.as_of_date""",
-                (exchange, start_date.isoformat(), end_date.isoformat()),
+                (start_date.isoformat(), end_date.isoformat()),
             ).fetchall()
         return [str(row[0]) for row in rows]
 

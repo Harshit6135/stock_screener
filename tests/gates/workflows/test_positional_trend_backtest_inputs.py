@@ -60,7 +60,7 @@ def test_snapshot_replay_loads_historical_non_eq_members_and_earliest_fallback(t
     assert sessions[-1] == "2026-06-09"
 
 
-def test_market_cap_loader_includes_both_exchanges_and_excludes_below_threshold(tmp_path):
+def test_market_cap_loader_includes_nse_members_and_excludes_below_threshold(tmp_path):
     from src.gates.workflows.positional_trend_backtest_inputs import load_market_cap_universe
 
     database = tmp_path / "market.db"
@@ -72,10 +72,10 @@ def test_market_cap_loader_includes_both_exchanges_and_excludes_below_threshold(
         CREATE TABLE market_bars(instrument_id TEXT, as_of_date TEXT, open REAL, high REAL,
                                  low REAL, close REAL, volume REAL);
         INSERT INTO reference_instruments VALUES ('a','A','NSE','2026-09-19'),
-            ('b','B','BSE','2026-09-19'), ('c','C','NSE','2026-09-19'),
+            ('b','B','NSE','2026-09-19'), ('c','C','NSE','2026-09-19'),
             ('index','NIFTY 500','NSE','2026-09-19');
         INSERT INTO universe_membership VALUES ('a','isin-a','NSE',6000000000,'2026-09-19'),
-            ('b','isin-b','BSE',5000000000,'2026-09-19'),
+            ('b','isin-b','NSE',5000000000,'2026-09-19'),
             ('c','isin-c','NSE',4999999999,'2026-09-19');
         INSERT INTO market_bars VALUES ('a','2022-01-03',100,101,99,100,1000000),
             ('b','2022-01-03',100,101,99,100,1000000),
@@ -86,7 +86,7 @@ def test_market_cap_loader_includes_both_exchanges_and_excludes_below_threshold(
     histories, sessions, coverage = load_market_cap_universe(database, end_date="2026-09-28")
     assert set(histories) == {"a", "b"}
     assert sessions == ["2022-01-03"]
-    assert coverage["members_by_exchange"] == {"NSE": 1, "BSE": 1}
+    assert coverage["members_by_exchange"] == {"NSE": 2}
     assert coverage["membership_snapshot_dates"] == ["2026-09-19"]
 
 
@@ -97,7 +97,7 @@ def test_constituent_loader_includes_be_only_when_requested(tmp_path):
             "CREATE TABLE reference_instruments (instrument_id, isin, symbol, observed_on, exchange);"
             "CREATE TABLE market_bars (instrument_id, as_of_date, open, high, low, close, volume);"
             "INSERT INTO reference_instruments VALUES ('a','ISINA','A','2026-01-01','NSE'),"
-            "('b','ISINB','B','2026-01-01','BSE');"
+            "('b','ISINB','B','2026-01-01','NSE');"
             "INSERT INTO market_bars VALUES ('a','2022-01-03',100,101,99,100,1000),"
             "('b','2022-01-03',100,101,99,100,1000);"
         )
@@ -111,4 +111,4 @@ def test_constituent_loader_includes_be_only_when_requested(tmp_path):
     assert coverage["constituent_eq_count"] == 1
     assert coverage["included_member_count"] == 2
     assert coverage["bar_count"] == 2
-    assert coverage["matched_members_by_exchange"] == {"NSE": 1, "BSE": 1}
+    assert coverage["matched_members_by_exchange"] == {"NSE": 2}

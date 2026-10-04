@@ -11,14 +11,14 @@ open lots; they are not broker authentication records.
 
 | Operation | Endpoint |
 |---|---|
-| List accounts | `GET /api/v2/portfolio/accounts` |
-| Create local account | `POST /api/v2/portfolio/accounts` |
-| Account projection | `GET /api/v2/portfolio/accounts/<account_id>` |
-| Record verified fills | `POST /api/v2/portfolio/accounts/<account_id>/fills` |
-| Record capital transfer | `POST /api/v2/portfolio/accounts/<account_id>/cash-transfers` |
-| Dated valuation | `GET /api/v2/portfolio/accounts/<account_id>/valuation?as_of_date=YYYY-MM-DD` |
-| Valuation history | `GET /api/v2/portfolio/accounts/<account_id>/valuation/history` |
-| Journal/events | `GET /api/v2/portfolio/accounts/<account_id>/journal` and `/events` |
+| List accounts | `GET /api/portfolio/accounts` |
+| Create local account | `POST /api/portfolio/accounts` |
+| Account projection | `GET /api/portfolio/accounts/<account_id>` |
+| Record verified fills | `POST /api/portfolio/accounts/<account_id>/fills` |
+| Record capital transfer | `POST /api/portfolio/accounts/<account_id>/cash-transfers` |
+| Dated valuation | `GET /api/portfolio/accounts/<account_id>/valuation?as_of_date=YYYY-MM-DD` |
+| Valuation history | `GET /api/portfolio/accounts/<account_id>/valuation/history` |
+| Journal/events | `GET /api/portfolio/accounts/<account_id>/journal` and `/events` |
 
 Mutating commands require an idempotency key and expected ledger version.
 Repeat a failed network request with the same key only when the original command
@@ -35,7 +35,7 @@ durable history point; Home will not fabricate one.
 ## Proposals
 
 Actions are generated as reviewable proposals. Retrieve them with
-`GET /api/v2/actions/proposals?account_id=<id>`. A proposal carries its reason,
+`GET /api/actions/proposals?account_id=<id>`. A proposal carries its reason,
 action date, decision state and event history. Approval/rejection/process routes
 are scoped to the proposal ID; a guarded rejection must be shown to the
 operator, not converted to success.
@@ -46,7 +46,7 @@ verified fill updates ledger history.
 
 ## Risk guard configuration
 
-Use `GET /api/v2/portfolio/risk-config` to read global managed-portfolio guard
-limits and its version. Send `PUT /api/v2/portfolio/risk-config` with
+Use `GET /api/portfolio/risk-config` to read global managed-portfolio guard
+limits and its version. Send `PUT /api/portfolio/risk-config` with
 `expected_version` and a complete `limits` object. Guard limits are distinct
 from strategy definitions and are not a license to modify strategy logic.

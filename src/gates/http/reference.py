@@ -15,7 +15,7 @@ from src.platform_kernel import ArtifactStore, DomainValidationError
 def create_reference_blueprint(
     store: ArtifactStore, repository: MarketRepository | None = None, publisher: ArtifactPublisher | None = None
 ) -> Blueprint:
-    blueprint = Blueprint("reference_v2", __name__, url_prefix="/api/v2/reference")
+    blueprint = Blueprint("reference", __name__, url_prefix="/api/reference")
 
     @blueprint.get("/instruments")
     def get_instruments():

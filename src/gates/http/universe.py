@@ -1,6 +1,7 @@
 """Read and refresh interfaces for immutable universe snapshots."""
 
-from datetime import UTC, date, datetime
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, jsonify, request
 
@@ -10,7 +11,7 @@ from src.platform_kernel import DomainValidationError
 
 
 def create_universe_blueprint(repository: MarketRepository, jobs: JobStore) -> Blueprint:
-    blueprint = Blueprint("universe_v2", __name__, url_prefix="/api/v2/universe")
+    blueprint = Blueprint("universe", __name__, url_prefix="/api/universe")
 
     @blueprint.get("/snapshots")
     def snapshots():
@@ -27,7 +28,9 @@ def create_universe_blueprint(repository: MarketRepository, jobs: JobStore) -> B
             snapshot_id = request.args.get("snapshot_id")
             if snapshot_id is None:
                 index_name = request.args.get("index_name", "NIFTY 500")
-                as_of = date.fromisoformat(request.args.get("as_of", datetime.now(UTC).date().isoformat()))
+                as_of = date.fromisoformat(
+                    request.args.get("as_of", datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat())
+                )
                 snapshot = repository.universe_snapshot_as_of(index_name, as_of)
                 if snapshot is None:
                     return jsonify({"error": "universe snapshot not found"}), 404
@@ -50,7 +53,9 @@ def create_universe_blueprint(repository: MarketRepository, jobs: JobStore) -> B
         if not isinstance(body, dict) or set(body) - {"snapshot_date"}:
             return jsonify({"error": "universe refresh payload is invalid"}), 400
         try:
-            snapshot_date = str(body.get("snapshot_date", datetime.now(UTC).date().isoformat()))
+            snapshot_date = str(
+                body.get("snapshot_date", datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat())
+            )
             if body:
                 date.fromisoformat(snapshot_date)
             job = jobs.submit(f"universe:nifty500:{snapshot_date}", "reference.download-nifty500-constituents", body)

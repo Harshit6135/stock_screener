@@ -85,7 +85,7 @@ class ApplicationServices:
         portfolio_live_execution: bool = False,
     ) -> "ApplicationServices":
         root = Path(data_directory)
-        database = root / "system.db"
+        database = root / "stock_screener.db"
         artifacts = SqliteArtifactStore(database)
         catalog = ArtifactCatalog(database)
         jobs = JobStore(database)

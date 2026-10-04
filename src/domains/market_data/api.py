@@ -21,7 +21,6 @@ NSE_INDEX_SYMBOLS = frozenset(
         "NIFTY NEXT 50",
         "NIFTY MIDCAP 150",
         "NIFTY SMLCAP 250",
-        "INDIA VIX",
     }
 )
 

@@ -7,7 +7,7 @@ from src.platform_kernel import DomainValidationError
 
 
 def create_pipeline_blueprint(pipelines: ResearchPipelineJobs) -> Blueprint:
-    blueprint = Blueprint("pipelines_v2", __name__, url_prefix="/api/v2/pipelines")
+    blueprint = Blueprint("pipelines", __name__, url_prefix="/api/pipelines")
 
     @blueprint.post("/research")
     def submit():

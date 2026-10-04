@@ -21,9 +21,6 @@ def load_data(
         constituent_rows = list(csv.DictReader(stream))
         accepted_series = {"EQ", "BE"} if include_be else {"EQ"}
         members = {row["ISIN Code"] for row in constituent_rows if row["Series"] in accepted_series}
-        be_members = {
-            row["ISIN Code"] for row in constituent_rows if include_be and row["Series"] == "BE"
-        }
     if not members:
         raise ValueError("constituent CSV contains no EQ members")
     connection = sqlite3.connect(f"file:{database.resolve().as_posix()}?mode=ro", uri=True)
@@ -32,15 +29,13 @@ def load_data(
         placeholders = ",".join("?" for _ in members)
         identities = connection.execute(
             f"SELECT instrument_id, isin, symbol, observed_on, exchange FROM reference_instruments "
-            f"WHERE exchange IN ('NSE', 'BSE') AND isin IN ({placeholders}) "
-            f"ORDER BY isin, CASE exchange WHEN 'NSE' THEN 0 ELSE 1 END, observed_on DESC, symbol",
+            f"WHERE exchange='NSE' AND isin IN ({placeholders}) "
+            f"ORDER BY isin, observed_on DESC, symbol",
             sorted(members),
         ).fetchall()
         chosen = {}
         chosen_exchanges = {}
         for row in identities:
-            if row["exchange"] == "BSE" and row["isin"] not in be_members:
-                continue
             if row["isin"] not in chosen:
                 chosen[row["isin"]] = (row["instrument_id"], row["symbol"])
                 chosen_exchanges[row["isin"]] = row["exchange"]
@@ -79,7 +74,7 @@ def load_data(
         "included_series": sorted(accepted_series),
         "matched_isin_count": len(chosen),
         "matched_members_by_exchange": dict(Counter(chosen_exchanges.values())),
-        "be_price_source": "NSE preferred; BSE fallback by identical ISIN when NSE is absent",
+        "price_source": "NSE only",
         "instruments_with_bars": len(histories),
         "bar_count": bar_count,
         "session_count": len(sessions),
@@ -94,7 +89,7 @@ def load_data(
 
 
 def load_market_cap_universe(database: Path, *, end_date: str) -> tuple[dict, list[str], dict]:
-    """Use the current application universe retrospectively, across NSE and BSE."""
+    """Use the current NSE universe retrospectively."""
     connection = sqlite3.connect(f"file:{database.resolve().as_posix()}?mode=ro", uri=True)
     connection.row_factory = sqlite3.Row
     try:
@@ -103,8 +98,8 @@ def load_market_cap_universe(database: Path, *, end_date: str) -> tuple[dict, li
             for row in connection.execute(
                 "SELECT u.*, r.symbol AS current_symbol FROM universe_membership u "
                 "JOIN reference_instruments r ON r.instrument_id=u.instrument_id "
-                "WHERE u.exchange IN ('NSE', 'BSE') AND u.last_market_cap >= 5000000000 "
-                "ORDER BY u.exchange, u.isin"
+                "WHERE u.exchange='NSE' AND u.last_market_cap >= 5000000000 "
+                "ORDER BY u.isin"
             )
         ]
         if not members:

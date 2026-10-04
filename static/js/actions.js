@@ -10,7 +10,7 @@
   async function dates() {
     const account = $("account").value;
     if (!account) return;
-    const data = await Screener.api("/api/v2/actions/proposals/dates?account_id=" + encodeURIComponent(account));
+    const data = await Screener.api("/api/actions/proposals/dates?account_id=" + encodeURIComponent(account));
     $("action-date").replaceChildren(new Option("All dates", ""), ...data.action_dates.map(day => new Option(day, day)));
   }
   async function load() {
@@ -20,24 +20,24 @@
     if ($("action-date").value) query.set("action_date", $("action-date").value);
     try {
       const [data, risk] = await Promise.all([
-        Screener.api("/api/v2/actions/proposals?" + query, {signal:request.signal}),
-        Screener.api("/api/v2/actions/risk?account_id=" + encodeURIComponent(account), {signal:request.signal})
+        Screener.api("/api/actions/proposals?" + query, {signal:request.signal}),
+        Screener.api("/api/actions/risk?account_id=" + encodeURIComponent(account), {signal:request.signal})
       ]);
       if (token !== generation || account !== $("account").value) return;
       $("proposals").replaceChildren(...data.proposals.map(proposal => {
         const review = document.createElement("div");
         if (proposal.status === "PENDING") {
           for (const action of ["approve", "reject"]) review.append(control(action, async () => {
-            await Screener.api("/api/v2/actions/proposals/" + encodeURIComponent(proposal.proposal_id) + "/" + action, {method:"POST"}); await load();
+            await Screener.api("/api/actions/proposals/" + encodeURIComponent(proposal.proposal_id) + "/" + action, {method:"POST"}); await load();
           }));
         }
         if (proposal.status === "APPROVED") {
           if (proposal.strategy_id === "manual") review.append(control("Confirm manual fills", async () => {
             if (!confirm("Confirm that these quantities and prices were actually executed?")) return;
-            await Screener.api("/api/v2/actions/proposals/" + encodeURIComponent(proposal.proposal_id) + "/process", {method:"POST"}); await load();
+            await Screener.api("/api/actions/proposals/" + encodeURIComponent(proposal.proposal_id) + "/process", {method:"POST"}); await load();
           }));
           review.append(control("Prepare broker intents (no submission)", async () => {
-            const result = await Screener.api("/api/v2/portfolio/proposals/" + encodeURIComponent(proposal.proposal_id) + "/broker-intents", {method:"POST"});
+            const result = await Screener.api("/api/portfolio/proposals/" + encodeURIComponent(proposal.proposal_id) + "/broker-intents", {method:"POST"});
             $("risk").textContent = JSON.stringify(result, null, 2);
           }));
         }
@@ -64,7 +64,7 @@
     const submit = document.createElement("button"); submit.type = "submit"; submit.textContent = "Create reviewable intent"; form.append(submit);
     form.onsubmit = async event => {
       event.preventDefault(); submit.disabled = true;
-      try {await Screener.api("/api/v2/actions/manual",{method:"POST",body:JSON.stringify({
+      try {await Screener.api("/api/actions/manual",{method:"POST",body:JSON.stringify({
         account_id:$("account").value, action_date:fields.date.value, reason:fields.reason.value,
         entries:[{symbol:fields.symbol.value.trim().toUpperCase(),exchange:"NSE",side:side.value,units:Number(fields.units.value),price:fields.price.value}]
       })}); modal.close(); await dates(); await load();}
@@ -74,7 +74,7 @@
   }
   document.addEventListener("DOMContentLoaded", async () => {
     try {
-      const data = await Screener.api("/api/v2/portfolio/accounts");
+      const data = await Screener.api("/api/portfolio/accounts");
       $("account").replaceChildren(...data.accounts.map(account => new Option(account.account_id,account.account_id)));
       $("account").onchange = async () => {request?.abort(); ++generation; await dates(); await load();};
       $("load-actions").onclick = load; $("action-date").onchange = load; $("manual-action").onclick = manual;

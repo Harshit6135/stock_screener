@@ -1,4 +1,4 @@
-# Stock Screener v2 — Master Overhaul Plan — Confirmed Scope
+# Stock Screener  — Master Overhaul Plan — Confirmed Scope
 
 > This plan supersedes `detailed_plan.md` and `best_practices_gap_analysis.md`. This is the authoritative plan. Phase files must follow it. The user authorized implementation and completion of all seven phases on 2026-09-29. Current evidence and outstanding work are recorded in [repair-status.md](phases/repair-status.md).
 
@@ -75,23 +75,23 @@ CREATE TABLE universe_snapshot_members (
 6. Use `kite.historical_data(instrument_token, from, to, "day")` to fetch bars
 
 ### Remove BSE Entirely
-- Delete `sync_bse_instruments()` method from [market_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/market_jobs.py)
+- Delete `sync_bse_instruments()` method from [market_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/market_jobs.py)
 - Delete `BSE_INDEX_SYMBOLS` constant
-- Remove `bse_csv_path` parameter from [composition.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/composition.py) and all callers
+- Remove `bse_csv_path` parameter from [composition.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/composition.py) and all callers
 - Remove `uuid5("BSE:...")` instrument_id generation
-- Remove BSE fallback logic in [positional_trend_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/positional_trend_jobs.py)
+- Remove BSE fallback logic in [positional_trend_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/positional_trend_jobs.py)
 - Delete `data/imports/BSE.csv` and `data/imports/NSE.csv` references (no longer needed — NIFTY 500 CSV is the sole source)
-- Remove `reference.sync-bse-instruments` worker handler from [composition.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/composition.py)
+- Remove `reference.sync-bse-instruments` worker handler from [composition.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/composition.py)
 
 ### Series Continuity
-- Remove the `SERIES == "EQ"` filter in `sync_instruments` ([market_jobs.py L79](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/market_jobs.py#L79))
+- Remove the `SERIES == "EQ"` filter in `sync_instruments` ([market_jobs.py L79](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/market_jobs.py#L79))
 - Accept all series from the instruments endpoint — universe membership (NIFTY 500 CSV) determines what's tracked
 - Add `series` column to `reference_instruments` (new migration)
 - When series changes (EQ → BE), ISIN stays stable → `instrument_id` stable → bar history preserved
 - Log series transitions
 
 ### Index Benchmarks — Add Historical Bars
-Update `NSE_INDEX_SYMBOLS` in [market_jobs.py L28-30](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/market_jobs.py#L28-L30):
+Update `NSE_INDEX_SYMBOLS` in [market_jobs.py L28-30](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/market_jobs.py#L28-L30):
 ```python
 NSE_INDEX_SYMBOLS = frozenset({
     "NIFTY 50",
@@ -237,18 +237,18 @@ def parse_corporate_action(subject: str) -> dict:
 
 ### Bugs to Fix
 
-**4.1: 8 unimplemented operations** in `APPROVED_OPERATIONS` ([dag.py L36-42](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/domains/indicators/dag.py#L36-L42)):
+**4.1: 8 unimplemented operations** in `APPROVED_OPERATIONS` ([dag.py L36-42](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/domains/indicators/dag.py#L36-L42)):
 - `percentile`, `rank`, `z_score`, `sector_z_score`, `modifier`, `all`, `any`, `not`
 - Either implement or remove from `APPROVED_OPERATIONS`
 
-**4.2: `_OPERATIONS` desync** between [strategy_definitions.py L29-36](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/gates/strategy_definitions.py#L29-L36) and [dag.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/domains/indicators/dag.py):
+**4.2: `_OPERATIONS` desync** between [strategy_definitions.py L29-36](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/gates/strategy_definitions.py#L29-L36) and [dag.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/domains/indicators/dag.py):
 - Missing `abs`, `pct_change`, `ewm_mean` in `_OPERATIONS`
 - **Fix**: Define `APPROVED_OPERATIONS` once in `dag.py`, import in `strategy_definitions.py`
 
-**4.3: Private method access** ([dag.py L414](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/domains/indicators/dag.py#L414)):
+**4.3: Private method access** ([dag.py L414](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/domains/indicators/dag.py#L414)):
 - `self._adapter._validate_parameters` — expose as public method
 
-**4.4: Content hash uses node IDs, not content hashes** ([dag.py L91-108](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/domains/indicators/dag.py#L91-L108)):
+**4.4: Content hash uses node IDs, not content hashes** ([dag.py L91-108](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/domains/indicators/dag.py#L91-L108)):
 - Hash should recursively include input nodes' content hashes for true content-addressed deduplication
 - Actual DagNode inputs are named reference tuples and the dataclass is frozen. Resolve dependencies in the validated graph, hash topologically, preserve argument roles/primitive identities and update cache consumers; do not treat input references as child objects or mutate the frozen hash property.
 
@@ -262,8 +262,8 @@ def parse_corporate_action(subject: str) -> dict:
 ## 5. Rankings: Strategy Pattern Abstraction
 
 ### Retained Strategies and Retirement
-- Delete [benchmark_relative_momentum.yml](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/strategies/benchmark_relative_momentum.yml)
-- Delete [early_momentum.yml](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/strategies/early_momentum.yml)
+- Delete [benchmark_relative_momentum.yml](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/strategies/benchmark_relative_momentum.yml)
+- Delete [early_momentum.yml](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/strategies/early_momentum.yml)
 - Remove references from: `_indicator_set()`, pipeline default strategies, worker handlers
 - Retain **Momentum strategy** (factor_score) and **Positional trend following strategy** (event_signal), including runtime, action generation, replay and test coverage.
 - Remove only benchmark-relative momentum and early momentum active definitions/wiring/code/tests after auditing shared dependencies; retire persisted revisions explicitly. Remove their historical backtesting data/results as well. Inventory database runs, artifacts/reports, strategy-specific output directories and UI/catalog references; delete only outputs attributable to these removed strategies. Retain shared market history and both retained strategies' outputs.
@@ -422,7 +422,7 @@ ActionJobs.generate() → proposal → UI display → user "Approve"
 | **Config tab** — Strategy YAML editor | **`/settings`** page | Merge with Kite auth settings |
 | **Approve/Buy/Sell/Capital Event modals** | Keep all modals | Restyle with Material Design |
 
-#### From `dashboard_web.py` (v2 Routes — ACTIVE)
+#### From `dashboard_web.py` ( Routes — ACTIVE)
 | Old Feature | New Location | Enhancement |
 |-------------|-------------|-------------|
 | `/app` — Rankings table, Index quotes table, Job inspector, Worker control, Portfolio account lookup, Action proposals | Distribute: Rankings→`/rankings`, Quotes→home carousel, Worker→`/pipeline`, Portfolio→home | Remove as standalone page |
@@ -563,19 +563,19 @@ Checks:
 
 | Location | Change |
 |----------|--------|
-| [market_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/market_jobs.py) `sync_bse_instruments()` | Delete entirely |
-| [market_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/market_jobs.py) `BSE_INDEX_SYMBOLS` | Delete |
-| [market_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/market_jobs.py) L79 `SERIES == "EQ"` filter | Remove filter |
-| [market_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/market_jobs.py) `NSE_INDEX_SYMBOLS` | Update to new set |
-| [composition.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/composition.py) `bse_csv_path` | Remove parameter |
-| [composition.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/composition.py) `sync-bse-instruments` handler | Remove |
-| [positional_trend_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/positional_trend_jobs.py) BSE fallback | Remove |
+| [market_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/market_jobs.py) `sync_bse_instruments()` | Delete entirely |
+| [market_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/market_jobs.py) `BSE_INDEX_SYMBOLS` | Delete |
+| [market_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/market_jobs.py) L79 `SERIES == "EQ"` filter | Remove filter |
+| [market_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/market_jobs.py) `NSE_INDEX_SYMBOLS` | Update to new set |
+| [composition.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/composition.py) `bse_csv_path` | Remove parameter |
+| [composition.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/composition.py) `sync-bse-instruments` handler | Remove |
+| [positional_trend_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/positional_trend_jobs.py) BSE fallback | Remove |
 | [research.py](../src/gates/workflows/research.py) `_indicator_set()` | Remove retired benchmark-relative momentum wiring; preserve both retained strategies |
-| [pipeline_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/pipeline_jobs.py) L85 default strategies | Use migrated names `momentum` and `positional_trend_following` throughout pipeline strategy selection |
-| [run.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/run.py) L65 `bse_csv_path=` | Remove |
-| [dag.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/domains/indicators/dag.py) `APPROVED_OPERATIONS` | Fix unimplemented ops |
-| [strategy_definitions.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/gates/strategy_definitions.py) `_OPERATIONS` | Import from `dag.py` |
-| [corporate_actions.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener_v2/src/application/corporate_actions.py) | Rewrite: NSE API detect → Kite re-fetch flow |
+| [pipeline_jobs.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/pipeline_jobs.py) L85 default strategies | Use migrated names `momentum` and `positional_trend_following` throughout pipeline strategy selection |
+| [run.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/run.py) L65 `bse_csv_path=` | Remove |
+| [dag.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/domains/indicators/dag.py) `APPROVED_OPERATIONS` | Fix unimplemented ops |
+| [strategy_definitions.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/gates/strategy_definitions.py) `_OPERATIONS` | Import from `dag.py` |
+| [corporate_actions.py](file:///c:/Users/harsh/Documents/GitHub/stocks_screener/src/application/corporate_actions.py) | Rewrite: NSE API detect → Kite re-fetch flow |
 
 ---
 

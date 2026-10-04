@@ -27,7 +27,7 @@ def _money(value: object, field: str) -> Money:
 def create_portfolio_blueprint(
     ledger: Ledger, market: MarketRepository, risk_reader=None, risk_config=None
 ) -> Blueprint:
-    blueprint = Blueprint("portfolio_v2", __name__, url_prefix="/api/v2/portfolio")
+    blueprint = Blueprint("portfolio", __name__, url_prefix="/api/portfolio")
 
     @blueprint.get("/accounts")
     def accounts():

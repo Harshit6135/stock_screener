@@ -7,7 +7,7 @@ from src.platform_kernel import DomainValidationError
 
 
 def create_broker_blueprint(orders: BrokerOrderWorkflow) -> Blueprint:
-    blueprint = Blueprint("broker_v2", __name__, url_prefix="/api/v2/portfolio")
+    blueprint = Blueprint("broker", __name__, url_prefix="/api/portfolio")
 
     @blueprint.post("/orders")
     def create():

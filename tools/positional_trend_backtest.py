@@ -22,7 +22,7 @@ from src.gates.workflows.positional_trend_backtest_inputs import (
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--database", type=Path, default=ROOT / "instance/system.db")
+    parser.add_argument("--database", type=Path, default=ROOT / "instance/stock_screener.db")
     parser.add_argument("--universe-csv", type=Path, default=ROOT / "ind_nifty500list.csv")
     parser.add_argument("--universe-source", choices=("nifty500", "csv", "mcap500"), default="nifty500")
     parser.add_argument("--include-be", action="store_true", help="include BE rows in a constituent CSV")

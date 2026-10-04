@@ -20,7 +20,7 @@ from src.domains.market_data import NSE_INDEX_SYMBOLS, KiteHistoricalBarsProvide
 from src.domains.portfolio_accounting import IntradayStopAlerts
 from src.gates.repositories import MarketRepository, TrackedInstrument
 from src.gates.workflows.market_ingestion import ingest_market_bars
-from src.platform_kernel import DomainValidationError
+from src.platform_kernel import DomainValidationError, QualityStatus
 from src.platform_kernel.security import sanitize_error
 
 PHASE2_BENCHMARK_SYMBOLS = NSE_INDEX_SYMBOLS
@@ -75,7 +75,29 @@ class KiteMarketJobs:
         provider = KiteHistoricalBarsProvider(self._client())
         rows = []
         while start <= end:
-            chunk_end = min(end, start + timedelta(days=364))
+            chunk_end = min(end, start + timedelta(days=1999))
+            bars, _raw_records, quality_events = provider.get_bars_with_quality(
+                str(identity["provider_token"]),
+                start,
+                chunk_end,
+                symbol=str(identity["symbol"]),
+                isin=str(identity["isin"]),
+            )
+            for quality_event in quality_events:
+                event_date = date.fromisoformat(str(quality_event["as_of_date"]))
+                self.repository.resolve_quality_events(
+                    instrument_id,
+                    event_date,
+                    "provider_ohlc_source_unresolved",
+                    {"method": quality_event["check_type"], **quality_event},
+                )
+                self.repository.record_quality_event(
+                    instrument_id,
+                    event_date,
+                    str(quality_event["check_type"]),
+                    str(quality_event["severity"]),
+                    dict(quality_event),
+                )
             rows.extend(
                 {
                     "as_of_date": bar.as_of_date.isoformat(),
@@ -85,7 +107,7 @@ class KiteMarketJobs:
                     "close": str(bar.close),
                     "volume": bar.volume,
                 }
-                for bar in provider.get_bars(str(identity["provider_token"]), start, chunk_end)
+                for bar in bars
             )
             start = chunk_end + timedelta(days=1)
         return rows
@@ -95,10 +117,7 @@ class KiteMarketJobs:
         payload: dict[str, Any],
         context: Any = None,
     ) -> dict[str, object]:
-        """Phase 2 Task 2.6: resolve universe snapshot members against cached Kite NSE dump.
-
-        Replaces CSV-filtered sync for snapshot-driven pipelines.
-        """
+        """Resolve snapshot members against Kite's NSE instrument dump."""
         snapshot_id = payload.get("snapshot_id")
         if not isinstance(snapshot_id, str) or not snapshot_id.strip():
             raise DomainValidationError("snapshot instrument sync requires snapshot_id")
@@ -107,23 +126,25 @@ class KiteMarketJobs:
             raise DomainValidationError("snapshot has no members to resolve")
         provider_records = self._cached_kite_nse_dump()
         observed_on = datetime.now(UTC).date()
-        # Build lookup: tradingsymbol -> provider record (prefer EQ instrument_type)
+        # Kite appends the NSE series to some trading symbols, e.g. HFCL-BE.
         provider_by_symbol: dict[str, dict[str, Any]] = {}
         for record in provider_records:
-            ts = str(record.get("tradingsymbol", ""))
+            ts = str(record.get("tradingsymbol", "")).upper()
             if ts and (ts not in provider_by_symbol or record.get("instrument_type") == "EQ"):
                 provider_by_symbol[ts] = record
         records: list[TrackedInstrument] = []
         unresolved: list[dict[str, str]] = []
         seen: set[str] = set()
         for member in members:
-            symbol = str(member["symbol"])
+            symbol = str(member["symbol"]).upper()
             isin = str(member["isin"])
             series = str(member.get("series", "EQ"))
             provider_record = provider_by_symbol.get(symbol)
+            if provider_record is None and series.upper() == "BE":
+                provider_record = provider_by_symbol.get(f"{symbol}-BE")
             if provider_record is None:
                 unresolved.append(
-                    {"isin": isin, "symbol": symbol, "reason": "absent_from_kite_dump"}
+                    {"isin": isin, "symbol": symbol, "reason": "absent_from_kite_nse_dump"}
                 )
                 continue
             instrument_id = str(uuid5(NAMESPACE_URL, f"NSE:{isin}"))
@@ -135,7 +156,7 @@ class KiteMarketJobs:
                     instrument_id,
                     isin,
                     symbol,
-                    "NSE",
+                    str(provider_record.get("exchange", "NSE")),
                     str(provider_record["instrument_token"]),
                     observed_on,
                     series=series,
@@ -367,8 +388,8 @@ class KiteMarketJobs:
             end_date = date.fromisoformat(payload["end_date"])
         except (TypeError, ValueError, KeyError) as exc:
             raise DomainValidationError("bar fetch dates must be ISO dates") from exc
-        if start_date > end_date or end_date - start_date > timedelta(days=365):
-            raise DomainValidationError("bar fetch range must be at most 365 days")
+        if start_date > end_date or end_date - start_date > timedelta(days=1999):
+            raise DomainValidationError("bar fetch range must be at most 2000 calendar days")
         instrument = self.repository.instrument(symbol, exchange)
         instrument_id = str(instrument["instrument_id"])
         coverage_context = self._history_context(
@@ -476,8 +497,8 @@ class KiteMarketJobs:
             end_date = date.fromisoformat(payload["end_date"])
         except (TypeError, ValueError, KeyError) as exc:
             raise DomainValidationError("bar fetch dates must be ISO dates") from exc
-        if start_date > end_date or end_date - start_date > timedelta(days=365):
-            raise DomainValidationError("bar fetch range must be at most 365 days")
+        if start_date > end_date or end_date - start_date > timedelta(days=1999):
+            raise DomainValidationError("bar fetch range must be at most 2000 calendar days")
 
         current_isins = self._current_history_isins()
         for item in items:
@@ -510,11 +531,20 @@ class KiteMarketJobs:
                 if self.repository.has_coverage(instrument_id, start_date, end_date, "kite"):
                     return {"skipped": True, "instrument_id": instrument_id}
                 token = str(instrument["provider_token"])
+                bars, raw_records, quality_events = provider.get_bars_with_quality(
+                    token,
+                    start_date,
+                    end_date,
+                    symbol=item["symbol"],
+                    isin=str(instrument["isin"]),
+                )
                 return {
                     "skipped": False,
                     "instrument_id": instrument_id,
                     "token": token,
-                    "fetched": provider.get_bars(token, start_date, end_date),
+                    "fetched": bars,
+                    "raw_records": raw_records,
+                    "quality_events": quality_events,
                 }
             except (
                 DomainValidationError,
@@ -536,6 +566,21 @@ class KiteMarketJobs:
                 return {"symbol": symbol, "status": "skipped"}
             instrument_id = data["instrument_id"]
             if not data["fetched"]:
+                for quality_event in data.get("quality_events", []):
+                    event_date = date.fromisoformat(str(quality_event["as_of_date"]))
+                    self.repository.resolve_quality_events(
+                        instrument_id,
+                        event_date,
+                        "provider_ohlc_source_unresolved",
+                        {"method": quality_event["check_type"], **quality_event},
+                    )
+                    self.repository.record_quality_event(
+                        instrument_id,
+                        event_date,
+                        str(quality_event["check_type"]),
+                        str(quality_event["severity"]),
+                        dict(quality_event),
+                    )
                 self.repository.record_fetch_coverage(
                     instrument_id, start_date, end_date, provider="kite", bar_count=0
                 )
@@ -564,14 +609,53 @@ class KiteMarketJobs:
                     "start_date": start_date.isoformat(),
                     "end_date": end_date.isoformat(),
                 },
+                raw_payload=(
+                    {
+                        "kite_records": data["raw_records"],
+                        "quality_events": data["quality_events"],
+                    }
+                    if data["quality_events"] else None
+                ),
                 provider_version="kiteconnect-v5",
+                quality=(
+                    QualityStatus.PARTIAL
+                    if data["quality_events"]
+                    else QualityStatus.COMPLETE
+                ),
             )
             self.repository.upsert_bars(instrument_id, bars, normalized.artifact_id)
             self.repository.record_fetch_coverage(
                 instrument_id, start_date, end_date, provider="kite", bar_count=len(bars)
             )
+            for quality_event in data["quality_events"]:
+                event_date = date.fromisoformat(str(quality_event["as_of_date"]))
+                resolution = {
+                    "method": quality_event["check_type"],
+                    "source_artifact_id": _raw.artifact_id,
+                    "normalized_artifact_id": normalized.artifact_id,
+                    **quality_event,
+                }
+                self.repository.resolve_quality_events(
+                    instrument_id,
+                    event_date,
+                    "provider_ohlc_source_unresolved",
+                    resolution,
+                )
+                self.repository.record_quality_event(
+                    instrument_id,
+                    event_date,
+                    str(quality_event["check_type"]),
+                    str(quality_event["severity"]),
+                    {**quality_event, "raw_artifact_id": _raw.artifact_id,
+                     "normalized_artifact_id": normalized.artifact_id},
+                )
             written_count += len(bars)
-            return {"symbol": symbol, "status": "fetched", "bar_count": len(bars)}
+            return {
+                "symbol": symbol,
+                "status": "fetched",
+                "bar_count": len(bars),
+                "quality_events": len(data["quality_events"]),
+            }
 
         # Submit at most ten reads, replenishing only after a checkpoint. A
         # cancelled job never leaves the full universe queued at the provider.

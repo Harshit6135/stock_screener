@@ -180,7 +180,7 @@ New modules are identified at their introduction; phase-specific test files are 
 
 **Files:** src/application/reference_web.py; src/application/composition.py.
 
-1. Add /api/v2/universe/members, /snapshots and /diff in an owning blueprint/service; parameterize IDs/dates and paginate lists.
+1. Add /api/universe/members, /snapshots and /diff in an owning blueprint/service; parameterize IDs/dates and paginate lists.
 2. Provide POST refresh that submits the universe job; GET remains read-only.
 3. Return selected snapshot/date/hash/member count and additions/removals for Phase 7 widgets.
 

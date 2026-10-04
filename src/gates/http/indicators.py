@@ -7,7 +7,7 @@ from src.platform_kernel import DomainValidationError
 
 
 def create_indicators_blueprint(adapter: PandasTaAdapter) -> Blueprint:
-    blueprint = Blueprint("indicators_v2", __name__, url_prefix="/api/v2/indicators")
+    blueprint = Blueprint("indicators", __name__, url_prefix="/api/indicators")
 
     @blueprint.get("/catalog")
     def catalogue():

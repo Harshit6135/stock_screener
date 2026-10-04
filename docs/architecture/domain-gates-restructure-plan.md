@@ -121,7 +121,7 @@ This tree describes responsibility destinations, not a requirement to create eac
 
 Use existing domain names where possible. The separate research, operations, and artifacts domains provide clear owners for substantial existing stateful functionality. Do not invent a domain for each web page or each job.
 
-The physical database remains `instance/system.db`. Table ownership is logical: a domain's repository is the only code allowed to query/write its tables. Schema/migration namespaces, table names, data formats, and transaction semantics remain stable.
+The physical database remains `instance/stock_screener.db`. Table ownership is logical: a domain's repository is the only code allowed to query/write its tables. Schema/migration namespaces, table names, data formats, and transaction semantics remain stable.
 
 ## 5. Enforceable dependency rules
 

@@ -17,7 +17,7 @@ def test_successful_profile_kite_callback_redirects_to_dashboard():
 
     app = Flask(__name__)
     app.secret_key = "test"
-    dashboard_blueprint = Blueprint("dashboard_v2", __name__)
+    dashboard_blueprint = Blueprint("dashboard", __name__)
 
     @dashboard_blueprint.get("/")
     def dashboard():
@@ -27,7 +27,7 @@ def test_successful_profile_kite_callback_redirects_to_dashboard():
     app.register_blueprint(create_kite_auth_blueprint(FakeKiteAuth()))
     client = app.test_client()
 
-    started = client.post("/api/v2/integrations/kite/market-data/authorize")
+    started = client.post("/api/integrations/kite/market-data/authorize")
     assert started.status_code == 200
     callback = client.get(
         "/integrations/kite/market-data/callback?status=success&request_token=request-token"
@@ -35,5 +35,5 @@ def test_successful_profile_kite_callback_redirects_to_dashboard():
 
     assert callback.status_code == 302
     assert callback.headers["Location"].endswith("/")
-    assert client.post("/api/v2/integrations/kite/authorize").status_code == 404
+    assert client.post("/api/integrations/kite/authorize").status_code == 404
     assert client.get("/integrations/kite/callback").status_code == 404

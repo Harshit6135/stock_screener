@@ -21,9 +21,9 @@ def test_manual_fill_lifecycle(tmp_path):
     app.register_blueprint(create_portfolio_blueprint(ledger, market))
     client = app.test_client()
 
-    assert client.get("/api/v2/portfolio/accounts").status_code == 200
+    assert client.get("/api/portfolio/accounts").status_code == 200
     response = client.post(
-        "/api/v2/portfolio/accounts",
+        "/api/portfolio/accounts",
         json={"account_id": "paper", "opening_cash": "1000"},
     )
     assert response.status_code == 201
@@ -40,13 +40,13 @@ def test_manual_fill_lifecycle(tmp_path):
             }
         ],
     }
-    assert client.post("/api/v2/portfolio/accounts/paper/fills", json=command).status_code == 201
-    assert client.post("/api/v2/portfolio/accounts/paper/fills", json=command).json["version"] == 1
-    account = client.get("/api/v2/portfolio/accounts/paper")
+    assert client.post("/api/portfolio/accounts/paper/fills", json=command).status_code == 201
+    assert client.post("/api/portfolio/accounts/paper/fills", json=command).json["version"] == 1
+    account = client.get("/api/portfolio/accounts/paper")
     assert account.json["cash"] == "800"
     assert account.json["open_lots"][0]["symbol"] == "ABC"
     transfer = client.post(
-        "/api/v2/portfolio/accounts/paper/cash-transfers",
+        "/api/portfolio/accounts/paper/cash-transfers",
         json={
             "idempotency_key": "withdraw-1",
             "expected_version": 1,
@@ -58,9 +58,9 @@ def test_manual_fill_lifecycle(tmp_path):
     )
     assert transfer.status_code == 201
     assert transfer.json["version"] == 2
-    assert client.get("/api/v2/portfolio/accounts/paper").json["cash"] == "700"
+    assert client.get("/api/portfolio/accounts/paper").json["cash"] == "700"
     valuation = client.get(
-        "/api/v2/portfolio/accounts/paper/valuation?as_of_date=2026-09-03&persist=1"
+        "/api/portfolio/accounts/paper/valuation?as_of_date=2026-09-03&persist=1"
     )
     assert valuation.status_code == 200
     assert valuation.json["stale_prices"] == 1
@@ -79,28 +79,28 @@ def test_manual_fill_lifecycle(tmp_path):
         ],
         "ticker-snapshot",
     )
-    assert client.get("/api/v2/portfolio/accounts/paper/ticker").status_code == 200
-    ticker = client.get("/api/v2/portfolio/accounts/paper/ticker")
+    assert client.get("/api/portfolio/accounts/paper/ticker").status_code == 200
+    ticker = client.get("/api/portfolio/accounts/paper/ticker")
     assert ticker.status_code == 200
     assert ticker.json["basis"] == "latest_available_market_bar"
     assert ticker.json["holdings"][0]["fresh"] is True
     assert ticker.json["holdings"][0]["price"] == "108"
-    stream = client.get("/api/v2/portfolio/accounts/paper/ticker/stream")
+    stream = client.get("/api/portfolio/accounts/paper/ticker/stream")
     assert stream.status_code == 200
     assert stream.mimetype == "text/event-stream"
     assert b"event: portfolio-ticker" in stream.data
-    snapshots = client.get("/api/v2/portfolio/accounts/paper/valuation/snapshots")
+    snapshots = client.get("/api/portfolio/accounts/paper/valuation/snapshots")
     assert snapshots.status_code == 200
     assert snapshots.json["snapshots"][0]["as_of_date"] == "2026-09-03"
-    summary = client.get("/api/v2/portfolio/accounts/paper/summary?as_of_date=2026-09-04")
+    summary = client.get("/api/portfolio/accounts/paper/summary?as_of_date=2026-09-04")
     assert summary.status_code == 200
     assert summary.json["summary_basis"] == "checksum_verified_valuation_snapshot"
-    history = client.get("/api/v2/portfolio/accounts/paper/valuation/history")
+    history = client.get("/api/portfolio/accounts/paper/valuation/history")
     assert history.status_code == 200
     assert (
         history.json["history"][0]["snapshot_id"] == snapshots.json["snapshots"][0]["snapshot_id"]
     )
-    journal = client.get("/api/v2/portfolio/accounts/paper/journal?long_term_days=1")
+    journal = client.get("/api/portfolio/accounts/paper/journal?long_term_days=1")
     assert journal.status_code == 200
     assert journal.json["long_term_days"] == 1
     invalid = {
@@ -116,6 +116,6 @@ def test_manual_fill_lifecycle(tmp_path):
             }
         ],
     }
-    assert client.post("/api/v2/portfolio/accounts/paper/fills", json=invalid).status_code == 400
-    events = client.get("/api/v2/portfolio/accounts/paper/events")
+    assert client.post("/api/portfolio/accounts/paper/fills", json=invalid).status_code == 400
+    events = client.get("/api/portfolio/accounts/paper/events")
     assert len(events.json["events"]) == 2

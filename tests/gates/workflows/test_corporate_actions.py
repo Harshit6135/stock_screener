@@ -893,8 +893,8 @@ class TestPriceFactorRepository:
         assert market.market_history_revision(inst_id) == "0"
         rev1 = market.bump_market_history_revision(inst_id)
         assert rev1 == "1"
-        rev2 = market.bump_market_history_revision(inst_id)
-        assert rev2 == "2"
+        second_revision = market.bump_market_history_revision(inst_id)
+        assert second_revision == "2"
 
 
 class TestAdjustmentFactorComputation:

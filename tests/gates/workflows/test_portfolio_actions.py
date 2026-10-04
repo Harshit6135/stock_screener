@@ -568,7 +568,7 @@ def test_held_exit_survives_missing_open_and_universe_removal(tmp_path, monkeypa
         "volume": 2_000_000,
         "snapshot_id": "held-close",
     }
-    identity = {"symbol": "HELD", "isin": "ISIN-H", "exchange": "BSE"}
+    identity = {"symbol": "HELD", "isin": "ISIN-H", "exchange": "NSE"}
     market = SimpleNamespace(
         session_dates=lambda start, end, **__: [day for day in days if day <= end.isoformat()],
         histories=lambda *_, **__: {"H": ([bar], identity)},
@@ -578,7 +578,7 @@ def test_held_exit_survives_missing_open_and_universe_removal(tmp_path, monkeypa
             else []
         ),
     )
-    # The held BSE identity is read directly even when absent from the current universe.
+    # The held NSE identity is read directly even when absent from the current universe.
     monkeypatch.setattr(
         "src.domains.strategies.positional_trend.feature_series",
         lambda *args: [

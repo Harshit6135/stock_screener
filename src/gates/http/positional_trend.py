@@ -10,7 +10,7 @@ from src.platform_kernel import DomainValidationError
 
 
 def create_positional_trend_blueprint(positional_trend: PositionalTrendJobs, jobs: JobStore) -> Blueprint:
-    blueprint = Blueprint("positional_trend_v2", __name__, url_prefix="/api/v2/positional-trend")
+    blueprint = Blueprint("positional_trend", __name__, url_prefix="/api/positional-trend")
 
     @blueprint.post("/signals/build")
     def build_signals():

@@ -12,7 +12,7 @@ The live stream uses the explicitly bound broker account and its validated Kite
 session. It is read-only. Starting it does not arm broker execution or submit an
 order. Credentials remain on the server.
 
-Start a connection with `POST /api/v2/market/intraday/live-stream`:
+Start a connection with `POST /api/market/intraday/live-stream`:
 
 ```json
 {"action":"start","account_id":"YOUR_LEDGER_ACCOUNT","instrument_ids":["YOUR_PERSISTENT_NSE_INSTRUMENT_ID"]}
@@ -27,7 +27,7 @@ new start. The durable lease alone does not open a connection.
 
 Read (or periodically ping) the latest quote with:
 
-`GET /api/v2/market/intraday/quotes?account_id=YOUR_LEDGER_ACCOUNT&instrument_id=YOUR_PERSISTENT_NSE_INSTRUMENT_ID`
+`GET /api/market/intraday/quotes?account_id=YOUR_LEDGER_ACCOUNT&instrument_id=YOUR_PERSISTENT_NSE_INSTRUMENT_ID`
 
 The response carries LTP, exchange timestamp, receipt timestamp, source, age and
 freshness. The read does not call the broker or refresh the exchange timestamp.
