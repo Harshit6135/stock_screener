@@ -53,6 +53,7 @@ htmlcov/
 
 # Cache
 .cache/
+.ruff_cache/
 
 DONOTUSE*/
 
@@ -66,3 +67,4 @@ DONOTUSE*/
 /.exit-session-checks/
 /.broker-exit-migration-tests/
 .pytest*
+.ruff_cache

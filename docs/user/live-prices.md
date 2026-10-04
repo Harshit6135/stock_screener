@@ -1,11 +1,9 @@
-# Live prices — pending phase integration
+# Live prices
 
-**Pending per user instruction.** Resume only as required by the defined phase
-tasks. WebSocket subscriptions must contain only stocks requiring an action.
-Historical bars are added through the separate pipeline; the WebSocket flow has
-no session-end historical ingestion step. The existing implementation described
-below does not yet enforce action-only subscriptions and is not a completed
-execution workflow.
+The optional Kite WebSocket stream supplies read-only live quotes for explicitly
+selected instruments. It does not submit orders and does not automatically limit
+subscriptions to stocks that need an action. Historical bars are added through the
+separate market pipeline; ticks are never converted into daily bars.
 
 
 The live stream uses the explicitly bound broker account and its validated Kite
@@ -36,7 +34,7 @@ timestamps. An observation without one remains displayable but is ineligible
 for execution checks. `LiveQuotes.execution_quote` also rejects missing, stale,
 previous-session and clock-skewed observations. The reader defaults to 60 seconds;
 `max_age_seconds` can be explicitly supplied from 1 to 300. This is a quote-reader
-setting, not yet a confirmed order execution policy.
+setting, not an order execution policy.
 
 Quotes survive process restarts and are isolated by ledger account. Older
 timestamps cannot replace a newer quote. Invalid batches do not partially write.
@@ -46,9 +44,9 @@ risk projection cannot discard the live quote. It still creates no ledger fill.
 
 Historical OHLCV addition belongs to the pipeline and is handled separately.
 Live ticks are never converted into historical daily bars. Broker trade
-reconciliation remains the source of actual execution prices. Execution integration
-and action-only subscription enforcement are pending within the original phase
-scope; the prior sizing/timing questions are deferred.
+reconciliation remains the source of actual execution prices. The stream requires
+a configured and validated account and an explicit list of instrument IDs. One
+connection is supported per application process. The lease records the selected
+subscription but does not open a connection after restart.
 
-Verified with fake broker sessions and a fake WebSocket ticker. No live connection
-or order was opened during this implementation review. Full suite: 360 tests pass.
+See [API and data contracts](../reference/api-and-data.md) for the route map.

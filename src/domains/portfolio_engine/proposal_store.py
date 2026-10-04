@@ -163,16 +163,18 @@ class PortfolioProposalStore:
         account_id: str,
         limit: int = 50,
         action_date: date | None = None,
+        strategy_id: str | None = None,
     ) -> list[dict[str, object]]:
         if not 1 <= limit <= 100:
             raise DomainValidationError("action proposal limit must be 1..100")
         encoded_date = action_date.isoformat() if action_date else None
         with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
-                """SELECT * FROM action_proposals WHERE account_id=?
-                   AND (? IS NULL OR action_date=?)
+                  """SELECT * FROM action_proposals WHERE account_id=?
+                     AND (? IS NULL OR action_date=?)
+                     AND (? IS NULL OR strategy_id=?)
                    ORDER BY action_date DESC, created_at DESC LIMIT ?""",
-                (account_id, encoded_date, encoded_date, limit),
+                  (account_id, encoded_date, encoded_date, strategy_id, strategy_id, limit),
             ).fetchall()
         return [self._decode(row) for row in rows]
 

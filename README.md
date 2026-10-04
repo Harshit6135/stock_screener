@@ -1,61 +1,56 @@
 # Stock Screener
 
-Local Indian-market research, ranking, backtesting, and real-portfolio
-accounting application. It runs as a modular Python monolith, stores all
-runtime state and compressed artifacts in one SQLite database, and uses Kite
-OAuth as its only authentication flow.
+Local-first research and portfolio operations for NSE equities. The application
+provides market and universe data, strategy rankings, backtests, portfolio
+accounting, reviewable action proposals, and optional Kite integrations.
 
-## Start here
+## Run locally
+
+Requirements: Python 3.13 and Poetry 2.x.
 
 ```powershell
 poetry install --with dev
 poetry run python run.py
 ```
 
-Or use the repository virtual environment:
+Or use the already-created environment:
 
 ```powershell
 .\.venv\Scripts\python.exe run.py
 ```
 
-Open `http://127.0.0.1:5000/app`. The default database is
-`instance/stock_screener.db`.
+Open [http://127.0.0.1:5000/](http://127.0.0.1:5000/). The default local data
+directory is `instance/`; change it with `SCREENER_DATA_DIRECTORY`. The app
+binds to localhost by default.
+
+Kite credentials are optional for read-only research. Configure them through
+the documented `MARKET_DATA_KITE_*` or `PORTFOLIO_KITE_*` environment variables,
+or the ignored local `local_secrets.py` file. Never commit credentials or access
+tokens. Live portfolio execution is disabled unless explicitly configured.
 
 ## Documentation
 
-- [Documentation index](docs/README.md)
-- [User guide](docs/user-guide.md)
-- [Operations](docs/wiki/operations.md)
-- [API and data reference](docs/wiki/api-and-data.md)
-- [Research and strategies](docs/wiki/research-and-strategies.md)
-- [Portfolio and actions](docs/wiki/portfolio-and-actions.md)
-- [Troubleshooting](docs/wiki/troubleshooting.md)
-- [Authoritative overhaul plan](docs/Overhaul_Plan.md)
-- [Phase plans and acceptance evidence](docs/phases/README.md)
-- [Current repair status](docs/phases/repair-status.md)
+- [User guide](docs/user/workflows.md): screen-by-screen instructions and common workflows.
+- [System architecture](docs/development/architecture.md): module ownership and data flows.
+- [Developer guide](docs/development/setup.md): configuration, commands, code conventions, and review workflow.
+- [API and data contracts](docs/reference/api-and-data.md).
+- [In-app guide index](docs/reference/README.md).
+- [Documentation index](docs/README.md) for current guides.
 
-Interactive CodeTour files are under `.tours/`. With the VS Code CodeTour
-extension installed, use them to walk through the application overview,
-strategy creation, market-data flow, research flow, and portfolio flow.
+## Main pages
 
-## Current implementation
+`/` Home · `/universe` Universe · `/pipeline` Pipeline · `/rankings` Rankings ·
+`/backtest` Backtest reports · `/actions` Action proposals · `/settings` Settings ·
+`/logs` Logs · `/wiki` Guide.
 
-- The manual pipeline uses immutable daily NIFTY 500 snapshots and six NSE benchmarks.
-- Active strategies are `momentum` and `positional_trend_following`.
-- Strategy definitions and published artifacts retain immutable revisions and provenance.
-- Backtests run in isolated simulations and never write portfolio fills.
-- Action proposals require approval and broker orders reconcile actual fills.
-- Live execution starts disabled with its kill switch active.
-- Phase completion remains under review; the [repair status](docs/phases/repair-status.md)
-  distinguishes verified behavior from outstanding work.
-
-## Validation
+## Project commands
 
 ```powershell
+poetry run screener-ops --help
+poetry run ruff check src tests run.py tools
 poetry run python -m pytest -q
-poetry run ruff check src tests run.py
-poetry run python -m compileall -q src tests run.py
 ```
 
-Outstanding phase work and validation evidence are recorded in
-[repair status](docs/phases/repair-status.md).
+See the [developer guide](docs/development/setup.md) before running checks or changing
+runtime state. Backups and generated research output should be handled through
+the operations commands documented there.

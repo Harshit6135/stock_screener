@@ -1,4 +1,4 @@
-# Wiki index
+# In-app handbook
 
 | Page | Use it for |
 |---|---|
@@ -8,9 +8,10 @@
 | [Operations and observability](operations.md) | pipeline, jobs, workers, SSE and quality events |
 | [API and data model](api-and-data.md) | owned HTTP contracts and persistent state |
 | [Troubleshooting](troubleshooting.md) | common failures and evidence collection |
-| [Historical positional-trend reference](historical-positional-trend-reference.md) | retained source material; not the current runtime contract |
 
 ## Terms
+
+For screen-by-screen instructions, see the [user guide](../user/workflows.md).
 
 - **Snapshot**: immutable stored universe or published research input.
 - **Artifact**: immutable payload plus manifest/lineage.
@@ -19,6 +20,5 @@
 - **Quality event**: a persisted warning/error about data; it does not silently
   remove a stock from research.
 
-The historical positional-trend reference predates the snapshot-based universe
-contract. Use the operational pages and versioned strategy definition for
-current behavior.
+The in-app pages are concise reference topics. For screen-by-screen instructions
+and workflows, see the [user guide](../user/workflows.md).

@@ -21,7 +21,8 @@ def create_actions_blueprint(actions: ActionJobs) -> Blueprint:
             limit = int(request.args.get("limit", "50"))
             action_date = request.args.get("action_date")
             parsed_date = date.fromisoformat(action_date) if action_date else None
-            return jsonify({"proposals": actions.proposals(account_id, limit, parsed_date)})
+            strategy_id = request.args.get("strategy_id") or None
+            return jsonify({"proposals": actions.proposals(account_id, limit, parsed_date, strategy_id)})
         except (ValueError, DomainValidationError):
             return jsonify({"error": "limit must be 1..100"}), 400
 

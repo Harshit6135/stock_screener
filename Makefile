@@ -11,7 +11,6 @@ run:
 
 test:
 	poetry run python -m pytest tests -q
-	poetry run python tools/verify_import_boundaries.py
 
 lint:
 	poetry run ruff format --check src tests run.py

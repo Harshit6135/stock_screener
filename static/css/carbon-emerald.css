@@ -98,6 +98,11 @@
 .workflow-heading p{margin:.25rem 0 0;max-width:68ch}
 .workflow-kicker{color:var(--accent);font-size:.68rem;font-weight:800;letter-spacing:.13em}
 .workflow-card,.workflow-filters{margin:0 0 1rem;padding:1.25rem}
+  .workflow-filters{background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 5%,var(--surface)),var(--surface));border-color:color-mix(in srgb,var(--accent) 24%,var(--line));padding:1.4rem}
+  .workflow-filters .workflow-section-title{margin-bottom:1.2rem}
+  .workflow-filters .toolbar{align-items:end;gap:.85rem}
+  .workflow-filters .field{max-width:21rem;min-width:min(17rem,100%)}
+  #proposal-filter-caption{color:var(--accent);font-size:.78rem;font-weight:650;letter-spacing:.02em}
 .workflow-section-title{align-items:center;display:flex;gap:1rem;justify-content:space-between;margin-bottom:1rem}
 .workflow-section-title h2{font-size:1rem;margin:0 0 .25rem}
 .workflow-section-title p{font-size:.83rem;margin:0;max-width:75ch}
@@ -112,6 +117,8 @@
 .status-chip{background:var(--surface-2);border:1px solid var(--line);border-radius:999px;color:var(--muted);display:inline-flex;font-size:.72rem;font-weight:700;padding:.25rem .55rem;white-space:nowrap}
 .status-pending,.status-queued{border-color:var(--warning);color:var(--warning)}.status-running{border-color:#64b5f6;color:#64b5f6}.status-succeeded,.status-approved{border-color:var(--accent);color:var(--accent)}.status-failed,.status-rejected,.status-cancelled{border-color:var(--danger);color:var(--danger)}
 .proposal-decisions{display:grid;gap:.45rem}.proposal-decision{align-items:center;display:flex;flex-wrap:wrap;gap:.45rem}.proposal-decision strong{font-size:.88rem}.proposal-decision>span:last-child{color:var(--muted);font-size:.78rem}
+  .strategy-chip{background:color-mix(in srgb,var(--accent) 9%,var(--surface));border:1px solid color-mix(in srgb,var(--accent) 36%,var(--line));border-radius:999px;color:var(--accent);display:inline-flex;font-size:.72rem;font-weight:700;line-height:1.35;padding:.3rem .6rem;white-space:nowrap}
+  #proposals td{padding:.9rem .8rem;vertical-align:top}#proposals td:nth-child(2){min-width:14rem}#proposals td:nth-child(3){min-width:17rem}#proposals td:nth-child(6){min-width:14rem}
 .trade-side{border:1px solid var(--line);border-radius:.25rem;font-size:.65rem;font-weight:800;letter-spacing:.04em;padding:.12rem .35rem}.trade-side.buy,.trade-side.pyramid_add{border-color:var(--accent);color:var(--accent)}.trade-side.sell,.trade-side.exit{border-color:var(--danger);color:var(--danger)}
 .proposal-reasons{color:var(--muted);font-size:.82rem;max-width:36rem}.proposal-reasons p{margin:.2rem 0}.proposal-review-actions{display:flex;flex-wrap:wrap;gap:.4rem}.proposal-review-actions button{font-size:.78rem;padding:.45rem .6rem}
 .risk-projections{display:grid;gap:.7rem;grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr))}.risk-card{background:var(--bg);border:1px solid var(--line);border-radius:.55rem;padding:.85rem}.risk-card-heading{align-items:center;display:flex;justify-content:space-between}.risk-fields{display:grid;gap:.4rem;grid-template-columns:repeat(2,minmax(0,1fr));margin:.85rem 0 0}.risk-fields>div{border-top:1px solid var(--line);padding-top:.35rem}.risk-fields dt{color:var(--muted);font-size:.68rem;text-transform:capitalize}.risk-fields dd{font-size:.85rem;margin:.12rem 0 0;overflow-wrap:anywhere}
@@ -123,4 +130,4 @@
 .manual-trade-form{display:grid;gap:.85rem;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:1rem}.manual-trade-form label{color:var(--muted);display:grid;font-size:.8rem;gap:.35rem}.manual-trade-form label:nth-last-of-type(1),.manual-trade-form button{grid-column:1/-1}
 .ranking-table{min-width:850px}.ranking-table th{text-transform:capitalize}.ranking-search{display:grid;gap:.3rem;min-width:13rem}.ranking-search span{color:var(--muted);font-size:.72rem;font-weight:700}.ranking-search input{font-size:.82rem}
 [hidden]{display:none!important}
-@media(max-width:700px){.workflow-heading,.workflow-section-title{align-items:flex-start;flex-direction:column}.workflow-heading{gap:.75rem}.workflow-heading>button{width:100%}.workflow-note{flex-direction:column;gap:.25rem}.workflow-note strong{white-space:normal}.workflow-card,.workflow-filters{padding:1rem}.manual-trade-form{grid-template-columns:1fr}.manual-trade-form label,.manual-trade-form button{grid-column:1}.workflow-stat{flex:1 1 8rem}}
+  @media(max-width:700px){.workflow-heading,.workflow-section-title{align-items:flex-start;flex-direction:column}.workflow-heading{gap:.75rem}.workflow-heading>button{width:100%}.workflow-note{flex-direction:column;gap:.25rem}.workflow-note strong{white-space:normal}.workflow-card,.workflow-filters{padding:1rem}.workflow-filters .toolbar{align-items:stretch}.workflow-filters .field{max-width:none;min-width:100%}.manual-trade-form{grid-template-columns:1fr}.manual-trade-form label,.manual-trade-form button{grid-column:1}.workflow-stat{flex:1 1 8rem}}

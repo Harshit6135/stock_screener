@@ -2,6 +2,7 @@
   const $ = id => document.getElementById(id);
   let request, generation = 0, generationPoll;
   const statusNames = {PENDING:"Awaiting review", APPROVED:"Approved", REJECTED:"Rejected", PROCESSED:"Recorded"};
+  const strategyNames = new Map();
   function actionButton(label, action, style = "secondary") {
     const button = document.createElement("button"); button.textContent = label; button.className = style; button.type = "button";
     button.onclick = async () => { button.disabled = true; try { await action(); } catch (error) { $("actions-error").textContent = error.message; } finally { button.disabled = false; } };
@@ -64,23 +65,27 @@
       }));
     }
     if (!review.childElementCount) { const note = document.createElement("span"); note.className = "muted"; note.textContent = "No further action"; review.append(note); }
-    return Screener.row([decisions, rationale, proposal.action_date || "—", state, review]);
+    const strategyLabel = document.createElement("span"); strategyLabel.className = "strategy-chip"; strategyLabel.textContent = strategyNames.get(proposal.strategy_id) || proposal.strategy_id || "Unknown";
+    return Screener.row([strategyLabel, decisions, rationale, proposal.action_date || "—", state, review]);
   }
   async function load() {
     request?.abort(); request = new AbortController(); const token = ++generation, account = $("account").value;
     if (!account) return;
-    $("proposals").innerHTML = '<tr><td colspan="5" class="workflow-empty">Loading proposals…</td></tr>';
+    $("proposals").innerHTML = '<tr><td colspan="6" class="workflow-empty">Loading proposals…</td></tr>';
     $("actions-error").textContent = "";
     const query = new URLSearchParams({account_id:account});
     if ($("action-date").value) query.set("action_date", $("action-date").value);
+    if ($("proposal-strategy").value) query.set("strategy_id", $("proposal-strategy").value);
+    const strategyLabel = $("proposal-strategy").selectedOptions[0]?.textContent || "All strategies";
+    $("proposal-filter-caption").textContent = `${strategyLabel} · ${$("action-date").value || "All dates"}`;
     try {
-      const riskQuery = new URLSearchParams({account_id:account}); if ($("action-date").value) riskQuery.set("action_date", $("action-date").value);
+    const riskQuery = new URLSearchParams({account_id:account}); if ($("action-date").value) riskQuery.set("action_date", $("action-date").value);
       const data = await Screener.api(`/api/actions/proposals?${query}`, {signal:request.signal});
       if (token !== generation || account !== $("account").value) return;
       const proposals = data.proposals || [];
       $("proposals").replaceChildren(...proposals.map(renderProposal));
       if (!proposals.length) {
-        const empty = document.createElement("tr"), cell = document.createElement("td"); cell.colSpan = 5; cell.className = "workflow-empty";
+        const empty = document.createElement("tr"), cell = document.createElement("td"); cell.colSpan = 6; cell.className = "workflow-empty";
         cell.textContent = "No proposals match this account and date. Generate actions above, or load another date."; empty.append(cell); $("proposals").append(empty);
       }
       const counts = {PENDING:0, APPROVED:0, REJECTED:0}; proposals.forEach(item => { counts[item.status] = (counts[item.status] || 0) + 1; });
@@ -149,12 +154,16 @@
     try {
       const [data, strategyData] = await Promise.all([Screener.api("/api/portfolio/accounts"), Screener.api("/api/strategies/active")]);
       $("account").replaceChildren(...(data.accounts || []).map(account => new Option(account.account_id, account.account_id)));
-      $("generate-strategy").replaceChildren(...(strategyData.strategies || []).map(strategy => new Option(strategy.definition.strategy.name, strategy.strategy_id)));
+      const strategies = strategyData.strategies || [];
+      strategies.forEach(strategy => strategyNames.set(strategy.strategy_id, strategy.definition.strategy.name));
+      $("generate-strategy").replaceChildren(...strategies.map(strategy => new Option(strategy.definition.strategy.name, strategy.strategy_id)));
+      $("proposal-strategy").replaceChildren(new Option("All strategies", ""), ...strategies.map(strategy => new Option(strategy.definition.strategy.name, strategy.strategy_id)), new Option("Manual trades", "manual"), new Option("Stop actions", "midweek_stop"));
       const positional = (strategyData.strategies || []).find(strategy => strategy.strategy_id === "positional_trend_following");
       if (positional) $("generate-strategy").value = positional.strategy_id;
       if (!data.accounts?.length) { $("actions-error").textContent = "Create a portfolio account on Home before reviewing actions."; return; }
       $("account").onchange = async () => { request?.abort(); ++generation; await dates(); await load(); };
       $("load-actions").onclick = load; $("action-date").onchange = load; $("manual-action").onclick = manual;
+      $("proposal-strategy").onchange = load;
       $("generate-actions").onclick = generate;
       $("start-action-worker").onclick = async () => {
         try { const result = await Screener.api("/api/operations/worker/start", {method:"POST"}); $("start-action-worker").hidden = true; $("generation-status").textContent = result.running ? "Worker started. Waiting for the proposal job to finish…" : "Worker start requested."; }

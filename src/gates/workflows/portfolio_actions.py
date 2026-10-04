@@ -1558,9 +1558,13 @@ class ActionJobs:
         return self.proposals_store.get(proposal_id)
 
     def proposals(
-        self, account_id: str, limit: int = 50, action_date: date | None = None
+        self,
+        account_id: str,
+        limit: int = 50,
+        action_date: date | None = None,
+        strategy_id: str | None = None,
     ) -> list[dict[str, object]]:
-        return self.proposals_store.list_for_account(account_id, limit, action_date)
+        return self.proposals_store.list_for_account(account_id, limit, action_date, strategy_id)
 
     def action_dates(self, account_id: str) -> list[date]:
         return self.proposals_store.action_dates(account_id)
