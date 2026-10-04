@@ -22,7 +22,8 @@ def create_dashboard_blueprint() -> Blueprint:
 
     @blueprint.get("/actions")
     def actions_page():
-        return page("actions.html", active_page="actions")
+        tomorrow = datetime.now(ZoneInfo("Asia/Kolkata")).date() + timedelta(days=1)
+        return page("actions.html", active_page="actions", default_action_date=tomorrow.isoformat())
 
     @blueprint.get("/pipeline")
     def pipeline_page():
@@ -31,7 +32,8 @@ def create_dashboard_blueprint() -> Blueprint:
 
     @blueprint.get("/rankings")
     def rankings_page():
-        return page("rankings.html", active_page="rankings")
+        today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+        return page("rankings.html", active_page="rankings", today=today.isoformat())
 
     @blueprint.get("/universe")
     def universe_page():

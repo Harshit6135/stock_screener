@@ -528,11 +528,15 @@ def create_portfolio_blueprint(
     def journal(account_id: str):
         try:
             long_term_days = int(request.args.get("long_term_days", "365"))
+            entries = ledger.journal(account_id, long_term_days=long_term_days)
+            for entry in entries:
+                identity = market.instrument_by_id(str(entry["instrument_id"]))
+                entry["symbol"] = identity["symbol"] if identity else None
             return jsonify(
                 {
                     "account_id": account_id,
                     "long_term_days": long_term_days,
-                    "journal": ledger.journal(account_id, long_term_days=long_term_days),
+                    "journal": entries,
                 }
             )
         except ValueError:

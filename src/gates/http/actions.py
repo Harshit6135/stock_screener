@@ -1,6 +1,7 @@
 """Reviewable portfolio action proposals and manually confirmed transactions."""
 
-from datetime import date
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, jsonify, request
 
@@ -23,6 +24,19 @@ def create_actions_blueprint(actions: ActionJobs) -> Blueprint:
             return jsonify({"proposals": actions.proposals(account_id, limit, parsed_date)})
         except (ValueError, DomainValidationError):
             return jsonify({"error": "limit must be 1..100"}), 400
+
+    @blueprint.get("/sessions/latest")
+    def latest_signal_session():
+        try:
+            target = date.fromisoformat(request.args["action_date"])
+        except (KeyError, ValueError):
+            return jsonify({"error": "action_date must be an ISO date"}), 400
+        today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+        end = min(target - timedelta(days=1), today - timedelta(days=1))
+        sessions = actions.market.session_dates(end - timedelta(days=30), end, exchange="NSE")
+        if not sessions:
+            return jsonify({"error": "no completed stored NSE session was found before that date"}), 404
+        return jsonify({"as_of_date": sessions[-1], "action_date": target.isoformat()})
 
     @blueprint.get("/proposals/dates")
     def proposal_dates():

@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from flask import Blueprint, jsonify, render_template
+from markdown_it import MarkdownIt
 
 
 _WIKI_DIRECTORY = Path(__file__).resolve().parents[3] / "docs" / "wiki"
@@ -15,6 +16,16 @@ _PAGES = {
     "troubleshooting": "Troubleshooting",
     "historical-positional-trend-reference": "Historical positional-trend reference",
 }
+_SECTIONS = {
+    "getting-started": "Start here",
+    "research-and-strategies": "Research",
+    "portfolio-and-actions": "Portfolio",
+    "operations": "Operations",
+    "api-and-data": "Reference",
+    "troubleshooting": "Reference",
+    "historical-positional-trend-reference": "Archive",
+}
+_MARKDOWN = MarkdownIt("default", {"html": False, "linkify": False, "typographer": True})
 
 
 def create_wiki_blueprint() -> Blueprint:
@@ -26,7 +37,14 @@ def create_wiki_blueprint() -> Blueprint:
 
     @blueprint.get("/api/wiki/pages")
     def pages():
-        return jsonify({"pages": [{"slug": slug, "title": title} for slug, title in _PAGES.items()]})
+        return jsonify(
+            {
+                "pages": [
+                    {"slug": slug, "title": title, "section": _SECTIONS[slug]}
+                    for slug, title in _PAGES.items()
+                ]
+            }
+        )
 
     @blueprint.get("/api/wiki/pages/<slug>")
     def read_page(slug: str):
@@ -38,6 +56,14 @@ def create_wiki_blueprint() -> Blueprint:
             content = path.read_text(encoding="utf-8")
         except OSError:
             return jsonify({"error": "wiki page is unavailable"}), 503
-        return jsonify({"slug": slug, "title": title, "content": content})
+        return jsonify(
+            {
+                "slug": slug,
+                "title": title,
+                "section": _SECTIONS[slug],
+                "content": content,
+                "content_html": _MARKDOWN.render(content),
+            }
+        )
 
     return blueprint

@@ -18,6 +18,7 @@ dependencies = [
     "PyYAML>=6.0,<7",
     "waitress>=3.0.2,<3.1",
     "typing-extensions>=4.16,<5",
+    "markdown-it-py>=4.0,<5",
 ]
 
 [project.optional-dependencies]

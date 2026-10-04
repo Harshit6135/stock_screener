@@ -2081,4 +2081,4 @@ dev = ["bandit", "black", "flake8", "isort", "mypy", "pytest", "pytest-cov", "ru
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13"
-content-hash = "c7d6a9cf6adff8687d544e6f0aa637a42851600f9e5f1675a9cc2375f9d946d8"
+content-hash = "b46133537e275a391335cc5ad8040ba08937aef5d7465820cab64d308e687352"

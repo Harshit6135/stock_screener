@@ -94,6 +94,7 @@ class ActionJobs:
             "account_id",
             "strategy_id",
             "action_date",
+            "as_of_date",
             "max_positions",
             "risk_pct",
             "max_order_pct",
@@ -110,17 +111,29 @@ class ActionJobs:
             action_date = date.fromisoformat(str(payload.get("action_date")))
         except (TypeError, ValueError) as exc:
             raise DomainValidationError("action_date must be an ISO date") from exc
-        if action_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
-            raise DomainValidationError("portfolio action date must be completed")
-        sessions = sorted(
-            self.market.session_dates(action_date - timedelta(days=14), action_date, exchange="NSE")
-        )
-        prior_sessions = [day for day in sessions if day < action_date.isoformat()]
-        if not prior_sessions or not sessions or sessions[-1] != action_date.isoformat():
-            raise DomainValidationError(
-                "Positional trend action date requires a prior and current stored session"
+        forward = "as_of_date" in payload
+        if forward:
+            try:
+                signal_date = date.fromisoformat(str(payload["as_of_date"]))
+            except (TypeError, ValueError) as exc:
+                raise DomainValidationError("as_of_date must be an ISO date") from exc
+            if signal_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date() or action_date <= signal_date:
+                raise DomainValidationError("forward actions require a completed signal date before the target date")
+            sessions = self.market.session_dates(signal_date - timedelta(days=14), signal_date, exchange="NSE")
+            if not sessions or sessions[-1] != signal_date.isoformat():
+                raise DomainValidationError("as_of_date must be a completed stored NSE session")
+        else:
+            if action_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
+                raise DomainValidationError("portfolio action date must be completed")
+            sessions = sorted(
+                self.market.session_dates(action_date - timedelta(days=14), action_date, exchange="NSE")
             )
-        signal_date = date.fromisoformat(prior_sessions[-1])
+            prior_sessions = [day for day in sessions if day < action_date.isoformat()]
+            if not prior_sessions or not sessions or sessions[-1] != action_date.isoformat():
+                raise DomainValidationError(
+                    "Positional trend action date requires a prior and current stored session"
+                )
+            signal_date = date.fromisoformat(prior_sessions[-1])
         universe = payload.get("universe", "SNAPSHOT_NIFTY500")
         if universe != "SNAPSHOT_NIFTY500":
             raise DomainValidationError("Positional trend universe is invalid")
@@ -253,13 +266,13 @@ class ActionJobs:
         if universe_snapshot_id is not None:
             source_ids.add(universe_snapshot_id)
         for instrument_id in requested_ids:
-            rows = self.market.bars(instrument_id, action_date, action_date, limit=1)
+            rows = self.market.bars(instrument_id, signal_date if forward else action_date, signal_date if forward else action_date, limit=1)
             if rows and valid_bar(rows[-1]):
                 bars[instrument_id] = rows[-1]
                 source_ids.add(str(rows[-1]["snapshot_id"]))
         equity = projection.cash.amount + sum(
             (
-                Decimal(str(bars[instrument_id]["open"]))
+                Decimal(str(bars[instrument_id]["close"] if forward else bars[instrument_id]["open"]))
                 if instrument_id in bars
                 else held_last_closes[instrument_id]
             )
@@ -286,7 +299,7 @@ class ActionJobs:
                         }
                     )
                     continue
-                price = Decimal(str(bars[instrument_id]["open"]))
+                price = Decimal(str(bars[instrument_id]["close"] if forward else bars[instrument_id]["open"]))
                 fee = price * units * fee_fraction
                 decisions.append(
                     {
@@ -329,7 +342,7 @@ class ActionJobs:
             if bar is None:
                 skipped.append({"instrument_id": instrument_id, "reason": "missing_action_open"})
                 continue
-            price = Decimal(str(bar["open"]))
+            price = Decimal(str(bar["close"] if forward else bar["open"]))
             signal_close = Decimal(str(row["close"]))
             stop = Decimal(str(row["initial_stop_anchor"]))
             if price > signal_close * Decimal("1.03") or price <= stop:
@@ -360,7 +373,7 @@ class ActionJobs:
                     "units": quantity,
                     "execution_price": str(price),
                     "fee": str(fee),
-                    "reason": "ranked Positional trend breakout; next-open risk-sized entry",
+                    "reason": "ranked Positional trend breakout; next-open size estimated from prior close" if forward else "ranked Positional trend breakout; next-open risk-sized entry",
                     "signal_date": signal_date.isoformat(),
                     "stop_anchor": str(stop),
                     "nominal_risk": str(quantity * (price - stop)),
@@ -417,12 +430,14 @@ class ActionJobs:
                     "ranking_week_end": signal_date.isoformat(),
                     "signal_date": signal_date.isoformat(),
                     "action_date": action_date.isoformat(),
+                    "as_of_date": signal_date.isoformat(),
+                    "pricing_basis": "latest_completed_close_estimate" if forward else "historical_action_open",
                     "expected_ledger_version": version,
                     "strategy_revision_id": revision["revision_id"],
                     "signal_artifact_id": signal_artifact_id,
                     "universe": universe,
                     "execution_assumptions": {
-                        "fill": "stored next-session opening price",
+                        "fill": "estimated from latest completed close; actual next-open price is unknown" if forward else "stored next-session opening price",
                         "upper_price_circuit": "not_observable_in_daily_OHLCV",
                         "live_order": "proposal generation does not submit an opening order",
                     },
@@ -448,6 +463,7 @@ class ActionJobs:
             "account_id",
             "strategy_id",
             "action_date",
+            "as_of_date",
             "max_positions",
             "risk_pct",
             "max_order_pct",
@@ -594,15 +610,27 @@ class ActionJobs:
             action_date = date.fromisoformat(payload["action_date"])
         except (TypeError, ValueError) as exc:
             raise DomainValidationError("action_date must be an ISO date") from exc
-        if action_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
+        forward = "as_of_date" in payload
+        market_date = action_date
+        if forward:
+            try:
+                market_date = date.fromisoformat(str(payload["as_of_date"]))
+            except (TypeError, ValueError) as exc:
+                raise DomainValidationError("as_of_date must be an ISO date") from exc
+            if market_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date() or action_date <= market_date:
+                raise DomainValidationError("forward actions require a completed signal date before the target date")
+            sessions = self.market.session_dates(market_date - timedelta(days=14), market_date, exchange="NSE")
+            if not sessions or sessions[-1] != market_date.isoformat():
+                raise DomainValidationError("as_of_date must be a completed stored NSE session")
+        elif action_date >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
             raise DomainValidationError("portfolio action date must be completed")
         if vacancy_from is not None:
             try:
                 vacancy_date = date.fromisoformat(vacancy_from)
             except ValueError as exc:
                 raise DomainValidationError("vacancy_from must be an ISO date") from exc
-            if vacancy_date >= action_date:
-                raise DomainValidationError("vacancy_from must precede action_date")
+            if vacancy_date >= market_date:
+                raise DomainValidationError("vacancy_from must precede the signal date")
         revision = self.research.runtime.revision(str(strategy_id))
         configured_settings = self.research.runtime.portfolio_policy(str(strategy_id))
         configured_positions = configured_settings["max_positions"]
@@ -621,7 +649,7 @@ class ActionJobs:
         if account is None:
             raise DomainValidationError("portfolio account does not exist")
         projection = self.ledger.projection(account_id)
-        weeks = [week for week in self.research.ranking_weeks(strategy_id) if week < action_date]
+        weeks = [week for week in self.research.ranking_weeks(strategy_id) if week <= market_date]
         if not weeks:
             raise DomainValidationError("no prior completed ranking is available")
         week_end = weeks[-1]
@@ -645,7 +673,7 @@ class ActionJobs:
         ranked = self.research.top_rankings(week_end, 500, strategy_id)
         if not ranked:
             raise DomainValidationError("prior ranking is empty")
-        histories = self.market.histories(action_date, action_date)
+        histories = self.market.histories(market_date, market_date)
         bars: dict[str, MarketBar] = {}
         snapshot_ids: set[str] = {str(ranked[0]["artifact_id"])}
         snapshot_ids.add(str(revision["revision_id"]))
@@ -655,8 +683,8 @@ class ActionJobs:
             bar = values[0]
             bars[instrument_id] = MarketBar(
                 instrument_id,
-                action_date,
-                Decimal(str(bar["open"])),
+                market_date,
+                Decimal(str(bar["close"] if forward else bar["open"])),
                 Decimal(str(bar["high"])),
                 Decimal(str(bar["low"])),
                 Decimal(str(bar["close"])),
@@ -683,7 +711,7 @@ class ActionJobs:
             snapshots = [
                 item
                 for item in self.ledger.valuations(account_id, 500)
-                if str(item["as_of_date"]) <= action_date.isoformat()
+                if str(item["as_of_date"]) <= market_date.isoformat()
             ]
             peak = Decimal(0)
             latest = None
@@ -715,7 +743,7 @@ class ActionJobs:
                 )
                 macro_date = date.fromisoformat(str(macro_payload["as_of_date"]))
                 values = macro_payload["values"]
-                if macro_date > action_date or not isinstance(values, dict):
+                if macro_date > market_date or not isinstance(values, dict):
                     raise ValueError("macro date or values")
                 raw_vix = values.get("vix", values.get("VIX"))
                 if raw_vix is not None:
@@ -732,7 +760,7 @@ class ActionJobs:
                 )
                 cap_date = date.fromisoformat(str(cap_payload["as_of_date"]))
                 values = cap_payload["values"]
-                if cap_date > action_date or not isinstance(values, dict):
+                if cap_date > market_date or not isinstance(values, dict):
                     raise ValueError("capitalization date or values")
                 if market_cap_sizing == "FREE_FLOAT" and any(
                     not isinstance(value, dict) or set(value) != {"market_cap", "free_float"}
@@ -764,7 +792,7 @@ class ActionJobs:
                 )
                 fundamental_date = date.fromisoformat(str(fundamental_payload["as_of_date"]))
                 values = fundamental_payload["values"]
-                if fundamental_date > action_date or not isinstance(values, dict):
+                if fundamental_date > market_date or not isinstance(values, dict):
                     raise ValueError("fundamentals date or values")
                 for instrument_id, value in values.items():
                     if not isinstance(value, dict):
@@ -995,6 +1023,8 @@ class ActionJobs:
                     "version": version,
                     "strategy_id": strategy_id,
                     "action_date": action_date.isoformat(),
+                    "as_of_date": market_date.isoformat(),
+                    "pricing_basis": "latest_completed_close_estimate" if forward else "historical_action_open",
                     "max_positions": positions,
                     "pyramid_enabled": pyramid_enabled,
                     "pyramid_fraction": str(pyramid_fraction),
@@ -1066,6 +1096,8 @@ class ActionJobs:
                 "strategy_id": strategy_id,
                 "ranking_week_end": week_end.isoformat(),
                 "action_date": action_date.isoformat(),
+                "as_of_date": market_date.isoformat(),
+                "pricing_basis": "latest_completed_close_estimate" if forward else "historical_action_open",
                 "expected_ledger_version": version,
                 "policy": {
                     "execution_policy_version": _EXECUTION_POLICY_VERSION,

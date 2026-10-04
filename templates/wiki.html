@@ -1,7 +1,20 @@
 {% extends "base.html" %}
-{% block title %}Wiki · Stock Screener{% endblock %}
+{% block title %}Operator wiki · Stock Screener{% endblock %}
 {% block content %}
-<div class="page-heading"><div><h1>Operator wiki</h1><p class="muted">Read-only documentation shipped with this application.</p></div></div>
-<section class="grid two"><aside class="card"><h2>Pages</h2><nav id="wiki-pages" class="grid"></nav></aside><article class="card"><h2 id="wiki-title">Choose a page</h2><pre id="wiki-content">Loading documentation…</pre></article></section>
+<div class="wiki-masthead"><div><div class="wiki-eyebrow">DOCUMENTATION</div><h1>Stock Screener Guide</h1><p class="muted">A practical reference for research, portfolios, and day-to-day operations.</p></div><div class="wiki-masthead-meta"><span class="wiki-status-dot"></span><span>Local operator handbook</span></div></div>
+<section class="wiki-layout">
+  <aside class="card wiki-sidebar" aria-label="Guide navigation">
+    <div class="wiki-nav-heading"><span class="wiki-eyebrow">HANDBOOK</span><span class="muted" id="wiki-total-count"></span></div>
+    <label class="field wiki-search"><span>Filter guides</span><input id="wiki-search" type="search" placeholder="Search guide titles…"></label>
+    <nav id="wiki-pages" class="wiki-pages" aria-label="Guide pages"></nav>
+    <p class="muted wiki-page-count" id="wiki-page-count"></p>
+  </aside>
+  <article class="card wiki-reader">
+    <header class="wiki-reader-header"><div><div class="wiki-breadcrumb"><a href="/wiki">Handbook</a><span aria-hidden="true">/</span><span id="wiki-category">Guide</span></div><h2 id="wiki-title">Choose a guide</h2></div><span class="wiki-reading-time" id="wiki-reading-time"></span></header>
+    <details class="wiki-toc" id="wiki-toc"><summary>On this page</summary><nav id="wiki-toc-links" aria-label="On this page"></nav></details>
+    <div id="wiki-content" class="markdown-body" aria-live="polite">Loading documentation…</div>
+    <footer class="wiki-footer"><button id="wiki-previous" class="secondary" type="button">← Previous guide</button><span class="muted" id="wiki-position"></span><button id="wiki-next" type="button">Next guide →</button></footer>
+  </article>
+</section>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='js/wiki.js') }}"></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/wiki.js', v=config.get('WIKI_ASSET_VERSION', '20261004-wiki-fix1')) }}"></script>{% endblock %}

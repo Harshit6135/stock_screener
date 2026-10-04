@@ -1,1 +1,44 @@
-{% extends "base.html" %}{% block title %}Backtest · Stock Screener{% endblock %}{% block content %}<div class="page-heading"><div><h1>Immutable backtest reports</h1><p class="muted">Saved reports are read-only. Missing-opening diagnostics are displayed from report data, never converted into a synthetic fill.</p></div></div><div class="toolbar"><div class="field"><label>Limit</label><input id="run-limit" type="number" value="50" min="1" max="100"></div><button id="load-runs">Load reports</button></div><p id="backtest-error" class="error" role="alert"></p><section class="grid two"><article class="card"><h2>Saved runs</h2><div class="table-wrap"><table><thead><tr><th>Run</th><th>Strategy</th><th>As of</th><th></th></tr></thead><tbody id="runs"></tbody></table></div></article><article class="card"><h2>Report detail</h2><pre id="run-detail">Choose a saved run.</pre></article></section>{% endblock %}{% block scripts %}<script src="{{ url_for('static', filename='js/backtest.js') }}"></script>{% endblock %}
+{% extends "base.html" %}
+{% block title %}Backtest · Stock Screener{% endblock %}
+{% block content %}
+<div class="page-heading"><div><h1>Backtesting and strategy research</h1><p class="muted">Run historical simulations, compare saved results, and inspect fills and diagnostics. Simulations never write to your live portfolio.</p></div></div>
+<p id="backtest-error" class="error" role="alert"></p>
+<section class="card">
+  <h2>Run a backtest</h2>
+  <div class="toolbar">
+    <div class="field"><label for="strategy">Strategy</label><select id="strategy"></select></div>
+    <div class="field"><label for="start-date">Start date</label><input id="start-date" type="date"></div>
+    <div class="field"><label for="end-date">End date</label><input id="end-date" type="date"></div>
+    <div class="field"><label for="starting-cash">Starting capital (₹)</label><input id="starting-cash" type="number" min="1" value="1000000"></div>
+    <div class="field"><label for="max-positions">Maximum holdings</label><input id="max-positions" type="number" min="1" max="50" value="15" readonly><small class="muted">From active strategy policy</small></div>
+  </div>
+  <details><summary>Execution assumptions and strategy options</summary>
+    <div id="common-options" class="grid three" style="margin-top:1rem">
+      <label><input id="check-daily-sl" type="checkbox" checked> Check protective stops daily</label>
+      <label><input id="mid-week-buy" type="checkbox" checked> Allow mid-week buys</label>
+      <label><input id="enable-pyramiding" type="checkbox"> Enable pyramiding</label>
+      <div class="field"><label for="pyramid-fraction">Pyramid fraction</label><input id="pyramid-fraction" type="number" min="0" max="1" step="0.05" value="0.5"></div>
+      <div class="field"><label for="slippage">Slippage (basis points)</label><input id="slippage" type="number" min="0" value="5"></div>
+      <div class="field"><label for="fee">Fees (basis points)</label><input id="fee" type="number" min="0" value="10"></div>
+      <div class="field"><label for="tax">Taxes (basis points)</label><input id="tax" type="number" min="0" value="0"></div>
+      <div class="field"><label for="rebalance">Rebalance frequency</label><select id="rebalance"><option>WEEKLY</option><option>DAILY</option><option>BIWEEKLY</option><option>MONTHLY</option></select></div>
+    </div>
+    <div id="positional-options" class="grid three" hidden style="margin-top:1rem">
+      <div class="field"><label for="risk-pct">Risk per position (%)</label><input id="risk-pct" type="number" min="0.1" max="10" step="0.1" value="1"></div>
+      <div class="field"><label for="max-order-pct">Maximum order size (%)</label><input id="max-order-pct" type="number" min="1" max="100" value="10"></div>
+      <div class="field"><label for="adv-participation">Average volume participation (%)</label><input id="adv-participation" type="number" min="0.1" max="100" step="0.1" value="1"></div>
+      <div class="field"><label for="round-trip-cost">Round trip cost (basis points)</label><input id="round-trip-cost" type="number" min="0" value="50"></div>
+    </div>
+    <p class="notice">Limits follow the selected strategy’s active portfolio policy. Choose dates with completed market data.</p>
+  </details>
+  <div class="toolbar" style="margin-top:1rem"><button id="run-backtest">Run simulation</button><span id="job-status" class="muted" role="status" aria-live="polite">Ready</span></div>
+</section>
+<section class="grid two" style="margin-top:1rem">
+  <article class="card"><div class="page-heading"><div><h2>Saved runs</h2><p class="muted">Completed immutable simulation reports</p></div><button id="load-runs" class="secondary">Refresh</button></div>
+    <div class="toolbar"><div class="field"><label for="run-limit">Show recent</label><input id="run-limit" type="number" value="50" min="1" max="100"></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Run</th><th>Strategy</th><th>As of</th><th>Report</th></tr></thead><tbody id="runs"></tbody></table></div>
+  </article>
+  <article class="card"><h2>Report detail</h2><div id="run-summary" class="grid three"></div><div id="run-tables"></div><details style="margin-top:1rem"><summary>Full report data</summary><pre id="run-detail">Choose a saved run or finish a simulation.</pre></details></article>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/backtest.js') }}"></script>{% endblock %}
