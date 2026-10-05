@@ -145,6 +145,21 @@ def create_actions_blueprint(actions: ActionJobs) -> Blueprint:
             status = 404 if "not found" in str(exc) else 409
             return jsonify({"error": str(exc)}), status
 
+    @blueprint.post("/proposals/<proposal_id>/decisions/<int:decision_index>/<action>")
+    def decide_stock(proposal_id: str, decision_index: int, action: str):
+        action = action.upper()
+        if action not in {"APPROVE", "REJECT"}:
+            return jsonify({"error": "action must be approve or reject"}), 400
+        try:
+            result = actions.decide_stock(
+                proposal_id, decision_index,
+                "APPROVED" if action == "APPROVE" else "REJECTED",
+            )
+            return jsonify(result)
+        except DomainValidationError as exc:
+            status = 404 if "not found" in str(exc) else 409
+            return jsonify({"error": str(exc)}), status
+
     @blueprint.post("/proposals/<proposal_id>/process")
     def process(proposal_id: str):
         try:

@@ -206,7 +206,13 @@ class BrokerOrderWorkflow:
         if accounts is None:
             raise DomainValidationError("account-specific broker routing is unavailable")
         binding = accounts.binding(proposal["account_id"])
-        decisions = proposal["decisions"]
+        decisions = [
+            decision
+            for decision, state in zip(proposal["decisions"], proposal["decision_statuses"], strict=True)
+            if state == "APPROVED"
+        ]
+        if not decisions:
+            raise DomainValidationError("approved proposal stocks are required")
         self.risk_guard.validate(
             proposal["account_id"],
             decisions,

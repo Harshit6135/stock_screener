@@ -35,7 +35,10 @@ class PortfolioProposalStore:
                         event_type TEXT NOT NULL, occurred_at TEXT NOT NULL,
                         detail_json TEXT NOT NULL,
                         FOREIGN KEY(proposal_id) REFERENCES action_proposals(proposal_id))""",
-                )
+                ),
+                2: (
+                    "ALTER TABLE action_proposals ADD COLUMN decision_status_json TEXT NOT NULL DEFAULT '[]'",
+                ),
             },
         )
 
@@ -156,6 +159,13 @@ class PortfolioProposalStore:
     def _decode(row: Any) -> dict[str, object]:
         result = dict(row)
         result["decisions"] = json.loads(result.pop("decision_json"))
+        statuses = json.loads(result.pop("decision_status_json", "[]"))
+        if not statuses:
+            statuses = [
+                result["status"] if result["status"] in {"APPROVED", "REJECTED", "PROCESSED"} else "PENDING"
+                for _ in result["decisions"]
+            ]
+        result["decision_statuses"] = statuses
         return result
 
     def list_for_account(
@@ -216,9 +226,12 @@ class PortfolioProposalStore:
                 raise DomainValidationError("action proposal was not found")
             if row["status"] != "PENDING":
                 raise DomainValidationError("action proposal is not pending")
+            decision_count = len(json.loads(connection.execute(
+                "SELECT decision_json FROM action_proposals WHERE proposal_id=?", (proposal_id,)
+            ).fetchone()[0]))
             connection.execute(
-                "UPDATE action_proposals SET status=?, updated_at=? WHERE proposal_id=?",
-                (action, timestamp, proposal_id),
+                "UPDATE action_proposals SET status=?, decision_status_json=?, updated_at=? WHERE proposal_id=?",
+                (action, json.dumps([action] * decision_count), timestamp, proposal_id),
             )
             connection.execute(
                 """INSERT INTO action_proposal_events
@@ -226,6 +239,34 @@ class PortfolioProposalStore:
                    VALUES (?, ?, ?, '{}')""",
                 (proposal_id, action, timestamp),
             )
+
+    def decide_stock(self, proposal_id: str, index: int, action: str, timestamp: str) -> dict[str, object]:
+        if action not in {"APPROVED", "REJECTED"}:
+            raise DomainValidationError("proposal decision is invalid")
+        with sqlite_connection(self.database, row_factory=True) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM action_proposals WHERE proposal_id=?", (proposal_id,)).fetchone()
+            if row is None:
+                raise DomainValidationError("action proposal was not found")
+            proposal = self._decode(row)
+            if proposal["status"] != "PENDING":
+                raise DomainValidationError("action proposal is not pending")
+            statuses = list(proposal["decision_statuses"])
+            if not 0 <= index < len(statuses):
+                raise DomainValidationError("proposal stock row was not found")
+            if statuses[index] != "PENDING":
+                raise DomainValidationError("proposal stock row is not pending")
+            statuses[index] = action
+            status = "PENDING" if "PENDING" in statuses else ("APPROVED" if "APPROVED" in statuses else "REJECTED")
+            connection.execute(
+                "UPDATE action_proposals SET status=?, decision_status_json=?, updated_at=? WHERE proposal_id=?",
+                (status, json.dumps(statuses), timestamp, proposal_id),
+            )
+            connection.execute(
+                "INSERT INTO action_proposal_events (proposal_id,event_type,occurred_at,detail_json) VALUES (?,?,?,?)",
+                (proposal_id, f"STOCK_{action}", timestamp, json.dumps({"decision_index": index}, sort_keys=True)),
+            )
+        return self.get(proposal_id)
 
     def mark_processed(
         self,

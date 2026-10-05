@@ -175,7 +175,7 @@ def test_v4_real_indicators_signals_actions_and_cataloged_backtest_agree(tmp_pat
     signal_day, buy_day, sell_day = (start + timedelta(days=index) for index in (105, 106, 107))
     signal_result = services.positional_trend.build_signals({"as_of_date": signal_day.isoformat()})
     assert signal_result["signal_count"] == 1
-    services.ledger.open_account("paper", Money(500_000))
+    services.ledger.open_account("paper", Money(200_000))
     buy = services.actions.generate(
         {
             "account_id": "paper",

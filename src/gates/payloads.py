@@ -131,7 +131,7 @@ class BacktestPayload:
                 strategy_id=str(raw["strategy_id"]),
                 start_date=date.fromisoformat(str(raw["start_date"])),
                 end_date=date.fromisoformat(str(raw["end_date"])),
-                initial_capital=float(raw.get("initial_capital", 100_000)),
+                initial_capital=float(raw.get("initial_capital", 200_000)),
                 pyramiding=bool(raw.get("pyramiding", False)),
             )
         except (TypeError, ValueError) as exc:

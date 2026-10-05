@@ -375,6 +375,9 @@ class ActionJobs:
                     "fee": str(fee),
                     "reason": "ranked Positional trend breakout; next-open size estimated from prior close" if forward else "ranked Positional trend breakout; next-open risk-sized entry",
                     "signal_date": signal_date.isoformat(),
+                    "signal_rank": row.get("rank"),
+                    "adx": str(row["adx14"]) if row.get("adx14") is not None else None,
+                    "adtv": str(row["adv30"]) if row.get("adv30") is not None else None,
                     "stop_anchor": str(stop),
                     "nominal_risk": str(quantity * (price - stop)),
                 }
@@ -894,6 +897,11 @@ class ActionJobs:
             for item in candidate_items
         )
         score_by_id = {str(item["instrument_id"]): Decimal(str(item["score"])) for item in ranked}
+        rank_by_id = {
+            str(item["instrument_id"]): int(item["rank"])
+            for item in ranked
+            if item.get("rank") is not None
+        }
         lots_by_instrument: dict[str, tuple[int, Decimal]] = {}
         opened_by_instrument: dict[str, date] = {}
         for lot in projection.open_lots:
@@ -1012,6 +1020,10 @@ class ActionJobs:
                 else None,
                 "fee": str(item.fee.amount),
                 "reason": item.reason,
+                "score": str(score_by_id[item.instrument_id])
+                if item.instrument_id in score_by_id
+                else None,
+                "rank": rank_by_id.get(item.instrument_id),
             }
             for item in decisions
         ]
@@ -1555,7 +1567,64 @@ class ActionJobs:
         )
 
     def proposal(self, proposal_id: str) -> dict[str, object]:
-        return self.proposals_store.get(proposal_id)
+        return self._with_signal_scores(self.proposals_store.get(proposal_id))
+
+    def _with_signal_scores(self, proposal: dict[str, object]) -> dict[str, object]:
+        """Add ranking details to legacy proposals without mutating their artifacts."""
+        strategy_id = str(proposal.get("strategy_id", ""))
+        decisions = [dict(item) for item in proposal.get("decisions", [])]
+        if strategy_id not in {"momentum", "positional_trend_following"} or not decisions:
+            return proposal
+        try:
+            _, artifact = self.publisher.store.read_json(
+                "actions/proposals", str(proposal["artifact_id"])
+            )
+            if strategy_id == "momentum":
+                revision_id = str(artifact.get("strategy_revision_id", ""))
+                week_end = str(proposal.get("ranking_week_end", ""))
+                rows = self.research.research_store.all_rankings(revision_id, week_end)
+                lookup = {
+                    str(row["instrument_id"]): (row.get("score"), row.get("rank"))
+                    for row in rows
+                }
+                for item in decisions:
+                    values = lookup.get(str(item.get("instrument_id")))
+                    if values is not None:
+                        if item.get("score") is None and values[0] is not None:
+                            item["score"] = str(values[0])
+                        if item.get("rank") is None and values[1] is not None:
+                            item["rank"] = values[1]
+            elif artifact.get("signal_artifact_id") and self.positional_trend is not None:
+                _, signals = self.publisher.store.read_json(
+                    self.positional_trend.CATEGORY, str(artifact["signal_artifact_id"])
+                )
+                lookup = {
+                    str(row["instrument_id"]): row for row in signals.get("signals", [])
+                }
+                ranked_signal_ids = {
+                    str(instrument_id): rank
+                    for rank, instrument_id in enumerate(
+                        signals.get("buy_candidates", []), start=1
+                    )
+                }
+                for item in decisions:
+                    row = lookup.get(str(item.get("instrument_id")))
+                    if row is not None:
+                        signal_rank = row.get("rank") or ranked_signal_ids.get(
+                            str(item.get("instrument_id"))
+                        )
+                        for target, source in (
+                            ("adx", "adx14"),
+                            ("adtv", "adv30"),
+                        ):
+                            if item.get(target) is None and row.get(source) is not None:
+                                item[target] = row[source]
+                        if item.get("signal_rank") is None and signal_rank is not None:
+                            item["signal_rank"] = signal_rank
+        except (DomainValidationError, KeyError, TypeError, ValueError):
+            # Old artifacts can predate stored ranks. Keep the proposal readable.
+            pass
+        return proposal | {"decisions": decisions}
 
     def proposals(
         self,
@@ -1564,7 +1633,12 @@ class ActionJobs:
         action_date: date | None = None,
         strategy_id: str | None = None,
     ) -> list[dict[str, object]]:
-        return self.proposals_store.list_for_account(account_id, limit, action_date, strategy_id)
+        return [
+            self._with_signal_scores(proposal)
+            for proposal in self.proposals_store.list_for_account(
+                account_id, limit, action_date, strategy_id
+            )
+        ]
 
     def action_dates(self, account_id: str) -> list[date]:
         return self.proposals_store.action_dates(account_id)
@@ -1602,6 +1676,35 @@ class ActionJobs:
             self.risk_guard.release(f"proposal:{proposal_id}")
         return self.proposal(proposal_id)
 
+    def decide_stock(self, proposal_id: str, decision_index: int, action: str) -> dict[str, object]:
+        if action not in {"APPROVED", "REJECTED"}:
+            raise DomainValidationError("proposal decision is invalid")
+        proposal = self.proposal(proposal_id)
+        if proposal["status"] != "PENDING":
+            raise DomainValidationError("action proposal is not pending")
+        decisions = cast(list[dict[str, object]], proposal["decisions"])
+        statuses = cast(list[str], proposal["decision_statuses"])
+        if not 0 <= decision_index < len(decisions) or statuses[decision_index] != "PENDING":
+            raise DomainValidationError("proposal stock row is not pending")
+        decision = decisions[decision_index]
+        reservation_id = f"proposal:{proposal_id}:stock:{decision_index}"
+        if action == "APPROVED":
+            if decision.get("type") in {"BUY", "PYRAMID_ADD"}:
+                _, eligible_ids = self._current_buy_members()
+                if str(decision.get("instrument_id")) not in eligible_ids:
+                    raise DomainValidationError("BUY proposal contains a stock outside the current NSE snapshot")
+            if self.risk_guard and decision.get("type") != "NO_ACTION":
+                self.risk_guard.validate(
+                    str(proposal["account_id"]), [decision],
+                    int(proposal["expected_ledger_version"]),
+                    reservation_id=reservation_id, proposal_id=proposal_id,
+                )
+        timestamp = datetime.now(UTC).isoformat()
+        updated = self.proposals_store.decide_stock(proposal_id, decision_index, action, timestamp)
+        if action == "REJECTED" and self.risk_guard:
+            self.risk_guard.release(reservation_id)
+        return updated
+
     def process(self, proposal_id: str) -> dict[str, object]:
         proposal = self.proposal(proposal_id)
         if proposal["status"] == "PROCESSED":
@@ -1632,7 +1735,12 @@ class ActionJobs:
         fills = []
         adjustments: list[dict[str, object]] = []
         cash_available = self.ledger.projection(str(proposal["account_id"])).cash.amount
-        decisions = cast(list[dict[str, object]], proposal["decisions"])
+        decisions = [decision for decision, state in zip(
+            cast(list[dict[str, object]], proposal["decisions"]),
+            cast(list[str], proposal["decision_statuses"]), strict=True,
+        ) if state == "APPROVED"]
+        if not decisions:
+            raise DomainValidationError("proposal has no approved stock decisions")
         ordered_decisions = sorted(
             decisions,
             key=lambda item: 0 if item["type"] not in {value.value for value in _BUY_TYPES} else 1,

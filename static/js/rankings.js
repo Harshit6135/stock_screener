@@ -6,7 +6,8 @@
   function chosenDate() { return $("signal-date").value; }
   function renderRows() {
     const query = $("ranking-search").value.trim().toLocaleLowerCase();
-    const visible = rows.filter(row => JSON.stringify(row).toLocaleLowerCase().includes(query));
+    const candidates = isDaily() ? rows.filter(row => row.filtered) : rows;
+    const visible = candidates.filter(row => JSON.stringify(row).toLocaleLowerCase().includes(query));
     const columns = [...new Set(visible.flatMap(row => Object.keys(row)))];
     const head = document.createElement("tr");
     columns.forEach(column => { const th = document.createElement("th"); th.textContent = column.replaceAll("_", " "); head.append(th); });
@@ -25,7 +26,7 @@
     }));
     if (!visible.length) {
       const tr = document.createElement("tr"), td = document.createElement("td"); td.colSpan = Math.max(1, columns.length); td.className = "workflow-empty";
-      td.textContent = rows.length ? "No rows match this filter." : "No ranking rows were returned for this date."; tr.append(td); $("ranking-body").replaceChildren(tr);
+      td.textContent = candidates.length ? "No rows match this filter." : (isDaily() ? "No BUY signals for this session." : "No ranking rows were returned for this date."); tr.append(td); $("ranking-body").replaceChildren(tr);
     }
     $("ranking-search-wrap").hidden = !rows.length;
   }
@@ -45,7 +46,7 @@
       : "Choose a strategy and week ending to view its published factor ranking.";
     $("ranking-title").textContent = daily ? "Daily trend signals" : "Weekly stock ranking";
     $("ranking-caption").textContent = daily
-      ? "BUY candidates are highlighted. Other screened rows show why a stock did not qualify."
+      ? "Only stocks with a BUY signal are shown, ordered by ADX and average traded value."
       : "Rows and columns are read from the selected strategy’s published ranking.";
     $("ranking-head").replaceChildren(); $("ranking-body").innerHTML = '<tr><td class="workflow-empty">Choose a date to load results.</td></tr>';
     $("ranking-summary").replaceChildren(); rows = [];
@@ -63,10 +64,11 @@
       if (isDaily()) {
         if (!chosenDate()) throw new Error("Choose a completed session date first.");
         const response = await Screener.api(`/api/positional-trend/signals?as_of_date=${encodeURIComponent(chosenDate())}`);
-        rows = response.signals.signals || [];
-        const buys = rows.filter(row => row.filtered).length, exits = rows.filter(row => row.exit_signal).length;
-        setSummary([["Session", response.signals.as_of_date], ["BUY candidates", buys], ["Exit signals", exits], ["Stocks screened", rows.length]]);
-        message(`Loaded Positional Trend signals for ${response.signals.as_of_date}.`);
+        const screened = response.signals.signals || [];
+        rows = screened.filter(row => row.filtered);
+        const exits = screened.filter(row => row.exit_signal).length;
+        setSummary([["Session", response.signals.as_of_date], ["BUY stocks shown", rows.length], ["Other stocks screened", screened.length], ["Exit signals", exits]]);
+        message(`Showing ${rows.length} Positional Trend BUY signals from ${response.signals.as_of_date}.`);
       } else {
         if (!$("week").value) throw new Error("No weekly ranking is available. Choose another strategy or run research first.");
         const response = await Screener.api(`/api/research/rankings?week_end=${encodeURIComponent($("week").value)}&strategy_id=${encodeURIComponent($("strategy").value)}&limit=500`);

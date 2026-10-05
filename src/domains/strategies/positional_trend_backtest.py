@@ -15,7 +15,7 @@ from .positional_trend import feature_series, valid_bar
 
 @dataclass(frozen=True)
 class Policy:
-    initial_capital: float = 500_000.0
+    initial_capital: float = 200_000.0
     max_positions: int = 15
     max_name_fraction: float = 0.10
     nominal_risk_fraction: float = 0.01

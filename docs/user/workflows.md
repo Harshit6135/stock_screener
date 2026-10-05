@@ -82,11 +82,13 @@ data** for the saved payload. Simulations are isolated from the live portfolio.
    job worker**, use it when no worker is running.
 3. Once generation completes, choose **Load proposals** to refresh the review
    queue. Use the action-date filter to narrow it.
-4. Read each proposal’s decisions, rationale, target date, and status. Review
-   risk projections for the selected account.
-5. Approve or reject proposals deliberately. Approval records a decision; it
-   does not submit a broker order. Broker-intent preparation and order submission
-   are separate steps.
+4. Review the stock table one row at a time. Each row shows the strategy, stock,
+   action, units, estimated price, rationale, session, and review status. Use its
+   **Approve** or **Reject** button to decide on that stock independently.
+   Review risk projections for the selected account.
+5. After every stock in a proposal is reviewed, prepare broker intents for the
+   approved stocks if appropriate. This does not submit an order; submission is
+   a separate step.
 
 Upcoming share quantities use stored closing prices as estimates. The next
 session’s opening prices are not known when proposals are generated. **Record a

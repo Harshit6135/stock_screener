@@ -27,7 +27,7 @@ ranking:
   pattern: direct_signal
 
 portfolio_policy:
-  initial_capital: 500000
+  initial_capital: 200000
   max_positions: 15
   risk_fraction: 0.01
   max_order_fraction: 0.10

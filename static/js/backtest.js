@@ -19,7 +19,7 @@
     const selected = strategyRows.find(item => item.strategy_id === $("strategy").value);
     const definition = selected?.definition || {};
     const policy = definition.portfolio_policy || {};
-    $("starting-cash").value = policy.initial_capital || 100000;
+    $("starting-cash").value = policy.initial_capital || 200000;
     $("max-positions").value = policy.max_positions || 15;
     const positional = $("strategy").value === "positional_trend_following";
     $("common-options").hidden = positional;

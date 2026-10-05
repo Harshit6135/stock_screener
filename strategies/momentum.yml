@@ -20,7 +20,7 @@ score:
   factor_modifiers: []
 
 portfolio_policy:
-  initial_capital: 100000
+  initial_capital: 200000
   max_positions: 15
   exit_threshold: 40
   buffer_percent: 0.25

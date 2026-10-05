@@ -34,44 +34,49 @@
     }));
   }
   function renderProposal(proposal) {
-    const decisions = document.createElement("div"); decisions.className = "proposal-decisions";
-    (proposal.decisions || []).forEach(decision => {
-      const line = document.createElement("div"); line.className = "proposal-decision";
+    const strategy = strategyNames.get(proposal.strategy_id) || proposal.strategy_id || "Unknown";
+    const decisions = proposal.decisions || [];
+    const states = proposal.decision_statuses || decisions.map(() => proposal.status || "PENDING");
+    return decisions.map((decision, index) => {
+      const strategyLabel = document.createElement("span"); strategyLabel.className = "strategy-chip"; strategyLabel.textContent = strategy;
+      const symbol = document.createElement("strong"); symbol.className = "stock-symbol"; symbol.textContent = decision.symbol || decision.instrument_id || "Portfolio";
       const side = document.createElement("span"); side.className = `trade-side ${String(decision.type || "").toLowerCase()}`; side.textContent = decision.type || "Action";
-      const instrument = document.createElement("strong"); instrument.textContent = decision.symbol || decision.instrument_id || "Portfolio";
-      const units = document.createElement("span"); units.textContent = decision.units != null ? `${decision.units} units` : "";
-      line.append(side, instrument, units); decisions.append(line);
+      let signalQuality = "—";
+      if (proposal.strategy_id === "momentum" && decision.score != null) {
+        signalQuality = Number(decision.score).toLocaleString("en-IN", {maximumFractionDigits:2});
+      } else if (proposal.strategy_id === "positional_trend_following" && decision.adx != null) {
+        signalQuality = `ADX ${Number(decision.adx).toLocaleString("en-IN", {maximumFractionDigits:1})}`;
+      }
+      const rank = decision.rank ?? decision.signal_rank;
+      const rankLabel = rank == null ? "—" : `#${rank}`;
+      const stateValue = states[index] || "PENDING";
+      const state = document.createElement("span"); state.className = `status-chip status-${String(stateValue).toLowerCase()}`; state.textContent = statusNames[stateValue] || stateValue;
+      const review = document.createElement("div"); review.className = "proposal-review-actions";
+      if (stateValue === "PENDING" && decision.type !== "NO_ACTION") {
+        review.append(actionButton("Approve", async () => { await Screener.api(`/api/actions/proposals/${encodeURIComponent(proposal.proposal_id)}/decisions/${index}/approve`, {method:"POST"}); await load(); }, ""));
+        review.append(actionButton("Reject", async () => { await Screener.api(`/api/actions/proposals/${encodeURIComponent(proposal.proposal_id)}/decisions/${index}/reject`, {method:"POST"}); await load(); }, "secondary"));
+      } else if (stateValue === "APPROVED" && proposal.status === "APPROVED") {
+        const firstApproved = states.findIndex(value => value === "APPROVED") === index;
+        if (firstApproved && proposal.strategy_id === "manual") review.append(actionButton("Record confirmed fills", async () => {
+          if (!confirm("Confirm these quantities and prices were actually executed?")) return;
+          await Screener.api(`/api/actions/proposals/${encodeURIComponent(proposal.proposal_id)}/process`, {method:"POST"}); await load();
+        }));
+        if (firstApproved && proposal.strategy_id !== "manual") review.append(actionButton("Prepare broker intents", async () => {
+          const result = await Screener.api(`/api/portfolio/proposals/${encodeURIComponent(proposal.proposal_id)}/broker-intents`, {method:"POST"});
+          $("risk").replaceChildren(); const notice = document.createElement("p"); notice.className = "notice"; notice.textContent = "Broker intents prepared. They have not been submitted."; $("risk").append(notice);
+          const pre = document.createElement("pre"); pre.textContent = JSON.stringify(result, null, 2); $("risk").append(pre);
+        }));
+      } else if (decision.type === "NO_ACTION") {
+        const note = document.createElement("span"); note.className = "muted"; note.textContent = "No stock action"; review.append(note);
+      }
+      if (decision.type === "NO_ACTION") { state.textContent = "No action"; state.className = "status-chip"; }
+      return Screener.row([strategyLabel, symbol, side, signalQuality, rankLabel, decision.units ?? "—", decision.execution_price ? `₹${Number(decision.execution_price).toLocaleString("en-IN", {maximumFractionDigits:2})}` : "—", decision.reason || "—", decision.signal_date || proposal.action_date || "—", state, review]);
     });
-    const rationale = document.createElement("div"); rationale.className = "proposal-reasons";
-    (proposal.decisions || []).forEach(decision => {
-      if (!decision.reason) return;
-      const line = document.createElement("p"); line.textContent = decision.reason; rationale.append(line);
-    });
-    if (!rationale.childElementCount) rationale.textContent = "No rationale supplied.";
-    const state = document.createElement("span"); state.className = `status-chip status-${String(proposal.status).toLowerCase()}`; state.textContent = statusNames[proposal.status] || proposal.status;
-    const review = document.createElement("div"); review.className = "proposal-review-actions";
-    if (proposal.status === "PENDING") {
-      review.append(actionButton("Approve", async () => { await Screener.api(`/api/actions/proposals/${encodeURIComponent(proposal.proposal_id)}/approve`, {method:"POST"}); await load(); }, ""));
-      review.append(actionButton("Reject", async () => { await Screener.api(`/api/actions/proposals/${encodeURIComponent(proposal.proposal_id)}/reject`, {method:"POST"}); await load(); }, "secondary"));
-    } else if (proposal.status === "APPROVED") {
-      if (proposal.strategy_id === "manual") review.append(actionButton("Record confirmed fills", async () => {
-        if (!confirm("Confirm these quantities and prices were actually executed?")) return;
-        await Screener.api(`/api/actions/proposals/${encodeURIComponent(proposal.proposal_id)}/process`, {method:"POST"}); await load();
-      }));
-      review.append(actionButton("Prepare broker intents", async () => {
-        const result = await Screener.api(`/api/portfolio/proposals/${encodeURIComponent(proposal.proposal_id)}/broker-intents`, {method:"POST"});
-        $("risk").replaceChildren(); const notice = document.createElement("p"); notice.className = "notice"; notice.textContent = "Broker intents prepared. They have not been submitted."; $("risk").append(notice);
-        const pre = document.createElement("pre"); pre.textContent = JSON.stringify(result, null, 2); $("risk").append(pre);
-      }));
-    }
-    if (!review.childElementCount) { const note = document.createElement("span"); note.className = "muted"; note.textContent = "No further action"; review.append(note); }
-    const strategyLabel = document.createElement("span"); strategyLabel.className = "strategy-chip"; strategyLabel.textContent = strategyNames.get(proposal.strategy_id) || proposal.strategy_id || "Unknown";
-    return Screener.row([strategyLabel, decisions, rationale, proposal.action_date || "—", state, review]);
   }
   async function load() {
     request?.abort(); request = new AbortController(); const token = ++generation, account = $("account").value;
     if (!account) return;
-    $("proposals").innerHTML = '<tr><td colspan="6" class="workflow-empty">Loading proposals…</td></tr>';
+    $("proposals").innerHTML = '<tr><td colspan="11" class="workflow-empty">Loading proposals…</td></tr>';
     $("actions-error").textContent = "";
     const query = new URLSearchParams({account_id:account});
     if ($("action-date").value) query.set("action_date", $("action-date").value);
@@ -83,13 +88,15 @@
       const data = await Screener.api(`/api/actions/proposals?${query}`, {signal:request.signal});
       if (token !== generation || account !== $("account").value) return;
       const proposals = data.proposals || [];
-      $("proposals").replaceChildren(...proposals.map(renderProposal));
+      $("proposals").replaceChildren(...proposals.flatMap(renderProposal));
       if (!proposals.length) {
-        const empty = document.createElement("tr"), cell = document.createElement("td"); cell.colSpan = 6; cell.className = "workflow-empty";
+        const empty = document.createElement("tr"), cell = document.createElement("td"); cell.colSpan = 11; cell.className = "workflow-empty";
         cell.textContent = "No proposals match this account and date. Generate actions above, or load another date."; empty.append(cell); $("proposals").append(empty);
       }
-      const counts = {PENDING:0, APPROVED:0, REJECTED:0}; proposals.forEach(item => { counts[item.status] = (counts[item.status] || 0) + 1; });
-      $("proposal-summary").replaceChildren(...[["Showing", String(proposals.length)], ["Awaiting review", String(counts.PENDING)], ["Approved", String(counts.APPROVED)]].map(([label, value]) => {
+      const counts = {PENDING:0, APPROVED:0, REJECTED:0};
+      proposals.forEach(item => (item.decision_statuses || []).forEach(state => { counts[state] = (counts[state] || 0) + 1; }));
+      const stockCount = proposals.reduce((sum, item) => sum + (item.decisions || []).length, 0);
+      $("proposal-summary").replaceChildren(...[["Stocks shown", String(stockCount)], ["Awaiting review", String(counts.PENDING)], ["Approved", String(counts.APPROVED)], ["Rejected", String(counts.REJECTED)]].map(([label, value]) => {
         const stat = document.createElement("div"); stat.className = "workflow-stat"; const n = document.createElement("strong"); n.textContent = value; const l = document.createElement("span"); l.textContent = label; stat.append(n, l); return stat;
       }));
       try {
