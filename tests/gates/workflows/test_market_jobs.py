@@ -34,7 +34,8 @@ def test_index_quotes_initialize_without_research_snapshot(tmp_path, monkeypatch
     jobs = KiteMarketJobs(market, publisher, None, tmp_path / "missing-token")
     monkeypatch.setattr(jobs, "_client", lambda: SimpleNamespace(ohlc=ohlc))
     assert jobs.fetch_index_quotes({})["quote_count"] == 1
-    assert len(calls) == len(NSE_INDEX_SYMBOLS)
+    assert len(calls) == len(NSE_INDEX_SYMBOLS) + 3
+    assert {"NSE:NIFTY 100", "NSE:NIFTY BANK", "BSE:SENSEX"} <= set(calls)
     quote = market.index_quotes()[0]
     assert quote["symbol"] == "NIFTY 50"
     assert quote["change_percent"] == 0.4
@@ -539,3 +540,15 @@ def test_history_fetch_requires_current_membership_or_exact_exit_session(tmp_pat
     assert jobs.fetch_bars({**payload, "exit_only": True})["skipped"] is True
     with pytest.raises(DomainValidationError, match="exit-only"):
         jobs.fetch_bars({**payload, "start_date": decision.isoformat(), "exit_only": True})
+
+
+
+def test_sensex_quotes_use_bse_identity(tmp_path, monkeypatch):
+    market, publisher = setup_market(tmp_path)
+    jobs = KiteMarketJobs(market, publisher, None, tmp_path / "missing-token")
+    monkeypatch.setattr(jobs, "_client", lambda: SimpleNamespace(ohlc=lambda symbols: {
+        "BSE:SENSEX": {"instrument_token": 265, "last_price": 81000, "ohlc": {"close": 80000}},
+    }))
+    assert jobs.fetch_index_quotes({})["quote_count"] == 1
+    assert market.instrument("SENSEX", "BSE")["provider_token"] == "265"
+    assert market.index_quotes()[0]["exchange"] == "BSE"

@@ -212,7 +212,7 @@ def test_complete_history_cash_realised_unrealised_xirr_and_cagr(tmp_path):
     assert value["fees_note"] is None
     assert Decimal(value["total_return"]) == Decimal(106) / 300
     assert Decimal(value["recorded_charges"]) == Decimal(4)
-    assert Decimal(value["tax_estimates"][0]["estimated_tax"]) == Decimal("8.32")
+    assert Decimal(value["tax_estimates"][0]["estimated_tax"]) == Decimal("4.16")
     # Sold lots: ABC cost 40.8 -> net proceeds 79; DEF cost 100 -> 79.
     from src.domains.portfolio_accounting.portfolio_performance import calculate_xirr
 

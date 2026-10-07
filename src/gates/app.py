@@ -11,6 +11,7 @@ from src.gates.composition import ApplicationServices
 from src.gates.http.actions import create_actions_blueprint
 from src.gates.http.backtest import create_backtest_blueprint
 from src.gates.http.broker import create_broker_blueprint
+from src.gates.http.charges import create_charges_blueprint
 from src.gates.http.dashboard import create_dashboard_blueprint
 from src.gates.http.indicators import create_indicators_blueprint
 from src.gates.http.kite_accounts import create_kite_accounts_blueprint
@@ -29,6 +30,7 @@ from src.gates.http.wiki import create_wiki_blueprint
 from src.gates.operations import sqlite_ready
 from src.gates.runtime import RuntimeConfig
 from src.gates.security import RedactingLogFilter
+from src.gates.workflows.charge_import import ChargeImport
 from src.gates.workflows.index_poller import BackgroundIndexPoller
 from src.gates.workflows.proposal_execution import ProposalExecution
 from src.gates.workflows.stop_sells import BackgroundStopMonitor, StopSellWorkflow
@@ -84,6 +86,16 @@ def create_app(config_class=RuntimeConfig):
         portfolio_live_execution=bool(app.config.get("PORTFOLIO_KITE_LIVE_EXECUTION", False)),
     )
     app.extensions["screener_services"] = services
+    def schedule_portfolio_history(account_id, as_of=None):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from uuid import uuid4
+        if as_of is None:
+            as_of = datetime.now(ZoneInfo('Asia/Kolkata')).date()
+        return services.jobs.submit(
+            f'portfolio-history:{account_id}:{uuid4()}', 'portfolio.backfill-price-history',
+            {'account_id': account_id, 'as_of_date': as_of.isoformat()}, max_attempts=1,
+        ).job_id
     market_auth = (
         KiteAuthService(market_data_credentials, market_data_token_path)
         if market_data_credentials is not None else None
@@ -133,19 +145,23 @@ def create_app(config_class=RuntimeConfig):
             broker_sync=services.portfolio_sync,
             live_quotes=services.live_quotes,
             intraday_stream=services.intraday_stream,
+            history_rebuilder=lambda account_id, as_of: {
+                'history_backfill_job_id': schedule_portfolio_history(account_id, as_of)
+            },
         )
     )
     app.register_blueprint(create_broker_blueprint(services.broker_orders))
+    app.register_blueprint(create_charges_blueprint(ChargeImport(services.ledger, services.market)))
     app.register_blueprint(
         create_tradebook_blueprint(
             TradebookImport(
                 services.database, services.ledger, services.market,
                 None if app.config.get("TESTING") else services.corporate_actions,
-            )
+            ), history_scheduler=schedule_portfolio_history
         )
     )
     app.register_blueprint(
-        create_kite_accounts_blueprint(services.kite_accounts, services.portfolio_sync)
+        create_kite_accounts_blueprint(services.kite_accounts, services.portfolio_sync, schedule_portfolio_history)
     )
     app.register_blueprint(create_backtest_blueprint(services.backtests, services.artifacts))
     stop_sells = StopSellWorkflow(services.actions, services.broker_orders, services.kite_accounts)

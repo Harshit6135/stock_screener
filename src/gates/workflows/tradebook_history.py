@@ -87,7 +87,7 @@ def history_review(importer, account_id, upload_id, parsed):
         )
     existing = importer.ledger.events(account_id)
     blocked = any(
-        e["event_type"] not in {"FILL_RECORDED", "STOCK_SPLIT_APPLIED", "CASH_TRANSFER"}
+        e["event_type"] not in {"FILL_RECORDED", "STOCK_SPLIT_APPLIED", "CASH_TRANSFER", "CHARGES_RECONCILED"}
         for e in existing
     )
     summary = None

@@ -24,7 +24,8 @@ def portfolio_history(ledger, market, account_id, as_of, limit=500, broker_snaps
             "missing_symbols": [],
         }
     events = ledger.events(account_id)
-    dates = {opened, as_of, *TradingCalendar(market.path).sessions(opened, as_of)}
+    sessions = set(TradingCalendar(market.path).sessions(opened, as_of))
+    dates = {opened, as_of, *sessions}
     instruments, transfers = set(), {}
     for event in events:
         day = date.fromisoformat(event["occurred_at"][:10])
@@ -56,9 +57,24 @@ def portfolio_history(ledger, market, account_id, as_of, limit=500, broker_snaps
     }
     broker_day = (broker_snapshot or {}).get("observed_at", "")[:10]
     history, missing, skipped = [], set(), 0
+    # Use a consistent priced subset across the entire curve. Excluding only
+    # market value would incorrectly turn unpriced purchases into total losses.
+    projections = {day: ledger.projection_at(account_id, day) for day in sorted(dates)}
+    for day, projection in projections.items():
+        unavailable = set()
+        for lot in projection.open_lots:
+            if day == as_of and broker_day == day.isoformat() and lot.instrument_id in current_prices:
+                continue
+            price_dates, _ = prices.get(lot.instrument_id, ([], []))
+            position = bisect_right(price_dates, day.isoformat()) - 1
+            if position < 0 or (day in sessions and day != as_of and price_dates[position] != day.isoformat()):
+                unavailable.add(lot.instrument_id)
+        if unavailable:
+            skipped += 1
+            missing.update(unavailable)
     prior_equity, prior_day, index, peak = None, None, Decimal(1), Decimal(1)
     for day in sorted(dates):
-        projection = ledger.projection_at(account_id, day)
+        projection = ledger.projection_at(account_id, day, excluded_instrument_ids=missing) if missing else projections[day]
         equity, stale, complete = projection.cash.amount, 0, True
         for lot in projection.open_lots:
             if (
@@ -110,7 +126,9 @@ def portfolio_history(ledger, market, account_id, as_of, limit=500, broker_snaps
     return {
         "account_id": account_id,
         "basis": "ledger_and_historical_prices",
-        "drawdown_basis": "cash_flow_adjusted_available_valuations",
+        "drawdown_basis": "cash_flow_adjusted_priced_subset" if missing else "cash_flow_adjusted_available_valuations",
+        "partial": bool(missing),
+        "excluded_symbols": missing_symbols,
         "history": history[-limit:],
         "missing_price_days": skipped,
         "missing_symbols": missing_symbols,

@@ -35,7 +35,7 @@ def _money(value: object, field: str) -> Money:
 
 def create_portfolio_blueprint(
     ledger: Ledger, market: MarketRepository, risk_reader=None, risk_config=None, broker_sync=None,
-    live_quotes=None, intraday_stream=None,
+    live_quotes=None, intraday_stream=None, history_rebuilder=None,
 ) -> Blueprint:
     blueprint = Blueprint("portfolio", __name__, url_prefix="/api/portfolio")
 
@@ -541,10 +541,15 @@ def create_portfolio_blueprint(
                 ]
             )
         realised_xirr = calculate_xirr(realised_flows)
+        effective_events = [e for e in ledger.effective_events(account_id) if e["occurred_at"][:10] <= as_of.isoformat()]
         recorded_charges = sum(
-            (Decimal(event["event"].get("fee", "0")) for event in events
+            (Decimal(event["event"].get("fee", "0")) for event in effective_events
              if event["event_type"] == "FILL_RECORDED"),
             Decimal(0),
+        )
+        recorded_charges += sum(
+            (sum((Decimal(c["amount"]) for c in e["charge_components"]), Decimal(0))
+             for e in effective_events if e["event_type"] == "OPENING_POSITION_IMPORTED"), Decimal(0)
         )
         net_gain = equity - net_capital
         elapsed = (as_of - date.fromisoformat(account["opening_date"])).days
@@ -637,7 +642,8 @@ def create_portfolio_blueprint(
             if any(
                 e["event_type"] == "FILL_RECORDED"
                 and e["event"].get("correlation_id") == "tradebook:charges-unavailable"
-                for e in events
+                and not any(c["charge_group"] == "contract" for c in e["charge_components"])
+                for e in effective_events
             )
             else None,
             "history_complete": not history_incomplete,
@@ -778,6 +784,17 @@ def create_portfolio_blueprint(
             }
         )
 
+    @blueprint.post("/accounts/<account_id>/valuation/history/backfill")
+    def backfill_history(account_id: str):
+        if history_rebuilder is None:
+            return jsonify({"error": "Historical price backfill unavailable"}), 503
+        try:
+            body = request.get_json(silent=True) or {}
+            as_of = date.fromisoformat(body.get("as_of_date", datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()))
+            return jsonify(history_rebuilder(account_id, as_of))
+        except (ValueError, DomainValidationError) as exc:
+            return jsonify({"error": str(exc)}), 400
+
     @blueprint.get("/accounts/<account_id>/valuation/history")
     def valuation_history(account_id: str):
         if request.args.get("as_of_date"):
@@ -827,6 +844,9 @@ def create_portfolio_blueprint(
                         **entry,
                         "units": 0,
                         "realised_pnl": "0",
+                        "buy_charges": {}, "sell_charges": {}, "total_charges": "0",
+                        "tax_deductible_charges": "0", "charge_sources": [], "charge_lots": [],
+                        "charges_complete": True,
                         "buy_date_end": entry["buy_date"],
                         "holding_days_min": entry["holding_days"],
                         "_buy_value": Decimal(0),
@@ -841,6 +861,17 @@ def create_portfolio_blueprint(
                 combined["realised_pnl"] = str(
                     Decimal(combined["realised_pnl"]) + Decimal(entry["realised_pnl"])
                 )
+                for side in ("buy_charges", "sell_charges"):
+                    for component, value in entry[side].items():
+                        combined[side][component] = str(Decimal(combined[side].get(component, "0")) + Decimal(value))
+                for field in ("total_charges", "tax_deductible_charges"):
+                    combined[field] = str(Decimal(combined[field]) + Decimal(entry[field]))
+                combined["charges_complete"] &= entry["charges_complete"]
+                combined["charge_sources"].extend(entry["charge_sources"])
+                combined["charge_lots"].append({k: entry[k] for k in (
+                    "buy_version", "sell_version", "buy_date", "sell_date", "units",
+                    "buy_charges", "sell_charges", "total_charges",
+                )})
                 combined["buy_date"] = min(combined["buy_date"], entry["buy_date"])
                 combined["buy_date_end"] = max(combined["buy_date_end"], entry["buy_date"])
                 combined["holding_days"] = max(combined["holding_days"], entry["holding_days"])

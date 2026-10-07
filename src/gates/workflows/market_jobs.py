@@ -24,6 +24,7 @@ from src.platform_kernel import DomainValidationError, QualityStatus
 from src.platform_kernel.security import sanitize_error
 
 PHASE2_BENCHMARK_SYMBOLS = NSE_INDEX_SYMBOLS
+DISPLAY_INDEX_INSTRUMENTS = {("NSE", "NIFTY 50"), ("NSE", "NIFTY 100"), ("NSE", "NIFTY BANK"), ("BSE", "SENSEX")}
 
 
 class KiteMarketJobs:
@@ -211,12 +212,13 @@ class KiteMarketJobs:
         if payload:
             raise DomainValidationError("index quote refresh takes no payload")
         tracked = []
-        for symbol in sorted(PHASE2_BENCHMARK_SYMBOLS):
+        quote_instruments = {("NSE", symbol) for symbol in PHASE2_BENCHMARK_SYMBOLS} | DISPLAY_INDEX_INSTRUMENTS
+        for exchange, symbol in sorted(quote_instruments):
             try:
-                instrument = self.repository.instrument(symbol, "NSE")
+                instrument = self.repository.instrument(symbol, exchange)
             except DomainValidationError:
                 instrument = None
-            tracked.append(("NSE", symbol, instrument))
+            tracked.append((exchange, symbol, instrument))
         raw = self._client().ohlc([f"{exchange}:{symbol}" for exchange, symbol, _ in tracked])
         if not isinstance(raw, dict):
             raise DomainValidationError("Kite index quote response is invalid")
@@ -231,12 +233,12 @@ class KiteMarketJobs:
                 if not isinstance(token, int) or isinstance(token, bool) or token <= 0:
                     continue
                 identity = TrackedInstrument(
-                    str(uuid5(NAMESPACE_URL, f"NSE:INDEX:{symbol}")),
-                    f"INDEX:{symbol}", symbol, "NSE", str(token),
+                    str(uuid5(NAMESPACE_URL, f"{exchange}:INDEX:{symbol}")),
+                    f"INDEX:{symbol}", symbol, exchange, str(token),
                     datetime.now(UTC).date(),
                 )
                 self.repository.upsert_instruments([identity])
-                instrument = self.repository.instrument(symbol, "NSE")
+                instrument = self.repository.instrument(symbol, exchange)
             try:
                 last_price = Decimal(str(item["last_price"]))
                 prev_close = Decimal(str(item["ohlc"]["close"]))

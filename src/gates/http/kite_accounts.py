@@ -7,7 +7,7 @@ from flask import Blueprint, jsonify, request, session
 from src.platform_kernel import DomainValidationError
 
 
-def create_kite_accounts_blueprint(accounts, sync) -> Blueprint:
+def create_kite_accounts_blueprint(accounts, sync, history_scheduler=None) -> Blueprint:
     blueprint = Blueprint("kite_accounts", __name__, url_prefix="/api/broker-accounts")
 
     @blueprint.get("")
@@ -147,13 +147,14 @@ def create_kite_accounts_blueprint(accounts, sync) -> Blueprint:
                 raise DomainValidationError(
                     "selected_instrument_ids is required for a selected import"
                 )
-            return jsonify(
-                sync.import_holdings(
+            result = sync.import_holdings(
                     broker_account_id,
                     body["selected_instrument_ids"] if body else None,
                     purchase_dates=body.get("purchase_dates") if body else None,
                 )
-            )
+            if history_scheduler and result.get('imported_positions'):
+                result['history_backfill_job_id'] = history_scheduler(broker_account_id)
+            return jsonify(result)
         except (KeyError, TypeError, ValueError, DomainValidationError) as exc:
             error = (
                 str(exc)

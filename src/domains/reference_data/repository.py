@@ -34,7 +34,9 @@ class ReferenceDataRepository:
 
     def upsert_instruments(self, records: Iterable[TrackedInstrument]) -> int:
         instruments = tuple(records)
-        if any(item.exchange != "NSE" for item in instruments):
+        if any(item.exchange != "NSE" and not (
+            item.exchange == "BSE" and item.symbol == "SENSEX" and item.isin == "INDEX:SENSEX"
+        ) for item in instruments):
             raise DomainValidationError("only NSE instruments are supported")
         if len({item.instrument_id for item in instruments}) != len(instruments):
             raise DomainValidationError("instrument snapshot contains duplicate identities")
@@ -308,7 +310,7 @@ class ReferenceDataRepository:
         return [dict(row) for row in rows]
 
     def instrument(self, symbol: str, exchange: str = "NSE") -> dict[str, object]:
-        if exchange != "NSE":
+        if exchange != "NSE" and (exchange, symbol) != ("BSE", "SENSEX"):
             raise DomainValidationError("only NSE instruments are supported")
         with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
             rows = connection.execute(

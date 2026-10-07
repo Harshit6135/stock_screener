@@ -367,7 +367,7 @@
         },
         {
           "key": "starting_cash",
-          "label": "Starting capital (₹)",
+          "label": "Starting capital (â‚¹)",
           "type": "number",
           "value": 200000,
           "min": 1,
@@ -391,7 +391,7 @@
       "kind": "backtest.attribute",
       "name": "Attribute backtest returns",
       "group": "Backtesting",
-      "description": "Break down a saved backtest’s returns.",
+      "description": "Break down a saved backtestâ€™s returns.",
       "fields": [
         {
           "key": "run_id",
@@ -479,7 +479,7 @@
       "needs": "Account history and completed strategy research.",
       "result": "Reviewable trade proposals, rather than executed orders.",
       "next": "actions",
-      "when": "Use when completed research is available and you want proposed trades for an account’s next target session. Review the proposals separately before execution."
+      "when": "Use when completed research is available and you want proposed trades for an accountâ€™s next target session. Review the proposals separately before execution."
     },
     {
       "kind": "artifacts.recover",
@@ -645,7 +645,7 @@
           }
         ]
       },
-      "needs": "Valid base parameters and 1–10 scenarios.",
+      "needs": "Valid base parameters and 1â€“10 scenarios.",
       "result": "Scenario comparison reports.",
       "next": "backtest",
       "when": "Use to compare how a baseline simulation behaves under alternative costs, capital, or supported execution assumptions.",
@@ -656,7 +656,7 @@
         },
         {
           "key": "scenarios",
-          "explanation": "Named stress cases with supported parameter overrides; use 1–10 scenarios."
+          "explanation": "Named stress cases with supported parameter overrides; use 1â€“10 scenarios."
         }
       ]
     },
@@ -682,7 +682,7 @@
           }
         ]
       },
-      "needs": "Valid base strategy parameters and 1–20 dated windows.",
+      "needs": "Valid base strategy parameters and 1â€“20 dated windows.",
       "result": "Window-by-window simulation reports.",
       "next": "backtest",
       "when": "Use to compare strategy results across successive train and test windows, rather than relying on one historical period.",
@@ -693,9 +693,33 @@
         },
         {
           "key": "windows",
-          "explanation": "Named train/test windows with train_start, train_end, test_start, and test_end; use 1–20 windows."
+          "explanation": "Named train/test windows with train_start, train_end, test_start, and test_end; use 1â€“20 windows."
         }
       ]
+    },
+    {
+      "kind": "portfolio.backfill-price-history",
+      "name": "Rebuild portfolio price history",
+      "group": "Portfolio",
+      "description": "Store daily historical prices for every stock traded in a portfolio, including closed positions outside the research universe. Imports schedule this automatically.",
+      "fields": [
+        {
+          "key": "account_id",
+          "label": "Portfolio account",
+          "type": "text",
+          "explanation": "Account whose dated trades define the stocks to backfill."
+        },
+        {
+          "key": "as_of_date",
+          "label": "Through date",
+          "type": "date",
+          "explanation": "Last date to collect, starting from the account opening date."
+        }
+      ],
+      "needs": "Active market-data Kite credentials and imported trade history.",
+      "result": "Daily prices stored in market_bars. Equity and cash-flow-adjusted drawdown reconstruct from ledger trades. Stocks without usable prices are excluded only from these curves.",
+      "next": "home",
+      "when": "Automatically runs after portfolio imports. Run again after renewing market-data credentials or to repair missing history."
     }
   ],
   "pipeline": {

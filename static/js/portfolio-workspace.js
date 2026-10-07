@@ -2,8 +2,18 @@
   let stream = null;
   let streamAccount = null, liveGeneration = 0, viewData = null, intradayRows = [], lastChartTime = null;
   let generation = 0;
+  let momentumRanking = {week: null, members: []};
   let savedBrokerAccountId = null;
   const $ = id => document.getElementById(id);
+  const details = $("portfolio-details");
+  if (details) {
+    const preferenceKey = "screener-portfolio-details-open";
+    try { details.open = localStorage.getItem(preferenceKey) === "true"; } catch {}
+    details.addEventListener("toggle", () => {
+      try { localStorage.setItem(preferenceKey, String(details.open)); } catch {}
+    });
+  }
+
   const fmt = value => value == null ? "—" : `₹${Number(value).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const today = () => { return new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date()); };
 
@@ -33,6 +43,40 @@
     values.forEach((value, index) => { const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle"); const [x, y] = points.split(" ")[index].split(","); dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("r", values.length === 1 ? "4" : "2"); dot.setAttribute("fill", color); const title = document.createElementNS("http://www.w3.org/2000/svg", "title"); title.textContent = `${rows[index].as_of_date}: ${negative ? `${(value * 100).toFixed(2)}%` : fmt(value)}`; dot.append(title); svg.append(dot); });
   }
 
+  const historyWatchers = new Set();
+  function watchHistoryImport(result, account) {
+    if (!result.history_backfill_job_id) return;
+    const jobId = result.history_backfill_job_id, key = `screener-history-job:${account}`;
+    try { localStorage.setItem(key, String(jobId)); } catch {}
+    if (historyWatchers.has(jobId)) return;
+    historyWatchers.add(jobId);
+    const poll = async () => {
+      try {
+        const job = await Screener.api(`/api/operations/jobs/${jobId}`);
+        if (["SUCCEEDED", "FAILED", "CANCELLED"].includes(job.status)) {
+          historyWatchers.delete(jobId);
+          try { if (localStorage.getItem(key) === String(jobId)) localStorage.removeItem(key); } catch {}
+          if ($("account").value === account) {
+            $("rebuild-history").disabled = false;
+            if (job.status === "SUCCEEDED") {
+              await refresh();
+              Screener.status(`Price history updated: ${job.result.bar_count} daily prices stored.`);
+            } else $("curve-history-note").textContent = `Price history update ${job.status.toLowerCase()}: ${job.last_error || "try Rebuild price history after checking market-data credentials"}.`;
+          }
+          return;
+        }
+        if ($("account").value === account) {
+          $("rebuild-history").disabled = true;
+          $("curve-history-note").textContent = `Updating imported portfolio history · ${job.current_progress?.message || job.status.toLowerCase()}…`;
+        }
+      } catch (error) {
+        if ($("account").value === account) $("curve-history-note").textContent = `Waiting for price history update: ${error.message}`;
+      }
+      setTimeout(poll, 2500);
+    };
+    poll();
+  }
+
   async function accounts() {
     const data = await Screener.api("/api/portfolio/accounts");
     const selected = $("account").value;
@@ -41,7 +85,7 @@
     $("live-toggle").disabled = !data.accounts.length;
     $("connect-kite").disabled = !data.accounts.length;
     $("edit-account").disabled = !data.accounts.length; $("refresh-credentials").disabled = !data.accounts.length;
-    $("upload-tradebook").disabled = !data.accounts.length;
+    $("upload-tradebook").disabled = !data.accounts.length; $("import-contract-notes").disabled=!data.accounts.length; $("import-dp-statement").disabled=!data.accounts.length;
     await brokerStatus();
     if (!data.accounts.length) $("home-error").textContent = "Create an account to start tracking a portfolio.";
   }
@@ -65,6 +109,7 @@
         const preview = await Screener.api(`/api/broker-accounts/${encodeURIComponent(accountId)}/import-preview`);
         if (!preview.import_complete && !preview.history_mode) { showImportPreview(accountId, preview); return; }
         const result = await Screener.api(`/api/broker-accounts/${encodeURIComponent(accountId)}/import-holdings`, { method: "POST" });
+        watchHistoryImport(result, accountId);
         Screener.status(result.imported_positions ? `Imported ${result.imported_positions} Kite holdings; ${fmt(result.cash_deducted)} deducted from cash.` : `Updated prices for ${result.holding_count} Kite holdings.`);
         if (result.quantity_mismatches?.length) $("home-error").textContent = `Broker quantities differ for ${result.quantity_mismatches.join(", ")}. Upload the latest tradebook to update transactions.`;
       }
@@ -123,6 +168,7 @@
         const selected = inputs.filter(item => item.checkbox.checked).map(item => item.holding.instrument_id);
         if (inputs.some(item => item.checkbox.checked && !item.holding.imported)) { showPurchaseDates(accountId, preview, selected); return; }
         const result = await Screener.api(`/api/broker-accounts/${encodeURIComponent(accountId)}/import-holdings`, { method: "POST", body: JSON.stringify({ selected_instrument_ids: selected }) });
+        watchHistoryImport(result, accountId);
         modal.close(); content.replaceChildren(); await refresh();
         Screener.status(`Imported ${result.imported_positions} holdings; ${result.ignored_count} ignored; ${fmt(result.cash_deducted)} deducted from cash.`);
       } catch (error) { note.textContent = error.message; note.className = "error"; save.disabled = false; }
@@ -155,6 +201,7 @@
           dates[holding.instrument_id] = input.value;
         }
         const result = await Screener.api(`/api/broker-accounts/${encodeURIComponent(accountId)}/import-holdings`, {method: "POST", body: JSON.stringify({selected_instrument_ids: selectedIds, purchase_dates: dates})});
+        watchHistoryImport(result, accountId);
         modal.close(); content.replaceChildren(); await refresh();
         Screener.status(`Imported ${result.imported_positions} Kite holdings; ${fmt(result.cash_deducted)} deducted from cash.`);
       } catch (error) { note.textContent = error.message; note.className = "error"; save.disabled = false; }
@@ -232,6 +279,7 @@
           apply.disabled = true;
           try {
             const result = await Screener.api(`/api/portfolio/accounts/${encodeURIComponent(accountId)}/tradebook/apply`, { method: "POST", body: JSON.stringify({ upload_id: preview.upload_id, expected_version: preview.expected_version, mode: fullHistory ? "history" : "open_lots", selected_instrument_ids: selections.filter(item => item.input.checked).map(item => item.holding.instrument_id) }) });
+            watchHistoryImport(result, accountId);
             modal.close(); content.replaceChildren(); await refresh(); Screener.status(fullHistory ? `Imported ${result.imported_trades} trades; ${result.duplicate_trades} duplicates skipped; realized gain ${fmt(result.realised_pnl)}.` : `Updated ${result.updated_holdings} holdings with ${result.open_lots} dated open lots.`);
           } catch (error) {
             if (error.message === "preview this tradebook again to resolve corporate actions from exchange records") {
@@ -301,12 +349,10 @@
     Screener.text($("realised"), fmt(data.realised_pnl));
     Screener.text($("day-pnl"), fmt(data.day_pnl)); $("day-pnl").classList.toggle("positive",data.day_pnl!=null&&Number(data.day_pnl)>=0); $("day-pnl").classList.toggle("negative",data.day_pnl!=null&&Number(data.day_pnl)<0);
     Screener.text($("xirr"), data.xirr == null ? "Insufficient cash-flow history" : `${(Number(data.xirr) * 100).toFixed(2)}%`);
-    Screener.text($("holdings-xirr"), data.holdings_xirr == null ? "Needs dated buys and prices" : `${(Number(data.holdings_xirr) * 100).toFixed(2)}%`);
     Screener.text($("realised-xirr"), data.realised_xirr == null ? "Needs dated closed trades" : `${(Number(data.realised_xirr) * 100).toFixed(2)}%`);
     Screener.text($("absolute-return"), data.total_return == null ? "Unavailable" : `${(Number(data.total_return) * 100).toFixed(2)}%`);
     Screener.text($("capital-risk"), fmt(data.capital_risk));
     Screener.text($("recorded-charges"), fmt(data.recorded_charges));
-    Screener.text($("annualized-return"), data.annualized_return == null ? "Insufficient history or cash transfers" : `${(Number(data.annualized_return) * 100).toFixed(2)}%`);
     Screener.text($("net-gain"), fmt(data.net_gain));
     $("gain-note").textContent = [
       data.return_basis === "recorded_capital_and_cash_funded_purchases"
@@ -315,7 +361,7 @@
       data.fees_note || ""
     ].filter(Boolean).join(" ");
     Screener.text($("risk"), fmt(data.portfolio_risk));
-    (data.tax_estimates || []).forEach((tax,index)=>{const key=index===0?"current":"previous";Screener.text($("tax-"+key+"-label"),`${tax.label} tax estimate`);Screener.text($("tax-"+key),fmt(tax.estimated_tax));Screener.text($("tax-"+key+"-detail"),`${tax.start_date} to ${tax.end_date} · Short-term gains ${fmt(tax.short_term_gains)} · Long-term gains ${fmt(tax.long_term_gains)} · Includes cess ${fmt(tax.cess)}`);});
+    (data.tax_estimates || []).forEach((tax,index)=>{const key=index===0?"current":"previous";Screener.text($("tax-"+key+"-label"),`${tax.label} realised-gains tax`);Screener.text($("tax-"+key),fmt(tax.estimated_tax));Screener.text($("tax-"+key+"-detail"),`${tax.start_date} to ${tax.end_date} · Net short-term realised gains ${fmt(tax.short_term_gains)} · Net long-term realised gains ${fmt(tax.long_term_gains)} · Includes cess ${fmt(tax.cess)}`);});
     const riskDates = [...new Set(data.holdings.map(h => h.risk_date).filter(Boolean))].sort();
     $("risk-note").textContent = `ATR(14), 2× ATR stop, 3% lower hard stop; stops ratchet upward on completed daily bars${riskDates.length ? ` through ${riskDates[riskDates.length - 1]}` : ""}. Portfolio risk sums max(purchase cost − trailing stop value, 0) for each lot. Capital risk retains negative values when stops protect gains.${data.breached_stop_holdings ? ` ${data.breached_stop_holdings} holdings are already below a stop; zero distance is not a safe position.` : ""} Breaches create sell actions below; Approve & sell on Kite submits the reviewed order.`;
     Screener.text($("stale-prices"), `${data.stale_prices ?? 0}`);
@@ -323,7 +369,7 @@
     renderHoldings(data.holdings);
     $("portfolio-alert").hidden = !data.breached_stop_holdings;
     $("portfolio-alert-text").textContent = `${data.breached_stop_holdings || 0} holding(s) need a stop review.`;
-    for (const id of ["xirr", "holdings-xirr", "realised-xirr", "annualized-return"]) $(id).classList.toggle("metric-long", $(id).textContent.length > 15);
+    for (const id of ["xirr", "realised-xirr"]) $(id).classList.toggle("metric-long", $(id).textContent.length > 15);
 
   }
 
@@ -356,26 +402,55 @@
     } catch (error) { if (token === generation) $("stop-actions-error").textContent = error.message; }
   }
 
+  async function latestMomentumRanks() {
+    try {
+      const weeks = await Screener.api("/api/research/ranking-weeks?strategy_id=momentum");
+      const week = [...weeks.week_ends].sort().at(-1);
+      if (!week) return {week: null, members: []};
+      const result = await Screener.api(`/api/research/rankings?strategy_id=momentum&week_end=${encodeURIComponent(week)}&limit=500`);
+      return {week, members: result.members};
+    } catch (error) { return {week: null, members: [], error: error.message}; }
+  }
+  function momentumRankNode(h) {
+    const member = momentumRanking.members.find(row => row.instrument_id === h.instrument_id)
+      || momentumRanking.members.find(row => row.symbol?.trim().toUpperCase() === h.symbol?.trim().toUpperCase());
+    const node = document.createElement(member ? "a" : "span");
+    node.textContent = member ? String(member.rank) : "—";
+    node.title = member ? `Momentum rank ${member.rank} · week ending ${momentumRanking.week}`
+      : momentumRanking.week ? `Not ranked in momentum for week ending ${momentumRanking.week}` : "Momentum rankings unavailable";
+    if (member) { node.href = "/rankings"; node.setAttribute("aria-label", `View momentum rankings, ${h.symbol || h.instrument_id} rank ${member.rank}`); }
+    return node;
+  }
+
   async function refresh() {
     const account = $("account").value;
     if (!account) return;
     const ownGeneration = ++generation;
     const asOf = $("as-of").value || today();
     try {
-      const [value, history, journal] = await Promise.all([
+      const [value, history, journal, ranks] = await Promise.all([
         Screener.api(`/api/portfolio/accounts/${encodeURIComponent(account)}/valuation?as_of_date=${encodeURIComponent(asOf)}`),
         Screener.api(`/api/portfolio/accounts/${encodeURIComponent(account)}/valuation/history?as_of_date=${encodeURIComponent(asOf)}&limit=500`),
         Screener.api(`/api/portfolio/accounts/${encodeURIComponent(account)}/journal`),
+        latestMomentumRanks(),
       ]);
       if (ownGeneration !== generation || account !== $("account").value) return;
+      momentumRanking = ranks;
+      $("holding-rank-note").textContent = ranks.week ? `Momentum ranks · week ending ${ranks.week}. — means the stock is not in that published ranking.` : ranks.error ? "Momentum rankings could not be loaded. Refresh values to retry." : "No momentum rankings have been published yet.";
+      $("momentum-rank-header").title = ranks.week ? `Latest published momentum ranking · ${ranks.week}` : "Latest published momentum ranking";
       render(value);
+      try { const jobId = localStorage.getItem(`screener-history-job:${account}`); if (jobId) watchHistoryImport({history_backfill_job_id: Number(jobId)}, account); } catch {}
       drawChart("equity-history-chart", history.history, "equity", "var(--accent)");
       drawChart("drawdown-history-chart", history.history, "drawdown", "var(--danger)", true);
-      $("history-note").textContent = history.missing_price_days ? `${history.history.length} valuations reconstructed from trades and stored prices. ${history.missing_price_days} dates omitted because historical prices are missing${history.missing_symbols?.length ? ` for ${history.missing_symbols.slice(0, 5).join(", ")}${history.missing_symbols.length > 5 ? ` and ${history.missing_symbols.length - 5} others` : ""}` : ""}. Drawdown uses available valuations and adjusts for cash transfers.` : `${history.history.length} valuations reconstructed from trades and stored prices. Drawdown adjusts for cash transfers.`;
-      $("history-note").title = history.missing_symbols?.length ? `Missing historical prices: ${history.missing_symbols.join(", ")}` : "";
+      const partial = history.partial;
+      const curveNote = `${history.history.length} daily valuations from recorded trades and stored closing prices. Drawdown adjusts for deposits and withdrawals.${partial ? ` Partial history: excludes all trades and charges for ${history.excluded_symbols.join(", ")} because prices are unavailable. Their capital stays in cash in this curve.` : ""}`;
+      $("history-note").textContent = curveNote;
+      $("curve-history-note").textContent = curveNote;
+      $("equity-history-title").textContent = partial ? "Equity history · priced stocks only" : "Equity history";
+      $("drawdown-history-title").textContent = partial ? "Historical drawdown · priced stocks only" : "Historical drawdown";
       $("history").replaceChildren(...history.history.map(item => Screener.row([item.as_of_date, fmt(item.equity), `${(Number(item.drawdown)*100).toFixed(2)}%`])));
-      $("journal").replaceChildren(...journal.journal.map(item => Screener.row([item.symbol || item.instrument_id, item.buy_date_end && item.buy_date_end !== item.buy_date ? `${item.buy_date} – ${item.buy_date_end}` : item.buy_date, item.sell_date, item.units, fmt(item.buy_price), fmt(item.sell_price), fmt(item.realised_pnl), item.holding_days_min != null && item.holding_days_min !== item.holding_days ? `${item.holding_days_min} – ${item.holding_days}` : item.holding_days])));
-      if (!journal.journal.length) $("journal").append(Screener.row(["No closed trades yet", "", "", "", "", "", "", ""]));
+      $("journal").replaceChildren(...journal.journal.map(item => Screener.row([item.symbol || item.instrument_id, item.buy_date_end && item.buy_date_end !== item.buy_date ? `${item.buy_date} – ${item.buy_date_end}` : item.buy_date, item.sell_date, item.units, fmt(item.buy_price), fmt(item.sell_price), fmt(item.realised_pnl), PortfolioCharges.link(item), item.holding_days_min != null && item.holding_days_min !== item.holding_days ? `${item.holding_days_min} – ${item.holding_days}` : item.holding_days])));
+      if (!journal.journal.length) $("journal").append(Screener.row(["No closed trades yet", "", "", "", "", "", "", "", ""]));
       $("home-error").textContent = "";
       await stopActions(account, ownGeneration);
     } catch (error) { if (ownGeneration === generation) $("home-error").textContent = error.message; }
@@ -505,12 +580,12 @@
   function renderHoldings(holdings) {
     $("holdings").replaceChildren(...holdings.map((h,index)=>{
       const detail=document.createElement("button");detail.className="secondary";detail.onclick=()=>holdingDetail(h);
-      const row=Screener.row([h.symbol||h.instrument_id,h.purchase_date_known===false?"Unknown":h.acquisition_date,h.units,fmt(Number(h.cost)/Number(h.units)),"","","","",fmt(h.cost),"","","","",detail]);
+      const row=Screener.row([h.symbol||h.instrument_id,h.purchase_date_known===false?"Unknown":h.acquisition_date,h.units,fmt(Number(h.cost)/Number(h.units)),"","","","",fmt(h.cost),"","","","",momentumRankNode(h),detail]);
       row.dataset.instrument=h.instrument_id;row.dataset.holdingIndex=String(index);
       ["price","stop","hard","risk","value","gain","gain-pct","day"].forEach((key,i)=>row.cells[[4,5,6,7,9,10,11,12][i]].dataset.field=key);
       updateHoldingRow(row,h);return row;
     }));
-    if(!holdings.length){const row=Screener.row(["No holdings yet. Import your portfolio or record an executed trade to get started."]);row.firstChild.colSpan=14;$("holdings").append(row);}
+    if(!holdings.length){const row=Screener.row(["No holdings yet. Import your portfolio or record an executed trade to get started."]);row.firstChild.colSpan=15;$("holdings").append(row);}
     filterHoldings();updateHoldingTotals();
   }
   function holdingDetail(h) {
@@ -521,7 +596,7 @@
     const close=document.createElement("button");close.className="secondary";close.textContent="Close";close.onclick=()=>modal.close();content.append(close);modal.showModal();
   }
   function filterHoldings(){const q=$("holding-search").value.trim().toLowerCase();const rows=[...$("holdings").querySelectorAll("tr[data-instrument]")];rows.forEach(row=>row.hidden=!row.cells[0].textContent.toLowerCase().includes(q));$("holding-count").textContent=`${rows.filter(row=>!row.hidden).length} of ${rows.length} positions · scroll right for stops and quote details`;}
-  function updateHoldingTotals(){const hs=viewData?.holdings||[],vals=hs.map(holdingValues);const sum=key=>vals.length&&vals.every(v=>v[key]!=null)?vals.reduce((n,v)=>n+v[key],0):null;$("holding-totals").replaceChildren(...[["Invested",hs.reduce((n,h)=>n+Number(h.cost),0)],["Market value",sum("value")],["Unrealised P&L",sum("pnl")],["Day P&L",sum("day")],["Capital risk",sum("risk")]].map(([label,value])=>{const node=document.createElement("span");node.textContent=`${label}: ${fmt(value)}`;return node;}));}
+  function updateHoldingTotals(){const hs=viewData?.holdings||[],vals=hs.map(holdingValues);const sum=key=>vals.length&&vals.every(v=>v[key]!=null)?vals.reduce((n,v)=>n+v[key],0):null;$("holding-totals").replaceChildren(...[["Invested capital",hs.reduce((n,h)=>n+Number(h.cost),0)],["Market value",sum("value")],["Unrealised P&L",sum("pnl")],["Day P&L",sum("day")],["Capital risk",sum("risk")]].map(([label,value])=>{const node=document.createElement("span");node.textContent=`${label}: ${fmt(value)}`;return node;}));}
   function applyLive(data){if(data.account_id!==$("account").value||!viewData)return;
     const capital=Number(viewData.net_contributed_capital);
     Screener.text($("absolute-return"),data.equity!=null&&capital>0?`${((Number(data.equity)-capital)/capital*100).toFixed(2)}%`:"Unavailable");
@@ -560,6 +635,18 @@
   }
   document.addEventListener("DOMContentLoaded", async () => {
     $("as-of").value = today(); $("refresh-home").onclick = refreshBroker;
+    $("rebuild-history").onclick = async () => {
+      const account = $("account").value;
+      if (!account) return;
+      $("rebuild-history").disabled = true;
+      $("curve-history-note").textContent = "Fetching daily prices for open and closed trades. This can take a minute…";
+      try {
+        const result = await Screener.api(`/api/portfolio/accounts/${encodeURIComponent(account)}/valuation/history/backfill`, {method: "POST", body: JSON.stringify({as_of_date: $("as-of").value || today()})});
+        watchHistoryImport(result, account);
+      } catch (error) { $("curve-history-note").textContent = error.message; }
+      finally { if (!historyWatchers.size) $("rebuild-history").disabled = false; }
+    };
+
     $("import-kite").onclick = previewImport;
     $("upload-tradebook").onclick = uploadTradebook;
     $("account").onchange = async () => { await stopLive(); intradayRows=[]; lastChartTime=null; drawChart("intraday-chart",[],"equity","var(--accent)"); brokerStatus().catch(error => { $("home-error").textContent = error.message; }); refresh(); };
@@ -570,5 +657,6 @@
     $("as-of").onchange = async () => { await stopLive(); refresh(); };
     try { await accounts(); await refresh(); } catch (error) { $("home-error").textContent = error.message; }
   });
+  window.addEventListener("portfolio-charges-updated", event => {if(event.detail.account_id===$("account").value)refresh();});
   window.addEventListener("pagehide", () => stream?.close());
 })();

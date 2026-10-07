@@ -19,6 +19,8 @@ dependencies = [
     "waitress>=3.0.2,<3.1",
     "typing-extensions>=4.16,<5",
     "markdown-it-py>=4.0,<5",
+    "pypdf[crypto]>=6,<7",
+    "openpyxl>=3.1,<4",
 ]
 
 [project.optional-dependencies]

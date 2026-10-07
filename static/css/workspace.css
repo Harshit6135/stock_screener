@@ -27,3 +27,47 @@ main{max-width:1600px;margin:auto;padding:32px}.page-heading,.workflow-heading{m
 .detailed-holdings td.tile-negative{background:color-mix(in srgb,#c84646 9%,var(--surface));color:#c84646}
 .detailed-holdings button{font-size:10px;white-space:nowrap}.detailed-holdings .stop-breached{color:#c84646;border:1px solid #c8464680}
 .market-strip{padding:8px 12px;margin-bottom:16px}.market-index{flex-basis:180px;padding:2px 18px;gap:3px}.market-index strong{font-size:14px}.market-index .index-symbol{font-size:10px;font-weight:650;letter-spacing:.3px}.market-index .index-change{font-size:10px}.market-strip-title small{font-size:9px;color:var(--muted)}.market-login{font-size:11px;color:var(--accent)}.tax-note{font-size:11px;margin:8px 0 20px}.tax-tiles .muted{font-size:11px;line-height:1.7}.tax-tiles .metric{font-size:26px}
+
+.charge-link{color:var(--accent);text-decoration:underline;text-decoration-style:dotted;white-space:nowrap}.charge-tooltip{position:fixed;z-index:10000;padding:12px 14px;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:9px;box-shadow:0 8px 30px #0003;font-size:11px;line-height:1.65;white-space:pre-line;pointer-events:none}.charge-tooltip[hidden]{display:none}dialog.charge-modal{max-width:1120px;width:calc(100% - 32px)}.charge-modal form .field{margin:16px 0}.charge-review-table{max-height:420px;margin-top:16px}.charge-review-table table{min-width:900px}.charge-review-table input[type=checkbox]{width:auto}.charge-review-table select{font-size:11px;max-width:220px}.charge-modal details{margin:14px 0}.charge-modal h3{margin-top:20px}.charge-modal .subtle{overflow-wrap:anywhere}
+
+/* Archived dashboard's slim, continuous single-line market strip. */
+.market-ticker{height:40px;padding:0;gap:0;border:0;border-top:1px solid color-mix(in srgb,var(--accent) 12%,var(--line));border-bottom:1px solid color-mix(in srgb,var(--accent) 18%,var(--line));border-radius:0;background:color-mix(in srgb,var(--accent) 4%,var(--surface));overflow:hidden;margin-bottom:18px}
+.market-ticker-indicator{width:25px;align-self:stretch;flex-shrink:0;display:grid;place-items:center;border-right:1px solid var(--line)}
+.market-ticker-indicator::before{content:"";width:5px;height:5px;background:var(--muted);border-radius:50%}
+.market-ticker-indicator[data-live="true"]::before{background:var(--accent)}
+.ticker-status-text{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.market-ticker-viewport{flex:1;min-width:0;overflow:hidden;outline-offset:-2px}
+.market-ticker-track{display:flex;width:max-content;max-width:none;overflow:visible;animation:market-ticker-scroll 40s linear infinite;will-change:transform}
+.market-ticker-group{display:flex;flex:0 0 auto;min-width:var(--ticker-width,0px);align-items:center;justify-content:space-around}
+.market-ticker .market-index{display:inline-flex;flex:0 0 auto;align-items:center;gap:10px;height:38px;padding:0 26px;border-left:0;border-right:1px solid color-mix(in srgb,var(--accent) 12%,var(--line));white-space:nowrap;background:transparent}
+.market-ticker .market-index .index-symbol{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px}
+.market-ticker .market-index strong{font-size:12px;font-weight:650;font-variant-numeric:tabular-nums;min-width:8ch;text-align:right}
+.market-ticker .market-index .index-change{font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;min-width:7ch;text-align:right}
+.market-ticker:hover .market-ticker-track,.market-ticker:focus-within .market-ticker-track{animation-play-state:paused}
+@keyframes market-ticker-scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@media(max-width:700px){.market-ticker .market-index{padding:0 18px;gap:8px}}
+@media(prefers-reduced-motion:reduce){.market-ticker-track{animation:none;will-change:auto}.market-ticker-viewport{overflow-x:auto;scrollbar-width:thin}.market-ticker-group[data-copy="true"]{display:none}}
+
+/* Persistent sidebar rail; the header toggle remains reachable in both states. */
+.topbar-heading{display:flex;align-items:center;gap:14px;min-width:0}
+.sidebar-toggle{flex-shrink:0;font-size:25px;line-height:1}
+.sidebar-toggle span{font-size:25px;line-height:1;margin-top:-2px}
+.sidebar-connection{display:flex;align-items:center;gap:8px}
+.sidebar-connection .nav-icon{font-size:16px;flex-shrink:0}
+.sidebar .brand-mark,.sidebar .nav-icon{flex-shrink:0}
+@media(min-width:801px){
+.sidebar{transition:width .18s ease,padding .18s ease;overflow-x:hidden}
+.app-shell{transition:margin-left .18s ease}
+html[data-sidebar-collapsed="true"] .sidebar{width:72px;padding:24px 10px}
+html[data-sidebar-collapsed="true"] .app-shell{margin-left:72px}
+html[data-sidebar-collapsed="true"] .sidebar .brand{justify-content:center;padding:0!important}
+html[data-sidebar-collapsed="true"] .sidebar .brand-copy,html[data-sidebar-collapsed="true"] .sidebar .nav-label,html[data-sidebar-collapsed="true"] .sidebar-footer .workspace-label,html[data-sidebar-collapsed="true"] .sidebar-footer small{display:none}
+html[data-sidebar-collapsed="true"] .sidebar nav a{justify-content:center;padding:11px 0;gap:0}
+html[data-sidebar-collapsed="true"] .sidebar-footer{padding:20px 0 0}
+html[data-sidebar-collapsed="true"] .sidebar-connection{justify-content:center}
+}
+@media(max-width:800px){
+html[data-sidebar-collapsed="true"] .sidebar{display:none}
+.topbar-heading{gap:8px}.topbar-context{display:none}.topbar-tools{width:auto;flex:1;min-width:0;margin-left:12px;gap:10px}.topbar-tools #page-status{max-width:30vw}
+.sidebar .sidebar-footer{display:none}
+}

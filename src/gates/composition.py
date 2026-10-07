@@ -1,6 +1,7 @@
 """Single-process composition for the local modular monolith."""
 
 import os
+from datetime import date
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,7 @@ from src.gates.workflows.market_refresh import MarketRefreshPlanner
 from src.gates.workflows.pipeline_preparation import PipelinePreparation
 from src.gates.workflows.portfolio_actions import ActionJobs
 from src.gates.workflows.portfolio_sync import PortfolioSync
+from src.gates.workflows.portfolio_history_backfill import backfill_portfolio_history
 from src.gates.workflows.positional_trend import PositionalTrendJobs
 from src.gates.workflows.research import ResearchJobs
 from src.gates.workflows.research_pipeline import ResearchPipelineJobs
@@ -188,6 +190,9 @@ class ApplicationServices:
                 "market.fetch-bulk-kite-bars": market_jobs.fetch_bulk_bars,
                 "market.fetch-kite-index-quotes": market_jobs.fetch_index_quotes,
                 "market.fetch-intraday-stop-alerts": market_jobs.fetch_intraday_stop_alerts,
+                "portfolio.backfill-price-history": lambda payload, context: backfill_portfolio_history(
+                    ledger, market_jobs, payload['account_id'], date.fromisoformat(payload['as_of_date']), context
+                ),
                 "market.schedule-all-symbol-refresh": market_refresh.schedule,
                 "reference.reconcile-market": market_refresh.reconcile,
                 "research.rebuild-range": research.rebuild_range,

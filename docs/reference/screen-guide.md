@@ -19,10 +19,37 @@ Understand what you own, how it is performing, and which positions need attentio
 
 - **Portfolio value:** Market value of holdings plus available cash.
 - **Unrealised gain:** Gain or loss on positions still held.
-- **XIRR:** Annualised return using dated cash flows; a reliable funding history is needed.
-- **Risk to stops:** Estimated distance from current prices to position stops. A breached stop requires separate attention.
+- **XIRR:** Annualised account return using opening capital, dated deposits and withdrawals, and portfolio value including cash. Buys and sells are internal account movements.
+- **Realised XIRR:** Annualised return on sold FIFO lots, using buy costs and net sale proceeds including recorded charges. Open holdings and idle cash are excluded.
+- **Portfolio risk:** Sum of positive capital risk across displayed holdings, floored at zero for each holding.
+- **Capital risk:** Purchase cost minus value at trailing stops; negative when the stop locks in a gain.
 
 [Open Portfolio](/)
+
+### Portfolio table, risk and tax
+
+Holdings use centered tile cells in the former dashboard order. Capital risk is purchase cost minus value at trailing stops and can be negative. Portfolio risk sums the positive capital risk of each displayed holding and floors each at zero. A stop breach remains an alert even when portfolio risk is zero. Quote timestamps, provenance and breach status are available through Details.
+
+The two financial-year tax tiles use net realised gains from sold units in this portfolio only, with eligible losses offset within each financial year. Short-term losses can offset short- and long-term gains; long-term losses offset only long-term gains. Losses are not carried between years. Current holdings and unrealised gains are excluded; a partial sale taxes only the units sold. Changing current market prices does not change the tax estimate. Short-term holdings of 12 months or less use 20%; longer holdings use 12.5% on gains above the annual ₹1.25 lakh exemption. Both include 4% cess, assume the exemption is available and exclude surcharge. Known itemized brokerage, exchange, clearing, SEBI, GST, stamp duty and DP expenses reduce the gain estimate. STT and unitemized fees are excluded from deductions. Missing charges make estimates incomplete. The dashboard shows XIRR and Realised XIRR separately; CAGR and the additional open-holdings XIRR tile are omitted. Realised XIRR includes all recorded buy and sell fees. The exclusion of STT follows the [Income Tax Department's capital-gains computation rules](https://www.incometaxindia.gov.in/w/section-48-48).
+
+On app open, a missing or expired shared session opens market-data Kite login in a separate tab; a visible login link is available if popups are blocked. Refresh account credentials beside Go live starts manual login for the selected portfolio account. The 40-pixel single-line market strip scrolls continuously and pauses on hover or keyboard focus. It follows the archived dashboard: NIFTY 50, NIFTY 100, NIFTY BANK and SENSEX. It polls stored real Kite index quotes every five seconds; the backend refreshes quotes every fifteen seconds during market hours and once on page initialization after login. Index identities initialize directly from Kite quotes without a research snapshot.
+
+### Importing and reviewing charges
+
+Zerodha’s current PDF format is read from its equity ISIN summary, cash-charge table and Annexure A. The importer checks summary quantities and reconciles charges to the net obligation; derivative charges and repeated NET TOTAL columns are excluded. Execution prices follow Zerodha’s net-rate convention, with brokerage recorded separately. See [Zerodha’s format guide](https://support.zerodha.com/category/console/reports/contract-note/articles/how-to-interpret-the-contract-note).
+
+1. Select the portfolio account, expand Account & imports and choose Import contract notes or Import DP statements.
+2. Select up to 50 PDF, CSV or XLSX files, totaling no more than 64 MB. Each file can be up to 8 MB. Encrypted PDFs in one batch must share a password; the password and original files are not saved.
+3. Review document extraction results. Unsupported or scanned PDFs are flagged for a CSV/XLSX export or parser support rather than guessed. The downloadable CSV template accepts individual trade charge components. For DP statements, use date, description, ISIN or symbol, debit and credit columns; only DP debits are imported.
+4. Check stock, trade date, side, quantity, price and trade ID matches. Trades outside the selected portfolio are ignored. Daily note totals are allocated across all recognized transactions before outside trades are excluded; such allocations are labeled estimates. Stamp duty is allocated to purchases. Resolve ambiguous DP postings by choosing their sale; same-day executions share the debit by units.
+5. Apply selected rows. Contract-note charges replace the previous trading-fee basis; DP statements reconcile the DP component separately. Repeated files do not add charges twice. Overlapping sources with conflicting amounts require choosing one source. A changed ledger requires a new preview.
+6. Hover over Charges in the closed-trade journal for a quick breakdown, or click for buy/sell components, source documents and FIFO allocations. Buy charges follow sold units; the rest remain in open holding cost. DP charges appear only after a matching DP import or itemized note.
+
+Charges are stored per account and trade with source provenance and an audit event. Original trade events remain unchanged. Cash, cost basis, realised P&L, valuations, return calculations and tax estimates read the reconciled amounts. These workflows apply to every account and do not contain portfolio-specific hardcoded fees.
+
+Recognized NSE series and BSE group suffixes are normalized when matching names, for example STOCK-SM, STOCK-A and STOCK-B. Imported executions use the exchange recorded in their original trade ID, rather than the exchange used for the instrument's current price listing. An older ISIN can match a current listing only when the normalized stock name and exact execution ID agree, along with the date, exchange, quantity and price. Re-upload documents to regenerate previews created before matching updates.
+
+Purchases whose basis was later replaced by an open-lot reconciliation are flagged rather than assigned fees to an unverifiable lot. Recover complete trade history into a fresh portfolio before importing those buy charges.
 
 ## Trade review
 
@@ -186,11 +213,6 @@ Understand each tab and follow a complete workflow without guessing what comes n
 
 [Open Guide](/wiki)
 
+Portfolio imports automatically queue a daily-price backfill for all stocks in the account's recorded history, including closed positions outside the research universe. The worker stores daily bars in `market_bars`; the dashboard reconstructs equity and drawdown from dated ledger buys, sells, charges, splits, available cash and cash transfers. Drawdown adjusts for external cash transfers. The chart refreshes when backfill finishes; Activity shows progress and failures. Rebuild price history retries the collection after credentials are renewed.
 
-### Portfolio table, risk and tax
-
-Holdings use centered tile cells in the former dashboard order. Capital risk is purchase cost minus value at trailing stops and can be negative. Portfolio risk sums the positive capital risk of each displayed holding and floors each at zero. A stop breach remains an alert even when portfolio risk is zero. Quote timestamps, provenance and breach status are available through Details.
-
-The two financial-year tax tiles use positive realised gains from this portfolio only, without loss offsets. Short-term holdings of 12 months or less use 20%; longer holdings use 12.5% on gains above the annual ₹1.25 lakh exemption. Both include 4% cess, assume the exemption is available and exclude surcharge. Until itemized charges are imported, estimates use gross gains before charge deductions. This is separate from Realised XIRR, which includes recorded buy and sell fees.
-
-On app open, a missing or expired shared session opens market-data Kite login in a separate tab; a visible login link is available if popups are blocked. Refresh account credentials beside Go live starts manual login for the selected portfolio account. The slim market strip polls stored real Kite index quotes every five seconds; the backend refreshes quotes every fifteen seconds during market hours and once on page initialization after login. Index identities initialize directly from Kite quotes without a research snapshot.
+Stocks without usable prices across their held dates are excluded consistently from both curves, including their curve cash flows and charges. Their capital remains idle in the reconstructed curve. Partial curves are labelled and list excluded symbols. These exclusions affect only chart reconstruction; all trades remain in the journal, holdings, account balance, returns, charges and tax calculations.

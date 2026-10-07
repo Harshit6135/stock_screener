@@ -1,7 +1,33 @@
 import pytest
 
-from src.domains.portfolio_accounting.tradebook import parse_tradebook
+from src.domains.portfolio_accounting.tradebook import canonical_symbol, parse_tradebook
 from src.platform_kernel import DomainValidationError
+
+
+@pytest.mark.parametrize(
+    "symbol",
+    [
+        "ABC-EQ",
+        "ABC-SM",
+        "ABC-ST",
+        "ABC-SZ",
+        "ABC-A",
+        "ABC-B",
+        "ABC-XT",
+        "ABC (BE)",
+        "ABC – EQ",
+        "ABC BE",
+    ],
+)
+def test_equity_series_normalization(symbol):
+    assert canonical_symbol(symbol) == "ABC"
+
+
+@pytest.mark.parametrize(
+    "symbol", ["MCDOWELL-N", "ABC-N1", "ABC-RE", "ABC-PART", "ABCDEF", "ABC-UNKNOWN"]
+)
+def test_normalization_preserves_security_names_and_distinct_classes(symbol):
+    assert canonical_symbol(symbol) == symbol
 
 
 def test_fifo_partial_sales_duplicate_executions_and_metadata_header():

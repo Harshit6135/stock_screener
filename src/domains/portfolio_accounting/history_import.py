@@ -5,6 +5,7 @@ import json
 from datetime import date
 
 from src.domains.portfolio_accounting.api import Fill, StockSplit, project
+from src.domains.portfolio_accounting.charges import charge_records, effective_payload
 from src.platform_kernel import DomainValidationError, Money
 
 
@@ -60,23 +61,26 @@ def import_history(ledger, account_id, import_id, expected_version, events):
         if current != expected_version:
             raise DomainValidationError("stale ledger version")
         if any(
-            row["event_type"] not in {"FILL_RECORDED", "STOCK_SPLIT_APPLIED", "CASH_TRANSFER"}
+            row["event_type"] not in {"FILL_RECORDED", "STOCK_SPLIT_APPLIED", "CASH_TRANSFER", "CHARGES_RECONCILED"}
             for row in rows
         ):
             raise DomainValidationError(
                 "full history requires an account without opening-position imports; create a fresh portfolio"
             )
         previous = []
+        records = charge_records(connection, account_id)
         seen = {}
         transfers = 0
         for row in rows:
             payload = json.loads(row["event_json"])
+            if row["event_type"] == "CHARGES_RECONCILED":
+                continue
             if row["event_type"] == "CASH_TRANSFER":
                 transfers += Money(payload["amount"]).amount * (
                     1 if payload["direction"] == "DEPOSIT" else -1
                 )
                 continue
-            parsed = ledger._parse_accounting_event(payload, row["event_type"])
+            parsed = ledger._parse_accounting_event(effective_payload(payload, row["event_type"], row["version"], records), row["event_type"])
             previous.append(parsed)
             identity = (
                 payload.get("broker_trade_id")

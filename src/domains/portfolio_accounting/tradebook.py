@@ -12,7 +12,13 @@ from src.platform_kernel import DomainValidationError
 
 
 def canonical_symbol(symbol: str) -> str:
-    return re.sub(r"-(EQ|BE|BZ)$", "", symbol.strip().upper())
+    """Normalize recognized cash-equity series/group suffixes for matching."""
+    symbol = symbol.strip().upper()
+    # Keep meaningful symbol parts and unrecognized security classes intact.
+    series = r"EQ|BE|BZ|SM|ST|SZ|A|B|T|Z|X|XT|M|MT|TS|P|ZP|ZT|BL|BO"
+    return re.sub(
+        rf"(?:\s*[-–—]\s*(?:{series})|\s+\((?:{series})\)|\s+(?:{series}))$", "", symbol
+    ).strip()
 
 
 def _header(value: str) -> str:

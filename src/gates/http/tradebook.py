@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 from src.platform_kernel import DomainValidationError
 
 
-def create_tradebook_blueprint(importer):
+def create_tradebook_blueprint(importer, history_scheduler=None):
     blueprint = Blueprint("tradebook", __name__, url_prefix="/api/portfolio/accounts")
 
     @blueprint.post("/<account_id>/tradebook/preview")
@@ -42,7 +42,10 @@ def create_tradebook_blueprint(importer):
     @blueprint.post("/<account_id>/tradebook/apply")
     def apply(account_id):
         try:
-            return jsonify(importer.apply(account_id, request.get_json(silent=True)))
+            result = importer.apply(account_id, request.get_json(silent=True))
+            if history_scheduler:
+                result['history_backfill_job_id'] = history_scheduler(account_id)
+            return jsonify(result)
         except DomainValidationError as exc:
             return jsonify({"error": str(exc)}), 400
 

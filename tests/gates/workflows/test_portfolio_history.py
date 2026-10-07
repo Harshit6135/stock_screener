@@ -80,4 +80,45 @@ def test_missing_historical_prices_are_reported_without_invented_values(tmp_path
     ).json
     assert result["missing_price_days"] == 1
     assert result["missing_symbols"] == ["ABC"]
-    assert "2026-02-02" not in [row["as_of_date"] for row in result["history"]]
+    assert result["partial"] is True
+    assert result["excluded_symbols"] == ["ABC"]
+    assert [Decimal(row["equity"]) for row in result["history"]] == [1000, 1000, 1000, 2000]
+    assert all(Decimal(row["drawdown"]) == 0 for row in result["history"])
+
+
+def test_partial_curve_keeps_priced_stock_and_excludes_unpriced_cash_flows(tmp_path):
+    client, ledger = setup(tmp_path)
+    market = MarketRepository(tmp_path / "history.db")
+    market.upsert_instruments([TrackedInstrument("missing", "MISSING", "MISSING", "NSE", "", date(2026, 2, 1))])
+    ledger.record_fills("account", "missing-buy", 2, [Fill("missing", date(2026, 2, 2), FillSide.BUY, Quantity(1), Money(50), executed_at=datetime.fromisoformat("2026-02-02T11:00:00+05:30"))])
+    ledger.record_fills("account", "missing-sell", 3, [Fill("missing", date(2026, 2, 3), FillSide.SELL, Quantity(1), Money(80))])
+    original = ledger.events("account")
+    result = client.get("/api/portfolio/accounts/account/valuation/history?as_of_date=2026-02-04").json
+    assert result["excluded_symbols"] == ["MISSING"]
+    assert [Decimal(r["equity"]) for r in result["history"]] == [1000, 1010, 990, 1990]
+    assert ledger.events("account") == original
+
+
+def test_closed_trades_change_cash_and_drawdown_after_sale(tmp_path):
+    client, ledger = setup(tmp_path)
+    ledger.record_fills("account", "sell", 2, [Fill("abc", date(2026, 2, 3), FillSide.SELL, Quantity(1), Money(80), Money(2))])
+    result = client.get("/api/portfolio/accounts/account/valuation/history?as_of_date=2026-02-04").json
+    assert [Decimal(r["equity"]) for r in result["history"]] == [1000, 1010, 978, 1978]
+    assert result["partial"] is False
+    assert Decimal(result["history"][2]["drawdown"]) < 0
+
+
+def test_excluding_imported_stock_adjusts_only_its_curve_funding(tmp_path):
+    from datetime import UTC
+    from src.domains.portfolio_accounting import OpeningPosition
+    _client, ledger = setup(tmp_path)
+    ledger.import_opening_positions('account', 'positions', 2, [
+        OpeningPosition('priced', date(2026, 2, 5), Quantity(1), Money(100), datetime.now(UTC), '{"source":"kite-opening-balance","broker_account_id":"account"}'),
+        OpeningPosition('missing', date(2026, 2, 5), Quantity(1), Money(50), datetime.now(UTC), '{"source":"kite-opening-balance","broker_account_id":"account"}'),
+    ])
+    ledger.fund_broker_imports('account', 'account')
+    before = ledger.projection('account')
+    filtered = ledger.projection_at('account', None, excluded_instrument_ids={'missing'})
+    assert filtered.cash.amount == before.cash.amount + 50
+    assert {lot.instrument_id for lot in filtered.open_lots} == {'abc', 'priced'}
+    assert ledger.projection('account') == before

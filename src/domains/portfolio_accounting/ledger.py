@@ -23,6 +23,13 @@ from src.domains.portfolio_accounting.api import (
     OpenLotReconciliation,
     StockSplit,
 )
+from src.domains.portfolio_accounting.charges import (
+    TAX_DEDUCTIBLE_COMPONENTS,
+    accounting_rows,
+    charge_records,
+    effective_payload,
+    fee_breakdown,
+)
 from src.platform_kernel import DomainValidationError, Money, Quantity
 from src.platform_kernel.sqlite import migrate_sqlite, sqlite_connection
 
@@ -74,6 +81,22 @@ class Ledger:
                     "ALTER TABLE ledger_accounts ADD COLUMN display_name TEXT",
                     "ALTER TABLE ledger_accounts ADD COLUMN details_version INTEGER NOT NULL DEFAULT 0",
                     "UPDATE ledger_accounts SET display_name=account_id",
+                ),
+                5: (
+                    """CREATE TABLE ledger_charge_documents (
+                        account_id TEXT NOT NULL REFERENCES ledger_accounts(account_id),
+                        document_id TEXT NOT NULL, filename TEXT NOT NULL, imported_at TEXT NOT NULL,
+                        PRIMARY KEY(account_id,document_id))""",
+                    """CREATE TABLE ledger_charge_components (
+                        account_id TEXT NOT NULL, event_version INTEGER NOT NULL,
+                        charge_group TEXT NOT NULL, component TEXT NOT NULL, amount TEXT NOT NULL,
+                        document_id TEXT NOT NULL, estimated INTEGER NOT NULL DEFAULT 0,
+                        PRIMARY KEY(account_id,event_version,charge_group,component),
+                        FOREIGN KEY(account_id,document_id) REFERENCES ledger_charge_documents(account_id,document_id))""",
+                    """CREATE TABLE ledger_charge_previews (
+                        account_id TEXT NOT NULL REFERENCES ledger_accounts(account_id), preview_id TEXT NOT NULL,
+                        payload_json TEXT NOT NULL, created_at TEXT NOT NULL, result_json TEXT,
+                        PRIMARY KEY(account_id,preview_id))""",
                 ),
             },
         )
@@ -147,14 +170,11 @@ class Ledger:
             if current != expected_version:
                 raise DomainValidationError("stale ledger version")
             previous_rows = connection.execute(
-                """SELECT event_json, event_type FROM ledger_events WHERE account_id = ?
+                """SELECT version, event_json, event_type FROM ledger_events WHERE account_id = ?
                    AND event_type IN ('FILL_RECORDED', 'OPENING_POSITION_IMPORTED', 'IMPORTED_POSITION_FUNDED', 'OPEN_LOTS_RECONCILED', 'STOCK_SPLIT_APPLIED') ORDER BY version""",
                 (account_id,),
             ).fetchall()
-            previous_fills = tuple(
-                self._parse_accounting_event(json.loads(row["event_json"]), row["event_type"])
-                for row in previous_rows
-            )
+            previous_fills = accounting_rows(self, connection, account_id, previous_rows)
 
             existing_trade_ids = {
                 f.broker_trade_id for f in previous_fills if getattr(f, "broker_trade_id", None)
@@ -273,13 +293,10 @@ class Ledger:
             if current != expected_version:
                 raise DomainValidationError("stale ledger version")
             previous_rows = connection.execute(
-                "SELECT event_json, event_type FROM ledger_events WHERE account_id = ? AND event_type IN ('FILL_RECORDED', 'OPENING_POSITION_IMPORTED', 'IMPORTED_POSITION_FUNDED', 'OPEN_LOTS_RECONCILED', 'STOCK_SPLIT_APPLIED') ORDER BY version",
+                "SELECT version, event_json, event_type FROM ledger_events WHERE account_id = ? AND event_type IN ('FILL_RECORDED', 'OPENING_POSITION_IMPORTED', 'IMPORTED_POSITION_FUNDED', 'OPEN_LOTS_RECONCILED', 'STOCK_SPLIT_APPLIED') ORDER BY version",
                 (account_id,),
             ).fetchall()
-            previous_events = tuple(
-                self._parse_accounting_event(json.loads(row["event_json"]), row["event_type"])
-                for row in previous_rows
-            )
+            previous_events = accounting_rows(self, connection, account_id, previous_rows)
 
             # Validate
             project(
@@ -557,7 +574,7 @@ class Ledger:
             held.update(str(lot.instrument_id) for lot in projection.open_lots)
         return held
 
-    def projection_at(self, account_id: str, as_of: date | None):
+    def projection_at(self, account_id: str, as_of: date | None, *, excluded_instrument_ids=()):
         with self._connect() as connection:
             account = connection.execute(
                 "SELECT opening_cash, currency FROM ledger_accounts WHERE account_id = ?",
@@ -567,17 +584,35 @@ class Ledger:
                 raise DomainValidationError("account does not exist")
             cutoff = f"{as_of.isoformat()}T23:59:59.999999" if as_of else None
             rows = connection.execute(
-                "SELECT event_json, event_type FROM ledger_events WHERE account_id = ? AND event_type IN ('FILL_RECORDED', 'OPENING_POSITION_IMPORTED', 'IMPORTED_POSITION_FUNDED', 'OPEN_LOTS_RECONCILED', 'STOCK_SPLIT_APPLIED') AND (? IS NULL OR occurred_at <= ?) ORDER BY version",
+                "SELECT version, event_json, event_type FROM ledger_events WHERE account_id = ? AND event_type IN ('FILL_RECORDED', 'OPENING_POSITION_IMPORTED', 'IMPORTED_POSITION_FUNDED', 'OPEN_LOTS_RECONCILED', 'STOCK_SPLIT_APPLIED') AND (? IS NULL OR occurred_at <= ?) ORDER BY version",
                 (account_id, cutoff, cutoff),
             ).fetchall()
             transfers = connection.execute(
                 "SELECT event_json FROM ledger_events WHERE account_id=? AND event_type='CASH_TRANSFER' AND (? IS NULL OR occurred_at <= ?) ORDER BY version",
                 (account_id, cutoff, cutoff),
             ).fetchall()
-        events_parsed = tuple(
-            self._parse_accounting_event(json.loads(row["event_json"]), row["event_type"])
+            records = charge_records(connection, account_id)
+        excluded_import_costs = {
+            row["version"]: Decimal(str(payload["units"])) * Decimal(str(payload["unit_cost"]))
             for row in rows
-        )
+            if row["event_type"] == "OPENING_POSITION_IMPORTED"
+            and (payload := json.loads(row["event_json"])).get("instrument_id") in excluded_instrument_ids
+        }
+        events_parsed = []
+        for row in rows:
+            payload = json.loads(row["event_json"])
+            if payload.get("instrument_id") in excluded_instrument_ids:
+                continue
+            if row["event_type"] == "IMPORTED_POSITION_FUNDED" and excluded_import_costs:
+                amount = Decimal(str(payload["amount"])) - sum(
+                    (excluded_import_costs.get(v, Decimal(0)) for v in payload.get("import_versions", [])), Decimal(0)
+                )
+                if amount <= 0:
+                    continue
+                payload["amount"] = str(amount)
+            events_parsed.append(self._parse_accounting_event(effective_payload(
+                payload, row["event_type"], row["version"], records
+            ), row["event_type"]))
         transfer_total = sum(
             (
                 Decimal(str(json.loads(row["event_json"])["amount"]))
@@ -602,11 +637,19 @@ class Ledger:
         ):
             raise DomainValidationError("long_term_days must be between 1 and 3650")
         events = self.events(account_id)
+        with self._connect() as connection:
+            records = charge_records(connection, account_id)
         lots: dict[str, list[dict[str, object]]] = {}
         journal: list[dict[str, object]] = []
         for event in events:
             if as_of is not None and event["occurred_at"][:10] > as_of.isoformat():
                 continue
+            raw = event["event"]
+            own_records = records.get(event["version"], [])
+            breakdown = fee_breakdown(raw, own_records)
+            event = {**event, "event": effective_payload(raw, event["event_type"], event["version"], records)}
+            provenance = [{"filename": r["filename"], "estimated": bool(r["estimated"]),
+                           "component": r["component"], "amount": r["amount"]} for r in own_records]
             if event["event_type"] == "STOCK_SPLIT_APPLIED":
                 row = event["event"]
                 factor = Decimal(row["numerator"]) / Decimal(row["denominator"])
@@ -614,13 +657,14 @@ class Ledger:
                     previous = lots.setdefault(row["instrument_id"], [])
                     additional = sum(lot["units"] for lot in previous) * (row["numerator"] - row["denominator"]) // row["denominator"]
                     if additional:
-                        previous.append({"units": int(additional), "price": Decimal(0), "gross_price": Decimal(0),
+                        previous.append({"units": int(additional), "price": Decimal(0), "gross_price": Decimal(0), "charges_unit": {}, "buy_version": event["version"], "sources": [], "charges_known": True,
                                          "date": datetime.fromisoformat(row["effective_at"]).date()})
                     continue
                 for lot in lots.get(row["instrument_id"], []):
                     lot["units"] = lot["units"] * row["numerator"] // row["denominator"]
                     lot["price"] /= factor
                     lot["gross_price"] /= factor
+                    lot["charges_unit"] = {k: v / factor for k, v in lot["charges_unit"].items()}
                 continue
             if event["event_type"] == "OPEN_LOTS_RECONCILED":
                 row = event["event"]
@@ -629,6 +673,7 @@ class Ledger:
                         "units": lot["units"],
                         "price": Decimal(lot["unit_cost"]),
                         "gross_price": Decimal(lot["unit_cost"]),
+                        "charges_unit": {}, "buy_version": event["version"], "sources": [], "charges_known": False,
                         "date": date.fromisoformat(lot["date"]),
                     }
                     for lot in row["lots"]
@@ -642,7 +687,9 @@ class Ledger:
                     {
                         "units": units,
                         "price": price,
-                        "gross_price": price,
+                        "gross_price": Decimal(raw["unit_cost"]),
+                        "charges_unit": {k: v / units for k, v in breakdown.items()},
+                        "buy_version": event["version"], "sources": provenance, "charges_known": any(r["charge_group"] == "contract" for r in own_records),
                         "date": date.fromisoformat(str(pos["acquisition_date"])),
                     }
                 )
@@ -658,6 +705,9 @@ class Ledger:
                         "units": units,
                         "price": price + Decimal(str(fill.get("fee", "0"))) / units,
                         "gross_price": price,
+                        "charges_unit": {k: v / units for k, v in breakdown.items()},
+                        "buy_version": event["version"], "sources": provenance,
+                        "charges_known": any(r["charge_group"] == "contract" for r in own_records) or raw.get("correlation_id") != "tradebook:charges-unavailable",
                         "date": date.fromisoformat(str(fill["fill_date"])),
                     }
                 )
@@ -669,9 +719,20 @@ class Ledger:
                     continue
                 sell_fee = Decimal(str(fill.get("fee", "0"))) * Decimal(matched) / Decimal(units)
                 holding_days = (date.fromisoformat(str(fill["fill_date"])) - lot["date"]).days
+                buy_charges = {k: v * matched for k, v in lot["charges_unit"].items()}
+                sell_charges = {k: v * Decimal(matched) / Decimal(units) for k, v in breakdown.items()}
+                total_charges = sum(buy_charges.values(), Decimal(0)) + sum(sell_charges.values(), Decimal(0))
+                deductible = sum((v for k, v in [*buy_charges.items(), *sell_charges.items()]
+                                  if k in TAX_DEDUCTIBLE_COMPONENTS), Decimal(0))
                 journal.append(
                     {
                         "instrument_id": fill["instrument_id"],
+                        "buy_version": lot["buy_version"], "sell_version": event["version"],
+                        "buy_charges": {k: str(v) for k, v in buy_charges.items()},
+                        "sell_charges": {k: str(v) for k, v in sell_charges.items()},
+                        "total_charges": str(total_charges), "tax_deductible_charges": str(deductible),
+                        "charges_complete": lot["charges_known"] and (any(r["charge_group"] == "contract" for r in own_records) or raw.get("correlation_id") != "tradebook:charges-unavailable"),
+                        "charge_sources": lot["sources"] + provenance,
                         "buy_date": lot["date"].isoformat(),
                         "sell_date": fill["fill_date"],
                         "units": matched,
@@ -854,6 +915,13 @@ class Ledger:
             for row in rows
         ]
 
+    def effective_events(self, account_id):
+        events = self.events(account_id)
+        with self._connect() as connection:
+            records = charge_records(connection, account_id)
+        return [{**e, "event": effective_payload(e["event"], e["event_type"], e["version"], records),
+                 "charge_components": records.get(e["version"], [])} for e in events]
+
     @staticmethod
     def _fill_event(fill: Fill) -> dict[str, object]:
         return {
@@ -957,12 +1025,13 @@ class Ledger:
     @staticmethod
     def _cash_balance(connection, account_id: str, account) -> Decimal:
         rows = connection.execute(
-            "SELECT event_json, event_type FROM ledger_events WHERE account_id=? ORDER BY version",
+            "SELECT version, event_json, event_type FROM ledger_events WHERE account_id=? ORDER BY version",
             (account_id,),
         ).fetchall()
         balance = Decimal(str(account["opening_cash"]))
+        records = charge_records(connection, account_id)
         for row in rows:
-            event = json.loads(row["event_json"])
+            event = effective_payload(json.loads(row["event_json"]), row["event_type"], row["version"], records)
             if row["event_type"] == "CASH_TRANSFER":
                 balance += Decimal(str(event["amount"])) * (
                     1 if event["direction"] == "DEPOSIT" else -1
