@@ -57,7 +57,7 @@ def test_token_lookup_uses_dated_assignments_and_flags_ambiguity(tmp_path):
     assert [
         item["instrument_id"]
         for item in client.get("/api/reference/tokens/10?exchange=NSE").json["assignments"]
-    ] == ["b"]
+    ] == ["b", "c"]
 
 
 def _command() -> dict[str, object]:

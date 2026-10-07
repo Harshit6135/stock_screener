@@ -44,3 +44,9 @@ market bars, and artifacts. Do not delete it as part of code cleanup.
 Include the route/page, timestamp, safe error message, job/pipeline/proposal ID,
 and relevant artifact or snapshot ID. Remove credentials, access tokens, raw
 provider responses, and personal holdings from support material.
+
+## Job launcher and definitions
+
+Research runs provides **Specific job** and **Full research pipeline** modes. The specific-job selector lists only registered handlers. Common operations use labelled parameter fields; complex record sets use a JSON editor. Each selection links to its definition under `/guide/jobs/<kind>`, covering purpose, prerequisites, parameters, and output.
+
+Recent jobs are read from `GET /api/operations/jobs?limit=50`; registered form metadata is at `GET /api/operations/job-types`. The job table shows progress, saved parameters, results, attempts, cancellation, and terminal retry controls. `POST /api/operations/jobs/<job_id>/retry` requeues only failed or cancelled jobs without replacing their event history. Queued jobs need a running worker.

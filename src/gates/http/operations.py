@@ -11,8 +11,8 @@ from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 
-from src.domains.operations import Job, JobStore
-from src.domains.operations import BackgroundWorker, JobWorker
+from src.domains.operations import BackgroundWorker, Job, JobStore, JobWorker
+from src.gates.job_catalog import job_catalog
 from src.platform_kernel import DomainValidationError
 
 
@@ -42,6 +42,59 @@ def create_operations_blueprint(
     """Create the operations API over a local durable :class:`JobStore`."""
     jobs = job_database if isinstance(job_database, JobStore) else JobStore(job_database)
     blueprint = Blueprint("operations", __name__, url_prefix="/api/operations")
+
+    @blueprint.get("/job-types")
+    def job_types():
+        catalog = job_catalog()
+        return jsonify(
+            {
+                "jobs": [
+                    job
+                    for job in catalog["jobs"]
+                    if allowed_job_kinds is None or job["kind"] in allowed_job_kinds
+                ],
+                "pipeline": catalog["pipeline"],
+            }
+        )
+
+    @blueprint.get("/jobs")
+    def recent_jobs():
+        try:
+            limit = int(request.args.get("limit", "50"))
+            if not 1 <= limit <= 100:
+                raise ValueError
+        except ValueError:
+            return jsonify({"error": "limit must be between 1 and 100"}), 400
+        recent = []
+        for job in jobs.recent(limit):
+            response = _job_response(job)
+            if job.status.value == "RUNNING":
+                progress = next(
+                    (
+                        event["payload"]
+                        for event in reversed(jobs.recent_events(job.job_id))
+                        if event["event_type"] == "progress"
+                    ),
+                    None,
+                )
+                response["current_progress"] = progress
+            recent.append(response)
+        return jsonify({"jobs": recent})
+
+    @blueprint.post("/jobs/<int:job_id>/retry")
+    def retry_job(job_id):
+        try:
+            job = jobs.get(job_id)
+            retried = (
+                jobs.retry_cancelled(job_id)
+                if job.status.value == "CANCELLED"
+                else jobs.retry_failed(job_id)
+            )
+            return jsonify(_job_response(retried)), 202
+        except DomainValidationError as error:
+            return jsonify({"error": str(error)}), 404 if str(
+                error
+            ) == "job does not exist" else 409
 
     @blueprint.post("/jobs")
     def submit_job():
@@ -98,11 +151,18 @@ def create_operations_blueprint(
             return jsonify({"error": "job not found"}), 404
         except ValueError:
             return jsonify({"error": "after must be a non-negative integer"}), 400
-        if request.args.get("stream") == "1" or request.accept_mimetypes.best == "text/event-stream":
+        if (
+            request.args.get("stream") == "1"
+            or request.accept_mimetypes.best == "text/event-stream"
+        ):
+
             @stream_with_context
             def stream_events():
                 after = cursor
-                while True:
+                iterations = 0
+                max_iterations = 25
+                yield "retry: 1000\n\n"
+                while iterations < max_iterations:
                     events = jobs.events_after(job_id, after)
                     for event in events:
                         after = event["event_id"]
@@ -110,10 +170,16 @@ def create_operations_blueprint(
                     state = jobs.get(job_id).status.value
                     if state in {"SUCCEEDED", "FAILED", "CANCELLED"} and not events:
                         yield f"event: terminal\ndata: {json.dumps({'status': state})}\n\n"
-                        break
+                        return
                     yield ": heartbeat\n\n"
                     time.sleep(1)
-            return Response(stream_events(), mimetype="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                    iterations += 1
+
+            return Response(
+                stream_events(),
+                mimetype="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
         return jsonify({"events": jobs.events_after(job_id, cursor)})
 
     @blueprint.post("/jobs/<int:job_id>/cancel")

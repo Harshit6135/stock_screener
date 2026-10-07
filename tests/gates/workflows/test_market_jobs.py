@@ -22,6 +22,25 @@ def setup_market(tmp_path):
     return market, publisher
 
 
+def test_index_quotes_initialize_without_research_snapshot(tmp_path, monkeypatch):
+    market, publisher = setup_market(tmp_path)
+    calls = []
+
+    def ohlc(symbols):
+        calls.extend(symbols)
+        return {"NSE:NIFTY 50": {"instrument_token": 256265,
+                "last_price": 25100, "ohlc": {"close": 25000}}}
+
+    jobs = KiteMarketJobs(market, publisher, None, tmp_path / "missing-token")
+    monkeypatch.setattr(jobs, "_client", lambda: SimpleNamespace(ohlc=ohlc))
+    assert jobs.fetch_index_quotes({})["quote_count"] == 1
+    assert len(calls) == len(NSE_INDEX_SYMBOLS)
+    quote = market.index_quotes()[0]
+    assert quote["symbol"] == "NIFTY 50"
+    assert quote["change_percent"] == 0.4
+    assert market.instrument("NIFTY 50", "NSE")["provider_token"] == "256265"
+
+
 def seed_snapshot(market, snapshot_id, day, instruments):
     market.create_universe_snapshot(
         snapshot_id=snapshot_id,
@@ -218,7 +237,7 @@ def test_malformed_historical_provider_payload_is_rejected_before_publication(
     elif defect == "boolean_volume":
         row["volume"] = True
     elif defect == "duplicate":
-        records.append(dict(row))
+        records.append({**row, "close": 100.5})
     elif defect == "outside_range":
         row["date"] = date(2026, 1, 6)
     elif defect == "bad_date":
@@ -240,14 +259,13 @@ def test_malformed_historical_provider_payload_is_rejected_before_publication(
 
 
 class TestBenchmarkSet:
-    def test_six_benchmarks_are_defined(self):
+    def test_five_benchmarks_are_defined(self):
         expected = {
             "NIFTY 50",
             "NIFTY 500",
             "NIFTY NEXT 50",
             "NIFTY MIDCAP 150",
             "NIFTY SMLCAP 250",
-            "INDIA VIX",
         }
         assert NSE_INDEX_SYMBOLS == expected
         assert PHASE2_BENCHMARK_SYMBOLS == expected
@@ -344,7 +362,7 @@ class TestSnapshotInstrumentSync:
         )
         jobs._kite_dump_cache = {datetime.now(UTC).date().isoformat(): fake_kite_dump}
         result = jobs.sync_snapshot_instruments({"snapshot_id": snap_id})
-        assert result["resolved_count"] == 7  # 1 member + 6 benchmarks
+        assert result["resolved_count"] == 6  # 1 member + 5 benchmarks
         assert result["unresolved"] == []
         # Verify instruments are persisted
         instruments = market.instruments(symbol="RELIANCE", limit=1)
@@ -413,7 +431,7 @@ class TestSnapshotInstrumentSync:
         )
         jobs._kite_dump_cache = {datetime.now(UTC).date().isoformat(): fake_kite_dump}
         result = jobs.sync_snapshot_instruments({"snapshot_id": snap_id})
-        assert result["resolved_count"] == 6  # only benchmarks, not GHOSTSYM
+        assert result["resolved_count"] == 5  # only benchmarks, not GHOSTSYM
         assert len(result["unresolved"]) == 1
         assert result["unresolved"][0]["symbol"] == "GHOSTSYM"
 

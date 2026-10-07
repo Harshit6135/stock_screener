@@ -143,6 +143,9 @@ class JobStore:
                     "CREATE TABLE IF NOT EXISTS ops_job_events (event_id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL, event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL, FOREIGN KEY(job_id) REFERENCES ops_jobs(job_id))",
                     "CREATE INDEX IF NOT EXISTS ops_jobs_claim_index ON ops_jobs(status, lease_until, created_at)",
                 ),
+                2: (
+                    "CREATE INDEX IF NOT EXISTS ops_job_events_job_event_index ON ops_job_events(job_id, event_id)",
+                ),
             },
         )
 
@@ -284,6 +287,14 @@ class JobStore:
             result.get("failed_attempts", 0) - result["data_unavailable_attempts"]
         )
         return result
+
+    def recent(self, limit: int = 50) -> list[Job]:
+        """Read recent jobs in submission order for the operations dashboard."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM ops_jobs ORDER BY job_id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [self._row(row) for row in rows]
 
     def active(self, limit: int = 20) -> list[Job]:
         """Return currently claimed jobs for operational status displays."""

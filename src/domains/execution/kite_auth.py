@@ -7,9 +7,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from time import monotonic
 from typing import Any, Protocol
 
 from kiteconnect import KiteConnect  # type: ignore[import-untyped]
+from kiteconnect.exceptions import KiteException, TokenException
+from requests.exceptions import RequestException
+
+from src.platform_kernel import DomainValidationError
 
 
 class KiteClient(Protocol):
@@ -70,6 +75,37 @@ class KiteAuthService:
         self._credentials = credentials
         self._access_token_path = Path(access_token_path)
         self._client_factory = client_factory
+        self._checked_token = None
+        self._checked_at = 0.0
+        self._session_state = "MISSING"
+
+    def session_status(self) -> dict[str, object]:
+        """Validate the saved shared token without returning any credentials."""
+        if not self.token_exists:
+            return {"configured": True, "status": "MISSING", "login_required": True}
+        token = self._access_token_path.read_text(encoding="utf-8").strip()
+        if token != self._checked_token or monotonic() - self._checked_at >= 30:
+            client = self._client_factory(api_key=self._credentials.api_key)
+            client.set_access_token(token)
+            try:
+                client.profile()
+                self._session_state = "ACTIVE"
+            except TokenException:
+                self._session_state = "EXPIRED"
+            except (KiteException, RequestException, OSError):
+                # A temporary network failure is not proof of token expiry.
+                self._session_state = "UNAVAILABLE"
+            self._checked_token, self._checked_at = token, monotonic()
+        return {"configured": True, "status": self._session_state,
+                "login_required": self._session_state == "EXPIRED"}
+
+    def stream_credentials(self) -> dict[str, str]:
+        status = self.session_status()
+        if status["status"] != "ACTIVE":
+            raise DomainValidationError("Shared market-data Kite login required" if status["login_required"]
+                                        else "Shared market-data Kite session could not be validated")
+        return {"api_key": self._credentials.api_key,
+                "access_token": self._access_token_path.read_text(encoding="utf-8").strip()}
 
     @property
     def token_exists(self) -> bool:

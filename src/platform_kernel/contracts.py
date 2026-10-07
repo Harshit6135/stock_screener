@@ -6,12 +6,9 @@ be introduced before the framework and persistence cutovers.
 
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Any, NewType
-from uuid import UUID
+from typing import Any
 
 from .errors import DomainValidationError
-
-AggregateVersion = NewType("AggregateVersion", int)
 
 
 class FrozenDict(dict):
@@ -79,23 +76,3 @@ class Quantity:
     def __post_init__(self) -> None:
         if isinstance(self.units, bool) or not isinstance(self.units, int) or self.units <= 0:
             raise DomainValidationError("units must be a positive integer")
-
-
-@dataclass(frozen=True)
-class VersionedReference:
-    """Stable aggregate ID plus its immutable revision ID."""
-
-    aggregate_id: UUID
-    revision_id: UUID
-
-
-@dataclass(frozen=True)
-class CommandMetadata:
-    """Concurrency and idempotency metadata required by mutable commands."""
-
-    idempotency_key: UUID
-    expected_version: AggregateVersion
-
-    def __post_init__(self) -> None:
-        if self.expected_version < 0:
-            raise DomainValidationError("expected_version must not be negative")

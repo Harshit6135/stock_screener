@@ -60,4 +60,4 @@ def test_pipeline_browser_renders_progress_and_recovery_controls():
     page = response.get_data(as_text=True)
     assert 'id="stages"' in page
     assert 'id="submit-pipeline"' in page
-    assert 'src="/static/js/pipeline.js"' in page
+    assert 'src="/static/js/pipeline-workspace.js' in page

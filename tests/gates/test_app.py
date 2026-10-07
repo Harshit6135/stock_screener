@@ -18,7 +18,10 @@ def test_fresh_app_initializes_current_owner_schemas_and_readback(tmp_path):
             "SELECT namespace, version FROM system_schema_migrations ORDER BY namespace, version"
         ).fetchall()
     assert rows
-    assert all(version == 1 for _, version in rows)
+    versions: dict[str, list[int]] = {}
+    for namespace, version in rows:
+        versions.setdefault(namespace, []).append(version)
+    assert all(found == list(range(1, len(found) + 1)) for found in versions.values())
     namespaces = {namespace for namespace, _ in rows}
     assert {"market_data", "reference_data", "indicator_node_cache", "ops", "research"} <= namespaces
     assert "market" not in namespaces

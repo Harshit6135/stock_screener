@@ -1046,6 +1046,7 @@ def corporate_fixture(tmp_path, *, action="RIGHTS", threshold=0.15):
     return market, CorporateActions(db, market)
 
 
+@pytest.mark.parametrize("action", ["RIGHTS", "DEMERGER", "SCHEME_OF_ARRANGEMENT"])
 def test_monitoring_persists_authoritative_history_before_verification(tmp_path, action):
     market, service = corporate_fixture(tmp_path, action=action)
     result = service.verify_with_kite("event", lambda *_: provider_rows())
@@ -1062,6 +1063,7 @@ def test_corporate_monitoring_uses_configured_threshold(tmp_path):
     assert market.bars("share")[-1]["close"] == "90"
 
 
+@pytest.mark.parametrize("defect", ["missing_volume", "duplicate_date", "invalid_ohlc"])
 def test_invalid_provider_history_remains_actionable_and_does_not_replace(tmp_path, defect):
     market, service = corporate_fixture(tmp_path)
     rows = provider_rows()

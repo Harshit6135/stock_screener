@@ -10,12 +10,6 @@ from .api import (
 from .dag import APPROVED_OPERATIONS, PRIMITIVE_FIELDS, DagExecutor, DagGraph, DagNode
 from .momentum_quality import momentum_quality_indicator_series
 from .node_cache import IndicatorNodeCache
-from .relative_strength import (
-    relative_strength_factor_series,
-    relative_strength_factors,
-    relative_strength_feature_series,
-    relative_strength_features,
-)
 from .registry import (
     IndicatorProvider,
     IndicatorSpec,
@@ -23,6 +17,12 @@ from .registry import (
     SupportStatus,
     provider_output_role,
     selected_indicator_output,
+)
+from .relative_strength import (
+    relative_strength_factor_series,
+    relative_strength_factors,
+    relative_strength_feature_series,
+    relative_strength_features,
 )
 
 __all__ = [
@@ -37,15 +37,15 @@ __all__ = [
     "IndicatorNodeCache",
     "IndicatorProvider",
     "IndicatorRevision",
-    "momentum_quality_indicator_series",
     "IndicatorSpec",
     "PandasTaAdapter",
     "SupportStatus",
     "compute_feature",
+    "momentum_quality_indicator_series",
+    "provider_output_role",
     "relative_strength_factor_series",
     "relative_strength_factors",
     "relative_strength_feature_series",
     "relative_strength_features",
-    "provider_output_role",
     "selected_indicator_output",
 ]

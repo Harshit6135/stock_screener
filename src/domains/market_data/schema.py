@@ -60,5 +60,8 @@ def migrate_market_data(path: str | Path) -> None:
                     FOREIGN KEY(instrument_id) REFERENCES reference_instruments(instrument_id))""",
                 "CREATE INDEX IF NOT EXISTS market_fetch_coverage_range ON market_fetch_coverage(instrument_id, provider, coverage_context, start_date, end_date)",
             ),
+            2: (
+                "CREATE INDEX IF NOT EXISTS market_bars_date_instrument ON market_bars(as_of_date, instrument_id)",
+            ),
         },
     )

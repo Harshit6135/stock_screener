@@ -1,7 +1,10 @@
 import sqlite3
 from contextlib import closing
 
-from src.gates.operations import sqlite_backup, sqlite_ready, sqlite_restore
+import pytest
+
+from src.gates.operations import sqlite_backup, sqlite_ready, sqlite_restore, sqlite_vacuum
+from src.platform_kernel import DomainValidationError
 
 
 def test_sqlite_backup_is_consistent_and_readiness_checks_database(tmp_path):
@@ -26,3 +29,18 @@ def test_missing_database_is_not_ready_or_created(tmp_path):
 
     assert not sqlite_ready(missing)
     assert not missing.exists()
+
+
+def test_sqlite_vacuum_reclaims_pages_and_validates_path(tmp_path):
+    database = tmp_path / "vacuum_test.db"
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute("CREATE TABLE t (x TEXT)")
+        connection.execute("INSERT INTO t VALUES ('sample data')")
+        connection.commit()
+
+    sqlite_vacuum(database)
+    assert sqlite_ready(database)
+
+    with pytest.raises(DomainValidationError, match="does not exist"):
+        sqlite_vacuum(tmp_path / "nonexistent.db")
+

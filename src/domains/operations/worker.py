@@ -7,9 +7,10 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any
 
-from .jobs import Job, JobExecutionContext, JobStore
 from src.platform_kernel import DomainValidationError
 from src.platform_kernel.security import sanitize_error
+
+from .jobs import Job, JobExecutionContext, JobStore
 
 JobHandler = Callable[..., dict[str, Any]]
 

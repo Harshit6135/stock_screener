@@ -50,6 +50,7 @@ class UniverseJobs:
             return {
                 "status": "reused",
                 "snapshot_id": existing["snapshot_id"],
+                "snapshot_date": str(existing.get("snapshot_date") or collection_day.isoformat()),
                 "member_count": existing["member_count"],
             }
         if collection_day != actual_day:
@@ -97,6 +98,7 @@ class UniverseJobs:
         return {
             "status": "stored",
             "snapshot_id": stored["snapshot_id"],
+            "snapshot_date": str(stored.get("snapshot_date") or collection_day.isoformat()),
             "member_count": stored["member_count"],
             "source_hash": stored["source_hash"],
             "diff": diff,

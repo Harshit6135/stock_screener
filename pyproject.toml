@@ -76,7 +76,7 @@ skip = [".git", ".venv", "migrations"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
-addopts = ["--import-mode=importlib"]
+addopts = ["--import-mode=importlib", "--basetemp=.pytest_tmp_scan"]
 
 [tool.ruff]
 line-length = 100

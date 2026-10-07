@@ -51,6 +51,9 @@ class ArtifactCatalog:
                     deleted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )""",
                 ),
+                2: (
+                    "CREATE INDEX IF NOT EXISTS catalog_artifacts_category_status_created ON catalog_artifacts(category, status, created_at DESC)",
+                ),
             },
         )
 

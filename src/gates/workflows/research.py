@@ -509,8 +509,12 @@ class ResearchJobs:
                 for factor in modifier["factors"]
             }
 
-            def factor_multiplier(factor: str, values: dict[str, object]) -> float:
-                modifier = modifiers_by_factor.get(factor)
+            def factor_multiplier(
+                factor: str,
+                values: dict[str, object],
+                modifiers: dict[str, Any] = modifiers_by_factor,
+            ) -> float:
+                modifier = modifiers.get(factor)
                 if modifier is None:
                     return 1.0
                 observed = float(values[str(modifier["input"])])

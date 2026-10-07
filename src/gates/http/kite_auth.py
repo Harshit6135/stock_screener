@@ -11,6 +11,7 @@ from flask.typing import ResponseReturnValue
 from kiteconnect.exceptions import KiteException  # type: ignore[import-untyped]
 
 from src.domains.execution import KiteAuthService
+from src.platform_kernel import DomainValidationError
 
 _SESSION_STARTED_AT = "kite_authorization_started_at"
 _SESSION_TTL_SECONDS = 10 * 60
@@ -20,6 +21,7 @@ _LOGGER = logging.getLogger(__name__)
 def create_kite_auth_blueprint(
     market_data_service: KiteAuthService | None,
     portfolio_service: KiteAuthService | None = None,
+    portfolio_accounts=None,
 ) -> Blueprint:
     """Build isolated local browser flows for market and portfolio profiles."""
     blueprint = Blueprint("kite_auth", __name__)
@@ -32,6 +34,10 @@ def create_kite_auth_blueprint(
 
     @blueprint.get("/integrations/kite")
     def authorization_page() -> Response:
+        if request.args.get("auto") == "1" and market_data_service is not None:
+            session.pop("portfolio_broker_authorization", None)
+            session[f"{_SESSION_STARTED_AT}:market-data"] = time.time()
+            return redirect(market_data_service.login_url())
         return _authorization_page("market-data", market_data_service)
 
     @blueprint.get("/integrations/kite/portfolio")
@@ -84,19 +90,59 @@ document.getElementById('authorize').addEventListener('click', async () => {{
         service = _service_for(profile)
         return _start_authorization(service, profile)
 
+    @blueprint.get("/api/integrations/kite/<profile>/status")
+    def profile_status(profile: str) -> ResponseReturnValue:
+        service = _service_for(profile)
+        if service is None:
+            return jsonify({"configured": False, "status": "NOT_CONFIGURED", "login_required": False})
+        pending = session.get("portfolio_broker_authorization")
+        started = pending.get("started_at") if isinstance(pending, dict) else None
+        shared_started = session.get(f"{_SESSION_STARTED_AT}:market-data")
+        login_in_progress = any(
+            isinstance(value, (int, float)) and 0 <= time.time() - value <= _SESSION_TTL_SECONDS
+            for value in (started, shared_started)
+        )
+        return jsonify({**service.session_status(), "login_in_progress": login_in_progress})
+
     def _start_authorization(service: KiteAuthService | None, profile: str) -> ResponseReturnValue:
         if service is None:
             return jsonify({"error": f"Kite {profile} credentials are not configured"}), 503
+        session.pop("portfolio_broker_authorization", None)
         session[f"{_SESSION_STARTED_AT}:{profile}"] = time.time()
         return jsonify({"authorization_url": service.login_url()})
 
     @blueprint.get("/integrations/kite/callback")
     def market_data_callback() -> Response:
-        """Support the registered shared market-data callback URL."""
+        """Route the registered callback to the login started in this browser."""
+        if "portfolio_broker_authorization" in session:
+            return profile_callback("portfolio")
         return _callback("market-data", market_data_service)
 
     @blueprint.get("/integrations/kite/<profile>/callback")
     def profile_callback(profile: str) -> Response:
+        if profile == "market-data" and "portfolio_broker_authorization" in session:
+            return profile_callback("portfolio")
+        if profile == "portfolio" and "portfolio_broker_authorization" in session:
+            pending = session.pop("portfolio_broker_authorization")
+            if (
+                portfolio_accounts is None
+                or not isinstance(pending, dict)
+                or not isinstance(pending.get("started_at"), (int, float))
+                or not 0 <= time.time() - pending["started_at"] <= _SESSION_TTL_SECONDS
+            ):
+                return Response("Start portfolio Kite login again from the app.", status=400)
+            if request.args.get("status") != "success":
+                return Response("Portfolio Kite login was not completed. Start again from the app.", status=400)
+            try:
+                portfolio_accounts.authenticate(
+                    pending["broker_account_id"], request.args.get("request_token", "")
+                )
+            except (KeyError, DomainValidationError):
+                return Response("Portfolio Kite login failed. Start again from the app.", status=400)
+            response = redirect(url_for("dashboard.home"))
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Referrer-Policy"] = "no-referrer"
+            return response
         return _callback(profile, _service_for(profile))
 
     def _service_for(profile: str) -> KiteAuthService | None:

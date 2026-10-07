@@ -2,11 +2,9 @@
 
 from .artifacts import ArtifactManifest, ArtifactStore, QualityStatus, SqliteArtifactStore
 from .contracts import (
-    CommandMetadata,
     FrozenDict,
     Money,
     Quantity,
-    VersionedReference,
     freeze_value,
 )
 from .errors import DomainValidationError
@@ -16,7 +14,6 @@ __all__ = [
     "ArtifactManifest",
     "ArtifactStore",
     "Broker",
-    "CommandMetadata",
     "DomainValidationError",
     "FrozenDict",
     "HistoricalBarsProvider",
@@ -26,6 +23,5 @@ __all__ = [
     "QualityStatus",
     "Quantity",
     "SqliteArtifactStore",
-    "VersionedReference",
     "freeze_value",
 ]

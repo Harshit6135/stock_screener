@@ -192,7 +192,9 @@ class BrokerOrderWorkflow:
     def get(self, order_id: str) -> dict[str, object]:
         return self.repository.get(order_id)
 
-    def prepare_proposal(self, proposal_id: str) -> list[dict[str, object]]:
+    def prepare_proposal(
+        self, proposal_id: str, *, regular_session=False
+    ) -> list[dict[str, object]]:
         """Create local intents only. Submission remains an explicit gated command."""
         if self.risk_guard is None:
             raise DomainValidationError("managed portfolio guards are unavailable")
@@ -208,7 +210,9 @@ class BrokerOrderWorkflow:
         binding = accounts.binding(proposal["account_id"])
         decisions = [
             decision
-            for decision, state in zip(proposal["decisions"], proposal["decision_statuses"], strict=True)
+            for decision, state in zip(
+                proposal["decisions"], proposal["decision_statuses"], strict=True
+            )
             if state == "APPROVED"
         ]
         if not decisions:
@@ -231,7 +235,10 @@ class BrokerOrderWorkflow:
             protective = decision["type"] in {"HARD_STOP", "STOP_LOSS"}
             variety = (
                 "amo"
-                if side == "SELL" and not protective and proposal["strategy_id"] != "manual"
+                if side == "SELL"
+                and not protective
+                and proposal["strategy_id"] != "manual"
+                and not regular_session
                 else "regular"
             )
             order = self.create_intent(
@@ -291,7 +298,13 @@ class BrokerOrderWorkflow:
                 ) from exc
             if proposal["account_id"] != order["account_id"] or proposal["status"] != "APPROVED":
                 raise DomainValidationError("broker order requires an approved owning proposal")
-            decisions = proposal["decisions"]
+            decisions = [
+                item
+                for item, state in zip(
+                    proposal["decisions"], proposal["decision_statuses"], strict=True
+                )
+                if state == "APPROVED"
+            ]
             decision = next(
                 (
                     item

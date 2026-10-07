@@ -5,8 +5,8 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from src.platform_kernel.sqlite import sqlite_connection
 from src.platform_kernel import DomainValidationError
+from src.platform_kernel.sqlite import sqlite_connection
 
 
 class CompletedSessionCoverage:

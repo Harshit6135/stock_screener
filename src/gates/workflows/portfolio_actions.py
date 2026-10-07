@@ -28,6 +28,7 @@ from src.domains.portfolio_engine import (
 )
 from src.domains.strategies import feature_series, valid_bar
 from src.gates.repositories import MarketRepository
+from src.gates.workflows.positional_trend import PositionalTrendJobs
 from src.gates.workflows.research import ResearchJobs
 from src.platform_kernel import DomainValidationError, Money, QualityStatus, Quantity
 from src.platform_kernel.sqlite import sqlite_connection
@@ -1596,7 +1597,7 @@ class ActionJobs:
                             item["rank"] = values[1]
             elif artifact.get("signal_artifact_id") and self.positional_trend is not None:
                 _, signals = self.publisher.store.read_json(
-                    self.positional_trend.CATEGORY, str(artifact["signal_artifact_id"])
+                    PositionalTrendJobs.CATEGORY, str(artifact["signal_artifact_id"])
                 )
                 lookup = {
                     str(row["instrument_id"]): row for row in signals.get("signals", [])

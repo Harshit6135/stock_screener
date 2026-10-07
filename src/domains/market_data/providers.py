@@ -3,7 +3,6 @@
 import csv
 import hashlib
 import io
-import requests
 import zipfile
 from collections.abc import Callable, Mapping, Sequence
 from datetime import date, datetime
@@ -11,6 +10,8 @@ from decimal import Decimal, InvalidOperation
 from threading import Lock
 from time import monotonic, sleep
 from typing import Any
+
+import requests
 
 from src.platform_kernel import DomainValidationError
 

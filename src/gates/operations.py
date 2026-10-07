@@ -58,3 +58,12 @@ def sqlite_ready(path: str | Path, required_namespaces: tuple[str, ...] = ()) ->
         return True
     except sqlite3.Error:
         return False
+
+
+def sqlite_vacuum(path: str | Path) -> None:
+    """Reclaim unused database pages by running VACUUM on the SQLite database."""
+    database = Path(path)
+    if not database.is_file():
+        raise DomainValidationError("SQLite database does not exist")
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute("VACUUM")

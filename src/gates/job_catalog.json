@@ -1,0 +1,744 @@
+{
+  "jobs": [
+    {
+      "kind": "research.rebuild-indicators",
+      "name": "Rebuild indicators",
+      "group": "Research",
+      "description": "Recalculate reusable strategy inputs for a completed date range.",
+      "fields": [
+        {
+          "key": "start_date",
+          "label": "Start date",
+          "type": "date",
+          "explanation": "First date to include in the requested window."
+        },
+        {
+          "key": "end_date",
+          "label": "End date",
+          "type": "date",
+          "explanation": "Last date to include. Historical research uses completed sessions."
+        },
+        {
+          "key": "strategies",
+          "label": "Strategies",
+          "type": "strategies",
+          "value": [
+            "momentum"
+          ],
+          "help": "Select the strategies whose inputs should be rebuilt.",
+          "explanation": "Strategy IDs whose research inputs or rankings should be calculated."
+        }
+      ],
+      "needs": "Stored market history and an active strategy.",
+      "result": "Indicator inputs ready for strategy research.",
+      "next": "rankings",
+      "when": "Use after new price data arrives or indicator definitions change. This prepares reusable inputs; use Rebuild strategy rankings afterward to publish scores and ranks."
+    },
+    {
+      "kind": "research.rebuild-range",
+      "name": "Rebuild strategy rankings",
+      "group": "Research",
+      "description": "Calculate strategy factors and rankings for selected completed sessions.",
+      "fields": [
+        {
+          "key": "start_date",
+          "label": "Start date",
+          "type": "date",
+          "explanation": "First date to include in the requested window."
+        },
+        {
+          "key": "end_date",
+          "label": "End date",
+          "type": "date",
+          "explanation": "Last date to include. Historical research uses completed sessions."
+        },
+        {
+          "key": "strategies",
+          "label": "Strategies",
+          "type": "strategies",
+          "value": [
+            "momentum"
+          ],
+          "help": "Select the strategies whose inputs should be rebuilt.",
+          "explanation": "Strategy IDs whose research inputs or rankings should be calculated."
+        },
+        {
+          "key": "trading_dates",
+          "label": "Completed trading sessions",
+          "type": "dates",
+          "value": "",
+          "help": "Comma-separated session dates. In the app, these should come from the stored trading calendar.",
+          "explanation": "Explicit trading sessions to process; sorted, unique, and within the requested range when a range is supplied."
+        }
+      ],
+      "needs": "Indicator inputs and historical market prices.",
+      "result": "Published rankings for the selected sessions.",
+      "next": "rankings",
+      "when": "Use when you need updated momentum research for specific sessions and its indicator inputs are ready. Daily Positional Trend signals use their dedicated job."
+    },
+    {
+      "kind": "research.positional-trend-build-signals",
+      "name": "Build Positional Trend signals",
+      "group": "Research",
+      "description": "Calculate daily trend signals for one completed session.",
+      "fields": [
+        {
+          "key": "as_of_date",
+          "label": "Signal session",
+          "type": "date",
+          "explanation": "The completed session used for signals, coverage, or dated calculations."
+        },
+        {
+          "key": "universe",
+          "label": "Stock universe",
+          "type": "select",
+          "options": [
+            [
+              "SNAPSHOT_NIFTY500",
+              "NIFTY 500 snapshot"
+            ]
+          ],
+          "value": "SNAPSHOT_NIFTY500",
+          "explanation": "The universe of stocks to use when calculating trend signals."
+        }
+      ],
+      "needs": "Universe membership and sufficient OHLC history.",
+      "result": "Daily trend signals available in stock rankings.",
+      "next": "rankings",
+      "when": "Use for one completed trading session when you want fresh daily entry and trend signals."
+    },
+    {
+      "kind": "research.positional-trend-build-range",
+      "name": "Build Positional Trend over sessions",
+      "group": "Research",
+      "description": "Build daily signals for several explicitly selected trading sessions.",
+      "fields": [
+        {
+          "key": "trading_dates",
+          "label": "Completed trading sessions",
+          "type": "dates",
+          "value": "",
+          "help": "Comma-separated session dates. In the app, these should come from the stored trading calendar.",
+          "explanation": "Explicit trading sessions to process; sorted, unique, and within the requested range when a range is supplied."
+        },
+        {
+          "key": "universe",
+          "label": "Stock universe",
+          "type": "select",
+          "options": [
+            [
+              "SNAPSHOT_NIFTY500",
+              "NIFTY 500 snapshot"
+            ]
+          ],
+          "value": "SNAPSHOT_NIFTY500",
+          "explanation": "The universe of stocks to use when calculating trend signals."
+        }
+      ],
+      "needs": "Market history covering all selected sessions.",
+      "result": "Trend signals for each selected session.",
+      "next": "rankings",
+      "when": "Use to rebuild daily trend signals for an explicit set of past sessions without rebuilding every other research output."
+    },
+    {
+      "kind": "research.pipeline-prepare",
+      "name": "Prepare research prerequisites",
+      "group": "Research",
+      "description": "Prepare reference data and historical prices before strategy calculations.",
+      "fields": [
+        {
+          "key": "start_date",
+          "label": "Start date",
+          "type": "date",
+          "explanation": "First date to include in the requested window."
+        },
+        {
+          "key": "end_date",
+          "label": "End date",
+          "type": "date",
+          "explanation": "Last date to include. Historical research uses completed sessions."
+        }
+      ],
+      "needs": "Configured market-data access for data collection.",
+      "result": "Prerequisite market and reference data prepared.",
+      "next": "pipeline",
+      "when": "Use to prepare data prerequisites as a standalone operation before running research calculations."
+    },
+    {
+      "kind": "reference.download-nifty500-constituents",
+      "name": "Refresh NIFTY 500 membership",
+      "group": "Reference data",
+      "description": "Collect a dated stock-universe snapshot.",
+      "fields": [
+        {
+          "key": "snapshot_date",
+          "label": "Collection date",
+          "type": "date",
+          "explanation": "Collection date of the membership snapshot. This does not reconstruct membership from an arbitrary historical date."
+        }
+      ],
+      "needs": "Access to the NSE reference-data source.",
+      "result": "A saved universe snapshot.",
+      "next": "universe",
+      "when": "Use when the screening universe needs a new membership collection. The source is current membership; requesting a past date does not supply a historically accurate past list."
+    },
+    {
+      "kind": "reference.sync-snapshot-instruments",
+      "name": "Resolve snapshot instruments",
+      "group": "Reference data",
+      "description": "Match a saved stock snapshot to Kite instrument identities.",
+      "fields": [
+        {
+          "key": "snapshot_id",
+          "label": "Universe snapshot ID",
+          "type": "text",
+          "value": "",
+          "help": "",
+          "explanation": "Identity of an existing saved universe snapshot."
+        }
+      ],
+      "needs": "An existing snapshot and market-data Kite connection.",
+      "result": "Resolved instruments and any unmatched symbols.",
+      "next": "universe",
+      "when": "Use after collecting a snapshot to resolve its stocks to provider instrument identities before price collection."
+    },
+    {
+      "kind": "market.fetch-kite-bars",
+      "name": "Fetch history for one stock",
+      "group": "Market data",
+      "description": "Download historical OHLCV bars for a tracked stock.",
+      "fields": [
+        {
+          "key": "symbol",
+          "label": "Stock symbol",
+          "type": "text",
+          "value": "RELIANCE",
+          "help": "",
+          "explanation": "Tracked exchange stock symbol, such as RELIANCE."
+        },
+        {
+          "key": "exchange",
+          "label": "Exchange",
+          "type": "select",
+          "options": [
+            [
+              "NSE",
+              "NSE"
+            ]
+          ],
+          "value": "NSE",
+          "explanation": "Exchange on which the instrument is tracked."
+        },
+        {
+          "key": "start_date",
+          "label": "Start date",
+          "type": "date",
+          "explanation": "First date to include in the requested window."
+        },
+        {
+          "key": "end_date",
+          "label": "End date",
+          "type": "date",
+          "explanation": "Last date to include. Historical research uses completed sessions."
+        }
+      ],
+      "needs": "A tracked instrument and market-data Kite connection.",
+      "result": "Historical price bars and quality diagnostics.",
+      "next": "logs",
+      "when": "Use to fill missing history or refresh a specific tracked stock without collecting the entire universe."
+    },
+    {
+      "kind": "market.schedule-all-symbol-refresh",
+      "name": "Refresh history for all stocks",
+      "group": "Market data",
+      "description": "Schedule historical data collection for the tracked stock universe.",
+      "fields": [
+        {
+          "key": "start_date",
+          "label": "Start date",
+          "type": "date",
+          "explanation": "First date to include in the requested window."
+        },
+        {
+          "key": "end_date",
+          "label": "End date",
+          "type": "date",
+          "explanation": "Last date to include. Historical research uses completed sessions."
+        }
+      ],
+      "needs": "Resolved stock instruments and market-data access.",
+      "result": "Scheduled collection jobs; inspect their completion separately.",
+      "next": "logs",
+      "when": "Use when many tracked stocks need new historical prices. Completion means collection jobs have been scheduled; inspect those jobs for the actual data outcome."
+    },
+    {
+      "kind": "reference.reconcile-market",
+      "name": "Check market-data coverage",
+      "group": "Reference data",
+      "description": "Check reference identities and historical session coverage.",
+      "fields": [
+        {
+          "key": "start_date",
+          "label": "Coverage starts",
+          "type": "date",
+          "explanation": "First date to include in the requested window."
+        },
+        {
+          "key": "as_of_date",
+          "label": "Coverage ends",
+          "type": "date",
+          "explanation": "The completed session used for signals, coverage, or dated calculations."
+        }
+      ],
+      "needs": "Stored reference identities and market bars.",
+      "result": "A coverage report showing missing or inconsistent data.",
+      "next": "logs",
+      "when": "Use when you suspect missing market sessions, unresolved symbols, or inconsistent reference identities. It checks coverage rather than collecting missing prices."
+    },
+    {
+      "kind": "reference.detect-corporate-actions",
+      "name": "Detect corporate actions",
+      "group": "Reference data",
+      "description": "Collect and classify corporate actions in a date window.",
+      "fields": [
+        {
+          "key": "start_date",
+          "label": "From",
+          "type": "date",
+          "explanation": "First date to include in the requested window."
+        },
+        {
+          "key": "as_of_date",
+          "label": "Through",
+          "type": "date",
+          "explanation": "The completed session used for signals, coverage, or dated calculations."
+        }
+      ],
+      "needs": "Access to corporate-action reference data.",
+      "result": "Detected actions ready for processing.",
+      "next": "logs",
+      "when": "Use to identify splits, bonuses, and other reported events before their related adjustments are processed."
+    },
+    {
+      "kind": "reference.process-corporate-actions",
+      "name": "Process detected corporate actions",
+      "group": "Reference data",
+      "description": "Process actionable corporate events already detected by the app.",
+      "fields": [],
+      "needs": "Detected corporate actions and historical price access.",
+      "result": "Processed events and related quality evidence.",
+      "next": "logs",
+      "when": "Use after detection to process pending actionable corporate events. Inspect the result and quality evidence afterward."
+    },
+    {
+      "kind": "backtest.run",
+      "name": "Run a strategy backtest",
+      "group": "Backtesting",
+      "description": "Simulate a strategy over a historical date range.",
+      "fields": [
+        {
+          "key": "strategy_id",
+          "label": "Strategy",
+          "type": "select",
+          "options": [
+            [
+              "momentum",
+              "Momentum"
+            ],
+            [
+              "positional_trend_following",
+              "Positional Trend"
+            ]
+          ],
+          "value": "momentum",
+          "explanation": "The active strategy used for this operation."
+        },
+        {
+          "key": "start_date",
+          "label": "Start date",
+          "type": "date",
+          "explanation": "First date to include in the requested window."
+        },
+        {
+          "key": "end_date",
+          "label": "End date",
+          "type": "date",
+          "explanation": "Last date to include. Historical research uses completed sessions."
+        },
+        {
+          "key": "starting_cash",
+          "label": "Starting capital (₹)",
+          "type": "number",
+          "value": 200000,
+          "min": 1,
+          "explanation": "Initial simulation capital in rupees."
+        },
+        {
+          "key": "max_positions",
+          "label": "Maximum holdings",
+          "type": "number",
+          "min": 1,
+          "value": 15,
+          "explanation": "Maximum concurrent holdings in the simulation, subject to strategy rules."
+        }
+      ],
+      "needs": "Published strategy inputs and sufficient market history.",
+      "result": "A simulation report with performance and trades.",
+      "next": "backtest",
+      "when": "Use for a historical performance simulation. Review data coverage, costs, and stop assumptions before interpreting its results."
+    },
+    {
+      "kind": "backtest.attribute",
+      "name": "Attribute backtest returns",
+      "group": "Backtesting",
+      "description": "Break down a saved backtest’s returns.",
+      "fields": [
+        {
+          "key": "run_id",
+          "label": "Saved backtest run ID",
+          "type": "text",
+          "value": "",
+          "help": "",
+          "explanation": "Identity of the saved backtest whose results should be analysed."
+        }
+      ],
+      "needs": "A completed saved backtest.",
+      "result": "Return attribution for the saved run.",
+      "next": "backtest",
+      "when": "Use after a backtest completes to understand which instruments and classifications contributed to returns. Optional classification artifacts can enrich the result."
+    },
+    {
+      "kind": "market.fetch-kite-index-quotes",
+      "name": "Refresh index quotes",
+      "group": "Market data",
+      "description": "Read quotes for tracked benchmark indices.",
+      "fields": [],
+      "needs": "Tracked index identities and market-data Kite connection.",
+      "result": "Updated index quotes.",
+      "next": "portfolio",
+      "when": "Use when tracked benchmark quotes need refreshing. This is a quote refresh, not a persistent streaming connection."
+    },
+    {
+      "kind": "market.fetch-intraday-stop-alerts",
+      "name": "Check portfolio stop alerts",
+      "group": "Portfolio",
+      "description": "Check current holding prices against their recorded stops.",
+      "fields": [
+        {
+          "key": "account_id",
+          "label": "Portfolio account ID",
+          "type": "text",
+          "value": "",
+          "help": "",
+          "explanation": "Identity of the portfolio whose holdings or proposals should be processed."
+        }
+      ],
+      "needs": "An existing portfolio, recorded stops, and quote access.",
+      "result": "Stop alerts for review; no order is submitted by this job.",
+      "next": "actions",
+      "when": "Use to check current portfolio quotes against recorded stop thresholds and create alert evidence for review."
+    },
+    {
+      "kind": "actions.generate-portfolio-proposal",
+      "name": "Generate trade proposals",
+      "group": "Portfolio",
+      "description": "Prepare proposed trades for an account and target session.",
+      "fields": [
+        {
+          "key": "account_id",
+          "label": "Portfolio account ID",
+          "type": "text",
+          "value": "",
+          "help": "",
+          "explanation": "Identity of the portfolio whose holdings or proposals should be processed."
+        },
+        {
+          "key": "strategy_id",
+          "label": "Strategy",
+          "type": "select",
+          "options": [
+            [
+              "momentum",
+              "Momentum"
+            ],
+            [
+              "positional_trend_following",
+              "Positional Trend"
+            ]
+          ],
+          "value": "momentum",
+          "explanation": "The active strategy used for this operation."
+        },
+        {
+          "key": "action_date",
+          "label": "Target session",
+          "type": "date",
+          "explanation": "Target trading session for the generated proposals; research comes from completed data."
+        }
+      ],
+      "needs": "Account history and completed strategy research.",
+      "result": "Reviewable trade proposals, rather than executed orders.",
+      "next": "actions",
+      "when": "Use when completed research is available and you want proposed trades for an account’s next target session. Review the proposals separately before execution."
+    },
+    {
+      "kind": "artifacts.recover",
+      "name": "Recover artifact publications",
+      "group": "Maintenance",
+      "description": "Recover interrupted artifact publications.",
+      "fields": [],
+      "needs": "An existing local artifact store.",
+      "result": "Recovery summary for interrupted publications.",
+      "next": "logs",
+      "when": "Use after an interrupted publication when research artifacts may not have completed their publication lifecycle."
+    },
+    {
+      "kind": "research.pipeline-advance",
+      "name": "Advance an existing pipeline",
+      "group": "Maintenance",
+      "description": "Ask the coordinator to advance an existing research pipeline.",
+      "fields": [
+        {
+          "key": "pipeline_id",
+          "label": "Pipeline ID",
+          "type": "text",
+          "value": "",
+          "help": "",
+          "explanation": "Identity of an existing tracked research pipeline."
+        }
+      ],
+      "needs": "An existing pipeline with completed prerequisite stages.",
+      "result": "Updated pipeline stage status.",
+      "next": "pipeline",
+      "when": "Use to resume coordination of a known pipeline whose prerequisite stages have finished. Prefer the full pipeline interface for creating a new run."
+    },
+    {
+      "kind": "system.echo",
+      "name": "Test job processing",
+      "group": "Maintenance",
+      "description": "Echo a payload to verify the job-processing flow.",
+      "advanced": true,
+      "sample": {
+        "message": "Test worker"
+      },
+      "needs": "A running worker.",
+      "result": "The submitted payload is returned unchanged.",
+      "next": "pipeline",
+      "when": "Use to confirm that job submission and worker processing function before troubleshooting a domain-specific job.",
+      "parameters": [
+        {
+          "key": "message",
+          "explanation": "Sample data to echo back when checking worker processing."
+        }
+      ]
+    },
+    {
+      "kind": "market.fetch-bulk-kite-bars",
+      "name": "Fetch bars for an instrument batch",
+      "group": "Advanced jobs",
+      "description": "Collect market history for an explicit instrument batch.",
+      "advanced": true,
+      "sample": {
+        "start_date": "2026-09-28",
+        "end_date": "2026-10-05",
+        "items": []
+      },
+      "needs": "Tracked instrument records in items and market-data access.",
+      "result": "Batch collection summary.",
+      "next": "logs",
+      "when": "Use for a bounded, explicit batch of tracked instruments when the all-symbol refresh is too broad.",
+      "parameters": [
+        {
+          "key": "start_date",
+          "explanation": "First date to include in the requested window."
+        },
+        {
+          "key": "end_date",
+          "explanation": "Last date to include. Historical research uses completed sessions."
+        },
+        {
+          "key": "items",
+          "explanation": "Instrument records for a bulk history request. Supply the identities required by the batch handler."
+        }
+      ]
+    },
+    {
+      "kind": "research.build-liquidity-universe",
+      "name": "Build a liquidity-filtered universe",
+      "group": "Advanced jobs",
+      "description": "Evaluate a supplied instrument and bar set against a liquidity policy.",
+      "advanced": true,
+      "sample": {
+        "as_of_date": "2026-10-05",
+        "policy": {},
+        "instruments": [],
+        "bars": []
+      },
+      "needs": "A valid liquidity policy, instrument records, and bar records.",
+      "result": "Eligible universe and exclusion reasons.",
+      "next": "universe",
+      "when": "Use when you already have instrument and bar records and want to apply a specific liquidity policy to them.",
+      "parameters": [
+        {
+          "key": "as_of_date",
+          "explanation": "The completed session used for signals, coverage, or dated calculations."
+        },
+        {
+          "key": "policy",
+          "explanation": "Liquidity policy with thresholds and required lookback settings."
+        },
+        {
+          "key": "instruments",
+          "explanation": "Instrument identity records to evaluate against the liquidity policy."
+        },
+        {
+          "key": "bars",
+          "explanation": "Historical OHLCV records required by the liquidity calculation."
+        }
+      ]
+    },
+    {
+      "kind": "universe.detect-exits",
+      "name": "Detect holdings leaving the universe",
+      "group": "Advanced jobs",
+      "description": "Compare held instrument identities with a universe snapshot.",
+      "advanced": true,
+      "sample": {
+        "snapshot_id": "",
+        "held_instrument_ids": []
+      },
+      "needs": "A saved snapshot and held instrument IDs.",
+      "result": "Universe-exit evidence for held stocks.",
+      "next": "actions",
+      "when": "Use after a universe change to identify held stocks that are absent from the selected membership snapshot.",
+      "parameters": [
+        {
+          "key": "snapshot_id",
+          "explanation": "Identity of an existing saved universe snapshot."
+        },
+        {
+          "key": "held_instrument_ids",
+          "explanation": "Instrument IDs currently held, to compare with the saved membership snapshot."
+        }
+      ]
+    },
+    {
+      "kind": "backtest.stress",
+      "name": "Stress-test backtest assumptions",
+      "group": "Advanced jobs",
+      "description": "Run a base simulation with a set of scenario overrides.",
+      "advanced": true,
+      "sample": {
+        "base": {
+          "strategy_id": "momentum",
+          "start_date": "2023-10-05",
+          "end_date": "2026-10-05",
+          "starting_cash": 200000,
+          "max_positions": 15
+        },
+        "scenarios": [
+          {
+            "name": "Higher costs",
+            "overrides": {
+              "slippage_bps": 20
+            }
+          }
+        ]
+      },
+      "needs": "Valid base parameters and 1–10 scenarios.",
+      "result": "Scenario comparison reports.",
+      "next": "backtest",
+      "when": "Use to compare how a baseline simulation behaves under alternative costs, capital, or supported execution assumptions.",
+      "parameters": [
+        {
+          "key": "base",
+          "explanation": "Shared simulation parameters such as strategy, capital, costs, and dates where required."
+        },
+        {
+          "key": "scenarios",
+          "explanation": "Named stress cases with supported parameter overrides; use 1–10 scenarios."
+        }
+      ]
+    },
+    {
+      "kind": "backtest.walk-forward",
+      "name": "Run walk-forward windows",
+      "group": "Advanced jobs",
+      "description": "Evaluate a base strategy across rolling train and test windows.",
+      "advanced": true,
+      "sample": {
+        "base": {
+          "strategy_id": "momentum",
+          "starting_cash": 200000,
+          "max_positions": 15
+        },
+        "windows": [
+          {
+            "name": "Window 1",
+            "train_start": "2023-01-01",
+            "train_end": "2024-12-31",
+            "test_start": "2025-01-01",
+            "test_end": "2025-12-31"
+          }
+        ]
+      },
+      "needs": "Valid base strategy parameters and 1–20 dated windows.",
+      "result": "Window-by-window simulation reports.",
+      "next": "backtest",
+      "when": "Use to compare strategy results across successive train and test windows, rather than relying on one historical period.",
+      "parameters": [
+        {
+          "key": "base",
+          "explanation": "Shared simulation parameters such as strategy, capital, costs, and dates where required."
+        },
+        {
+          "key": "windows",
+          "explanation": "Named train/test windows with train_start, train_end, test_start, and test_end; use 1–20 windows."
+        }
+      ]
+    }
+  ],
+  "pipeline": {
+    "kind": "full-pipeline",
+    "name": "Full research pipeline",
+    "description": "Prepare data and run both momentum research and daily trend signals in a tracked sequence.",
+    "fields": [
+      {
+        "key": "start_date",
+        "label": "Start date",
+        "type": "date",
+        "explanation": "First date to include in the requested window."
+      },
+      {
+        "key": "end_date",
+        "label": "End date",
+        "type": "date",
+        "explanation": "Last date to include. Historical research uses completed sessions."
+      },
+      {
+        "key": "strategies",
+        "label": "Strategies",
+        "type": "strategies",
+        "value": [
+          "momentum",
+          "positional_trend_following"
+        ],
+        "help": "Select the strategies whose inputs should be rebuilt.",
+        "all": true,
+        "explanation": "Strategy IDs whose research inputs or rankings should be calculated."
+      },
+      {
+        "key": "orchestrate_data",
+        "label": "Prepare market data first",
+        "type": "checkbox",
+        "value": true,
+        "help": "Collect prerequisites before strategy calculations.",
+        "explanation": "Whether the full pipeline should prepare market-data prerequisites first."
+      }
+    ],
+    "needs": "Market-data access when preparation is enabled.",
+    "result": "Completed research stages and published strategy results.",
+    "next": "rankings",
+    "when": "Use for an end-to-end research update when you want prerequisites and both strategy outputs coordinated as a single run."
+  }
+}

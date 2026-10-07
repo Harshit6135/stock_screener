@@ -52,6 +52,10 @@ class ResearchRepository:
                         market_data_end TEXT, market_history_revision TEXT,
                         percentile_snapshot_id TEXT, computed_at TEXT NOT NULL)""",
                 ),
+                2: (
+                    "CREATE INDEX IF NOT EXISTS research_percentile_snapshots_lookup ON research_percentile_snapshots(input_fingerprint, as_of_date)",
+                    "CREATE INDEX IF NOT EXISTS research_percentiles_date ON research_percentiles(as_of_date)",
+                ),
             },
         )
 
@@ -330,3 +334,20 @@ class ResearchRepository:
                 (strategy_revision_id,),
             ).fetchall()
         return tuple(str(row["week_end"]) for row in rows)
+
+    def prune_percentiles(self, *, before_date: str) -> dict[str, int]:
+        """Delete raw intermediate percentile cache rows prior to before_date."""
+        with sqlite_connection(self.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor_p = connection.execute(
+                "DELETE FROM research_percentiles WHERE as_of_date < ?", (before_date,)
+            )
+            deleted_percentiles = cursor_p.rowcount
+            cursor_s = connection.execute(
+                "DELETE FROM research_percentile_snapshots WHERE as_of_date < ?", (before_date,)
+            )
+            deleted_snapshots = cursor_s.rowcount
+        return {
+            "deleted_percentiles": deleted_percentiles,
+            "deleted_snapshots": deleted_snapshots,
+        }

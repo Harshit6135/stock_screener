@@ -123,3 +123,27 @@ def test_weekly_rankings_replace_rows_and_list_ordered_weeks(tmp_path):
     rows = repository.all_rankings("revision-1", "2026-09-11")
     assert [(row["instrument_id"], row["artifact_id"]) for row in rows] == [("inst-b", "rank-b")]
     assert repository.ranking_weeks("revision-1") == ("2026-09-11",)
+
+
+def test_prune_percentiles_purges_only_prior_snapshots(tmp_path):
+    repository = _research_repository(tmp_path)
+    percentiles = {"inst-a": {"factor1": (1.0, 0.5)}}
+    symbols = {"inst-a": "AAA"}
+
+    repository.upsert_percentile_snapshot(
+        "snap-old", "rev-1", "2026-01-01", "fp-old", percentiles, symbols
+    )
+    repository.upsert_percentile_snapshot(
+        "snap-new", "rev-1", "2026-06-01", "fp-new", percentiles, symbols
+    )
+
+    assert repository.read_percentile_snapshot("fp-old", "2026-01-01") is not None
+    assert repository.read_percentile_snapshot("fp-new", "2026-06-01") is not None
+
+    result = repository.prune_percentiles(before_date="2026-05-01")
+    assert result["deleted_percentiles"] == 1
+    assert result["deleted_snapshots"] == 1
+
+    assert repository.read_percentile_snapshot("fp-old", "2026-01-01") is None
+    assert repository.read_percentile_snapshot("fp-new", "2026-06-01") is not None
+

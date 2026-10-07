@@ -6,8 +6,9 @@ from pathlib import Path
 
 from src.domains.execution import load_kite_credentials
 from src.domains.operations import JobStore
+from src.domains.research import ResearchRepository
 from src.gates.composition import ApplicationServices
-from src.gates.operations import sqlite_backup, sqlite_ready, sqlite_restore
+from src.gates.operations import sqlite_backup, sqlite_ready, sqlite_restore, sqlite_vacuum
 from src.gates.runtime import RuntimeConfig
 from src.gates.workflows.index_poller import IndexQuotePoller
 from src.gates.workflows.intraday_stream import IntradayStreamLease
@@ -40,6 +41,11 @@ def main() -> int:
     stream_action.add_argument("--stop", action="store_true")
     stream_state.add_argument("--token-count", type=int, default=0)
     stream_state.add_argument("--heartbeat", action="store_true")
+    vacuum = subparsers.add_parser("vacuum-sqlite")
+    vacuum.add_argument("database", type=Path)
+    prune = subparsers.add_parser("prune-percentiles")
+    prune.add_argument("database", type=Path)
+    prune.add_argument("before_date", help="ISO cutoff date (YYYY-MM-DD); percentiles before this date are deleted")
     args = parser.parse_args()
     if args.command == "backup-sqlite":
         print(sqlite_backup(args.source, args.destination))
@@ -87,6 +93,14 @@ def main() -> int:
         else:
             result = stream.state()
         print(json.dumps(result, default=str, sort_keys=True))
+        return 0
+    if args.command == "vacuum-sqlite":
+        sqlite_vacuum(args.database)
+        print("vacuum completed")
+        return 0
+    if args.command == "prune-percentiles":
+        result = ResearchRepository(args.database).prune_percentiles(before_date=args.before_date)
+        print(json.dumps(result, sort_keys=True))
         return 0
     return 0 if sqlite_ready(args.database) else 1
 

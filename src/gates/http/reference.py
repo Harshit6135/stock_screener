@@ -7,8 +7,8 @@ from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, jsonify, request
 
-from src.gates.repositories import MarketRepository
 from src.domains.artifacts import ArtifactPublisher
+from src.gates.repositories import MarketRepository
 from src.platform_kernel import ArtifactStore, DomainValidationError
 
 

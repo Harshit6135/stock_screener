@@ -146,6 +146,31 @@ class PortfolioProposalStore:
                 (proposal_id, event_type, timestamp, json.dumps(detail, sort_keys=True)),
             )
 
+    def expire_unsubmitted_stop(self, proposal_id: str, timestamp: str) -> bool:
+        """Retire a stale stop review without touching an order sent to Kite."""
+        with sqlite_connection(self.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            changed = connection.execute(
+                """UPDATE action_proposals SET status='EXPIRED',
+                decision_status_json='["EXPIRED"]', updated_at=?
+                WHERE proposal_id=? AND strategy_id='portfolio_stop'
+                AND status IN ('PENDING','APPROVED')
+                AND NOT EXISTS (SELECT 1 FROM broker_orders WHERE proposal_id=?
+                    AND status != 'LOCAL_CREATED')""",
+                (timestamp, proposal_id, proposal_id),
+            ).rowcount
+            if not changed:
+                return False
+            connection.execute(
+                "UPDATE broker_orders SET status='CANCELLED' WHERE proposal_id=? AND status='LOCAL_CREATED'",
+                (proposal_id,),
+            )
+            connection.execute(
+                "INSERT INTO action_proposal_events(proposal_id,event_type,occurred_at,detail_json) VALUES (?,'EXPIRED',?,'{}')",
+                (proposal_id, timestamp),
+            )
+            return True
+
     def get(self, proposal_id: str) -> dict[str, object]:
         with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
             row = connection.execute(
@@ -162,7 +187,9 @@ class PortfolioProposalStore:
         statuses = json.loads(result.pop("decision_status_json", "[]"))
         if not statuses:
             statuses = [
-                result["status"] if result["status"] in {"APPROVED", "REJECTED", "PROCESSED"} else "PENDING"
+                result["status"]
+                if result["status"] in {"APPROVED", "REJECTED", "PROCESSED"}
+                else "PENDING"
                 for _ in result["decisions"]
             ]
         result["decision_statuses"] = statuses
@@ -180,11 +207,11 @@ class PortfolioProposalStore:
         encoded_date = action_date.isoformat() if action_date else None
         with sqlite_connection(self.database, read_only=True, row_factory=True) as connection:
             rows = connection.execute(
-                  """SELECT * FROM action_proposals WHERE account_id=?
+                """SELECT * FROM action_proposals WHERE account_id=?
                      AND (? IS NULL OR action_date=?)
                      AND (? IS NULL OR strategy_id=?)
                    ORDER BY action_date DESC, created_at DESC LIMIT ?""",
-                  (account_id, encoded_date, encoded_date, strategy_id, strategy_id, limit),
+                (account_id, encoded_date, encoded_date, strategy_id, strategy_id, limit),
             ).fetchall()
         return [self._decode(row) for row in rows]
 
@@ -226,9 +253,14 @@ class PortfolioProposalStore:
                 raise DomainValidationError("action proposal was not found")
             if row["status"] != "PENDING":
                 raise DomainValidationError("action proposal is not pending")
-            decision_count = len(json.loads(connection.execute(
-                "SELECT decision_json FROM action_proposals WHERE proposal_id=?", (proposal_id,)
-            ).fetchone()[0]))
+            decision_count = len(
+                json.loads(
+                    connection.execute(
+                        "SELECT decision_json FROM action_proposals WHERE proposal_id=?",
+                        (proposal_id,),
+                    ).fetchone()[0]
+                )
+            )
             connection.execute(
                 "UPDATE action_proposals SET status=?, decision_status_json=?, updated_at=? WHERE proposal_id=?",
                 (action, json.dumps([action] * decision_count), timestamp, proposal_id),
@@ -240,12 +272,16 @@ class PortfolioProposalStore:
                 (proposal_id, action, timestamp),
             )
 
-    def decide_stock(self, proposal_id: str, index: int, action: str, timestamp: str) -> dict[str, object]:
+    def decide_stock(
+        self, proposal_id: str, index: int, action: str, timestamp: str
+    ) -> dict[str, object]:
         if action not in {"APPROVED", "REJECTED"}:
             raise DomainValidationError("proposal decision is invalid")
         with sqlite_connection(self.database, row_factory=True) as connection:
             connection.execute("BEGIN IMMEDIATE")
-            row = connection.execute("SELECT * FROM action_proposals WHERE proposal_id=?", (proposal_id,)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM action_proposals WHERE proposal_id=?", (proposal_id,)
+            ).fetchone()
             if row is None:
                 raise DomainValidationError("action proposal was not found")
             proposal = self._decode(row)
@@ -257,14 +293,23 @@ class PortfolioProposalStore:
             if statuses[index] != "PENDING":
                 raise DomainValidationError("proposal stock row is not pending")
             statuses[index] = action
-            status = "PENDING" if "PENDING" in statuses else ("APPROVED" if "APPROVED" in statuses else "REJECTED")
+            status = (
+                "PENDING"
+                if "PENDING" in statuses
+                else ("APPROVED" if "APPROVED" in statuses else "REJECTED")
+            )
             connection.execute(
                 "UPDATE action_proposals SET status=?, decision_status_json=?, updated_at=? WHERE proposal_id=?",
                 (status, json.dumps(statuses), timestamp, proposal_id),
             )
             connection.execute(
                 "INSERT INTO action_proposal_events (proposal_id,event_type,occurred_at,detail_json) VALUES (?,?,?,?)",
-                (proposal_id, f"STOCK_{action}", timestamp, json.dumps({"decision_index": index}, sort_keys=True)),
+                (
+                    proposal_id,
+                    f"STOCK_{action}",
+                    timestamp,
+                    json.dumps({"decision_index": index}, sort_keys=True),
+                ),
             )
         return self.get(proposal_id)
 

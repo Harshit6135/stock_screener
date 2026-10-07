@@ -19,7 +19,6 @@ from src.domains.portfolio_engine import (
     PortfolioState,
 )
 from src.domains.strategies import feature_series
-from src.gates.backtesting_adapter import BacktestPortfolioEngineAdapter
 from src.gates.composition import ApplicationServices
 from src.gates.workflows.positional_trend_backtest_inputs import load_snapshot_universe
 from src.platform_kernel import Money, QualityStatus

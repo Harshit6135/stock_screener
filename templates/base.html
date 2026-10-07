@@ -1,21 +1,22 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <title>{% block title %}Stock Screener{% endblock %} · Development</title>
-  <script>document.documentElement.dataset.theme=localStorage.getItem("screener-theme")||"dark";</script>
+  <title>{% block title %}Stock Screener{% endblock %}</title>
+  <script>document.documentElement.dataset.theme=localStorage.getItem("screener-theme")||"light";</script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/carbon-emerald.css', v='20261005-stock-review1') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace.css', v='20261007-portfolio2') }}"><link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}">
   {% block head %}{% endblock %}
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
   <aside class="sidebar" aria-label="Primary navigation">
-    <a class="brand" href="/"><span aria-hidden="true">◆</span><span>SCREENER · DEVELOPMENT</span></a>
-    <nav>{% for href, label, key in [('/', 'Home', 'home'), ('/actions', 'Actions', 'actions'), ('/pipeline', 'Pipeline', 'pipeline'), ('/rankings', 'Rankings', 'rankings'), ('/universe', 'Universe', 'universe'), ('/backtest', 'Backtest', 'backtest'), ('/settings', 'Settings', 'settings'), ('/logs', 'Logs', 'logs'), ('/wiki', 'Wiki', 'wiki')] %}<a href="{{ href }}" {% if active_page == key %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
-    <a href="/integrations/kite">Kite access</a>
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">S</span><span>Screener<small>MARKET WORKSPACE</small></span></a>
+    <nav>{% for href, label, key in [('/', 'Portfolio', 'home'), ('/actions', 'Trade review', 'actions'), ('/pipeline', 'Research runs', 'pipeline'), ('/rankings', 'Stock rankings', 'rankings'), ('/universe', 'Stock universe', 'universe'), ('/backtest', 'Backtest', 'backtest'), ('/settings', 'Settings', 'settings'), ('/logs', 'Activity & quality', 'logs'), ('/wiki', 'Guide', 'wiki')] %}<a href="{{ href }}" {% if active_page == key %}aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true">{{ {'home':'▦','actions':'✓','pipeline':'↗','rankings':'≡','universe':'◎','backtest':'◷','settings':'⚙','logs':'≋','wiki':'?'}[key] }}</span>{{ label }}</a>{% endfor %}</nav>
+    <div class="sidebar-footer"><span class="workspace-label">NSE EQUITIES</span><a href="/integrations/kite">Manage Kite connection ↗</a><small>Research · Review · Track</small></div>
   </aside>
-  <div class="app-shell"><header class="topbar"><span id="page-status" role="status" aria-live="polite">Ready</span><button id="theme-toggle" class="icon-button" type="button" aria-label="Switch color theme">◐</button></header><main id="main-content">{% block content %}{% endblock %}</main></div>
+  <div class="app-shell"><header class="topbar"><span class="topbar-context">Your investment workspace</span><div class="topbar-tools"><a id="market-login" class="market-login" href="/integrations/kite?auto=1" target="kite-market-login" rel="noopener">Market data login ↗</a><span id="page-status" role="status" aria-live="polite">Ready</span><button id="theme-toggle" class="icon-button" type="button" aria-label="Switch color theme">◐</button></div></header><main id="main-content" data-page="{{ active_page|default('wiki') }}">{% block content %}{% endblock %}</main></div>
   <dialog id="app-modal" aria-labelledby="modal-title"><section id="modal-content"></section></dialog>
-  <script src="{{ url_for('static', filename='js/common.js') }}"></script>{% block scripts %}{% endblock %}
+  <script src="{{ url_for('static', filename='js/common.js') }}"></script><script src="{{ url_for('static', filename='js/market-session.js', v='20261007-portfolio2') }}"></script>{% block scripts %}{% endblock %}
 </body></html>

@@ -23,12 +23,16 @@ from src.gates.http.positional_trend import create_positional_trend_blueprint
 from src.gates.http.reference import create_reference_blueprint
 from src.gates.http.research import create_research_blueprint
 from src.gates.http.strategies import create_strategies_blueprint
+from src.gates.http.tradebook import create_tradebook_blueprint
 from src.gates.http.universe import create_universe_blueprint
 from src.gates.http.wiki import create_wiki_blueprint
 from src.gates.operations import sqlite_ready
 from src.gates.runtime import RuntimeConfig
 from src.gates.security import RedactingLogFilter
 from src.gates.workflows.index_poller import BackgroundIndexPoller
+from src.gates.workflows.proposal_execution import ProposalExecution
+from src.gates.workflows.stop_sells import BackgroundStopMonitor, StopSellWorkflow
+from src.gates.workflows.tradebook_import import TradebookImport
 
 
 def configure_logging() -> None:
@@ -80,6 +84,11 @@ def create_app(config_class=RuntimeConfig):
         portfolio_live_execution=bool(app.config.get("PORTFOLIO_KITE_LIVE_EXECUTION", False)),
     )
     app.extensions["screener_services"] = services
+    market_auth = (
+        KiteAuthService(market_data_credentials, market_data_token_path)
+        if market_data_credentials is not None else None
+    )
+    services.live_stream.market_auth = market_auth
     app.register_blueprint(create_dashboard_blueprint())
     app.register_blueprint(create_wiki_blueprint())
     app.register_blueprint(
@@ -121,23 +130,40 @@ def create_app(config_class=RuntimeConfig):
             services.market,
             services.actions.risk_projection,
             services.broker_orders.risk_config,
+            broker_sync=services.portfolio_sync,
+            live_quotes=services.live_quotes,
+            intraday_stream=services.intraday_stream,
         )
     )
     app.register_blueprint(create_broker_blueprint(services.broker_orders))
     app.register_blueprint(
+        create_tradebook_blueprint(
+            TradebookImport(
+                services.database, services.ledger, services.market,
+                None if app.config.get("TESTING") else services.corporate_actions,
+            )
+        )
+    )
+    app.register_blueprint(
         create_kite_accounts_blueprint(services.kite_accounts, services.portfolio_sync)
     )
     app.register_blueprint(create_backtest_blueprint(services.backtests, services.artifacts))
-    app.register_blueprint(create_actions_blueprint(services.actions))
+    stop_sells = StopSellWorkflow(services.actions, services.broker_orders, services.kite_accounts)
+    proposal_execution = ProposalExecution(stop_sells)
+    app.extensions["portfolio_stop_monitor"] = BackgroundStopMonitor(
+        stop_sells, proposal_execution=proposal_execution
+    )
+    app.register_blueprint(
+        create_actions_blueprint(services.actions, stop_sells, proposal_execution)
+    )
 
     app.register_blueprint(
         create_kite_auth_blueprint(
-            KiteAuthService(market_data_credentials, market_data_token_path)
-            if market_data_credentials is not None
-            else None,
+            market_auth,
             KiteAuthService(portfolio_credentials, portfolio_token_path)
             if portfolio_credentials is not None
             else None,
+            portfolio_accounts=services.kite_accounts,
         )
     )
 
@@ -206,6 +232,7 @@ def main() -> None:
         index_poller.start()
 
     print(f"Serving Waitress on http://{host}:5000 ...", flush=True)
+    app.extensions["portfolio_stop_monitor"].start()
     waitress_threads = max(1, int(os.environ.get("SCREENER_WAITRESS_THREADS", "8")))
     serve(
         app,

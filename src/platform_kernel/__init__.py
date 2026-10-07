@@ -8,7 +8,6 @@ from .api import (
     ArtifactManifest,
     ArtifactStore,
     Broker,
-    CommandMetadata,
     DomainValidationError,
     FrozenDict,
     HistoricalBarsProvider,
@@ -18,7 +17,6 @@ from .api import (
     QualityStatus,
     Quantity,
     SqliteArtifactStore,
-    VersionedReference,
     freeze_value,
 )
 
@@ -26,7 +24,6 @@ __all__ = [
     "ArtifactManifest",
     "ArtifactStore",
     "Broker",
-    "CommandMetadata",
     "DomainValidationError",
     "FrozenDict",
     "HistoricalBarsProvider",
@@ -36,6 +33,5 @@ __all__ = [
     "QualityStatus",
     "Quantity",
     "SqliteArtifactStore",
-    "VersionedReference",
     "freeze_value",
 ]

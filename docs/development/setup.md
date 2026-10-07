@@ -38,6 +38,16 @@ not used as a fallback for portfolio credentials.
 
 ## Code organization
 
+Portfolio account creation opens a separate **Connect portfolio Kite** step.
+Existing accounts can use the same button on the portfolio dashboard. Enter only
+the portfolio API key and API secret, then complete Kite login. Configure the
+Kite application's redirect URL as
+`http://127.0.0.1:5000/integrations/kite/portfolio/callback`. The app exchanges
+Kite's request token on the server and saves the access token for the selected
+account. Account connections never use the shared market-data token. Complete
+login again using the same form when the session expires.
+Creating the local ledger or connecting Kite does not itself import holdings.
+
 Read the [architecture overview](architecture.md) before moving code.
 Put calculations and domain invariants in `src/domains/`, multi-owner
 coordination in `src/gates/workflows/`, HTTP adaptation in `src/gates/http/`,

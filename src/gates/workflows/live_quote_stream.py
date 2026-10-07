@@ -10,11 +10,13 @@ from src.platform_kernel import DomainValidationError
 class LiveQuoteStream:
     """Explicitly started read-only stream using the owning broker session."""
 
-    def __init__(self, accounts, market, quotes, lease, alerts, provider_factory, ticker_factory=KiteTicker):
+    def __init__(self, accounts, market, quotes, lease, alerts, provider_factory, ticker_factory=KiteTicker,
+                 market_auth=None):
         self.accounts, self.market, self.quotes = accounts, market, quotes
         self.lease, self.alerts = lease, alerts
         self.provider_factory, self.ticker_factory = provider_factory, ticker_factory
         self.provider = None
+        self.market_auth = market_auth
         self._lock = RLock()
 
     def start(self, account_id, instrument_ids):
@@ -27,9 +29,12 @@ class LiveQuoteStream:
         with self._lock:
             if self.provider is not None:
                 raise DomainValidationError("stop the existing live stream before starting another")
-            binding = self.accounts.binding(account_id)
-            self.accounts.validate(binding["broker_account_id"])
-            credentials = self.accounts.get_credentials(binding["broker_account_id"])
+            if self.market_auth is not None:
+                credentials = self.market_auth.stream_credentials()
+            else:
+                binding = self.accounts.binding(account_id)
+                self.accounts.validate(binding["broker_account_id"])
+                credentials = self.accounts.get_credentials(binding["broker_account_id"])
             tokens = {}
             for instrument_id in instrument_ids:
                 instrument = self.market.instrument_by_id(instrument_id)

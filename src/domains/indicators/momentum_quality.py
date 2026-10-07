@@ -8,9 +8,24 @@ from typing import Any
 
 import pandas as pd
 
+
 def _value(row: pd.Series, name: int, default: float) -> float:
     raw = row[name]
     return float(raw) if pd.notna(raw) and math.isfinite(float(raw)) else default
+
+
+def average_true_range(frame: pd.DataFrame, length: int = 14) -> pd.Series:
+    """The ATR calculation shared by momentum indicators and portfolio stops."""
+    previous = frame["close"].shift(1)
+    true_range = pd.concat(
+        [
+            (frame["high"] - frame["low"]),
+            (frame["high"] - previous).abs(),
+            (frame["low"] - previous).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    return true_range.ewm(alpha=1 / length, adjust=False, min_periods=length).mean()
 
 
 def momentum_quality_indicator_series(
@@ -23,8 +38,6 @@ def momentum_quality_indicator_series(
     for column in ("open", "high", "low", "close", "volume"):
         frame[column] = pd.to_numeric(frame[column], errors="raise")
     close = frame["close"]
-    high = frame["high"]
-    low = frame["low"]
     volume = frame["volume"]
     ema50 = close.ewm(span=50, adjust=False, min_periods=50).mean()
     ema200 = close.ewm(span=200, adjust=False, min_periods=200).mean()
@@ -38,11 +51,7 @@ def momentum_quality_indicator_series(
     ppo = (fast - slow) / slow * 100
     ppo_signal = ppo.ewm(span=9, adjust=False, min_periods=9).mean()
     ppo_histogram = ppo - ppo_signal
-    previous = close.shift(1)
-    true_range = pd.concat(
-        [(high - low), (high - previous).abs(), (low - previous).abs()], axis=1
-    ).max(axis=1)
-    atr = true_range.ewm(alpha=1 / 14, adjust=False, min_periods=14).mean()
+    atr = average_true_range(frame)
     atr_value = atr
     midpoint = close.rolling(20).mean()
     deviation = close.rolling(20).std(ddof=0)
@@ -94,9 +103,7 @@ def momentum_quality_indicator_series(
             "percent_b": _value(percent_b, i, 0.5),
             "bandwidth_change_5d": _value(bandwidth_change, i, 0),
             "volume": int(latest["volume"]),
-            "flat_ohlc": len(
-                {float(latest[field]) for field in ("open", "high", "low", "close")}
-            )
+            "flat_ohlc": len({float(latest[field]) for field in ("open", "high", "low", "close")})
             == 1,
             "close": latest_close,
         }

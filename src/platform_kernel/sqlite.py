@@ -28,7 +28,7 @@ def sqlite_connection(
         if row_factory:
             connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute("PRAGMA busy_timeout=5000")
+        connection.execute("PRAGMA busy_timeout=30000")
         if not read_only:
             connection.execute("PRAGMA journal_mode=WAL")
         yield connection

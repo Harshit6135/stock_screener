@@ -91,6 +91,18 @@ def test_missing_stop_projection_preserves_quotes(tmp_path):
     assert store.execution_quote("ledger", "stock")["price"] == "100"
 
 
+def test_shared_market_quotes_do_not_require_broker_binding(tmp_path):
+    _, _, _, _, stream, calls = stream_services(tmp_path)
+    stream.market_auth = SimpleNamespace(stream_credentials=lambda: {
+        "api_key": "shared-key", "access_token": "shared-token",
+    })
+    stream.accounts = None  # No broker binding or trading credentials available.
+    assert stream.start("ledger", ["stock"])["status"] == "CONNECTED"
+    assert stream.provider.ticker.credentials == ("shared-key", "shared-token")
+    assert calls == []
+    stream.stop()
+
+
 def test_connection_failure_and_stopped_lease_cannot_claim_connected(tmp_path):
     _, _, _, lease, stream, _ = stream_services(tmp_path)
 

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Backtest · Stock Screener{% endblock %}
 {% block content %}
-<div class="page-heading"><div><h1>Backtesting and strategy research</h1><p class="muted">Run historical simulations, compare saved results, and inspect fills and diagnostics. Simulations never write to your live portfolio.</p></div></div>
+<div class="page-heading"><div><h1>Test a strategy</h1><p class="muted">Choose a historical period and capital, run a simulation, then review returns, drawdown, and trades.</p></div></div>
 <p id="backtest-error" class="error" role="alert"></p>
 <section class="card">
   <h2>Run a backtest</h2>
@@ -33,12 +33,12 @@
   </details>
   <div class="toolbar" style="margin-top:1rem"><button id="run-backtest">Run simulation</button><span id="job-status" class="muted" role="status" aria-live="polite">Ready</span></div>
 </section>
-<section class="grid two" style="margin-top:1rem">
-  <article class="card"><div class="page-heading"><div><h2>Saved runs</h2><p class="muted">Completed immutable simulation reports</p></div><button id="load-runs" class="secondary">Refresh</button></div>
+<section class="grid two backtest-results" style="margin-top:1rem">
+  <article class="card"><div class="page-heading"><div><h2>Saved runs</h2><p class="muted">Open a completed simulation to inspect performance.</p></div><button id="load-runs" class="secondary">Refresh</button></div>
     <div class="toolbar"><div class="field"><label for="run-limit">Show recent</label><input id="run-limit" type="number" value="50" min="1" max="100"></div></div>
     <div class="table-wrap"><table><thead><tr><th>Run</th><th>Strategy</th><th>As of</th><th>Report</th></tr></thead><tbody id="runs"></tbody></table></div>
   </article>
-  <article class="card"><h2>Report detail</h2><div id="run-summary" class="grid three"></div><div id="run-tables"></div><details style="margin-top:1rem"><summary>Full report data</summary><pre id="run-detail">Choose a saved run or finish a simulation.</pre></details></article>
+  <article class="card"><h2>Performance report</h2><p id="report-placeholder" class="muted">Open a saved run to see its performance and trades.</p><svg id="backtest-equity-chart" viewBox="0 0 600 180" role="img" aria-label="Simulation equity history" hidden style="width:100%;height:220px"></svg><div id="run-summary" class="grid three"></div><div id="run-tables"></div><details style="margin-top:1rem"><summary>Full report data</summary><pre id="run-detail">Choose a saved run or finish a simulation.</pre></details></article>
 </section>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='js/backtest.js') }}"></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/backtest-workspace.js', v='20261006-app1') }}"></script>{% endblock %}

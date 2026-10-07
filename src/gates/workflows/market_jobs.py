@@ -215,10 +215,8 @@ class KiteMarketJobs:
             try:
                 instrument = self.repository.instrument(symbol, "NSE")
             except DomainValidationError:
-                continue
+                instrument = None
             tracked.append(("NSE", symbol, instrument))
-        if not tracked:
-            raise DomainValidationError("no index identities are synchronized")
         raw = self._client().ohlc([f"{exchange}:{symbol}" for exchange, symbol, _ in tracked])
         if not isinstance(raw, dict):
             raise DomainValidationError("Kite index quote response is invalid")
@@ -228,6 +226,17 @@ class KiteMarketJobs:
             item = raw.get(f"{exchange}:{symbol}")
             if not isinstance(item, dict):
                 continue
+            if instrument is None:
+                token = item.get("instrument_token")
+                if not isinstance(token, int) or isinstance(token, bool) or token <= 0:
+                    continue
+                identity = TrackedInstrument(
+                    str(uuid5(NAMESPACE_URL, f"NSE:INDEX:{symbol}")),
+                    f"INDEX:{symbol}", symbol, "NSE", str(token),
+                    datetime.now(UTC).date(),
+                )
+                self.repository.upsert_instruments([identity])
+                instrument = self.repository.instrument(symbol, "NSE")
             try:
                 last_price = Decimal(str(item["last_price"]))
                 prev_close = Decimal(str(item["ohlc"]["close"]))

@@ -191,7 +191,8 @@ class PipelinePreparation:
         )
         return {
             "snapshot_id": snapshot_id,
-            "snapshot_fallback": start < date.fromisoformat(str(collection["snapshot_date"])),
+            "snapshot_fallback": start
+            < date.fromisoformat(str(collection.get("snapshot_date") or start.isoformat())),
             "collection": collection,
             "instrument_sync": {
                 "resolved_count": sync.get("resolved_count"),

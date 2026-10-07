@@ -334,4 +334,4 @@ def test_fresh_application_uses_only_owner_migrations(tmp_path):
                 "SELECT namespace, MAX(version) FROM system_schema_migrations GROUP BY namespace"
             )
         )
-    assert versions == {"market_data": 1, "reference_data": 1}
+    assert versions == {"market_data": 2, "reference_data": 1}

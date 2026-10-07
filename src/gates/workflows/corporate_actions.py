@@ -120,7 +120,7 @@ class CorporateActions:
         text = raw_type.strip().upper()
         if "BONUS" in text:
             return "BONUS"
-        if "SPLIT" in text:
+        if "SPLIT" in text or "SUB-DIVISION" in text or "SUBDIVISION" in text or "SUB DIVISION" in text:
             return "SPLIT"
         if "RIGHT" in text:
             return "RIGHTS"
@@ -192,7 +192,19 @@ class CorporateActions:
             context.checkpoint(progress={"stage": "detect_events", "detected": len(detected), "skipped": len(skipped)})
         return {"detected": len(detected), "skipped": skipped, "events": detected}
 
-    def detect_job(self, payload: dict[str, object], context=None) -> dict[str, object]:
+    @staticmethod
+    def source_ratio(subject: str, action_type: str) -> str:
+        """Parse exchange wording, including singular Re and plural Rs currency."""
+        ratio = re.search(r"(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)", subject)
+        face_values = re.search(
+            r"FROM\s+(?:(?:RS\.?|RE\.?|INR|₹)\s*)?(\d+(?:\.\d+)?).*?TO\s+(?:(?:RS\.?|RE\.?|INR|₹)\s*)?(\d+(?:\.\d+)?)",
+            subject.upper(),
+        )
+        if action_type == "SPLIT" and face_values:
+            return face_values.group(2) + ":" + face_values.group(1)
+        return ratio.group(0) if ratio else ""
+
+    def detect_job(self, payload: dict[str, object], context=None, *, client=None) -> dict[str, object]:
         """Adapt durable job payloads to normalized NSE source records."""
         from src.domains.reference_data import NseClient
         if set(payload) - {"as_of_date", "start_date"}:
@@ -208,15 +220,11 @@ class CorporateActions:
             raise DomainValidationError("corporate action detection dates must be ISO dates") from exc
         if start > end:
             raise DomainValidationError("corporate action detection start_date must not follow end_date")
-        raw = NseClient().corporate_actions(from_date=start.strftime("%d-%m-%Y"), to_date=end.strftime("%d-%m-%Y"))
+        raw = (client or NseClient()).corporate_actions(from_date=start.strftime("%d-%m-%Y"), to_date=end.strftime("%d-%m-%Y"))
         records = []
         for row in raw:
             subject = str(row.get("subject", ""))
-            ratio = re.search(r"(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)", subject)
-            face_values = re.search(r"FROM\s+(?:RS\.?\s*)?(\d+(?:\.\d+)?).*?TO\s+(?:RS\.?\s*)?(\d+(?:\.\d+)?)", subject.upper())
-            ratio_text = ratio.group(0) if ratio else ""
-            if "SPLIT" in subject.upper() and face_values:
-                ratio_text = face_values.group(2) + ":" + face_values.group(1)
+            ratio_text = self.source_ratio(subject, self.classify_action_type(subject))
             records.append({"symbol": row.get("symbol", ""), "isin": row.get("isin", ""),
                 "ex_date": row.get("exDate", ""), "action_type": subject,
                 "ratio": ratio_text, "raw_json": json.dumps(row)})

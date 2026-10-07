@@ -19,5 +19,8 @@ def test_market_repository_records_owner_migration_and_final_market_tables(tmp_p
         coverage_columns = {
             row[1] for row in connection.execute("PRAGMA table_info(market_fetch_coverage)")
         }
-    assert versions == {"market_data": 1}
+    assert versions == {"market_data": 2}
     assert "coverage_context" in coverage_columns
+    with sqlite3.connect(database) as connection:
+        indexes = {row[1] for row in connection.execute("PRAGMA index_list('market_bars')")}
+    assert "market_bars_date_instrument" in indexes

@@ -122,5 +122,5 @@ def test_coverage_earliest_fallback_and_unresolved_benchmarks(tmp_path):
         DAY, DAY
     )
     assert report["membership_lineage"][0]["earliest_fallback"] is True
-    assert len(report["missing_identities"]) == 5
+    assert len(report["missing_identities"]) == 4
     assert report["status"] == "PARTIAL"

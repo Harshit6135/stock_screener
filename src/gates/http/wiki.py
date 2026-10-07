@@ -5,10 +5,12 @@ from pathlib import Path
 from flask import Blueprint, jsonify, render_template
 from markdown_it import MarkdownIt
 
+from src.gates.job_catalog import job_catalog
 
 _DOCS_DIRECTORY = Path(__file__).resolve().parents[3] / "docs"
 _WIKI_DIRECTORY = _DOCS_DIRECTORY / "reference"
 _PAGES = {
+    "screen-guide": "Every tab explained",
     "getting-started": "Getting started",
     "research-and-strategies": "Research and strategies",
     "portfolio-and-actions": "Portfolio and actions",
@@ -17,6 +19,7 @@ _PAGES = {
     "troubleshooting": "Troubleshooting",
 }
 _SECTIONS = {
+    "screen-guide": "Start here",
     "getting-started": "Start here",
     "research-and-strategies": "Research",
     "portfolio-and-actions": "Portfolio",
@@ -45,6 +48,19 @@ def create_wiki_blueprint() -> Blueprint:
             "ui-guide.html",
             active_page="wiki",
             guide_html=_MARKDOWN.render(content),
+        )
+
+    @blueprint.get("/guide/jobs")
+    @blueprint.get("/guide/jobs/<kind>")
+    def job_guide(kind=None):
+        catalog = job_catalog()
+        definitions = catalog["jobs"] + [catalog["pipeline"]]
+        selected = next((job for job in definitions if job["kind"] == kind), None)
+        if kind is not None and selected is None:
+            return jsonify({"error": "job definition not found"}), 404
+        return render_template(
+            "job-guide.html", active_page="wiki", jobs=definitions, selected=selected,
+            groups=list(dict.fromkeys(job.get("group", "Pipeline") for job in definitions)),
         )
 
     @blueprint.get("/api/wiki/pages")

@@ -34,7 +34,7 @@
     }));
   }
   function renderProposal(proposal) {
-    const strategy = strategyNames.get(proposal.strategy_id) || proposal.strategy_id || "Unknown";
+    const strategy = proposal.strategy_id === "portfolio_stop" ? "Portfolio stops" : strategyNames.get(proposal.strategy_id) || proposal.strategy_id || "Unknown";
     const decisions = proposal.decisions || [];
     const states = proposal.decision_statuses || decisions.map(() => proposal.status || "PENDING");
     return decisions.map((decision, index) => {
@@ -52,8 +52,28 @@
       const stateValue = states[index] || "PENDING";
       const state = document.createElement("span"); state.className = `status-chip status-${String(stateValue).toLowerCase()}`; state.textContent = statusNames[stateValue] || stateValue;
       const review = document.createElement("div"); review.className = "proposal-review-actions";
-      if (stateValue === "PENDING" && decision.type !== "NO_ACTION") {
-        review.append(actionButton("Approve", async () => { await Screener.api(`/api/actions/proposals/${encodeURIComponent(proposal.proposal_id)}/decisions/${index}/approve`, {method:"POST"}); await load(); }, ""));
+      if (proposal.strategy_id === "portfolio_stop") {
+        side.textContent = "SELL";
+        const order = proposal.broker_order;
+        if (order) state.textContent = order.status;
+        const id = encodeURIComponent(proposal.proposal_id);
+        if (["PENDING", "APPROVED"].includes(proposal.status) && (!order || order.status === "LOCAL_CREATED")) {
+          review.append(actionButton(proposal.status === "APPROVED" ? "Submit approved sell on Kite" : "Approve & sell on Kite", async () => {
+            const result = await Screener.api(`/api/actions/stops/${id}/approve-execute`, {method:"POST",body:JSON.stringify({approved:true})});
+            await load();
+            $("generation-status").textContent = `Kite order ${result.order.broker_order_id || result.order.order_id}: ${result.order.status}. Confirmed fills update the portfolio journal.`;
+          }, ""));
+          if (proposal.status === "PENDING") review.append(actionButton("Reject", async () => { await Screener.api(`/api/actions/proposals/${id}/reject`, {method:"POST"}); await load(); }));
+        }
+        if (order && !["FILLED", "CANCELLED", "REJECTED", "LOCAL_CREATED"].includes(order.status)) review.append(actionButton("Refresh Kite order", async () => {
+          await Screener.api(`/api/actions/stops/${id}/reconcile`, {method:"POST"}); await load();
+        }));
+      } else if (stateValue === "PENDING" && decision.type !== "NO_ACTION") {
+        if (proposal.strategy_id === "manual") review.append(actionButton("Approve", async () => { await Screener.api(`/api/actions/proposals/${encodeURIComponent(proposal.proposal_id)}/decisions/${index}/approve`, {method:"POST"}); await load(); }, ""));
+        else review.append(actionButton("Approve & execute on Kite", async () => {
+          const result = await Screener.api(`/api/actions/proposals/${encodeURIComponent(proposal.proposal_id)}/approve-execute`, {method:"POST",body:JSON.stringify({approved:true,decision_index:index})});
+          await load(); $("generation-status").textContent = result.execution?.last_error || (result.status === "PENDING" ? "Stock approved. Execution waits until every stock in this proposal is reviewed." : `Execution ${result.execution?.status || "queued"} for session ${result.action_date}. Confirmed fills update the journal.`);
+        }, ""));
         review.append(actionButton("Reject", async () => { await Screener.api(`/api/actions/proposals/${encodeURIComponent(proposal.proposal_id)}/decisions/${index}/reject`, {method:"POST"}); await load(); }, "secondary"));
       } else if (stateValue === "APPROVED" && proposal.status === "APPROVED") {
         const firstApproved = states.findIndex(value => value === "APPROVED") === index;
@@ -61,15 +81,19 @@
           if (!confirm("Confirm these quantities and prices were actually executed?")) return;
           await Screener.api(`/api/actions/proposals/${encodeURIComponent(proposal.proposal_id)}/process`, {method:"POST"}); await load();
         }));
-        if (firstApproved && proposal.strategy_id !== "manual") review.append(actionButton("Prepare broker intents", async () => {
-          const result = await Screener.api(`/api/portfolio/proposals/${encodeURIComponent(proposal.proposal_id)}/broker-intents`, {method:"POST"});
-          $("risk").replaceChildren(); const notice = document.createElement("p"); notice.className = "notice"; notice.textContent = "Broker intents prepared. They have not been submitted."; $("risk").append(notice);
-          const pre = document.createElement("pre"); pre.textContent = JSON.stringify(result, null, 2); $("risk").append(pre);
+        if (firstApproved && proposal.strategy_id !== "manual") review.append(actionButton(proposal.execution?.status === "BLOCKED" ? "Retry approved execution on Kite" : proposal.execution ? "Refresh execution" : "Execute approved actions on Kite", async () => {
+          const path = proposal.execution && proposal.execution.status !== "BLOCKED" ? "execution-refresh" : "approve-execute";
+          const result = await Screener.api(`/api/actions/proposals/${encodeURIComponent(proposal.proposal_id)}/${path}`, {method:"POST", ...(path === "approve-execute" ? {body:JSON.stringify({approved:true})} : {})});
+          await load(); $("generation-status").textContent = result.execution?.last_error || `Execution ${result.execution?.status || "queued"} for ${result.action_date}.`;
         }));
       } else if (decision.type === "NO_ACTION") {
         const note = document.createElement("span"); note.className = "muted"; note.textContent = "No stock action"; review.append(note);
       }
       if (decision.type === "NO_ACTION") { state.textContent = "No action"; state.className = "status-chip"; }
+      const brokerOrder = proposal.broker_orders?.find(order => order.instrument_id === decision.instrument_id);
+      if (brokerOrder) state.textContent = brokerOrder.status;
+      else if (proposal.execution && proposal.strategy_id !== "portfolio_stop" && stateValue === "APPROVED") state.textContent = proposal.execution.status;
+      if (proposal.execution?.last_error) state.title = proposal.execution.last_error;
       return Screener.row([strategyLabel, symbol, side, signalQuality, rankLabel, decision.units ?? "—", decision.execution_price ? `₹${Number(decision.execution_price).toLocaleString("en-IN", {maximumFractionDigits:2})}` : "—", decision.reason || "—", decision.signal_date || proposal.action_date || "—", state, review]);
     });
   }
@@ -78,6 +102,7 @@
     if (!account) return;
     $("proposals").innerHTML = '<tr><td colspan="11" class="workflow-empty">Loading proposals…</td></tr>';
     $("actions-error").textContent = "";
+    $("stop-check-error").textContent = "";
     const query = new URLSearchParams({account_id:account});
     if ($("action-date").value) query.set("action_date", $("action-date").value);
     if ($("proposal-strategy").value) query.set("strategy_id", $("proposal-strategy").value);
@@ -85,6 +110,23 @@
     $("proposal-filter-caption").textContent = `${strategyLabel} · ${$("action-date").value || "All dates"}`;
     try {
     const riskQuery = new URLSearchParams({account_id:account}); if ($("action-date").value) riskQuery.set("action_date", $("action-date").value);
+      try {
+        const stops = await Screener.api("/api/actions/stops/check", {method:"POST", body:JSON.stringify({account_id:account}), signal:request.signal});
+        if (token !== generation || account !== $("account").value) return;
+        $("stop-proposals").replaceChildren(...(stops.proposals || []).flatMap(renderProposal));
+        const money = value => value == null ? "—" : `₹${Number(value).toLocaleString("en-IN", {maximumFractionDigits:2})}`;
+        $("stop-checks").replaceChildren(...(stops.checks || []).map(check => Screener.row([check.symbol, money(check.price), money(check.stop_threshold), check.price_source ? `${check.price_source === "live_kite" ? "Live Kite" : "Stored close"} · ${check.price_date}` : "—", ({above_stop:"Above stop", breached:"Stop breached", review_exists:"Sell review exists", stop_unavailable:check.reason || "Stop unavailable"})[check.status] || check.status])));
+        $("stop-check-note").textContent = stops.proposals?.length ? `${stops.proposals.length} stop sell reviews. Orders require your approval; confirmed fills update the portfolio.` : "No current stop breaches at the checked prices. Expand the checks below to see each price, threshold and source.";
+        if (!stops.proposals?.length) { const row = document.createElement("tr"), cell = document.createElement("td"); cell.colSpan = 11; cell.className = "workflow-empty"; cell.textContent = "No stop sell action currently requires review."; row.append(cell); $("stop-proposals").append(row); }
+      } catch (error) {
+        if (error.name === "AbortError") return;
+        $("stop-proposals").replaceChildren(); $("stop-checks").replaceChildren();
+        $("stop-check-note").textContent = "Stop check unavailable.";
+        $("stop-check-error").textContent = error.message;
+      }
+      if (token !== generation || account !== $("account").value) return;
+      await dates();
+      if ($("action-date").value) query.set("action_date", $("action-date").value); else query.delete("action_date");
       const data = await Screener.api(`/api/actions/proposals?${query}`, {signal:request.signal});
       if (token !== generation || account !== $("account").value) return;
       const proposals = data.proposals || [];
@@ -160,16 +202,16 @@
   document.addEventListener("DOMContentLoaded", async () => {
     try {
       const [data, strategyData] = await Promise.all([Screener.api("/api/portfolio/accounts"), Screener.api("/api/strategies/active")]);
-      $("account").replaceChildren(...(data.accounts || []).map(account => new Option(account.account_id, account.account_id)));
+      $("account").replaceChildren(...(data.accounts || []).map(account => new Option(account.display_name || account.account_id, account.account_id)));
       const strategies = strategyData.strategies || [];
       strategies.forEach(strategy => strategyNames.set(strategy.strategy_id, strategy.definition.strategy.name));
       $("generate-strategy").replaceChildren(...strategies.map(strategy => new Option(strategy.definition.strategy.name, strategy.strategy_id)));
-      $("proposal-strategy").replaceChildren(new Option("All strategies", ""), ...strategies.map(strategy => new Option(strategy.definition.strategy.name, strategy.strategy_id)), new Option("Manual trades", "manual"), new Option("Stop actions", "midweek_stop"));
+      $("proposal-strategy").replaceChildren(new Option("All strategies", ""), ...strategies.map(strategy => new Option(strategy.definition.strategy.name, strategy.strategy_id)), new Option("Manual trades", "manual"), new Option("Portfolio stops", "portfolio_stop"));
       const positional = (strategyData.strategies || []).find(strategy => strategy.strategy_id === "positional_trend_following");
       if (positional) $("generate-strategy").value = positional.strategy_id;
       if (!data.accounts?.length) { $("actions-error").textContent = "Create a portfolio account on Home before reviewing actions."; return; }
       $("account").onchange = async () => { request?.abort(); ++generation; await dates(); await load(); };
-      $("load-actions").onclick = load; $("action-date").onchange = load; $("manual-action").onclick = manual;
+      $("load-actions").onclick = load; $("check-stops").onclick = load; $("action-date").onchange = load; $("manual-action").onclick = manual;
       $("proposal-strategy").onchange = load;
       $("generate-actions").onclick = generate;
       $("start-action-worker").onclick = async () => {

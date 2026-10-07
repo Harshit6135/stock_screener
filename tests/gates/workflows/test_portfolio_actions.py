@@ -580,7 +580,7 @@ def test_held_exit_survives_missing_open_and_universe_removal(tmp_path, monkeypa
     )
     # The held NSE identity is read directly even when absent from the current universe.
     monkeypatch.setattr(
-        "src.domains.strategies.positional_trend.feature_series",
+        "src.gates.workflows.portfolio_actions.feature_series",
         lambda *args: [
             {
                 "symbol": "HELD",
