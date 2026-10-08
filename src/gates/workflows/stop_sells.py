@@ -12,7 +12,7 @@ from requests.exceptions import RequestException
 
 from src.domains.execution import KiteExecutionGateway
 from src.gates.workflows.broker_orders import BrokerOrderWorkflow
-from src.gates.workflows.portfolio_stops import portfolio_stops
+from src.gates.workflows.portfolio_stops import latest_saved_stops, portfolio_stops
 from src.platform_kernel import DomainValidationError
 from src.platform_kernel.sqlite import sqlite_connection
 
@@ -89,23 +89,7 @@ class StopSellWorkflow:
             return account_id
 
     def saved_stops(self, account_id, today):
-        saved = {}
-        for row in sorted(
-            self.actions.risk_projection(account_id),
-            key=lambda row: row["action_date"],
-            reverse=True,
-        ):
-            if row.get("stop_model") != "ATR" or row["action_date"] > today.isoformat():
-                continue
-            for position in row["positions"]:
-                saved.setdefault(
-                    position["instrument_id"],
-                    {
-                        "stop": Decimal(str(position["current_trailing_stop"])),
-                        "date": row["action_date"],
-                    },
-                )
-        return saved
+        return latest_saved_stops(self.actions.risk_projection(account_id), today)
 
     def live_price(self, client, symbol):
         key = "NSE:" + symbol

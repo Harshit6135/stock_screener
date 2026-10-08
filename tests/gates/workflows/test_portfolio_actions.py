@@ -88,6 +88,70 @@ def _payload(account_id="paper"):
     }
 
 
+@pytest.mark.parametrize(
+    ("overrides", "can_buy", "policy_field"),
+    [
+        ({"max_vix": "10"}, False, "macro_paused"),
+        ({"max_sector_fraction": "0.5"}, False, "sector_skipped"),
+        ({"min_eps": "6"}, False, None),
+        ({"max_debt_equity": "0.5"}, False, None),
+        ({"market_cap_sizing": "LINEAR"}, True, None),
+        ({"market_cap_sizing": "SQRT"}, True, None),
+        ({"market_cap_sizing": "FREE_FLOAT"}, True, None),
+    ],
+)
+def test_generation_stages_keep_reference_filters_and_lineage(
+    tmp_path, overrides, can_buy, policy_field
+):
+    services, instrument_id = _services(tmp_path)
+    services.ledger.open_account("paper", Money(1000))
+    sources = {
+        "sector_artifact_id": ("reference/sectors", {"values": {instrument_id: "IT"}}),
+        "macro_artifact_id": (
+            "reference/macro-indicators", {"as_of_date": "2026-09-04", "values": {"vix": 20}},
+        ),
+        "market_cap_artifact_id": (
+            "reference/market-capitalization",
+            {"as_of_date": "2026-09-04", "values": {
+                instrument_id: {"market_cap": "100", "free_float": "0.5"},
+            }},
+        ),
+        "fundamentals_artifact_id": (
+            "reference/fundamentals",
+            {"as_of_date": "2026-09-04", "values": {
+                instrument_id: {"eps": "5", "debt_equity": "1"},
+            }},
+        ),
+    }
+    references = {}
+    for field, (category, payload) in sources.items():
+        services.publisher.publish_json(category, field, payload)
+        references[field] = field
+    before = services.ledger.events("paper")
+    command = _payload() | references | overrides
+    proposal = services.actions.generate(command)
+    manifest, payload = services.artifacts.read_json("actions/proposals", proposal["proposal_id"])
+    assert any(decision["type"] == "BUY" for decision in payload["decisions"]) is can_buy
+    if policy_field:
+        assert payload["policy"][policy_field]
+    assert set(references.values()) <= set(manifest.upstream_ids)
+    assert services.ledger.events("paper") == before
+    assert services.actions.generate(command)["proposal_id"] == proposal["proposal_id"]
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"account_id": "", "stale_buy_threshold": "bad"}, "policy values must be numeric"),
+        ({"account_id": "", "max_drawdown_pause": "NaN"}, "parameters are invalid"),
+    ],
+)
+def test_generation_validation_keeps_error_precedence(tmp_path, overrides, message):
+    services, _instrument_id = _services(tmp_path)
+    with pytest.raises(DomainValidationError, match=message):
+        services.actions.generate(_payload() | overrides)
+
+
 def test_manually_confirmed_transaction_processes_once(tmp_path):
     services, instrument_id = _services(tmp_path)
     services.ledger.open_account("paper", Money(1000))

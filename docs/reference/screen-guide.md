@@ -216,3 +216,9 @@ Understand each tab and follow a complete workflow without guessing what comes n
 Portfolio imports automatically queue a daily-price backfill for all stocks in the account's recorded history, including closed positions outside the research universe. The worker stores daily bars in `market_bars`; the dashboard reconstructs equity and drawdown from dated ledger buys, sells, charges, splits, available cash and cash transfers. Drawdown adjusts for external cash transfers. The chart refreshes when backfill finishes; Activity shows progress and failures. Rebuild price history retries the collection after credentials are renewed.
 
 Stocks without usable prices across their held dates are excluded consistently from both curves, including their curve cash flows and charges. Their capital remains idle in the reconstructed curve. Partial curves are labelled and list excluded symbols. These exclusions affect only chart reconstruction; all trades remain in the journal, holdings, account balance, returns, charges and tax calculations.
+
+The portfolio's top summary has six tiles: portfolio value, invested capital, unrealised gain, realised gain with Realised XIRR beneath it, today's P&L and available cash. Invested capital, realised gain and Realised XIRR are no longer repeated in the collapsible details section.
+
+Every current-holdings column can be sorted ascending or descending by selecting its header. Numeric columns sort numerically, unavailable values stay last, and the selection persists through refreshes and live updates. Details sorts by the displayed stop status.
+
+Live portfolio prices and index quotes refresh on the dashboard every 30 seconds. Today's P&L chart retains 30-second observations in the active five-minute period and replaces completed periods with their average observed P&L. This is an average of received observations, not a closing value or reconstructed missing ticks. The chart resets when the trading date changes in IST.

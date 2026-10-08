@@ -22,6 +22,26 @@ _DEFAULT_RULES = {
 }
 
 
+def _exact_value_prefix(values: list[float]) -> list[float] | None:
+    """Certify prefix sums whose rolling differences match the original sum exactly.
+
+    Non-negative integral floats and every prefix up to 2**53 have exact
+    additions and subtractions. Other inputs must retain the original window
+    summation, including its floating-point rounding and non-finite behavior.
+    """
+    prefix = [0.0]
+    total = 0.0
+    exact_limit = float(1 << 53)
+    for value in values:
+        # Check remaining capacity before adding: an overflowing addition could
+        # round back down to the limit and incorrectly appear to be exact.
+        if value < 0 or not value.is_integer() or value > exact_limit - total:
+            return None
+        total += value
+        prefix.append(total)
+    return prefix
+
+
 def _segment_features(bars: list[dict], symbol: str, rules: dict | None = None) -> list[dict]:
     """Wilder ATR/ADX, TA-Lib-style bullish Supertrend seed and current-band flips."""
     rules = {**_DEFAULT_RULES, **(rules or {})}
@@ -51,7 +71,6 @@ def _segment_features(bars: list[dict], symbol: str, rules: dict | None = None) 
         minus_dm[i] = down if down > up and down > 0 else 0.0
 
     atr = [math.nan] * n
-    atr_adx = [math.nan] * n
     adx = [math.nan] * n
     st = [math.nan] * n
     bullish = [False] * n
@@ -64,11 +83,9 @@ def _segment_features(bars: list[dict], symbol: str, rules: dict | None = None) 
         elif i > atr_period:
             atr[i] = (atr[i - 1] * (atr_period - 1) + tr[i]) / atr_period
         if i == adx_period:
-            atr_adx[i] = sum(tr[1:adx_period + 1]) / adx_period
             sm_plus = sum(plus_dm[1:adx_period + 1]) / adx_period
             sm_minus = sum(minus_dm[1:adx_period + 1]) / adx_period
         elif i > adx_period:
-            atr_adx[i] = (atr_adx[i - 1] * (adx_period - 1) + tr[i]) / adx_period
             sm_plus = (sm_plus * (adx_period - 1) + plus_dm[i]) / adx_period
             sm_minus = (sm_minus * (adx_period - 1) + minus_dm[i]) / adx_period
         if i >= adx_period:
@@ -121,8 +138,14 @@ def _segment_features(bars: list[dict], symbol: str, rules: dict | None = None) 
 
     features = []
     feature_start = max(20, exit_period, atr_period)
+    value_prefix = _exact_value_prefix(value) if adtv_period > 0 else None
     for i in range(feature_start, n):
-        adtv = sum(value[i - adtv_period:i]) / adtv_period if i >= adtv_period else math.nan
+        if i < adtv_period:
+            adtv = math.nan
+        elif value_prefix is not None:
+            adtv = (value_prefix[i] - value_prefix[i - adtv_period]) / adtv_period
+        else:
+            adtv = sum(value[i - adtv_period:i]) / adtv_period
         first_cross = (i >= max(required_sessions, entry_period + 1)
                        and close[i - 1] <= upper_entry[i - 1]
                        and close[i] > upper_entry[i] and adtv > minimum_adtv)

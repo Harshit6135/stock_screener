@@ -12,6 +12,37 @@ from src.platform_kernel.sqlite import sqlite_connection
 DAY = date(2026, 1, 5)
 
 
+def test_snapshot_lookup_reads_only_candidates_and_keeps_checksum_validation(tmp_path, monkeypatch):
+    market, publisher = setup_market(tmp_path)
+    runtime = SimpleNamespace(
+        strategy_ids=lambda: ("momentum",),
+        revision=lambda strategy: {"revision_id": "rev"},
+    )
+    research = ResearchJobs(market.path, market, publisher, runtime)
+    store = publisher.store
+    payload = {"strategy_id": "momentum", "strategy_revision_id": "rev", "members": []}
+    store.publish_json("research/rankings", "older", {**payload, "week_end": "2026-01-02"})
+    store.publish_json("research/rankings", "newer", {**payload, "week_end": "2026-01-09"})
+    store.publish_json("features/momentum", "unrelated", {"large": list(range(1000))})
+    read_json, reads = store.read_json, []
+
+    def counted_read(category, artifact_id):
+        reads.append(artifact_id)
+        return read_json(category, artifact_id)
+
+    monkeypatch.setattr(store, "read_json", counted_read)
+    assert research.read_snapshot("rankings", "momentum")["week_end"] == "2026-01-09"
+    assert reads == ["newer"]
+    with sqlite_connection(market.path) as connection:
+        connection.execute(
+            "UPDATE artifact_payloads SET checksum_sha256='invalid' WHERE artifact_id='newer'"
+        )
+    reads.clear()
+    assert research.read_snapshot("rankings", "momentum")["week_end"] == "2026-01-02"
+    assert reads == ["newer", "older"]
+    assert research.read_snapshot("rankings", "momentum", date(2026, 1, 9)) is None
+
+
 def setup_market(tmp_path):
     database = tmp_path / "system.db"
     market = MarketRepository(database)

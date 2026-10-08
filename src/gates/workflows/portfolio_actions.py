@@ -7,6 +7,7 @@ import json
 import logging
 
 logger = logging.getLogger("screener." + __name__)
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -15,7 +16,7 @@ from uuid import NAMESPACE_URL, uuid5
 from zoneinfo import ZoneInfo
 
 from src.domains.artifacts import ArtifactPublisher
-from src.domains.portfolio_accounting import Fill, FillSide, Ledger
+from src.domains.portfolio_accounting import Fill, FillSide, Ledger, PortfolioProjection
 from src.domains.portfolio_engine import (
     Candidate,
     DecisionType,
@@ -47,6 +48,71 @@ _EXECUTION_POLICY = {
     "pyramid_enabled": "explicit_operator_switch",
     "pyramid_fraction": "0.5",
 }
+
+
+@dataclass(frozen=True)
+class _GenerationRequest:
+    account_id: str
+    strategy_id: str
+    positions: int
+    ltcg_hold_days: int
+    sector_artifact_id: str | None
+    macro_artifact_id: str | None
+    market_cap_artifact_id: str | None
+    market_cap_sizing: str
+    fundamentals_artifact_id: str | None
+    pyramid_enabled: bool
+    pyramid_fraction: Decimal
+    stale_buy_threshold: Decimal
+    decorrelation_threshold: Decimal
+    max_sector_fraction: Decimal
+    max_drawdown_pause: Decimal
+    max_vix: Decimal
+    swap_cost_bps: Decimal
+    min_eps: Decimal | None
+    max_debt_equity: Decimal | None
+    vacancy_from: str | None
+    correlation_artifact_id: str | None
+    action_date: date
+    forward: bool
+    market_date: date
+    vacancy_date: date | None
+    revision: dict[str, Any]
+    configured_settings: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class _GenerationInputs:
+    account: dict[str, Any]
+    projection: PortfolioProjection
+    week_end: date
+    risk_inputs: dict[str, Any]
+    ranked: list[dict[str, Any]]
+    bars: dict[str, MarketBar]
+    snapshot_ids: set[str]
+    eligible: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class _GenerationSelection:
+    stale_buy_skipped: list[dict[str, object]]
+    sector_skipped: list[dict[str, object]]
+    drawdown_paused: bool
+    drawdown_value: Decimal | None
+    macro_paused: bool
+    vix_value: Decimal | None
+    decorrelation_skipped: list[dict[str, object]]
+    candidates: tuple[Candidate, ...]
+    holdings: tuple[Holding, ...]
+    score_by_id: dict[str, Decimal]
+    rank_by_id: dict[str, int]
+
+
+@dataclass(frozen=True)
+class _GenerationEvaluation:
+    policy: PortfolioPolicy
+    resulting_state: PortfolioState
+    encoded_decisions: list[dict[str, object]]
 
 
 class ActionJobs:
@@ -462,7 +528,98 @@ class ActionJobs:
         self._recover_projection(proposal_id)
         return self.proposal(proposal_id)
 
+    def _sector_reference(self, sector_artifact_id):
+        sector_by_instrument: dict[str, str] = {}
+        if sector_artifact_id is not None:
+            try:
+                _, sector_payload = self.publisher.store.read_json(
+                    "reference/sectors", sector_artifact_id
+                )
+                values = sector_payload["values"]
+                if not isinstance(values, dict):
+                    raise TypeError("values")
+                sector_by_instrument = {str(key): str(value) for key, value in values.items()}
+            except (DomainValidationError, KeyError, TypeError) as exc:
+                raise DomainValidationError("sector artifact is missing or malformed") from exc
+        return sector_by_instrument
+
+    def _capitalization_reference(self, market_cap_artifact_id, market_date, market_cap_sizing):
+        cap_by_instrument: dict[str, Decimal] = {}
+        if market_cap_artifact_id is not None:
+            try:
+                _, cap_payload = self.publisher.store.read_json(
+                    "reference/market-capitalization", market_cap_artifact_id
+                )
+                cap_date = date.fromisoformat(str(cap_payload["as_of_date"]))
+                values = cap_payload["values"]
+                if cap_date > market_date or not isinstance(values, dict):
+                    raise ValueError("capitalization date or values")
+                if market_cap_sizing == "FREE_FLOAT" and any(
+                    not isinstance(value, dict) or set(value) != {"market_cap", "free_float"}
+                    for value in values.values()
+                ):
+                    raise ValueError("free-float values")
+                cap_by_instrument = {
+                    str(key): Decimal(str(value["market_cap"])) * Decimal(str(value["free_float"]))
+                    if market_cap_sizing == "FREE_FLOAT"
+                    and isinstance(value, dict)
+                    and set(value) == {"market_cap", "free_float"}
+                    else Decimal(str(value["market_cap"]))
+                    if isinstance(value, dict) and "market_cap" in value
+                    else Decimal(str(value))
+                    for key, value in values.items()
+                }
+                if not cap_by_instrument or any(
+                    not value.is_finite() or value <= 0 for value in cap_by_instrument.values()
+                ):
+                    raise ValueError("capitalization values")
+            except (DomainValidationError, KeyError, TypeError, ValueError) as exc:
+                raise DomainValidationError("market-cap artifact is missing or malformed") from exc
+        return cap_by_instrument
+
+    def _fundamentals_reference(self, fundamentals_artifact_id, market_date):
+        fundamentals_by_instrument: dict[str, dict[str, Decimal]] = {}
+        if fundamentals_artifact_id is not None:
+            try:
+                _, fundamental_payload = self.publisher.store.read_json(
+                    "reference/fundamentals", fundamentals_artifact_id
+                )
+                fundamental_date = date.fromisoformat(str(fundamental_payload["as_of_date"]))
+                values = fundamental_payload["values"]
+                if fundamental_date > market_date or not isinstance(values, dict):
+                    raise ValueError("fundamentals date or values")
+                for instrument_id, value in values.items():
+                    if not isinstance(value, dict):
+                        raise TypeError("fundamental row")
+                    fundamentals_by_instrument[str(instrument_id)] = {
+                        field: Decimal(str(raw)) for field, raw in value.items()
+                    }
+                if not fundamentals_by_instrument:
+                    raise ValueError("empty fundamentals")
+            except (
+                DomainValidationError,
+                KeyError,
+                TypeError,
+                ValueError,
+                InvalidOperation,
+            ) as exc:
+                raise DomainValidationError(
+                    "fundamentals artifact is missing or malformed"
+                ) from exc
+        return fundamentals_by_instrument
+
     def generate(self, payload: dict[str, Any]) -> dict[str, object]:
+        self._validate_generation_payload(payload)
+        if payload["strategy_id"] == "positional_trend_following":
+            return self._generate_positional_trend(payload)
+        request = self._parse_generation_request(payload)
+        inputs = self._load_generation_inputs(request)
+        selection = self._select_generation_candidates(request, inputs)
+        evaluation = self._evaluate_generation(request, inputs, selection)
+        return self._publish_generation(request, inputs, selection, evaluation)
+
+    @staticmethod
+    def _validate_generation_payload(payload):
         allowed_fields = {
             "account_id",
             "strategy_id",
@@ -501,10 +658,11 @@ class ActionJobs:
             raise DomainValidationError(
                 "action generation requires account, strategy, date and limit"
             )
+
+    def _parse_generation_request(self, payload) -> _GenerationRequest:
         account_id = payload["account_id"]
         strategy_id = payload["strategy_id"]
-        if strategy_id == "positional_trend_following":
-            return self._generate_positional_trend(payload)
+        vacancy_date = None
         positions = payload.get("max_positions")
         ltcg_hold_days = payload.get("ltcg_hold_days", 365)
         sector_artifact_id = payload.get("sector_artifact_id")
@@ -647,13 +805,44 @@ class ActionJobs:
         positions = configured_positions
         if not isinstance(positions, int):
             raise DomainValidationError("max_positions is invalid")
+        return _GenerationRequest(
+            account_id=account_id,
+            strategy_id=strategy_id,
+            positions=positions,
+            ltcg_hold_days=ltcg_hold_days,
+            sector_artifact_id=sector_artifact_id,
+            macro_artifact_id=macro_artifact_id,
+            market_cap_artifact_id=market_cap_artifact_id,
+            market_cap_sizing=market_cap_sizing,
+            fundamentals_artifact_id=fundamentals_artifact_id,
+            pyramid_enabled=pyramid_enabled,
+            pyramid_fraction=pyramid_fraction,
+            stale_buy_threshold=stale_buy_threshold,
+            decorrelation_threshold=decorrelation_threshold,
+            max_sector_fraction=max_sector_fraction,
+            max_drawdown_pause=max_drawdown_pause,
+            max_vix=max_vix,
+            swap_cost_bps=swap_cost_bps,
+            min_eps=min_eps,
+            max_debt_equity=max_debt_equity,
+            vacancy_from=vacancy_from,
+            correlation_artifact_id=correlation_artifact_id,
+            action_date=action_date,
+            forward=forward,
+            market_date=market_date,
+            vacancy_date=vacancy_date,
+            revision=revision,
+            configured_settings=configured_settings,
+        )
+
+    def _load_generation_inputs(self, request: _GenerationRequest) -> _GenerationInputs:
         account = next(
-            (item for item in self.ledger.accounts() if item["account_id"] == account_id), None
+            (item for item in self.ledger.accounts() if item["account_id"] == request.account_id), None
         )
         if account is None:
             raise DomainValidationError("portfolio account does not exist")
-        projection = self.ledger.projection(account_id)
-        weeks = [week for week in self.research.ranking_weeks(strategy_id) if week <= market_date]
+        projection = self.ledger.projection(request.account_id)
+        weeks = [week for week in self.research.ranking_weeks(request.strategy_id) if week <= request.market_date]
         if not weeks:
             raise DomainValidationError("no prior completed ranking is available")
         week_end = weeks[-1]
@@ -661,34 +850,21 @@ class ActionJobs:
             self.research._indicator_set("momentum", None), week_end
         )
 
-        def risk_candidate(item, multiplier=Decimal(1)):
-            instrument_id = str(item["instrument_id"])
-            risk = risk_inputs.get(instrument_id, {})
-            atr = Decimal(str(risk.get("atrr_14", 0)))
-            close = Decimal(str(risk.get("close", 0)))
-            return Candidate(
-                instrument_id,
-                Decimal(str(item["score"])),
-                multiplier,
-                atr if atr > 0 else None,
-                close if close > 0 else None,
-            )
-
-        ranked = self.research.top_rankings(week_end, 500, strategy_id)
+        ranked = self.research.top_rankings(week_end, 500, request.strategy_id)
         if not ranked:
             raise DomainValidationError("prior ranking is empty")
-        histories = self.market.histories(market_date, market_date)
+        histories = self.market.histories(request.market_date, request.market_date)
         bars: dict[str, MarketBar] = {}
         snapshot_ids: set[str] = {str(ranked[0]["artifact_id"])}
-        snapshot_ids.add(str(revision["revision_id"]))
+        snapshot_ids.add(str(request.revision["revision_id"]))
         for instrument_id, (values, identity) in histories.items():
             if str(identity["isin"]).startswith("INDEX:"):
                 continue
             bar = values[0]
             bars[instrument_id] = MarketBar(
                 instrument_id,
-                market_date,
-                Decimal(str(bar["close"] if forward else bar["open"])),
+                request.market_date,
+                Decimal(str(bar["close"] if request.forward else bar["open"])),
                 Decimal(str(bar["high"])),
                 Decimal(str(bar["low"])),
                 Decimal(str(bar["close"])),
@@ -703,173 +879,39 @@ class ActionJobs:
             for item in ranked
             if Decimal(str(item["score"])) > 0 and str(item["instrument_id"]) in buy_members
         ]
-        if any(str(item["instrument_id"]) not in bars for item in eligible[:positions]):
+        if any(str(item["instrument_id"]) not in bars for item in eligible[:request.positions]):
             raise DomainValidationError("top-ranked action candidate is missing a market bar")
-        stale_buy_skipped: list[dict[str, object]] = []
-        sector_skipped: list[dict[str, object]] = []
-        drawdown_paused = False
-        drawdown_value: Decimal | None = None
-        macro_paused = False
-        vix_value: Decimal | None = None
-        if max_drawdown_pause > 0:
-            snapshots = [
-                item
-                for item in self.ledger.valuations(account_id, 500)
-                if str(item["as_of_date"]) <= market_date.isoformat()
-            ]
-            peak = Decimal(0)
-            latest = None
-            for snapshot in sorted(snapshots, key=lambda item: str(item["as_of_date"])):
-                equity = Decimal(str(snapshot["payload"]["equity"]))
-                peak = max(peak, equity)
-                latest = (snapshot, (equity / peak - Decimal(1)) if peak else Decimal(0))
-            if latest is not None:
-                snapshot, drawdown_value = latest
-                snapshot_ids.add(str(snapshot["snapshot_id"]))
-                drawdown_paused = drawdown_value <= -max_drawdown_pause
-        sector_by_instrument: dict[str, str] = {}
-        if sector_artifact_id is not None:
-            try:
-                _, sector_payload = self.publisher.store.read_json(
-                    "reference/sectors", sector_artifact_id
-                )
-                values = sector_payload["values"]
-                if not isinstance(values, dict):
-                    raise TypeError("values")
-                sector_by_instrument = {str(key): str(value) for key, value in values.items()}
-            except (DomainValidationError, KeyError, TypeError) as exc:
-                raise DomainValidationError("sector artifact is missing or malformed") from exc
-            snapshot_ids.add(str(sector_artifact_id))
-        if macro_artifact_id is not None:
-            try:
-                _, macro_payload = self.publisher.store.read_json(
-                    "reference/macro-indicators", macro_artifact_id
-                )
-                macro_date = date.fromisoformat(str(macro_payload["as_of_date"]))
-                values = macro_payload["values"]
-                if macro_date > market_date or not isinstance(values, dict):
-                    raise ValueError("macro date or values")
-                raw_vix = values.get("vix", values.get("VIX"))
-                if raw_vix is not None:
-                    vix_value = Decimal(str(raw_vix))
-                    macro_paused = max_vix > 0 and vix_value >= max_vix
-            except (DomainValidationError, KeyError, TypeError, ValueError) as exc:
-                raise DomainValidationError("macro artifact is missing or malformed") from exc
-            snapshot_ids.add(str(macro_artifact_id))
-        cap_by_instrument: dict[str, Decimal] = {}
-        if market_cap_artifact_id is not None:
-            try:
-                _, cap_payload = self.publisher.store.read_json(
-                    "reference/market-capitalization", market_cap_artifact_id
-                )
-                cap_date = date.fromisoformat(str(cap_payload["as_of_date"]))
-                values = cap_payload["values"]
-                if cap_date > market_date or not isinstance(values, dict):
-                    raise ValueError("capitalization date or values")
-                if market_cap_sizing == "FREE_FLOAT" and any(
-                    not isinstance(value, dict) or set(value) != {"market_cap", "free_float"}
-                    for value in values.values()
-                ):
-                    raise ValueError("free-float values")
-                cap_by_instrument = {
-                    str(key): Decimal(str(value["market_cap"])) * Decimal(str(value["free_float"]))
-                    if market_cap_sizing == "FREE_FLOAT"
-                    and isinstance(value, dict)
-                    and set(value) == {"market_cap", "free_float"}
-                    else Decimal(str(value["market_cap"]))
-                    if isinstance(value, dict) and "market_cap" in value
-                    else Decimal(str(value))
-                    for key, value in values.items()
-                }
-                if not cap_by_instrument or any(
-                    not value.is_finite() or value <= 0 for value in cap_by_instrument.values()
-                ):
-                    raise ValueError("capitalization values")
-            except (DomainValidationError, KeyError, TypeError, ValueError) as exc:
-                raise DomainValidationError("market-cap artifact is missing or malformed") from exc
-            snapshot_ids.add(str(market_cap_artifact_id))
-        fundamentals_by_instrument: dict[str, dict[str, Decimal]] = {}
-        if fundamentals_artifact_id is not None:
-            try:
-                _, fundamental_payload = self.publisher.store.read_json(
-                    "reference/fundamentals", fundamentals_artifact_id
-                )
-                fundamental_date = date.fromisoformat(str(fundamental_payload["as_of_date"]))
-                values = fundamental_payload["values"]
-                if fundamental_date > market_date or not isinstance(values, dict):
-                    raise ValueError("fundamentals date or values")
-                for instrument_id, value in values.items():
-                    if not isinstance(value, dict):
-                        raise TypeError("fundamental row")
-                    fundamentals_by_instrument[str(instrument_id)] = {
-                        field: Decimal(str(raw)) for field, raw in value.items()
-                    }
-                if not fundamentals_by_instrument:
-                    raise ValueError("empty fundamentals")
-            except (
-                DomainValidationError,
-                KeyError,
-                TypeError,
-                ValueError,
-                InvalidOperation,
-            ) as exc:
-                raise DomainValidationError(
-                    "fundamentals artifact is missing or malformed"
-                ) from exc
-            snapshot_ids.add(str(fundamentals_artifact_id))
-        cap_median = (
-            sorted(cap_by_instrument.values())[len(cap_by_instrument) // 2]
-            if cap_by_instrument
-            else Decimal(1)
+        return _GenerationInputs(
+            account=account,
+            projection=projection,
+            week_end=week_end,
+            risk_inputs=risk_inputs,
+            ranked=ranked,
+            bars=bars,
+            snapshot_ids=snapshot_ids,
+            eligible=eligible,
         )
 
-        def size_multiplier(instrument_id: str) -> Decimal:
-            if market_cap_sizing == "NONE" or instrument_id not in cap_by_instrument:
-                return Decimal(1)
-            ratio = cap_by_instrument[instrument_id] / cap_median
-            if market_cap_sizing == "SQRT":
-                ratio = ratio.sqrt()
-            return min(Decimal(2), max(Decimal("0.5"), ratio))
+    @staticmethod
+    def _risk_candidate(item, risk_inputs, multiplier=Decimal(1)):
+        instrument_id = str(item["instrument_id"])
+        risk = risk_inputs.get(instrument_id, {})
+        atr = Decimal(str(risk.get("atrr_14", 0)))
+        close = Decimal(str(risk.get("close", 0)))
+        return Candidate(
+            instrument_id,
+            Decimal(str(item["score"])),
+            multiplier,
+            atr if atr > 0 else None,
+            close if close > 0 else None,
+        )
 
-        candidate_items = []
-        for item in eligible:
-            instrument_id = str(item["instrument_id"])
-            if instrument_id not in bars:
-                continue
-            if market_cap_sizing != "NONE" and instrument_id not in cap_by_instrument:
-                continue
-            fundamental = (
-                fundamentals_by_instrument.get(instrument_id)
-                if fundamentals_artifact_id is not None
-                else None
-            )
-            if fundamentals_artifact_id is not None and (
-                fundamental is None
-                or min_eps is not None
-                and ("eps" not in fundamental or fundamental["eps"] < min_eps)
-                or max_debt_equity is not None
-                and (
-                    "debt_equity" not in fundamental or fundamental["debt_equity"] > max_debt_equity
-                )
-            ):
-                continue
-            if vacancy_from is not None:
-                signal_bars = self.market.bars(instrument_id, vacancy_date, vacancy_date, limit=2)
-                signal_close = Decimal(str(signal_bars[0]["close"])) if signal_bars else None
-                if signal_close is None or bars[instrument_id].open > signal_close * (
-                    Decimal(1) + stale_buy_threshold
-                ):
-                    stale_buy_skipped.append(
-                        {
-                            "instrument_id": instrument_id,
-                            "reason": "stale_buy_above_signal_threshold",
-                        }
-                    )
-                    continue
-            candidate_items.append(item)
-        if sector_by_instrument and max_sector_fraction < 1:
+    @staticmethod
+    def _filter_generation_sectors(request, inputs, sector_by_instrument, candidate_items):
+        sector_skipped: list[dict[str, object]] = []
+        if sector_by_instrument and request.max_sector_fraction < 1:
             held_sector_counts: dict[str, int] = {}
-            held_instrument_ids = {lot.instrument_id for lot in projection.open_lots}
+            held_instrument_ids = {lot.instrument_id for lot in inputs.projection.open_lots}
             for instrument_id in held_instrument_ids:
                 sector = sector_by_instrument.get(instrument_id)
                 if sector:
@@ -880,7 +922,7 @@ class ActionJobs:
                 projected = held_sector_counts.get(sector, 0) + (
                     0 if str(item["instrument_id"]) in held_instrument_ids else 1
                 )
-                if sector and Decimal(projected) / Decimal(positions) > max_sector_fraction:
+                if sector and Decimal(projected) / Decimal(request.positions) > request.max_sector_fraction:
                     sector_skipped.append(
                         {
                             "instrument_id": str(item["instrument_id"]),
@@ -891,21 +933,18 @@ class ActionJobs:
                 else:
                     filtered_items.append(item)
             candidate_items = filtered_items
-        if drawdown_paused or macro_paused:
-            candidate_items = []
-        candidates = tuple(
-            risk_candidate(item, size_multiplier(str(item["instrument_id"])))
-            for item in candidate_items
-        )
-        score_by_id = {str(item["instrument_id"]): Decimal(str(item["score"])) for item in ranked}
+        return candidate_items, sector_skipped
+
+    def _generation_holdings(self, request, inputs):
+        score_by_id = {str(item["instrument_id"]): Decimal(str(item["score"])) for item in inputs.ranked}
         rank_by_id = {
             str(item["instrument_id"]): int(item["rank"])
-            for item in ranked
+            for item in inputs.ranked
             if item.get("rank") is not None
         }
         lots_by_instrument: dict[str, tuple[int, Decimal]] = {}
         opened_by_instrument: dict[str, date] = {}
-        for lot in projection.open_lots:
+        for lot in inputs.projection.open_lots:
             units, cost = lots_by_instrument.get(lot.instrument_id, (0, Decimal(0)))
             lots_by_instrument[lot.instrument_id] = (
                 units + lot.remaining_units.units,
@@ -916,9 +955,9 @@ class ActionJobs:
             )
         previous_risk = [
             item
-            for item in self.risk_projection(account_id)
+            for item in self.risk_projection(request.account_id)
             if item.get("stop_model") == "ATR"
-            and str(item["action_date"]) < action_date.isoformat()
+            and str(item["action_date"]) < request.action_date.isoformat()
         ]
         previous_stops = (
             {
@@ -944,13 +983,132 @@ class ActionJobs:
             )
             for instrument_id, (units, cost) in lots_by_instrument.items()
         )
-        if any(holding.instrument_id not in bars for holding in holdings):
+        if any(holding.instrument_id not in inputs.bars for holding in holdings):
             raise DomainValidationError("held stock is missing an action-date market bar")
+        return holdings, score_by_id, rank_by_id
+
+    def _generation_drawdown(self, request, inputs):
+        drawdown_paused = False
+        drawdown_value: Decimal | None = None
+        if request.max_drawdown_pause > 0:
+            snapshots = [
+                item
+                for item in self.ledger.valuations(request.account_id, 500)
+                if str(item["as_of_date"]) <= request.market_date.isoformat()
+            ]
+            peak = Decimal(0)
+            latest = None
+            for snapshot in sorted(snapshots, key=lambda item: str(item["as_of_date"])):
+                equity = Decimal(str(snapshot["payload"]["equity"]))
+                peak = max(peak, equity)
+                latest = (snapshot, (equity / peak - Decimal(1)) if peak else Decimal(0))
+            if latest is not None:
+                snapshot, drawdown_value = latest
+                inputs.snapshot_ids.add(str(snapshot["snapshot_id"]))
+                drawdown_paused = drawdown_value <= -request.max_drawdown_pause
+        return drawdown_paused, drawdown_value
+
+    def _generation_macro(self, request, inputs):
+        macro_paused = False
+        vix_value: Decimal | None = None
+        if request.macro_artifact_id is not None:
+            try:
+                _, macro_payload = self.publisher.store.read_json(
+                    "reference/macro-indicators", request.macro_artifact_id
+                )
+                macro_date = date.fromisoformat(str(macro_payload["as_of_date"]))
+                values = macro_payload["values"]
+                if macro_date > request.market_date or not isinstance(values, dict):
+                    raise ValueError("macro date or values")
+                raw_vix = values.get("vix", values.get("VIX"))
+                if raw_vix is not None:
+                    vix_value = Decimal(str(raw_vix))
+                    macro_paused = request.max_vix > 0 and vix_value >= request.max_vix
+            except (DomainValidationError, KeyError, TypeError, ValueError) as exc:
+                raise DomainValidationError("macro artifact is missing or malformed") from exc
+            inputs.snapshot_ids.add(str(request.macro_artifact_id))
+        return macro_paused, vix_value
+
+    def _select_generation_candidates(
+        self, request: _GenerationRequest, inputs: _GenerationInputs
+    ) -> _GenerationSelection:
+        stale_buy_skipped: list[dict[str, object]] = []
+        drawdown_paused, drawdown_value = self._generation_drawdown(request, inputs)
+        sector_by_instrument = self._sector_reference(request.sector_artifact_id)
+        if request.sector_artifact_id is not None:
+            inputs.snapshot_ids.add(str(request.sector_artifact_id))
+        macro_paused, vix_value = self._generation_macro(request, inputs)
+        cap_by_instrument = self._capitalization_reference(request.market_cap_artifact_id, request.market_date, request.market_cap_sizing)
+        if request.market_cap_artifact_id is not None:
+            inputs.snapshot_ids.add(str(request.market_cap_artifact_id))
+        fundamentals_by_instrument = self._fundamentals_reference(request.fundamentals_artifact_id, request.market_date)
+        if request.fundamentals_artifact_id is not None:
+            inputs.snapshot_ids.add(str(request.fundamentals_artifact_id))
+        cap_median = (
+            sorted(cap_by_instrument.values())[len(cap_by_instrument) // 2]
+            if cap_by_instrument
+            else Decimal(1)
+        )
+
+        def size_multiplier(instrument_id: str) -> Decimal:
+            if request.market_cap_sizing == "NONE" or instrument_id not in cap_by_instrument:
+                return Decimal(1)
+            ratio = cap_by_instrument[instrument_id] / cap_median
+            if request.market_cap_sizing == "SQRT":
+                ratio = ratio.sqrt()
+            return min(Decimal(2), max(Decimal("0.5"), ratio))
+
+        candidate_items = []
+        for item in inputs.eligible:
+            instrument_id = str(item["instrument_id"])
+            if instrument_id not in inputs.bars:
+                continue
+            if request.market_cap_sizing != "NONE" and instrument_id not in cap_by_instrument:
+                continue
+            fundamental = (
+                fundamentals_by_instrument.get(instrument_id)
+                if request.fundamentals_artifact_id is not None
+                else None
+            )
+            if request.fundamentals_artifact_id is not None and (
+                fundamental is None
+                or request.min_eps is not None
+                and ("eps" not in fundamental or fundamental["eps"] < request.min_eps)
+                or request.max_debt_equity is not None
+                and (
+                    "debt_equity" not in fundamental or fundamental["debt_equity"] > request.max_debt_equity
+                )
+            ):
+                continue
+            if request.vacancy_from is not None:
+                signal_bars = self.market.bars(instrument_id, request.vacancy_date, request.vacancy_date, limit=2)
+                signal_close = Decimal(str(signal_bars[0]["close"])) if signal_bars else None
+                if signal_close is None or inputs.bars[instrument_id].open > signal_close * (
+                    Decimal(1) + request.stale_buy_threshold
+                ):
+                    stale_buy_skipped.append(
+                        {
+                            "instrument_id": instrument_id,
+                            "reason": "stale_buy_above_signal_threshold",
+                        }
+                    )
+                    continue
+            candidate_items.append(item)
+        candidate_items, sector_skipped = self._filter_generation_sectors(
+            request, inputs, sector_by_instrument, candidate_items
+        )
+        if drawdown_paused or macro_paused:
+            candidate_items = []
+        candidates = tuple(
+            self._risk_candidate(item, inputs.risk_inputs, size_multiplier(str(item["instrument_id"])))
+            for item in candidate_items
+        )
+        holdings, score_by_id, rank_by_id = self._generation_holdings(request, inputs)
         correlation_matrix: dict[str, dict[str, object]] = {}
-        if correlation_artifact_id is not None:
+        if request.correlation_artifact_id is not None:
             try:
                 _, correlation_payload = self.publisher.store.read_json(
-                    "research/correlations", correlation_artifact_id
+                    "research/correlations", request.correlation_artifact_id
                 )
                 correlation_matrix = correlation_payload["matrix"]
             except (DomainValidationError, KeyError, TypeError) as exc:
@@ -963,7 +1121,7 @@ class ActionJobs:
                 instrument_id = str(item["instrument_id"])
                 correlated = any(
                     abs(float(correlation_matrix.get(instrument_id, {}).get(held_id, 0)))
-                    >= float(decorrelation_threshold)
+                    >= float(request.decorrelation_threshold)
                     for held_id in held_ids
                 )
                 if correlated:
@@ -977,28 +1135,46 @@ class ActionJobs:
                     filtered_items.append(item)
             candidate_items = filtered_items
             candidates = tuple(
-                risk_candidate(item, size_multiplier(str(item["instrument_id"])))
+                self._risk_candidate(item, inputs.risk_inputs, size_multiplier(str(item["instrument_id"])))
                 for item in candidate_items
             )
-        settings = configured_settings
+        return _GenerationSelection(
+            stale_buy_skipped=stale_buy_skipped,
+            sector_skipped=sector_skipped,
+            drawdown_paused=drawdown_paused,
+            drawdown_value=drawdown_value,
+            macro_paused=macro_paused,
+            vix_value=vix_value,
+            decorrelation_skipped=decorrelation_skipped,
+            candidates=candidates,
+            holdings=holdings,
+            score_by_id=score_by_id,
+            rank_by_id=rank_by_id,
+        )
+
+    def _evaluate_generation(
+        self, request: _GenerationRequest, inputs: _GenerationInputs,
+        selection: _GenerationSelection,
+    ) -> _GenerationEvaluation:
+        settings = request.configured_settings
         policy = PortfolioPolicy(
-            positions,
+            request.positions,
             Decimal(str(settings["exit_threshold"])),
             max_position_fraction=min(
-                Decimal(1) / Decimal(positions),
+                Decimal(1) / Decimal(request.positions),
                 Decimal(str(settings["max_concentration_pct"])),
             ),
             swap_buffer=Decimal(str(settings["buffer_percent"])),
-            pyramid_fraction=pyramid_fraction,
-            ltcg_hold_days=ltcg_hold_days,
-            swap_cost_bps=swap_cost_bps,
+            pyramid_fraction=request.pyramid_fraction,
+            ltcg_hold_days=request.ltcg_hold_days,
+            swap_cost_bps=request.swap_cost_bps,
         )
         decisions, resulting_state = evaluate(
-            PortfolioState(projection.cash, holdings),
+            PortfolioState(inputs.projection.cash, selection.holdings),
             policy,
-            candidates,
-            bars,
-            score_candidates=tuple(risk_candidate(item) for item in ranked),
+            selection.candidates,
+            inputs.bars,
+            score_candidates=tuple(self._risk_candidate(item, inputs.risk_inputs) for item in inputs.ranked),
         )
         identities = {
             item.instrument_id: self.market.instrument_by_id(item.instrument_id)
@@ -1021,51 +1197,61 @@ class ActionJobs:
                 else None,
                 "fee": str(item.fee.amount),
                 "reason": item.reason,
-                "score": str(score_by_id[item.instrument_id])
-                if item.instrument_id in score_by_id
+                "score": str(selection.score_by_id[item.instrument_id])
+                if item.instrument_id in selection.score_by_id
                 else None,
-                "rank": rank_by_id.get(item.instrument_id),
+                "rank": selection.rank_by_id.get(item.instrument_id),
             }
             for item in decisions
         ]
-        version = int(str(account["version"]))
+        return _GenerationEvaluation(
+            policy=policy,
+            resulting_state=resulting_state,
+            encoded_decisions=encoded_decisions,
+        )
+
+    def _publish_generation(
+        self, request: _GenerationRequest, inputs: _GenerationInputs,
+        selection: _GenerationSelection, evaluation: _GenerationEvaluation,
+    ) -> dict[str, object]:
+        version = int(str(inputs.account["version"]))
         fingerprint = hashlib.sha256(
             json.dumps(
                 {
-                    "account_id": account_id,
+                    "account_id": request.account_id,
                     "version": version,
-                    "strategy_id": strategy_id,
-                    "action_date": action_date.isoformat(),
-                    "as_of_date": market_date.isoformat(),
-                    "pricing_basis": "latest_completed_close_estimate" if forward else "historical_action_open",
-                    "max_positions": positions,
-                    "pyramid_enabled": pyramid_enabled,
-                    "pyramid_fraction": str(pyramid_fraction),
-                    "vacancy_from": vacancy_from,
-                    "stale_buy_threshold": str(stale_buy_threshold),
-                    "correlation_artifact_id": correlation_artifact_id,
-                    "decorrelation_threshold": str(decorrelation_threshold),
-                    "ltcg_hold_days": ltcg_hold_days,
-                    "sector_artifact_id": sector_artifact_id,
-                    "max_sector_fraction": str(max_sector_fraction),
-                    "max_drawdown_pause": str(max_drawdown_pause),
-                    "sector_skipped": sector_skipped,
-                    "drawdown_paused": drawdown_paused,
-                    "drawdown": str(drawdown_value) if drawdown_value is not None else None,
-                    "macro_artifact_id": macro_artifact_id,
-                    "max_vix": str(max_vix),
-                    "vix": str(vix_value) if vix_value is not None else None,
-                    "macro_paused": macro_paused,
-                    "market_cap_artifact_id": market_cap_artifact_id,
-                    "market_cap_sizing": market_cap_sizing,
-                    "swap_cost_bps": str(swap_cost_bps),
-                    "fundamentals_artifact_id": fundamentals_artifact_id,
-                    "min_eps": str(min_eps) if min_eps is not None else None,
-                    "max_debt_equity": str(max_debt_equity)
-                    if max_debt_equity is not None
+                    "strategy_id": request.strategy_id,
+                    "action_date": request.action_date.isoformat(),
+                    "as_of_date": request.market_date.isoformat(),
+                    "pricing_basis": "latest_completed_close_estimate" if request.forward else "historical_action_open",
+                    "max_positions": request.positions,
+                    "pyramid_enabled": request.pyramid_enabled,
+                    "pyramid_fraction": str(request.pyramid_fraction),
+                    "vacancy_from": request.vacancy_from,
+                    "stale_buy_threshold": str(request.stale_buy_threshold),
+                    "correlation_artifact_id": request.correlation_artifact_id,
+                    "decorrelation_threshold": str(request.decorrelation_threshold),
+                    "ltcg_hold_days": request.ltcg_hold_days,
+                    "sector_artifact_id": request.sector_artifact_id,
+                    "max_sector_fraction": str(request.max_sector_fraction),
+                    "max_drawdown_pause": str(request.max_drawdown_pause),
+                    "sector_skipped": selection.sector_skipped,
+                    "drawdown_paused": selection.drawdown_paused,
+                    "drawdown": str(selection.drawdown_value) if selection.drawdown_value is not None else None,
+                    "macro_artifact_id": request.macro_artifact_id,
+                    "max_vix": str(request.max_vix),
+                    "vix": str(selection.vix_value) if selection.vix_value is not None else None,
+                    "macro_paused": selection.macro_paused,
+                    "market_cap_artifact_id": request.market_cap_artifact_id,
+                    "market_cap_sizing": request.market_cap_sizing,
+                    "swap_cost_bps": str(request.swap_cost_bps),
+                    "fundamentals_artifact_id": request.fundamentals_artifact_id,
+                    "min_eps": str(request.min_eps) if request.min_eps is not None else None,
+                    "max_debt_equity": str(request.max_debt_equity)
+                    if request.max_debt_equity is not None
                     else None,
-                    "strategy_revision_id": revision["revision_id"],
-                    "sources": sorted(snapshot_ids),
+                    "strategy_revision_id": request.revision["revision_id"],
+                    "sources": sorted(inputs.snapshot_ids),
                 },
                 sort_keys=True,
             ).encode("utf-8")
@@ -1075,8 +1261,8 @@ class ActionJobs:
         risk_projection = {
             "stop_model": "ATR",
             "risk_projection_id": risk_artifact_id,
-            "account_id": account_id,
-            "action_date": action_date.isoformat(),
+            "account_id": request.account_id,
+            "action_date": request.action_date.isoformat(),
             "source_action_revision": proposal_id,
             "positions": [
                 {
@@ -1086,7 +1272,7 @@ class ActionJobs:
                     "current_trailing_stop": str(holding.current_stop.amount),
                     "score": str(holding.score),
                 }
-                for holding in resulting_state.holdings
+                for holding in evaluation.resulting_state.holdings
             ],
         }
         if not self.publisher.catalog.has(risk_artifact_id):
@@ -1094,7 +1280,7 @@ class ActionJobs:
                 "actions/risk-projections",
                 risk_artifact_id,
                 risk_projection,
-                upstream_ids=tuple(sorted(snapshot_ids)),
+                upstream_ids=tuple(sorted(inputs.snapshot_ids)),
                 quality=QualityStatus.PARTIAL,
             )
         if self.publisher.catalog.has(proposal_id):
@@ -1105,12 +1291,12 @@ class ActionJobs:
             proposal_id,
             {
                 "proposal_id": proposal_id,
-                "account_id": account_id,
-                "strategy_id": strategy_id,
-                "ranking_week_end": week_end.isoformat(),
-                "action_date": action_date.isoformat(),
-                "as_of_date": market_date.isoformat(),
-                "pricing_basis": "latest_completed_close_estimate" if forward else "historical_action_open",
+                "account_id": request.account_id,
+                "strategy_id": request.strategy_id,
+                "ranking_week_end": inputs.week_end.isoformat(),
+                "action_date": request.action_date.isoformat(),
+                "as_of_date": request.market_date.isoformat(),
+                "pricing_basis": "latest_completed_close_estimate" if request.forward else "historical_action_open",
                 "expected_ledger_version": version,
                 "policy": {
                     "execution_policy_version": _EXECUTION_POLICY_VERSION,
@@ -1118,50 +1304,50 @@ class ActionJobs:
                     "entry_timing": "next_tradable_open",
                     "cash_resize": "actual_open_with_available_cash",
                     "zero_unit_buy": "remain_pending",
-                    "pyramid_enabled": pyramid_enabled,
-                    "max_positions": positions,
-                    "exit_score": str(settings["exit_threshold"]),
-                    "max_position_fraction": str(policy.max_position_fraction),
-                    "swap_buffer": str(policy.swap_buffer),
-                    "pyramid_fraction": str(policy.pyramid_fraction),
-                    "vacancy_advance_from": vacancy_from,
-                    "stale_buy_threshold": str(stale_buy_threshold),
-                    "stale_buy_skipped": stale_buy_skipped,
-                    "correlation_artifact_id": correlation_artifact_id,
-                    "decorrelation_threshold": str(decorrelation_threshold),
-                    "decorrelation_skipped": decorrelation_skipped,
-                    "ltcg_hold_days": ltcg_hold_days,
-                    "sector_artifact_id": sector_artifact_id,
-                    "max_sector_fraction": str(max_sector_fraction),
-                    "sector_skipped": sector_skipped,
-                    "max_drawdown_pause": str(max_drawdown_pause),
-                    "drawdown_paused": drawdown_paused,
-                    "drawdown": str(drawdown_value) if drawdown_value is not None else None,
-                    "market_cap_artifact_id": market_cap_artifact_id,
-                    "market_cap_sizing": market_cap_sizing,
-                    "macro_artifact_id": macro_artifact_id,
-                    "max_vix": str(max_vix),
-                    "vix": str(vix_value) if vix_value is not None else None,
-                    "macro_paused": macro_paused,
-                    "fundamentals_artifact_id": fundamentals_artifact_id,
-                    "min_eps": str(min_eps) if min_eps is not None else None,
-                    "max_debt_equity": str(max_debt_equity)
-                    if max_debt_equity is not None
+                    "pyramid_enabled": request.pyramid_enabled,
+                    "max_positions": request.positions,
+                    "exit_score": str(request.configured_settings["exit_threshold"]),
+                    "max_position_fraction": str(evaluation.policy.max_position_fraction),
+                    "swap_buffer": str(evaluation.policy.swap_buffer),
+                    "pyramid_fraction": str(evaluation.policy.pyramid_fraction),
+                    "vacancy_advance_from": request.vacancy_from,
+                    "stale_buy_threshold": str(request.stale_buy_threshold),
+                    "stale_buy_skipped": selection.stale_buy_skipped,
+                    "correlation_artifact_id": request.correlation_artifact_id,
+                    "decorrelation_threshold": str(request.decorrelation_threshold),
+                    "decorrelation_skipped": selection.decorrelation_skipped,
+                    "ltcg_hold_days": request.ltcg_hold_days,
+                    "sector_artifact_id": request.sector_artifact_id,
+                    "max_sector_fraction": str(request.max_sector_fraction),
+                    "sector_skipped": selection.sector_skipped,
+                    "max_drawdown_pause": str(request.max_drawdown_pause),
+                    "drawdown_paused": selection.drawdown_paused,
+                    "drawdown": str(selection.drawdown_value) if selection.drawdown_value is not None else None,
+                    "market_cap_artifact_id": request.market_cap_artifact_id,
+                    "market_cap_sizing": request.market_cap_sizing,
+                    "macro_artifact_id": request.macro_artifact_id,
+                    "max_vix": str(request.max_vix),
+                    "vix": str(selection.vix_value) if selection.vix_value is not None else None,
+                    "macro_paused": selection.macro_paused,
+                    "fundamentals_artifact_id": request.fundamentals_artifact_id,
+                    "min_eps": str(request.min_eps) if request.min_eps is not None else None,
+                    "max_debt_equity": str(request.max_debt_equity)
+                    if request.max_debt_equity is not None
                     else None,
                 },
-                "strategy_revision_id": revision["revision_id"],
+                "strategy_revision_id": request.revision["revision_id"],
                 "limitations": [
                     "portfolio execution against a completed historical bar",
                     "stop derived as 90% of FIFO unit cost; v3 trailing stops not imported",
                 ],
-                "decisions": encoded_decisions,
+                "decisions": evaluation.encoded_decisions,
             },
             upstream_ids=tuple(
                 sorted(
                     (
-                        *snapshot_ids,
+                        *inputs.snapshot_ids,
                         risk_artifact_id,
-                        *((correlation_artifact_id,) if correlation_artifact_id else ()),
+                        *((request.correlation_artifact_id,) if request.correlation_artifact_id else ()),
                     )
                 )
             ),

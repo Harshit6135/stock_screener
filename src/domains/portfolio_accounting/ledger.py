@@ -575,23 +575,54 @@ class Ledger:
         return held
 
     def projection_at(self, account_id: str, as_of: date | None, *, excluded_instrument_ids=()):
+        return self.projections_at(
+            account_id, (as_of,), excluded_instrument_ids=excluded_instrument_ids
+        )[as_of]
+
+    def projections_at(self, account_id: str, dates, *, excluded_instrument_ids=()):
+        """Read one consistent ledger snapshot and reuse unchanged dated projections.
+
+        Results live only for this call; later ledger or charge writes are always
+        visible on the next request. Events retain their ledger version order.
+        """
+        dates = tuple(dict.fromkeys(dates))
+        if not dates:
+            return {}
         with self._connect() as connection:
+            connection.execute("BEGIN")
             account = connection.execute(
                 "SELECT opening_cash, currency FROM ledger_accounts WHERE account_id = ?",
                 (account_id,),
             ).fetchone()
             if account is None:
                 raise DomainValidationError("account does not exist")
-            cutoff = f"{as_of.isoformat()}T23:59:59.999999" if as_of else None
+            cutoff = f"{max(dates).isoformat()}T23:59:59.999999" if None not in dates else None
             rows = connection.execute(
-                "SELECT version, event_json, event_type FROM ledger_events WHERE account_id = ? AND event_type IN ('FILL_RECORDED', 'OPENING_POSITION_IMPORTED', 'IMPORTED_POSITION_FUNDED', 'OPEN_LOTS_RECONCILED', 'STOCK_SPLIT_APPLIED') AND (? IS NULL OR occurred_at <= ?) ORDER BY version",
+                "SELECT version, event_json, event_type, occurred_at FROM ledger_events WHERE account_id = ? AND event_type IN ('FILL_RECORDED', 'OPENING_POSITION_IMPORTED', 'IMPORTED_POSITION_FUNDED', 'OPEN_LOTS_RECONCILED', 'STOCK_SPLIT_APPLIED') AND (? IS NULL OR occurred_at <= ?) ORDER BY version",
                 (account_id, cutoff, cutoff),
             ).fetchall()
             transfers = connection.execute(
-                "SELECT event_json FROM ledger_events WHERE account_id=? AND event_type='CASH_TRANSFER' AND (? IS NULL OR occurred_at <= ?) ORDER BY version",
+                "SELECT event_json, occurred_at FROM ledger_events WHERE account_id=? AND event_type='CASH_TRANSFER' AND (? IS NULL OR occurred_at <= ?) ORDER BY version",
                 (account_id, cutoff, cutoff),
             ).fetchall()
             records = charge_records(connection, account_id)
+        result, previous_key, previous_projection = {}, None, None
+        for day in sorted(dates, key=lambda day: day or date.max):
+            cutoff = f"{day.isoformat()}T23:59:59.999999" if day else None
+            dated_rows = [row for row in rows if cutoff is None or row["occurred_at"] <= cutoff]
+            dated_transfers = [
+                row for row in transfers if cutoff is None or row["occurred_at"] <= cutoff
+            ]
+            key = (tuple(row["version"] for row in dated_rows), len(dated_transfers))
+            if key != previous_key:
+                previous_projection = self._project_rows(
+                    account, dated_rows, dated_transfers, records, excluded_instrument_ids
+                )
+                previous_key = key
+            result[day] = previous_projection
+        return result
+
+    def _project_rows(self, account, rows, transfers, records, excluded_instrument_ids):
         excluded_import_costs = {
             row["version"]: Decimal(str(payload["units"])) * Decimal(str(payload["unit_cost"]))
             for row in rows
@@ -615,9 +646,10 @@ class Ledger:
             ), row["event_type"]))
         transfer_total = sum(
             (
-                Decimal(str(json.loads(row["event_json"])["amount"]))
-                * (1 if json.loads(row["event_json"])["direction"] == "DEPOSIT" else -1)
+                Decimal(str(payload["amount"]))
+                * (1 if payload["direction"] == "DEPOSIT" else -1)
                 for row in transfers
+                for payload in (json.loads(row["event_json"]),)
             ),
             Decimal(0),
         )

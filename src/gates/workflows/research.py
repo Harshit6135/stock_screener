@@ -1091,10 +1091,9 @@ class ResearchJobs:
         category = categories.get(kind)
         if category is None or strategy_id not in self.runtime.strategy_ids():
             raise DomainValidationError("research snapshot query is invalid")
-        candidates: list[tuple[str, dict[str, object]]] = []
-        for manifest in self.publisher.store.manifests():
-            if manifest.category != category:
-                continue
+        revision_id = self.runtime.revision(strategy_id)["revision_id"]
+        candidates = self.publisher.store.manifest_candidates(category)
+        for manifest in sorted(candidates, key=lambda item: item.created_at, reverse=True):
             try:
                 _, payload = self.publisher.store.read_json(category, manifest.artifact_id)
             except DomainValidationError:
@@ -1102,7 +1101,7 @@ class ResearchJobs:
             if (
                 payload.get("strategy_id") != strategy_id
                 or payload.get("strategy_revision_id")
-                != self.runtime.revision(strategy_id)["revision_id"]
+                != revision_id
             ):
                 continue
             snapshot_date = payload.get("as_of_date", payload.get("week_end"))
@@ -1126,11 +1125,8 @@ class ResearchJobs:
                     )
                 if not matches:
                     continue
-            candidates.append((manifest.created_at, payload))
-        if not candidates:
-            return None
-        _, payload = max(candidates, key=lambda item: item[0])
-        return payload
+            return payload
+        return None
 
     # Phase 4 Task 4.6: Percentile snapshot persistence
 

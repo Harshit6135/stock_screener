@@ -156,6 +156,11 @@ class ArtifactStore:
             results.append(manifest)
         return tuple(results)
 
+    def manifest_candidates(self, category: str) -> tuple[ArtifactManifest, ...]:
+        """List category metadata; callers must verify selected payloads with read_json."""
+        self._parts(category, "category")
+        return tuple(manifest for manifest in self.manifests() if manifest.category == category)
+
     def artifact_locations(self) -> tuple[tuple[str, str], ...]:
         """Return candidate artifact locations without trusting their manifests."""
         locations: list[tuple[str, str]] = []
@@ -303,6 +308,29 @@ class SqliteArtifactStore(ArtifactStore):
 
     def manifests(self) -> tuple[ArtifactManifest, ...]:
         return tuple(self.read_json(category, artifact_id)[0] for category, artifact_id in self.artifact_locations())
+
+    def manifest_candidates(self, category: str) -> tuple[ArtifactManifest, ...]:
+        self._parts(category, "category")
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """SELECT artifact_id, category, schema_version, created_at, checksum_sha256,
+                          upstream_ids_json, quality FROM artifact_payloads
+                   WHERE category=? AND quarantined=0 ORDER BY artifact_id""",
+                (category,),
+            ).fetchall()
+        try:
+            return tuple(
+                ArtifactManifest(
+                    artifact_id=row["artifact_id"], category=row["category"],
+                    schema_version=row["schema_version"], created_at=row["created_at"],
+                    checksum_sha256=row["checksum_sha256"],
+                    upstream_ids=tuple(json.loads(row["upstream_ids_json"])),
+                    quality=QualityStatus(row["quality"]),
+                )
+                for row in rows
+            )
+        except (TypeError, ValueError) as exc:
+            raise DomainValidationError("artifact manifest fields are invalid") from exc
 
     def artifact_locations(self) -> tuple[tuple[str, str], ...]:
         with closing(self._connect()) as connection:

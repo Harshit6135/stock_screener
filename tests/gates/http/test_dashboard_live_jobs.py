@@ -150,3 +150,18 @@ def test_job_definitions_are_allowlisted_and_link_to_selected_launcher():
     assert b"Parameters explained" in response.data
     assert b"/pipeline?job=research.rebuild-indicators" in response.data
     assert client.get("/guide/jobs/unknown-kind").status_code == 404
+
+
+def test_live_stream_accepts_thirty_second_refresh_and_bounds_interval(tmp_path, monkeypatch):
+    client, quotes, _lease, _ledger = live_client(tmp_path)
+    sleeps = []
+    monkeypatch.setattr("src.gates.http.portfolio.time.sleep", sleeps.append)
+    response = client.get("/api/portfolio/accounts/paper/ticker/stream?live=1&continuous=1&interval=30", buffered=False)
+    events = iter(response.response)
+    next(events)  # reconnect interval
+    next(events)  # immediate first quote
+    next(events)  # second quote waits the selected interval
+    assert sleeps == [30]
+    response.close()
+    for value in ["0", "61", "bad"]:
+        assert client.get(f"/api/portfolio/accounts/paper/ticker/stream?interval={value}").status_code == 400

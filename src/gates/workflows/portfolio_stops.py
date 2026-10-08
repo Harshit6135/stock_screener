@@ -12,6 +12,21 @@ from src.domains.portfolio_engine.api import PortfolioPolicy
 from src.domains.strategies import valid_bar
 
 
+def latest_saved_stops(projections, as_of):
+    """Choose the latest dated ATR projection for each instrument."""
+    saved = {}
+    for row in sorted(projections, key=lambda row: str(row["action_date"]), reverse=True):
+        if row.get("stop_model") != "ATR" or str(row["action_date"]) > as_of.isoformat():
+            continue
+        for position in row["positions"]:
+            saved.setdefault(
+                str(position["instrument_id"]),
+                {"stop": Decimal(str(position["current_trailing_stop"])),
+                 "date": str(row["action_date"])},
+            )
+    return saved
+
+
 def portfolio_stops(market, lots, as_of, saved=None):
     saved = saved or {}
     # Intraday OHLC/ticker bars must not change a completed-close stop.

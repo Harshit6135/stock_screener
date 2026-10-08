@@ -2,7 +2,6 @@ import io
 import json
 from datetime import date
 from decimal import Decimal
-from unittest.mock import patch
 
 import pytest
 from flask import Flask
@@ -148,11 +147,11 @@ def test_same_day_sells_are_averaged_across_executions_and_fifo_buy_lots(tmp_pat
     assert ledger.projection("account") == before
 
 
-def fixture(tmp_path):
+def fixture(tmp_path, risk_reader=None):
     database = tmp_path / "history.db"
     ledger, market = Ledger(database), MarketRepository(database)
     app = Flask(__name__)
-    app.register_blueprint(create_portfolio_blueprint(ledger, market))
+    app.register_blueprint(create_portfolio_blueprint(ledger, market, risk_reader=risk_reader))
     app.register_blueprint(create_tradebook_blueprint(TradebookImport(database, ledger, market)))
     client = app.test_client()
     assert (
@@ -184,7 +183,8 @@ def command(review):
 
 
 def test_complete_history_cash_realised_unrealised_xirr_and_cagr(tmp_path):
-    client, ledger, market = fixture(tmp_path)
+    risks = []
+    client, ledger, market = fixture(tmp_path, risk_reader=lambda _: risks)
     review = preview(client)
     assert review["closed_symbols"] == 1
     assert review["summary"]["realised_pnl"] == "17.2"
@@ -223,12 +223,13 @@ def test_complete_history_cash_realised_unrealised_xirr_and_cagr(tmp_path):
         (date(2026, 4, 1), Decimal(79)),
     ])
     assert abs(Decimal(value["realised_xirr"]) - closed_return) < Decimal("1e-10")
-    with patch("src.gates.http.portfolio.portfolio_stops", return_value={
-        instrument_id: {"current_trailing_stop": Decimal(30)}
-    }):
-        risk_value = client.get(
-            "/api/portfolio/accounts/account/valuation?as_of_date=2026-10-06"
-        ).json
+    risks.append({
+        "stop_model": "ATR", "action_date": "2026-10-06",
+        "positions": [{"instrument_id": instrument_id, "current_trailing_stop": "30"}],
+    })
+    risk_value = client.get(
+        "/api/portfolio/accounts/account/valuation?as_of_date=2026-10-06"
+    ).json
     assert Decimal(risk_value["capital_risk"]) == Decimal("61.2") - 180
     assert Decimal(risk_value["stop_based_risk"]) == 0
     assert Decimal(risk_value["portfolio_risk"]) == 0
@@ -441,10 +442,18 @@ def test_kite_direct_import_after_history_preserves_trades_and_saves_purchase_da
             provenance = json.loads(event["event"]["broker_provenance"])
             provenance["purchase_date_known"] = False
             event["event"]["broker_provenance"] = json.dumps(provenance)
-    with patch.object(ledger, "events", return_value=uncertain_events):
-        uncertain = client.get(
-            f"/api/portfolio/accounts/account/valuation?as_of_date={valuation_date}"
-        ).json
+    # A stored-input correction must invalidate a previously cached valuation,
+    # even when the account version and number of rows remain unchanged.
+    with sqlite_connection(ledger.path) as connection:
+        for event in uncertain_events:
+            if event["event_type"] == "OPENING_POSITION_IMPORTED":
+                connection.execute(
+                    "UPDATE ledger_events SET event_json=? WHERE account_id=? AND version=?",
+                    (json.dumps(event["event"]), "account", event["version"]),
+                )
+    uncertain = client.get(
+        f"/api/portfolio/accounts/account/valuation?as_of_date={valuation_date}"
+    ).json
     assert uncertain["xirr"] is None and uncertain["annualized_return"] is None
 
 

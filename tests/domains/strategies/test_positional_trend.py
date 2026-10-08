@@ -1,10 +1,62 @@
 from __future__ import annotations
 
+import math
+import random
 from datetime import date, timedelta
 
 import pytest
 
+from src.domains.strategies import positional_trend
 from src.domains.strategies.positional_trend import feature_series, signal_series
+from src.domains.strategies.positional_trend_backtest import Policy, simulate
+
+
+@pytest.mark.parametrize("period", [1, 7, 30, 100])
+def test_exact_adtv_matches_original_window_sums_bit_for_bit(period):
+    rng = random.Random(741)
+    values = [float(rng.randrange(0, 10**9)) for _ in range(250)]
+    prefix = positional_trend._exact_value_prefix(values)
+    assert prefix is not None
+    for i in range(period, len(values)):
+        expected = sum(values[i - period:i]) / period
+        actual = (prefix[i] - prefix[i - period]) / period
+        assert actual.hex() == expected.hex()
+    boundary = positional_trend._exact_value_prefix([float(2**53 - 1), 1.0, 0.0])
+    assert boundary == [0.0, float(2**53 - 1), float(2**53), float(2**53)]
+
+
+@pytest.mark.parametrize("values", [
+    [0.1, 0.2, 0.3], [-1.0, 2.0], [math.inf], [math.nan],
+    [float(2**53), 1.0], [float(2**53 + 2)],
+])
+def test_adtv_falls_back_when_exact_prefix_arithmetic_cannot_be_certified(values):
+    assert positional_trend._exact_value_prefix(values) is None
+
+
+@pytest.mark.parametrize("fractional", [False, True])
+def test_adtv_preserves_threshold_edges_and_complete_replay(tmp_path, monkeypatch, fractional):
+    days, bars = _fixture()
+    if fractional:
+        bars = [{**bar, "open": bar["open"] + 0.1, "high": bar["high"] + 0.1,
+                 "low": bar["low"] + 0.1, "close": bar["close"] + 0.1, "volume": 3}
+                for bar in bars]
+    prior = sum(float(bar["close"]) * float(bar["volume"]) for bar in bars[70:100]) / 30
+    thresholds = [math.nextafter(prior, -math.inf), prior, math.nextafter(prior, math.inf)]
+    optimized = [feature_series(bars, days, "A", {"minimum_adtv": threshold})
+                 for threshold in thresholds]
+    replay = simulate(
+        {"a": ("A", bars)}, days, policy=Policy(), start_date=days[0], end_date=days[-1],
+        rules={"minimum_adtv": 0, "adx_minimum": 0},
+    )
+    monkeypatch.setattr(positional_trend, "_exact_value_prefix", lambda _: None)
+    baseline = [feature_series(bars, days, "A", {"minimum_adtv": threshold})
+                for threshold in thresholds]
+    assert optimized == baseline
+    assert [rows[80]["first_cross"] for rows in optimized] == [True, False, False]
+    assert simulate(
+        {"a": ("A", bars)}, days, policy=Policy(), start_date=days[0], end_date=days[-1],
+        rules={"minimum_adtv": 0, "adx_minimum": 0},
+    ) == replay
 
 
 def _bars(count=110, *, volume=2_000_000):

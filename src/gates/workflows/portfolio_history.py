@@ -59,7 +59,7 @@ def portfolio_history(ledger, market, account_id, as_of, limit=500, broker_snaps
     history, missing, skipped = [], set(), 0
     # Use a consistent priced subset across the entire curve. Excluding only
     # market value would incorrectly turn unpriced purchases into total losses.
-    projections = {day: ledger.projection_at(account_id, day) for day in sorted(dates)}
+    projections = ledger.projections_at(account_id, sorted(dates))
     for day, projection in projections.items():
         unavailable = set()
         for lot in projection.open_lots:
@@ -72,9 +72,13 @@ def portfolio_history(ledger, market, account_id, as_of, limit=500, broker_snaps
         if unavailable:
             skipped += 1
             missing.update(unavailable)
+    if missing:
+        projections = ledger.projections_at(
+            account_id, sorted(dates), excluded_instrument_ids=missing
+        )
     prior_equity, prior_day, index, peak = None, None, Decimal(1), Decimal(1)
     for day in sorted(dates):
-        projection = ledger.projection_at(account_id, day, excluded_instrument_ids=missing) if missing else projections[day]
+        projection = projections[day]
         equity, stale, complete = projection.cash.amount, 0, True
         for lot in projection.open_lots:
             if (

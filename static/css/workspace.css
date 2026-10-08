@@ -71,3 +71,12 @@ html[data-sidebar-collapsed="true"] .sidebar{display:none}
 .topbar-heading{gap:8px}.topbar-context{display:none}.topbar-tools{width:auto;flex:1;min-width:0;margin-left:12px;gap:10px}.topbar-tools #page-status{max-width:30vw}
 .sidebar .sidebar-footer{display:none}
 }
+
+/* Six top-level account metrics and accessible holding-column sorting. */
+.portfolio-metrics{grid-template-columns:repeat(6,minmax(0,1fr))}
+.portfolio-metrics .realised-return{display:flex;flex-wrap:wrap;gap:5px 10px;margin:8px 0 0;font-size:11px;color:var(--muted)}
+.realised-return strong{color:var(--text);font-variant-numeric:tabular-nums}
+.detailed-holdings th .holding-sort{width:100%;min-height:32px;padding:2px 0;background:transparent;border:0;color:inherit;font:inherit;white-space:nowrap;border-radius:3px}
+@media(max-width:1300px){.portfolio-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:800px){.portfolio-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:380px){.portfolio-metrics{grid-template-columns:1fr}}

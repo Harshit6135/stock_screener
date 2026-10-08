@@ -7,7 +7,7 @@
   <script>document.documentElement.dataset.theme=localStorage.getItem("screener-theme")||"light";</script>
   <script>try{document.documentElement.dataset.sidebarCollapsed=String(localStorage.getItem("screener-sidebar-collapsed")==="true");}catch{}</script>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/carbon-emerald.css', v='20261005-stock-review1') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace.css', v='20261007-sidebar1') }}"><link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/workspace.css', v='20261007-summary-sort1') }}"><link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -19,5 +19,5 @@
   </aside>
   <div class="app-shell"><header class="topbar"><div class="topbar-heading"><button id="sidebar-toggle" class="icon-button secondary sidebar-toggle" type="button" aria-label="Collapse sidebar" aria-controls="primary-sidebar" aria-expanded="true" title="Collapse sidebar"><span aria-hidden="true">‹</span></button><span class="topbar-context">Your investment workspace</span></div><div class="topbar-tools"><a id="market-login" class="market-login" href="/integrations/kite?auto=1" target="kite-market-login" rel="noopener">Market data login ↗</a><span id="page-status" role="status" aria-live="polite">Ready</span><button id="theme-toggle" class="icon-button" type="button" aria-label="Switch color theme">◐</button></div></header><main id="main-content" data-page="{{ active_page|default('wiki') }}">{% block content %}{% endblock %}</main></div>
   <dialog id="app-modal" aria-labelledby="modal-title"><section id="modal-content"></section></dialog>
-  <script src="{{ url_for('static', filename='js/sidebar.js', v='20261007-sidebar1') }}"></script><script src="{{ url_for('static', filename='js/common.js') }}"></script><script src="{{ url_for('static', filename='js/market-session.js', v='20261007-charges1') }}"></script>{% block scripts %}{% endblock %}
+  <script src="{{ url_for('static', filename='js/sidebar.js', v='20261007-summary-sort1') }}"></script><script src="{{ url_for('static', filename='js/common.js') }}"></script><script src="{{ url_for('static', filename='js/market-session.js', v='20261007-charges1') }}"></script>{% block scripts %}{% endblock %}
 </body></html>

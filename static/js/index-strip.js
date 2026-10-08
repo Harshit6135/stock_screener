@@ -56,6 +56,6 @@
   window.addEventListener("market-session", event => startPolling(event.detail));
   startPolling(window.marketSessionStatus);
   render([]); load();
-  const quoteTimer = setInterval(load, 5000);
+  const quoteTimer = setInterval(load, 30000);
   window.addEventListener("pagehide", () => { clearInterval(quoteTimer); observer?.disconnect(); });
 })();

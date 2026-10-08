@@ -133,15 +133,9 @@ class MarketHistoryRepositoryMixin:
                 )
         return int(cursor.rowcount)
 
-    def has_coverage(
-        self,
-        instrument_id: str,
-        start_date: date,
-        end_date: date,
-        provider: str = "kite",
-        coverage_context: str = "regular",
-    ) -> bool:
-        """Return whether completed provider windows cover the full calendar range."""
+    def _coverage_windows(
+        self, instrument_id, start_date, end_date, provider, coverage_context
+    ):
         if (
             start_date > end_date
             or not provider.strip()
@@ -162,6 +156,20 @@ class MarketHistoryRepositoryMixin:
                     end_date.isoformat(),
                 ),
             ).fetchall()
+        return rows
+
+    def has_coverage(
+        self,
+        instrument_id: str,
+        start_date: date,
+        end_date: date,
+        provider: str = "kite",
+        coverage_context: str = "regular",
+    ) -> bool:
+        """Return whether completed provider windows cover the full calendar range."""
+        rows = self._coverage_windows(
+            instrument_id, start_date, end_date, provider, coverage_context
+        )
         covered_through = start_date - timedelta(days=1)
         for row in rows:
             window_start = date.fromisoformat(str(row["start_date"]))
@@ -182,26 +190,9 @@ class MarketHistoryRepositoryMixin:
         coverage_context: str = "regular",
     ) -> tuple[tuple[date, date], ...]:
         """Return only calendar intervals not covered by completed provider requests."""
-        if (
-            start_date > end_date
-            or not provider.strip()
-            or coverage_context not in {"regular", "exit_only"}
-        ):
-            raise DomainValidationError("market fetch coverage range is invalid")
-        with sqlite_connection(self.path, read_only=True, row_factory=True) as connection:
-            rows = connection.execute(
-                """SELECT start_date, end_date FROM market_fetch_coverage
-                   WHERE instrument_id=? AND provider=? AND coverage_context=?
-                   AND end_date>=? AND start_date<=?
-                   ORDER BY start_date, end_date""",
-                (
-                    instrument_id,
-                    provider,
-                    coverage_context,
-                    start_date.isoformat(),
-                    end_date.isoformat(),
-                ),
-            ).fetchall()
+        rows = self._coverage_windows(
+            instrument_id, start_date, end_date, provider, coverage_context
+        )
         missing: list[tuple[date, date]] = []
         cursor = start_date
         for row in rows:

@@ -108,6 +108,36 @@ def test_closed_trades_change_cash_and_drawdown_after_sale(tmp_path):
     assert Decimal(result["history"][2]["drawdown"]) < 0
 
 
+def test_dated_projections_read_once_and_reuse_only_unchanged_balances(tmp_path, monkeypatch):
+    _client, ledger = setup(tmp_path)
+    dates = [date(2026, 2, day) for day in range(1, 8)]
+    expected = {day: ledger.projection_at("account", day) for day in dates}
+    connect, project_rows = ledger._connect, ledger._project_rows
+    connections, replays = [], []
+
+    def counted_connect():
+        connections.append(True)
+        return connect()
+
+    def counted_project(*args):
+        replays.append(True)
+        return project_rows(*args)
+
+    monkeypatch.setattr(ledger, "_connect", counted_connect)
+    monkeypatch.setattr(ledger, "_project_rows", counted_project)
+    assert ledger.projections_at("account", reversed(dates)) == expected
+    assert len(connections) == 1
+    assert len(replays) == 3  # opening balance, buy, deposit; no replay on other days.
+
+    ledger.record_cash_transfer(
+        "account", "later-deposit", 2, "DEPOSIT", Money(10), reason="funding",
+        occurred_at=datetime.fromisoformat("2026-02-06T00:00:00+05:30"),
+    )
+    refreshed = ledger.projections_at("account", dates)
+    assert refreshed[dates[-1]].cash.amount == expected[dates[-1]].cash.amount + 10
+    assert refreshed[dates[0]] == expected[dates[0]]
+
+
 def test_excluding_imported_stock_adjusts_only_its_curve_funding(tmp_path):
     from datetime import UTC
     from src.domains.portfolio_accounting import OpeningPosition

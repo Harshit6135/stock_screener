@@ -2,7 +2,7 @@
   let stream = null;
   let streamAccount = null, liveGeneration = 0, viewData = null, intradayRows = [], lastChartTime = null;
   let generation = 0;
-  let momentumRanking = {week: null, members: []};
+  let momentumRanking = indexMomentumRanking({week: null, members: []});
   let savedBrokerAccountId = null;
   const $ = id => document.getElementById(id);
   const details = $("portfolio-details");
@@ -346,7 +346,7 @@
     Screener.text($("invested"), fmt(data.invested_cost));
     Screener.text($("cash"), fmt(data.cash));
     Screener.text($("unrealised"), fmt(data.unrealised_gain)); $("unrealised").classList.toggle("positive",Number(data.unrealised_gain)>=0); $("unrealised").classList.toggle("negative",Number(data.unrealised_gain)<0);
-    Screener.text($("realised"), fmt(data.realised_pnl));
+    Screener.text($("realised"), fmt(data.realised_pnl)); $("realised").classList.toggle("positive",data.realised_pnl!=null&&Number(data.realised_pnl)>=0); $("realised").classList.toggle("negative",data.realised_pnl!=null&&Number(data.realised_pnl)<0);
     Screener.text($("day-pnl"), fmt(data.day_pnl)); $("day-pnl").classList.toggle("positive",data.day_pnl!=null&&Number(data.day_pnl)>=0); $("day-pnl").classList.toggle("negative",data.day_pnl!=null&&Number(data.day_pnl)<0);
     Screener.text($("xirr"), data.xirr == null ? "Insufficient cash-flow history" : `${(Number(data.xirr) * 100).toFixed(2)}%`);
     Screener.text($("realised-xirr"), data.realised_xirr == null ? "Needs dated closed trades" : `${(Number(data.realised_xirr) * 100).toFixed(2)}%`);
@@ -411,9 +411,19 @@
       return {week, members: result.members};
     } catch (error) { return {week: null, members: [], error: error.message}; }
   }
+  function indexMomentumRanking(ranks) {
+    const byInstrument = new Map(), bySymbol = new Map(), byTrimmedSymbol = new Map();
+    for (const member of ranks.members) {
+      if (!byInstrument.has(member.instrument_id)) byInstrument.set(member.instrument_id, member);
+      const symbol = member.symbol?.toUpperCase(), trimmed = member.symbol?.trim().toUpperCase();
+      if (!bySymbol.has(symbol)) bySymbol.set(symbol, member);
+      if (!byTrimmedSymbol.has(trimmed)) byTrimmedSymbol.set(trimmed, member);
+    }
+    return {...ranks, byInstrument, bySymbol, byTrimmedSymbol};
+  }
   function momentumRankNode(h) {
-    const member = momentumRanking.members.find(row => row.instrument_id === h.instrument_id)
-      || momentumRanking.members.find(row => row.symbol?.trim().toUpperCase() === h.symbol?.trim().toUpperCase());
+    const member = momentumRanking.byInstrument.get(h.instrument_id)
+      || momentumRanking.byTrimmedSymbol.get(h.symbol?.trim().toUpperCase());
     const node = document.createElement(member ? "a" : "span");
     node.textContent = member ? String(member.rank) : "—";
     node.title = member ? `Momentum rank ${member.rank} · week ending ${momentumRanking.week}`
@@ -427,19 +437,25 @@
     if (!account) return;
     const ownGeneration = ++generation;
     const asOf = $("as-of").value || today();
-    try {
-      const [value, history, journal, ranks] = await Promise.all([
-        Screener.api(`/api/portfolio/accounts/${encodeURIComponent(account)}/valuation?as_of_date=${encodeURIComponent(asOf)}`),
-        Screener.api(`/api/portfolio/accounts/${encodeURIComponent(account)}/valuation/history?as_of_date=${encodeURIComponent(asOf)}&limit=500`),
-        Screener.api(`/api/portfolio/accounts/${encodeURIComponent(account)}/journal`),
-        latestMomentumRanks(),
-      ]);
-      if (ownGeneration !== generation || account !== $("account").value) return;
-      momentumRanking = ranks;
-      $("holding-rank-note").textContent = ranks.week ? `Momentum ranks · week ending ${ranks.week}. — means the stock is not in that published ranking.` : ranks.error ? "Momentum rankings could not be loaded. Refresh values to retry." : "No momentum rankings have been published yet.";
-      $("momentum-rank-header").title = ranks.week ? `Latest published momentum ranking · ${ranks.week}` : "Latest published momentum ranking";
-      render(value);
-      try { const jobId = localStorage.getItem(`screener-history-job:${account}`); if (jobId) watchHistoryImport({history_backfill_job_id: Number(jobId)}, account); } catch {}
+    const current = () => ownGeneration === generation && account === $("account").value;
+    const base = `/api/portfolio/accounts/${encodeURIComponent(account)}`;
+    $("home-error").textContent = "";
+    $("history-note").textContent = $("curve-history-note").textContent = "Loading historical valuations�";
+    $("journal").replaceChildren(Screener.row(["Loading closed trades�"]));
+
+    const valueTask = (async () => {
+      try {
+        const value = await Screener.api(`${base}/valuation?as_of_date=${encodeURIComponent(asOf)}`);
+        if (!current()) return;
+        render(value);
+        try { const jobId = localStorage.getItem(`screener-history-job:${account}`); if (jobId) watchHistoryImport({history_backfill_job_id: Number(jobId)}, account); } catch {}
+        await stopActions(account, ownGeneration);
+      } catch (error) { if (current()) $("home-error").textContent = error.message; }
+    })();
+    const historyTask = (async () => {
+      try {
+        const history = await Screener.api(`${base}/valuation/history?as_of_date=${encodeURIComponent(asOf)}&limit=500`);
+        if (!current()) return;
       drawChart("equity-history-chart", history.history, "equity", "var(--accent)");
       drawChart("drawdown-history-chart", history.history, "drawdown", "var(--danger)", true);
       const partial = history.partial;
@@ -449,11 +465,36 @@
       $("equity-history-title").textContent = partial ? "Equity history · priced stocks only" : "Equity history";
       $("drawdown-history-title").textContent = partial ? "Historical drawdown · priced stocks only" : "Historical drawdown";
       $("history").replaceChildren(...history.history.map(item => Screener.row([item.as_of_date, fmt(item.equity), `${(Number(item.drawdown)*100).toFixed(2)}%`])));
+      } catch (error) {
+        if (current()) {
+          drawChart("equity-history-chart", [], "equity", "var(--accent)");
+          drawChart("drawdown-history-chart", [], "drawdown", "var(--danger)", true);
+          $("history").replaceChildren();
+          $("history-note").textContent = $("curve-history-note").textContent = error.message;
+        }
+      }
+    })();
+    const journalTask = (async () => {
+      try {
+        const journal = await Screener.api(`${base}/journal`);
+        if (!current()) return;
       $("journal").replaceChildren(...journal.journal.map(item => Screener.row([item.symbol || item.instrument_id, item.buy_date_end && item.buy_date_end !== item.buy_date ? `${item.buy_date} – ${item.buy_date_end}` : item.buy_date, item.sell_date, item.units, fmt(item.buy_price), fmt(item.sell_price), fmt(item.realised_pnl), PortfolioCharges.link(item), item.holding_days_min != null && item.holding_days_min !== item.holding_days ? `${item.holding_days_min} – ${item.holding_days}` : item.holding_days])));
       if (!journal.journal.length) $("journal").append(Screener.row(["No closed trades yet", "", "", "", "", "", "", "", ""]));
-      $("home-error").textContent = "";
-      await stopActions(account, ownGeneration);
-    } catch (error) { if (ownGeneration === generation) $("home-error").textContent = error.message; }
+      } catch (error) { if (current()) $("journal").replaceChildren(Screener.row([error.message])); }
+    })();
+    const ranksTask = (async () => {
+      const ranks = await latestMomentumRanks();
+      if (!current()) return;
+      momentumRanking = indexMomentumRanking(ranks);
+      $("holding-rank-note").textContent = ranks.week ? `Momentum ranks � week ending ${ranks.week}. � means the stock is not in that published ranking.` : ranks.error ? "Momentum rankings could not be loaded. Refresh values to retry." : "No momentum rankings have been published yet.";
+      $("momentum-rank-header").title = ranks.week ? `Latest published momentum ranking � ${ranks.week}` : "Latest published momentum ranking";
+      if (viewData?.account_id === account) {
+        renderHoldings(viewData.holdings);
+        sortHoldingRows();
+        filterHoldings();
+      }
+    })();
+    await Promise.allSettled([valueTask, historyTask, journalTask, ranksTask]);
   }
 
   function openForm(kind) {
@@ -586,7 +627,7 @@
       updateHoldingRow(row,h);return row;
     }));
     if(!holdings.length){const row=Screener.row(["No holdings yet. Import your portfolio or record an executed trade to get started."]);row.firstChild.colSpan=15;$("holdings").append(row);}
-    filterHoldings();updateHoldingTotals();
+    sortHoldingRows();filterHoldings();updateHoldingTotals();
   }
   function holdingDetail(h) {
     const modal=$("app-modal"),content=$("modal-content");content.replaceChildren();const title=document.createElement("h2");title.id="modal-title";title.textContent=h.symbol||h.instrument_id;content.append(title);
@@ -594,6 +635,63 @@
     for(const [label,value] of [["Opened",h.purchase_date_known===false?"Unknown":h.acquisition_date],["Units",h.units],["Average cost",fmt(Number(h.cost)/Number(h.units))],["Previous close",fmt(h.previous_close)],["Latest price",fmt(h.price)],["Quote timestamp",h.quote_time||h.price_date],["Quote source",h.price_basis],["Quote freshness",h.freshness||(h.fresh?"Current session":"Older session")],["Stop status",v.status.replaceAll("_"," ")],["Capital risk",fmt(v.risk)],["Day P&L",fmt(v.day)],["Unrealised P&L",fmt(v.pnl)],["Trailing stop",fmt(h.current_trailing_stop)],["Hard stop",fmt(h.hard_stop)],["Stop basis",h.risk_basis],["Stop calculated through",h.risk_date]]) {const line=document.createElement("div");line.className="detail-line";const name=document.createElement("span"),amount=document.createElement("strong");name.textContent=label;amount.textContent=value??"—";line.append(name,amount);content.append(line);}
     if(h.risk_note){const note=document.createElement("p");note.className="muted";note.textContent=h.risk_note;content.append(note);}
     const close=document.createElement("button");close.className="secondary";close.textContent="Close";close.onclick=()=>modal.close();content.append(close);modal.showModal();
+  }
+  let holdingSort = {column: 0, direction: "asc"};
+  try { const saved = JSON.parse(localStorage.getItem("screener-holding-sort")); if (saved && Number.isInteger(saved.column) && saved.column >= 0 && saved.column < 15 && ["asc","desc"].includes(saved.direction)) holdingSort = saved; } catch {}
+  function holdingSortValue(h, column) {
+    const v = holdingValues(h);
+    const rank = momentumRanking.byInstrument.get(h.instrument_id) || momentumRanking.bySymbol.get(h.symbol?.toUpperCase());
+    return [h.symbol || h.instrument_id,h.purchase_date_known===false?null:h.acquisition_date,Number(h.units),Number(h.cost)/Number(h.units),h.price==null?null:Number(h.price),h.current_trailing_stop==null?null:Number(h.current_trailing_stop),h.hard_stop==null?null:Number(h.hard_stop),v.risk,Number(h.cost),v.value,v.pnl,v.gainPct,v.day,rank?.rank==null?null:Number(rank.rank),v.status.startsWith("below_")?"Stop breached · Details":"Details"][column];
+  }
+  function sortHoldingRows() {
+    if (!viewData) return;
+    const body = $("holdings"), rows = [...body.querySelectorAll("tr[data-instrument]")];
+    const sortKeys = new Map(rows.map(row => [
+      row, holdingSortValue(viewData.holdings[Number(row.dataset.holdingIndex)], holdingSort.column),
+    ]));
+    rows.sort((a,b) => {
+      const av=sortKeys.get(a),bv=sortKeys.get(b);
+      if(av==null || bv==null) return av==null&&bv==null?0:av==null?1:-1;
+      const compare=typeof av==="number"?av-bv:String(av).localeCompare(String(bv),"en",{numeric:true,sensitivity:"base"});
+      return compare*(holdingSort.direction==="asc"?1:-1) || Number(a.dataset.holdingIndex)-Number(b.dataset.holdingIndex);
+    });
+    body.append(...rows);
+    document.querySelectorAll(".detailed-holdings thead th").forEach((th,index)=>{
+      const active=index===holdingSort.column;
+      th.setAttribute("aria-sort",active?(holdingSort.direction==="asc"?"ascending":"descending"):"none");
+      th.firstElementChild.textContent=`${th.dataset.label} ${active?(holdingSort.direction==="asc"?"↑":"↓"):"↕"}`;
+    });
+  }
+  function setupHoldingSort() {
+    document.querySelectorAll(".detailed-holdings thead th").forEach((th,index)=>{
+      th.dataset.label=th.textContent;
+      const button=document.createElement("button");button.type="button";button.className="holding-sort";button.textContent=`${th.dataset.label} ↕`;
+      button.title=index===14?"Sort by stop status":"Sort by "+th.dataset.label;
+      button.onclick=()=>{holdingSort={column:index,direction:holdingSort.column===index&&holdingSort.direction==="asc"?"desc":"asc"};try{localStorage.setItem("screener-holding-sort",JSON.stringify(holdingSort));}catch{}sortHoldingRows();};
+      th.replaceChildren(button);
+    });
+  }
+  function recordIntradayPoint(timestamp,value) {
+    const time=Date.parse(timestamp);if(!Number.isFinite(time)||!Number.isFinite(value))return;
+    const previous=intradayRows.at(-1);
+    if(previous&&time<Date.parse(previous.as_of_date))return;
+    const tradingDay=t=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Kolkata",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date(t));
+    if(previous&&tradingDay(time)!==tradingDay(previous.as_of_date))intradayRows=[];
+    const bucket=Math.floor(time/300000),sample=Math.floor(time/30000);
+    const last=intradayRows.at(-1);
+    if(last&&!last.rolled_up&&Math.floor(Date.parse(last.as_of_date)/30000)===sample){last.as_of_date=timestamp;last.equity=value;}
+    else if(!last || time>Date.parse(last.as_of_date)) intradayRows.push({as_of_date:timestamp,equity:value});
+    const rolled=[], groups=new Map();
+    for(const row of intradayRows){
+      const rowBucket=Math.floor(Date.parse(row.as_of_date)/300000);
+      if(row.rolled_up||rowBucket===bucket)rolled.push(row);
+      else {const group=groups.get(rowBucket)||[];group.push(row);groups.set(rowBucket,group);}
+    }
+    for(const [key,group] of groups){rolled.push({as_of_date:new Date((key+1)*300000-1).toISOString(),equity:group.reduce((sum,r)=>sum+r.equity,0)/group.length,rolled_up:true,sample_count:group.length});}
+    intradayRows=rolled.sort((a,b)=>Date.parse(a.as_of_date)-Date.parse(b.as_of_date));
+    if(intradayRows.length>900)intradayRows=intradayRows.slice(-900);
+    drawChart("intraday-chart",intradayRows,"equity","var(--accent)");
+    $("intraday-note").textContent="Refreshes every 30 seconds. Completed five-minute periods show average P&L; the current period keeps 30-second observations. History begins when live monitoring starts.";
   }
   function filterHoldings(){const q=$("holding-search").value.trim().toLowerCase();const rows=[...$("holdings").querySelectorAll("tr[data-instrument]")];rows.forEach(row=>row.hidden=!row.cells[0].textContent.toLowerCase().includes(q));$("holding-count").textContent=`${rows.filter(row=>!row.hidden).length} of ${rows.length} positions · scroll right for stops and quote details`;}
   function updateHoldingTotals(){const hs=viewData?.holdings||[],vals=hs.map(holdingValues);const sum=key=>vals.length&&vals.every(v=>v[key]!=null)?vals.reduce((n,v)=>n+v[key],0):null;$("holding-totals").replaceChildren(...[["Invested capital",hs.reduce((n,h)=>n+Number(h.cost),0)],["Market value",sum("value")],["Unrealised P&L",sum("pnl")],["Day P&L",sum("day")],["Capital risk",sum("risk")]].map(([label,value])=>{const node=document.createElement("span");node.textContent=`${label}: ${fmt(value)}`;return node;}));}
@@ -603,11 +701,14 @@
     const quotes=new Map(data.holdings.map(h=>[h.instrument_id,h]));
     viewData.holdings.forEach(h=>{const q=quotes.get(h.instrument_id);if(!q)return;for(const field of ["price","price_date","quote_time","price_basis","freshness","fresh","previous_close"])h[field]=q[field];h.day_pnl=q.day_pnl==null?null:String(Number(q.day_pnl)*Number(h.units)/Number(q.units));h.market_value=h.price==null?null:String(Number(h.price)*Number(h.units));});
     $("holdings").querySelectorAll("tr[data-instrument]").forEach(row=>{const h=viewData.holdings[Number(row.dataset.holdingIndex)];if(h)updateHoldingRow(row,h);});
-    updateHoldingTotals();const risks=viewData.holdings.map(h=>holdingValues(h).risk);Screener.text($("risk"),risks.every(r=>r!=null)?fmt(risks.reduce((sum,r)=>sum+Math.max(0,r),0)):null);Screener.text($("equity"),fmt(data.equity));Screener.text($("unrealised"),fmt(data.unrealised_pnl));Screener.text($("day-pnl"),fmt(data.day_pnl));for(const [id,value] of [["unrealised",data.unrealised_pnl],["day-pnl",data.day_pnl]]){$(id).classList.toggle("positive",value!=null&&Number(value)>=0);$(id).classList.toggle("negative",value!=null&&Number(value)<0);}
+    sortHoldingRows();updateHoldingTotals();const risks=viewData.holdings.map(h=>holdingValues(h).risk);Screener.text($("risk"),risks.every(r=>r!=null)?fmt(risks.reduce((sum,r)=>sum+Math.max(0,r),0)):null);Screener.text($("equity"),fmt(data.equity));Screener.text($("unrealised"),fmt(data.unrealised_pnl));Screener.text($("day-pnl"),fmt(data.day_pnl));for(const [id,value] of [["unrealised",data.unrealised_pnl],["day-pnl",data.day_pnl]]){$(id).classList.toggle("positive",value!=null&&Number(value)>=0);$(id).classList.toggle("negative",value!=null&&Number(value)<0);}
     const connected=data.stream?.matches_account&&data.stream?.status==="CONNECTED";
     $("live-status").textContent=connected?`Connected · ${data.fresh_count}/${data.holding_count} fresh quotes`:data.stream?.matches_account?`${data.stream.status.toLowerCase()} · waiting for fresh quotes`:"Feed unavailable for this account";
     $("last-live-quote").textContent=data.observed_at?`Latest quote ${new Date(data.observed_at).toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata",hour12:false})} IST`:"Waiting for a timestamped quote";
-    if(data.all_quotes_fresh&&data.day_pnl!=null&&data.observed_at&&data.observed_at!==lastChartTime){lastChartTime=data.observed_at;intradayRows.push({as_of_date:data.observed_at,equity:Number(data.day_pnl)});if(intradayRows.length>900)intradayRows.shift();drawChart("intraday-chart",intradayRows,"equity","var(--accent)");$("intraday-note").textContent=`${intradayRows.length} fresh observations since live monitoring started. Earlier session ticks are not reconstructed.`;}
+    if(data.all_quotes_fresh&&data.day_pnl!=null&&data.observed_at&&data.observed_at!==lastChartTime){
+      lastChartTime=data.observed_at;
+      recordIntradayPoint(data.observed_at,Number(data.day_pnl));
+    }
     const breached=viewData.holdings.filter(h=>holdingValues(h).status.startsWith("below_")).length;$("portfolio-alert").hidden=!breached;$("portfolio-alert-text").textContent=`${breached} position(s) need a stop review.`;
   }
   async function stopLive(stopBroker=true){++liveGeneration;stream?.close();stream=null;const account=streamAccount;streamAccount=null;$("live-toggle").textContent="Go live";$("live-status").textContent="Live feed off";if(stopBroker&&account){try{const state=await Screener.api("/api/market/intraday/stream");if(state.enabled&&state.account_id===account)await Screener.api("/api/market/intraday/live-stream",{method:"POST",body:JSON.stringify({action:"stop"})});}catch(error){$("home-error").textContent=error.message;}}}
@@ -618,7 +719,7 @@
       if(state.enabled&&state.status==="ERROR")await Screener.api("/api/market/intraday/live-stream",{method:"POST",body:JSON.stringify({action:"stop"})});
       if(!state.enabled||state.status==="ERROR")await Screener.api("/api/market/intraday/live-stream",{method:"POST",body:JSON.stringify({action:"start",account_id:account,instrument_ids:[...new Set(viewData.holdings.map(h=>h.instrument_id))]})});
       if(token!==liveGeneration||account!==$("account").value){const latest=await Screener.api("/api/market/intraday/stream");if(latest.account_id===account&&latest.enabled)await Screener.api("/api/market/intraday/live-stream",{method:"POST",body:JSON.stringify({action:"stop"})});return;}streamAccount=account;
-      stream=new EventSource(`/api/portfolio/accounts/${encodeURIComponent(account)}/ticker/stream?live=1&continuous=1`);
+      stream=new EventSource(`/api/portfolio/accounts/${encodeURIComponent(account)}/ticker/stream?live=1&continuous=1&interval=30`);
       stream.addEventListener("portfolio-ticker",event=>{if(token===liveGeneration){try{applyLive(JSON.parse(event.data));}catch(error){$("home-error").textContent=error.message;}}});
       stream.onerror=()=>{if(token===liveGeneration)$("live-status").textContent="Reconnecting · last values retained";};$("live-toggle").textContent="Stop live";$("home-error").textContent="";
     }catch(error){$("home-error").textContent=error.message;$("live-status").textContent="Could not connect";}finally{$("live-toggle").disabled=false;}
@@ -634,6 +735,7 @@
     } catch(error){loginTab?.close();$("home-error").textContent=error.message;}
   }
   document.addEventListener("DOMContentLoaded", async () => {
+    setupHoldingSort();
     $("as-of").value = today(); $("refresh-home").onclick = refreshBroker;
     $("rebuild-history").onclick = async () => {
       const account = $("account").value;
