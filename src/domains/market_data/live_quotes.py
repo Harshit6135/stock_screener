@@ -22,6 +22,8 @@ class LiveQuotes:
                 received_at TEXT NOT NULL, source TEXT NOT NULL,
                 exchange_timestamp_available INTEGER NOT NULL,
                 PRIMARY KEY(account_id, instrument_id))""",
+        ), 2: (
+            "ALTER TABLE live_quotes ADD COLUMN previous_close TEXT",
         )})
 
     def ingest(self, payload):
@@ -38,23 +40,34 @@ class LiveQuotes:
                 received = datetime.fromisoformat(item["received_at"])
                 instrument_id = item["instrument_id"]
                 available = item["exchange_timestamp_available"]
+                previous_close = (
+                    Decimal(str(item["previous_close"]))
+                    if item.get("previous_close") is not None else None
+                )
             except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
                 raise DomainValidationError("invalid live quote") from exc
             if (not isinstance(instrument_id, str) or not instrument_id.strip()
                     or not price.is_finite() or price <= 0
                     or observed.utcoffset() is None or received.utcoffset() is None
+                    or (previous_close is not None
+                        and (not previous_close.is_finite() or previous_close <= 0
+                             or isinstance(item["previous_close"], bool)))
                     or not isinstance(available, bool) or item.get("source") != "kite-stream"):
                 raise DomainValidationError("invalid live quote")
             rows.append((payload["account_id"], instrument_id, str(price),
                          observed.astimezone(UTC).isoformat(), received.astimezone(UTC).isoformat(),
-                         "kite-stream", int(available)))
+                         "kite-stream", int(available),
+                         str(previous_close) if previous_close is not None else None))
         with sqlite_connection(self.database) as connection:
             connection.execute("BEGIN IMMEDIATE")
-            connection.executemany("""INSERT INTO live_quotes VALUES (?, ?, ?, ?, ?, ?, ?)
+            connection.executemany("""INSERT INTO live_quotes
+                (account_id, instrument_id, price, observed_at, received_at, source,
+                 exchange_timestamp_available, previous_close) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(account_id, instrument_id) DO UPDATE SET
                 price=excluded.price, observed_at=excluded.observed_at,
                 received_at=excluded.received_at, source=excluded.source,
-                exchange_timestamp_available=excluded.exchange_timestamp_available
+                exchange_timestamp_available=excluded.exchange_timestamp_available,
+                previous_close=excluded.previous_close
                 WHERE excluded.observed_at > live_quotes.observed_at
                    OR (excluded.observed_at = live_quotes.observed_at
                        AND excluded.received_at > live_quotes.received_at)""", rows)

@@ -36,7 +36,7 @@ def test_entry_stop_and_ratchet_never_fall_with_price():
     later = portfolio_stops(market, [lot()], date(2026, 3, 11))["abc"]
     assert peak["entry_stop"] == Decimal(96)
     assert later["current_trailing_stop"] == peak["current_trailing_stop"]
-    assert later["risk_date"] == "2026-03-11"
+    assert later["risk_date"] == "2026-03-06"
     assert later["atr"] > 0
 
 
@@ -45,8 +45,8 @@ def test_existing_stop_takes_priority_and_future_bars_are_excluded():
     saved = {"abc": {"stop": Decimal(120), "date": "2026-02-25"}}
     row = portfolio_stops(market, [lot()], date(2026, 3, 1), saved)["abc"]
     assert row["current_trailing_stop"] == 120
-    assert row["risk_date"] == "2026-03-01"
-    assert row["risk_basis"] == "persisted_atr_plus_completed_close_ratchet"
+    assert row["risk_date"] == "2026-02-27"
+    assert row["risk_basis"] == "persisted_atr_plus_weekly_close_ratchet"
 
 
 def test_insufficient_history_is_explicit_and_preserves_saved_stop():
@@ -83,7 +83,7 @@ def test_intraday_bar_is_excluded(monkeypatch):
 
     monkeypatch.setattr(module, "datetime", Clock)
     row = module.portfolio_stops(Market([100] * 29 + [200]), [lot()], date(2026, 3, 2))["abc"]
-    assert row["risk_date"] == "2026-03-01"
+    assert row["risk_date"] == "2026-02-27"
     assert row["current_trailing_stop"] == Decimal(96)
 
 
@@ -136,3 +136,34 @@ def test_valuation_exposes_breached_stop_without_changing_ledger(tmp_path):
     assert result["breached_stop_holdings"] == 1
     assert Decimal(result["stop_based_risk"]) == 0
     assert ledger.events("account") == before
+
+
+def test_stop_ignores_midweek_prices_and_ratchets_after_friday_close(monkeypatch):
+    from datetime import datetime
+
+    from src.gates.workflows import portfolio_stops as module
+
+    market = Market([100] * 29 + [200] * 5)
+    clock = [15]
+
+    class Clock:
+        @staticmethod
+        def now(zone):
+            return datetime(2026, 3, 6, clock[0], tzinfo=zone)
+
+    monkeypatch.setattr(module, "datetime", Clock)
+    thursday = module.portfolio_stops(market, [lot()], date(2026, 3, 5))["abc"]
+    friday_intraday = module.portfolio_stops(market, [lot()], date(2026, 3, 6))["abc"]
+    assert friday_intraday["current_trailing_stop"] == thursday["current_trailing_stop"]
+    assert friday_intraday["risk_date"] == "2026-02-27"
+    clock[0] = 16
+    friday_close = module.portfolio_stops(market, [lot()], date(2026, 3, 6))["abc"]
+    assert friday_close["current_trailing_stop"] > thursday["current_trailing_stop"]
+    assert friday_close["risk_date"] == "2026-03-06"
+
+
+def test_holiday_week_uses_last_available_weekday_close():
+    market = Market([100] * 29 + [200] * 4)
+    row = portfolio_stops(market, [lot()], date(2026, 3, 9))["abc"]
+    assert row["weekly_close_date"] == "2026-03-05"
+    assert row["risk_date"] == "2026-03-05"

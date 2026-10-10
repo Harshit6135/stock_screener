@@ -104,6 +104,17 @@ class KiteStreamingProvider:
                 # Kite decodes epoch timestamps with datetime.fromtimestamp,
                 # so a naive value is in the host timezone, not necessarily UTC.
                 observed_at = timestamp.astimezone(UTC).isoformat()
+            # Kite's OHLC close is the previous session's exchange close.
+            # Keep it with this tick instead of substituting older local bars.
+            ohlc = tick.get("ohlc")
+            previous_close = ohlc.get("close") if isinstance(ohlc, dict) else None
+            try:
+                parsed_close = Decimal(str(previous_close))
+            except InvalidOperation:
+                parsed_close = Decimal(0)
+            previous_close = (
+                str(parsed_close) if parsed_close.is_finite() and parsed_close > 0 else None
+            )
             observations.append(
                 {
                     "instrument_id": instrument_id,
@@ -112,6 +123,7 @@ class KiteStreamingProvider:
                     "source": "kite-stream",
                     "received_at": received_at,
                     "exchange_timestamp_available": isinstance(timestamp, datetime),
+                    "previous_close": previous_close,
                 }
             )
         if observations:

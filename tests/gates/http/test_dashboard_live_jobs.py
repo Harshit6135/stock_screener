@@ -55,7 +55,7 @@ def live_client(tmp_path):
     return client, quotes, lease, ledger
 
 
-def ingest_quote(quotes, account, price, age=0):
+def ingest_quote(quotes, account, price, age=0, previous_close="100"):
     stamp = (datetime.now(UTC) - timedelta(seconds=age)).isoformat()
     quotes.ingest(
         {
@@ -68,6 +68,7 @@ def ingest_quote(quotes, account, price, age=0):
                     "received_at": stamp,
                     "source": "kite-stream",
                     "exchange_timestamp_available": True,
+                    "previous_close": previous_close,
                 }
             ],
         }
@@ -92,6 +93,68 @@ def test_live_prices_revalue_holdings_and_day_pnl_without_changing_ledger(tmp_pa
     assert live["stream"]["status"] == "CONNECTED"
     assert live["holdings"][0]["quote_time"]
     assert ledger.events("paper") == before
+
+
+def test_live_day_pnl_uses_exchange_close_when_local_history_is_outdated(tmp_path):
+    client, quotes, _lease, ledger = live_client(tmp_path)
+    before = ledger.events("paper")
+    # Stored history says 100; today's exchange baseline is 80. The stock is up.
+    ingest_quote(quotes, "paper", "90", previous_close="80")
+    result = client.get("/api/portfolio/accounts/paper/ticker?live=1").json
+    assert result["holdings"][0]["previous_close"] == "80"
+    assert Decimal(result["holdings"][0]["day_pnl"]) == 20
+    assert Decimal(result["day_pnl"]) == 20
+    assert ledger.events("paper") == before
+
+
+def test_missing_exchange_close_does_not_guess_live_day_pnl(tmp_path):
+    client, quotes, _lease, _ledger = live_client(tmp_path)
+    ingest_quote(quotes, "paper", "90", previous_close=None)
+    result = client.get("/api/portfolio/accounts/paper/ticker?live=1").json
+    assert result["holdings"][0]["price"] == "90"
+    assert result["holdings"][0]["previous_close"] is None
+    assert result["holdings"][0]["day_pnl"] is None
+    assert result["day_pnl"] is None
+
+
+def test_old_bar_fallback_does_not_claim_today_day_pnl(tmp_path):
+    client, _quotes, _lease, _ledger = live_client(tmp_path)
+    result = client.get("/api/portfolio/accounts/paper/ticker?live=1").json
+    assert result["holdings"][0]["price"] == "100"
+    assert result["holdings"][0]["day_pnl"] is None
+    assert result["day_pnl"] is None
+
+
+def test_filled_sell_changes_live_version_and_removes_closed_holding(tmp_path):
+    client, _quotes, _lease, _ledger = live_client(tmp_path)
+    before = client.get("/api/portfolio/accounts/paper/ticker?live=1").json
+    today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    response = client.post(
+        "/api/portfolio/accounts/paper/fills",
+        json={
+            "idempotency_key": "confirmed-sell",
+            "expected_version": before["ledger_version"],
+            "fills": [
+                {
+                    "symbol": "ABC",
+                    "fill_date": today.isoformat(),
+                    "side": "SELL",
+                    "units": 2,
+                    "price": "110",
+                }
+            ],
+        },
+    )
+    assert response.status_code == 201
+    after = client.get("/api/portfolio/accounts/paper/ticker?live=1").json
+    assert after["ledger_version"] > before["ledger_version"]
+    assert after["holdings"] == []
+    assert after["holding_count"] == 0
+    assert Decimal(after["cash"]) == 1040
+    assert Decimal(after["realised_pnl"]) == 40
+    valuation = client.get(f"/api/portfolio/accounts/paper/valuation?as_of_date={today}").json
+    assert valuation["ledger_version"] == after["ledger_version"]
+    assert valuation["holdings"] == []
 
 
 def test_stale_quotes_are_not_presented_as_live_and_stream_updates(tmp_path, monkeypatch):
@@ -153,10 +216,13 @@ def test_job_definitions_are_allowlisted_and_link_to_selected_launcher():
 
 
 def test_live_stream_accepts_thirty_second_refresh_and_bounds_interval(tmp_path, monkeypatch):
-    client, quotes, _lease, _ledger = live_client(tmp_path)
+    client, _quotes, _lease, _ledger = live_client(tmp_path)
     sleeps = []
     monkeypatch.setattr("src.gates.http.portfolio.time.sleep", sleeps.append)
-    response = client.get("/api/portfolio/accounts/paper/ticker/stream?live=1&continuous=1&interval=30", buffered=False)
+    response = client.get(
+        "/api/portfolio/accounts/paper/ticker/stream?live=1&continuous=1&interval=30",
+        buffered=False,
+    )
     events = iter(response.response)
     next(events)  # reconnect interval
     next(events)  # immediate first quote
@@ -164,4 +230,7 @@ def test_live_stream_accepts_thirty_second_refresh_and_bounds_interval(tmp_path,
     assert sleeps == [30]
     response.close()
     for value in ["0", "61", "bad"]:
-        assert client.get(f"/api/portfolio/accounts/paper/ticker/stream?interval={value}").status_code == 400
+        assert (
+            client.get(f"/api/portfolio/accounts/paper/ticker/stream?interval={value}").status_code
+            == 400
+        )

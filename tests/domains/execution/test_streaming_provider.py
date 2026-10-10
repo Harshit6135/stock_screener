@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from src.domains.execution import KiteStreamingProvider
 
 
@@ -78,3 +80,16 @@ def test_provider_timestamps_are_independent_and_invalid_ticks_skipped():
     assert not second["exchange_timestamp_available"]
     assert second["observed_at"] == second["received_at"]
     assert second["observed_at"] != first["observed_at"]
+
+
+@pytest.mark.parametrize("close", [None, 0, -1, True, "NaN", "Infinity", "bad"])
+def test_invalid_ohlc_close_does_not_discard_valid_last_price(close):
+    received = []
+    ticker = Ticker()
+    provider = KiteStreamingProvider(ticker, "ledger", {42: "a"}, received.append)
+    provider.start()
+    ticker.on_ticks(ticker, [{"instrument_token": 42, "last_price": 101,
+                             "exchange_timestamp": NOW, "ohlc": {"close": close}}])
+    item = received[0]["observations"][0]
+    assert item["price"] == 101
+    assert item["previous_close"] is None

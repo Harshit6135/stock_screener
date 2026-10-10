@@ -136,6 +136,9 @@ def test_breach_creates_single_review_action_without_trading(setup):
 
 def test_stop_check_explains_empty_queue_when_live_price_is_above_stop(setup):
     workflow, kite, client = setup
+    workflow.market.upsert_bars(
+        "abc", [NormalizedBar("abc", date(2026, 3, 6), 110, 111, 109, 110, 100)], "weekly"
+    )
     kite.price = 120
     response = client.post("/api/actions/stops/check", json={"account_id": "account"})
     assert response.status_code == 200
@@ -163,6 +166,97 @@ def test_current_stop_reviews_are_available_independently_of_strategy_date_filte
     assert repeated.json["proposals"][0]["proposal_id"] == proposal_id
     assert repeated.json["checks"][0]["status"] == "review_exists"
     assert not kite.calls
+
+
+def test_intraday_normal_stop_crossing_does_not_create_sell(setup):
+    workflow, kite, _ = setup
+    workflow.market.upsert_bars(
+        "abc", [NormalizedBar("abc", date(2026, 3, 6), 110, 111, 109, 110, 100)], "weekly"
+    )
+    stop = workflow.saved_stops("account", NOW.date())
+    from src.gates.workflows.portfolio_stops import portfolio_stops
+
+    threshold = portfolio_stops(
+        workflow.market, workflow.ledger.projection("account").open_lots, NOW.date(), stop
+    )["abc"]["current_trailing_stop"]
+    kite.price = threshold * Decimal("0.985")
+    result = workflow.check("account")
+    assert not result["proposals"]
+    assert not kite.calls
+
+
+def test_weekly_stop_is_frozen_and_executes_despite_monday_recovery(setup, monkeypatch):
+    workflow, kite, _ = setup
+    saturday = NOW.replace(day=7)
+    monkeypatch.setattr("src.gates.workflows.stop_sells.india_now", lambda: saturday)
+    first = proposal(workflow)
+    assert first["decisions"][0]["type"] == "STOP_LOSS"
+    assert first["decisions"][0]["stop_schedule"] == "weekly"
+    assert first["decisions"][0]["price_date"] == "2026-03-06"
+    assert first["action_date"] == "2026-03-09"
+    with pytest.raises(DomainValidationError, match="next week's market open"):
+        workflow.approve_and_execute(first["proposal_id"])
+    monday = NOW.replace(day=9)
+    monkeypatch.setattr("src.gates.workflows.stop_sells.india_now", lambda: monday)
+    kite.price, kite.stamp = 120, monday
+    retained = proposal(workflow)
+    assert retained["proposal_id"] == first["proposal_id"]
+    assert retained["decisions"] == first["decisions"]
+    assert workflow.approve_and_execute(first["proposal_id"])["order"]["status"] == "SUBMITTED"
+    assert len(kite.calls) == 1
+
+
+def test_hard_stop_recovery_above_hard_threshold_blocks_sell(setup):
+    workflow, kite, _ = setup
+    first = proposal(workflow)
+    kite.price = Decimal(first["decisions"][0]["stop_threshold"]) * Decimal("0.985")
+    with pytest.raises(DomainValidationError, match="recovered above the approved hard stop"):
+        workflow.approve_and_execute(first["proposal_id"])
+    assert not kite.calls
+
+
+def test_previous_daily_stop_review_is_retired_without_trading(setup):
+    workflow, kite, _ = setup
+    current = proposal(workflow)
+    legacy = {**current["decisions"][0], "type": "STOP_LOSS"}
+    legacy.pop("stop_schedule")
+    workflow.store.recover_pending(
+        proposal_id="legacy-daily-stop",
+        account_id="account",
+        strategy_id="portfolio_stop",
+        action_date=NOW.date().isoformat(),
+        ranking_week_end=NOW.date().isoformat(),
+        expected_ledger_version=current["expected_ledger_version"],
+        artifact_id="legacy-daily-stop",
+        decisions=[legacy],
+        timestamp=NOW.isoformat(),
+        event_type="STOP_BREACHED",
+    )
+    workflow.check("account")
+    assert workflow.store.get("legacy-daily-stop")["status"] == "EXPIRED"
+    assert workflow.store.get(current["proposal_id"])["status"] == "PENDING"
+    assert not kite.calls
+
+
+def test_permission_failure_can_be_refreshed_without_resubmission(setup, monkeypatch):
+    from kiteconnect.exceptions import PermissionException
+
+    workflow, kite, client = setup
+    pid = proposal(workflow)["proposal_id"]
+
+    def denied(**kwargs):
+        kite.calls.append(kwargs)
+        raise PermissionException("Insufficient permission for that call")
+
+    monkeypatch.setattr(kite, "place_order", denied)
+    response = client.post(f"/api/actions/stops/{pid}/approve-execute", json={"approved": True})
+    assert response.status_code == 409
+    assert "Kite denied order permission" in response.json["error"]
+    for _ in range(2):
+        response = client.post(f"/api/actions/stops/{pid}/reconcile")
+        assert response.status_code == 200
+        assert response.json["order"]["status"] == "LOCAL_CREATED"
+    assert len(kite.calls) == 1
 
 
 def test_approval_submits_once_and_only_confirmed_fills_change_ledger(setup):
@@ -249,6 +343,49 @@ def test_preflight_failure_never_approves_or_trades(setup, monkeypatch, conditio
     assert workflow.store.get(pid)["status"] == "PENDING"
 
 
+def test_real_kite_trade_prices_close_holding_and_repair_legacy_filled_order(setup):
+    from src.gates.workflows.stop_sells import BackgroundStopMonitor
+
+    workflow, kite, _ = setup
+    pid = proposal(workflow)["proposal_id"]
+    order = workflow.approve_and_execute(pid)["order"]
+    # Previous code marked the receipt FILLED while discarding actual trade rows.
+    workflow.orders.repository.update_status(order["order_id"], "FILLED", {}, NOW.isoformat())
+    kite.status = "COMPLETE"
+    kite.fills = [
+        {"trade_id": "real-1", "quantity": 1, "average_price": 95, "fill_timestamp": NOW},
+        {"trade_id": "real-2", "quantity": 2, "average_price": 94, "fill_timestamp": NOW},
+    ]
+    monitor = BackgroundStopMonitor(workflow)
+    monitor.tick()
+    projection = workflow.ledger.projection("account")
+    assert not projection.open_lots
+    assert projection.cash.amount == Decimal(983)
+    assert workflow.orders.repository.fill_quantity(order["order_id"]) == 3
+    monitor.tick()
+    workflow.reconcile(pid)
+    assert workflow.ledger.projection("account").cash.amount == Decimal(983)
+    assert len(kite.calls) == 1
+
+
+def test_complete_order_waits_for_all_trade_rows_before_marking_filled(setup):
+    workflow, kite, _ = setup
+    pid = proposal(workflow)["proposal_id"]
+    order = workflow.approve_and_execute(pid)["order"]
+    kite.status = "COMPLETE"
+    assert workflow.reconcile(pid)["order"]["status"] == "SUBMITTED"
+    assert workflow.store.get(pid)["status"] == "APPROVED"
+    kite.fills = [{"trade_id": "part-1", "quantity": 1, "average_price": 95, "fill_timestamp": NOW}]
+    assert workflow.reconcile(pid)["order"]["status"] == "PARTIALLY_FILLED"
+    assert workflow.ledger.projection("account").open_lots[0].remaining_units.units == 2
+    kite.fills.append(
+        {"trade_id": "part-2", "quantity": 2, "average_price": 94, "fill_timestamp": NOW}
+    )
+    assert workflow.reconcile(pid)["order"]["status"] == "FILLED"
+    assert workflow.orders.repository.fill_quantity(order["order_id"]) == order["quantity"]
+    assert not workflow.ledger.projection("account").open_lots
+
+
 def test_rejection_and_uncertain_submission_are_not_retried(setup):
     workflow, kite, _ = setup
     pid = proposal(workflow)["proposal_id"]
@@ -257,6 +394,64 @@ def test_rejection_and_uncertain_submission_are_not_retried(setup):
         workflow.approve_and_execute(pid)
     assert workflow.approve_and_execute(pid)["order"]["status"] == "SUBMIT_UNKNOWN"
     assert len(kite.calls) == 1
+
+
+def test_bse_delivery_holding_matches_isin_and_sells_on_nse(setup):
+    workflow, kite, _ = setup
+    pid = proposal(workflow)["proposal_id"]
+    kite.holdings = lambda: [
+        {
+            "tradingsymbol": "BSEABC",
+            "exchange": "BSE",
+            "isin": "ABC",
+            "quantity": 3,
+        }
+    ]
+    assert workflow.approve_and_execute(pid)["order"]["status"] == "SUBMITTED"
+    assert kite.calls[0]["exchange"] == "NSE"
+    assert kite.calls[0]["tradingsymbol"] == "ABC"
+
+
+@pytest.mark.parametrize(
+    "condition", ["wrong_isin", "pending_bse_sell", "executed_bse_sell", "same_day_bse_buy"]
+)
+def test_cross_exchange_holdings_do_not_allow_overselling(setup, condition):
+    workflow, kite, _ = setup
+    pid = proposal(workflow)["proposal_id"]
+    kite.holdings = lambda: [
+        {
+            "tradingsymbol": "BSEABC",
+            "exchange": "BSE",
+            "isin": "OTHER" if condition == "wrong_isin" else "ABC",
+            "quantity": 2 if condition == "same_day_bse_buy" else 3,
+        }
+    ]
+    if condition == "pending_bse_sell":
+        kite.pending = [
+            {
+                "tradingsymbol": "BSEABC",
+                "exchange": "BSE",
+                "transaction_type": "SELL",
+                "quantity": 1,
+                "status": "OPEN",
+                "product": "CNC",
+            }
+        ]
+    if condition in {"executed_bse_sell", "same_day_bse_buy"}:
+        kite.positions = lambda: {
+            "net": [
+                {
+                    "tradingsymbol": "BSEABC",
+                    "exchange": "BSE",
+                    "product": "CNC",
+                    "quantity": -1 if condition == "executed_bse_sell" else 1,
+                }
+            ]
+        }
+    with pytest.raises(DomainValidationError, match="uncommitted shares"):
+        workflow.approve_and_execute(pid)
+    assert not kite.calls
+    assert workflow.store.get(pid)["status"] == "PENDING"
 
 
 def test_rejected_sell_never_executes(setup):
@@ -273,6 +468,7 @@ def test_next_day_retires_unsubmitted_review_and_creates_fresh_action(setup, mon
     workflow, kite, _ = setup
     old = proposal(workflow)
     monkeypatch.setattr("src.gates.workflows.stop_sells.india_now", lambda: NOW + timedelta(days=1))
+    kite.stamp = NOW + timedelta(days=1)
     current = proposal(workflow)
     assert current["proposal_id"] != old["proposal_id"]
     assert workflow.store.get(old["proposal_id"])["status"] == "EXPIRED"
@@ -323,7 +519,7 @@ def strategy_proposal(flow, target="2026-03-11", extra=False, side="SELL"):
             "type": side,
             "instrument_id": "abc",
             "symbol": "ABC",
-            "units": 3 if side == "SELL" else 1,
+            "units": 1 if side == "BUY" else 3,
             "execution_price": "100",
             "fee": "0",
             "reason": "Strategy signal",
@@ -462,6 +658,17 @@ def test_strategy_changed_portfolio_blocks_queued_execution(execution):
     assert result["execution"]["status"] == "BLOCKED"
     assert "outside this proposal" in result["execution"]["last_error"]
     assert not kite.calls
+
+
+def test_strategy_weekly_stop_sell_remains_valid_after_price_recovery(execution):
+    flow, kite = execution
+    pid = strategy_proposal(flow, side="STOP_LOSS")
+    kite.price = 120
+    result = flow.request(pid)
+    assert result["execution"]["status"] == "SUBMITTED"
+    assert len(kite.calls) == 1
+    assert kite.calls[0]["transaction_type"] == "SELL"
+    assert kite.calls[0]["quantity"] == 3
 
 
 @pytest.mark.parametrize("condition", ["cash", "price"])

@@ -6,6 +6,9 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid4, uuid5
+from zoneinfo import ZoneInfo
+
+from kiteconnect.exceptions import PermissionException
 
 from src.domains.execution import (
     BrokerExecutionGateway,
@@ -331,6 +334,21 @@ class BrokerOrderWorkflow:
             if self.risk_guard:
                 self.risk_guard.release(f"broker:{order_id}")
             raise
+        except PermissionException as exc:
+            self.repository.reset_local_created(order_id)
+            if self.risk_guard:
+                self.risk_guard.release(f"broker:{order_id}")
+            reason = str(exc)
+            if "no ips configured" in reason.lower() or "static-ip" in reason.lower():
+                raise DomainValidationError(
+                    f"Kite denied order permission: {reason}. In the Kite developer console, "
+                    "open Profile > IP Whitelist and add the static public IP used by this "
+                    "app's internet connection. Reconnecting alone will not fix this error."
+                ) from exc
+            raise DomainValidationError(
+                f"Kite denied order permission: {exc}. Check the portfolio Kite app's "
+                "order permissions and reconnect the portfolio account before retrying."
+            ) from exc
         except Exception as exc:
             self.repository.mark_submit_unknown(
                 order_id, type(exc).__name__, datetime.now(UTC).isoformat()
@@ -351,12 +369,21 @@ class BrokerOrderWorkflow:
                 )
             broker_id = lookup(order)
             if not broker_id:
+                if self.repository.recover_permission_denial(
+                    order_id, datetime.now(UTC).isoformat()
+                ):
+                    if self.risk_guard:
+                        self.risk_guard.release(f"broker:{order_id}")
+                    return self.get(order_id)
                 raise DomainValidationError(
                     "broker has no confirmed matching receipt; do not resubmit"
                 )
             self.repository.recover_receipt(order_id, broker_id, datetime.now(UTC).isoformat())
             order = self.get(order_id)
-        if order["status"] not in {"SUBMITTED", "PARTIALLY_FILLED"} or not order["broker_order_id"]:
+        if (
+            order["status"] not in {"SUBMITTED", "PARTIALLY_FILLED", "FILLED"}
+            or not order["broker_order_id"]
+        ):
             raise DomainValidationError("broker order is not open for reconciliation")
         if self.gateway is None:
             raise DomainValidationError("broker execution gateway is unavailable")
@@ -374,10 +401,15 @@ class BrokerOrderWorkflow:
                 raise DomainValidationError("broker fill is missing trade id")
             self._post_fill_once(order, item)
         status = str(state.get("status", order["status"]))
+        posted_units = self.repository.fill_quantity(order_id)
         mapped = (
             "PARTIALLY_FILLED"
             if status in {"OPEN", "PARTIAL"}
             else "FILLED"
+            if posted_units == int(order["quantity"])
+            else "PARTIALLY_FILLED"
+            if posted_units
+            else "SUBMITTED"
             if status == "COMPLETE"
             else status
         )
@@ -427,6 +459,15 @@ class BrokerOrderWorkflow:
         trade_id = str(item["trade_id"])
         if self.repository.has_fill_event(str(order["order_id"]), trade_id):
             return
+        if self.repository.fill_quantity(str(order["order_id"])) + int(str(item["quantity"])) > int(
+            str(order["quantity"])
+        ):
+            raise DomainValidationError("broker trade quantity exceeds the order quantity")
+        executed_at = None
+        if item.get("executed_at"):
+            executed_at = datetime.fromisoformat(str(item["executed_at"]))
+            if executed_at.tzinfo is None:
+                executed_at = executed_at.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
         account = next(
             item for item in self.ledger.accounts() if item["account_id"] == order["account_id"]
         )
@@ -442,6 +483,7 @@ class BrokerOrderWorkflow:
                     units=Quantity(int(str(item["quantity"]))),
                     price=Money(Decimal(str(item["price"]))),
                     broker_trade_id=trade_id,
+                    executed_at=executed_at,
                 )
             ],
             order_id=str(order["order_id"]),

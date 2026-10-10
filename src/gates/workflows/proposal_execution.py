@@ -84,25 +84,8 @@ class ApprovedProposalGateway(KiteExecutionGateway):
                     "live Kite funds or portfolio cash are insufficient for approved shares"
                 )
         else:
-            available = sum(
-                int(row.get("quantity", 0)) + int(row.get("t1_quantity", 0))
-                for row in client.holdings()
-                if row.get("exchange") == "NSE" and row.get("tradingsymbol") == order["symbol"]
-            )
-            available += sum(
-                int(row.get("quantity", 0))
-                for row in client.positions().get("net", [])
-                if row.get("exchange") == "NSE"
-                and row.get("tradingsymbol") == order["symbol"]
-                and row.get("product") == "CNC"
-            )
-            available -= sum(
-                max(0, int(row.get("quantity", 0)) - int(row.get("filled_quantity", 0)))
-                for row in client.orders()
-                if row.get("exchange") == "NSE"
-                and row.get("tradingsymbol") == order["symbol"]
-                and row.get("transaction_type") == "SELL"
-                and row.get("status") not in {"COMPLETE", "CANCELLED", "REJECTED"}
+            available = self.workflow.stops.uncommitted_shares(
+                client, str(order["instrument_id"]), str(order["symbol"])
             )
             if available < int(order["quantity"]):
                 raise DomainValidationError(

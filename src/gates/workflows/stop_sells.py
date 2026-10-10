@@ -12,7 +12,11 @@ from requests.exceptions import RequestException
 
 from src.domains.execution import KiteExecutionGateway
 from src.gates.workflows.broker_orders import BrokerOrderWorkflow
-from src.gates.workflows.portfolio_stops import latest_saved_stops, portfolio_stops
+from src.gates.workflows.portfolio_stops import (
+    completed_week_end,
+    latest_saved_stops,
+    portfolio_stops,
+)
 from src.platform_kernel import DomainValidationError
 from src.platform_kernel.sqlite import sqlite_connection
 
@@ -91,6 +95,43 @@ class StopSellWorkflow:
     def saved_stops(self, account_id, today):
         return latest_saved_stops(self.actions.risk_projection(account_id), today)
 
+    def uncommitted_shares(self, client, instrument_id, symbol):
+        instrument = self.market.instrument_by_id(instrument_id)
+        isin = instrument.get("isin") if instrument else None
+        aliases = {("NSE", symbol)}
+        available = 0
+        for row in client.holdings():
+            if row.get("product", "CNC") != "CNC":
+                continue
+            # Demat holdings are exchange independent. BSE symbols may differ,
+            # so only a matching ISIN can establish that cross-exchange identity.
+            matches = (
+                row["isin"] == isin
+                if row.get("isin") and isin
+                else row.get("exchange") == "NSE" and row.get("tradingsymbol") == symbol
+            )
+            if not matches:
+                continue
+            aliases.add((row.get("exchange"), row.get("tradingsymbol")))
+            available += int(row.get("quantity", 0)) + int(row.get("t1_quantity", 0))
+        for row in client.positions().get("net", []):
+            identity = (row.get("exchange"), row.get("tradingsymbol"))
+            if identity in aliases and row.get("product") == "CNC":
+                quantity = int(row.get("quantity", 0))
+                # Same-day BSE purchases cannot fund an NSE sell. Executed
+                # delivery sells on either exchange do reduce availability.
+                if identity == ("NSE", symbol) or quantity < 0:
+                    available += quantity
+        outstanding = sum(
+            max(0, int(row.get("quantity", 0)) - int(row.get("filled_quantity", 0)))
+            for row in client.orders()
+            if (row.get("exchange"), row.get("tradingsymbol")) in aliases
+            and row.get("product", "CNC") == "CNC"
+            and row.get("transaction_type") == "SELL"
+            and row.get("status") not in {"COMPLETE", "CANCELLED", "REJECTED"}
+        )
+        return available - outstanding
+
     def live_price(self, client, symbol):
         key = "NSE:" + symbol
         try:
@@ -124,7 +165,8 @@ class StopSellWorkflow:
         )
         if account is None:
             raise DomainValidationError("portfolio account does not exist")
-        today = india_now().date()
+        now = india_now()
+        today = now.date()
         lots = self.ledger.projection(account_id).open_lots
         stops = portfolio_stops(self.market, lots, today, self.saved_stops(account_id, today))
         quantities = {}
@@ -140,8 +182,13 @@ class StopSellWorkflow:
         created, checks = [], []
         for row in rows:
             prior = self.store.get(row[0])
+            weekly = prior["decisions"][0].get("stop_schedule") == "weekly"
             if (
-                prior["action_date"] != today.isoformat()
+                (
+                    not weekly
+                    and (prior["action_date"] != today.isoformat() or now.time() >= time(15, 30))
+                )
+                or prior["decisions"][0].get("stop_schedule") not in {"weekly", "intraday"}
                 or prior["expected_ledger_version"] != account["version"]
                 or prior["decisions"][0].get("account_details_version", 0)
                 != account.get("details_version", 0)
@@ -152,7 +199,11 @@ class StopSellWorkflow:
                 continue
             created.append(prior)
         client = None
-        if quantities:
+        week_end = completed_week_end(today)
+        weekly_sessions = self.market.session_dates(
+            week_end - timedelta(days=4), week_end, exchange="NSE"
+        )
+        if quantities and now.weekday() < 5 and time(9, 15) <= now.time() < time(15, 30):
             try:
                 broker_account = self.broker_account(account_id)
                 self.accounts.validate(broker_account)
@@ -171,7 +222,10 @@ class StopSellWorkflow:
                         "symbol": decision["symbol"],
                         "status": "review_exists",
                         "price": decision["execution_price"],
-                        "stop_threshold": decision["stop_threshold"],
+                        "stop_threshold": decision["hard_stop"]
+                        if decision["type"] == "HARD_STOP"
+                        else decision["stop_threshold"],
+                        "stop_schedule": decision.get("stop_schedule", "legacy"),
                         "price_source": decision["price_source"],
                         "price_date": decision["price_date"],
                     }
@@ -206,23 +260,54 @@ class StopSellWorkflow:
                 except DomainValidationError:
                     # A historical close can produce a review action, never a live execution.
                     source = "stored_close"
+            hard = threshold * Decimal("0.97")
+            # Live ticks only trigger the hard stop. A normal stop is a frozen
+            # decision from a completed weekly close, independent of live price.
+            hard_breached = source == "live_kite" and price <= hard
+            weekly_price, weekly_date = stop["weekly_close"], stop["weekly_close_date"]
+            weekly_breached = (
+                weekly_price is not None
+                and weekly_price < threshold
+                and weekly_sessions
+                and weekly_date == weekly_sessions[-1]
+                and (completed_week_end(today) - date.fromisoformat(weekly_date)).days <= 4
+                and any(
+                    lot.instrument_id == instrument_id
+                    and lot.opened_on <= date.fromisoformat(weekly_date)
+                    for lot in lots
+                )
+            )
+            if weekly_breached and not hard_breached:
+                price, price_date, source = weekly_price, weekly_date, "weekly_close"
             checks.append(
                 {
                     "instrument_id": instrument_id,
                     "symbol": identity["symbol"],
-                    "status": "above_stop" if price > threshold else "breached",
+                    "status": "breached"
+                    if hard_breached or weekly_breached
+                    else "live_unavailable"
+                    if source == "stored_close"
+                    else "above_stop",
                     "price": str(price),
-                    "stop_threshold": str(threshold),
+                    "stop_threshold": str(threshold if source == "weekly_close" else hard),
+                    "stop_schedule": "weekly" if source == "weekly_close" else "intraday",
                     "price_source": source,
                     "price_date": price_date,
                 }
             )
-            if price > threshold:
+            if not hard_breached and not weekly_breached:
                 continue
+            schedule = "intraday" if hard_breached else "weekly"
+            action_date = today
+            if not hard_breached:
+                price, price_date, source = weekly_price, weekly_date, "weekly_close"
+                action_date = date.fromisoformat(weekly_date) + timedelta(days=1)
+                while action_date.weekday() != 0:
+                    action_date += timedelta(days=1)
             proposal_id = str(
                 uuid5(
                     NAMESPACE_URL,
-                    f"stop-sell:{account_id}:{instrument_id}:{account['version']}:{account.get('details_version', 0)}:{today}",
+                    f"stop-sell:{account_id}:{instrument_id}:{account['version']}:{account.get('details_version', 0)}:{schedule}:{price_date}",
                 )
             )
             try:
@@ -231,9 +316,9 @@ class StopSellWorkflow:
                 continue
             except DomainValidationError:
                 pass
-            hard = threshold * Decimal("0.97")
             decision = {
-                "type": "HARD_STOP" if price <= hard else "STOP_LOSS",
+                "type": "HARD_STOP" if hard_breached else "STOP_LOSS",
+                "stop_schedule": schedule,
                 "instrument_id": instrument_id,
                 "symbol": identity["symbol"],
                 "units": units,
@@ -246,14 +331,18 @@ class StopSellWorkflow:
                 "price_date": price_date,
                 "price_source": source,
                 "account_details_version": account.get("details_version", 0),
-                "reason": f"Sell {units} shares: {source} price {price} breached trailing stop {threshold:.2f} (ATR dated {stop['risk_date']}). Live quote rechecked on approval.",
+                "reason": (
+                    f"Sell {units} shares: live price {price} breached hard stop {hard:.2f}. Hard stop rechecked on approval."
+                    if hard_breached
+                    else f"Sell {units} shares next week: {price_date} weekly close {price} was below trailing stop {threshold:.2f}. Price recovery does not cancel this weekly sell."
+                ),
             }
             timestamp = datetime.now(UTC).isoformat()
             self.store.recover_pending(
                 proposal_id=proposal_id,
                 account_id=account_id,
                 strategy_id=self.STRATEGY,
-                action_date=today.isoformat(),
+                action_date=action_date.isoformat(),
                 ranking_week_end=price_date,
                 expected_ledger_version=account["version"],
                 artifact_id=proposal_id,
@@ -284,9 +373,18 @@ class StopSellWorkflow:
         decision = current["decisions"][0]
         if decision["type"] not in {"STOP_LOSS", "HARD_STOP"}:
             raise DomainValidationError("stop execution requires a protective sell")
+        if decision.get("stop_schedule") not in {"weekly", "intraday"}:
+            raise DomainValidationError("stop schedule changed; check stops again before selling")
         now = india_now()
-        if current["action_date"] != now.date().isoformat():
+        weekly = decision.get("stop_schedule") == "weekly" and decision["type"] == "STOP_LOSS"
+        if weekly and date.fromisoformat(current["action_date"]) > now.date():
+            raise DomainValidationError("weekly stop sell is due at the next week's market open")
+        if not weekly and current["action_date"] != now.date().isoformat():
             raise DomainValidationError("stop action is from a previous day; check stops again")
+        if decision["type"] == "STOP_LOSS" and not weekly:
+            raise DomainValidationError(
+                "normal stops require a completed weekly close; check stops again"
+            )
         if now.weekday() >= 5 or not time(9, 15) <= now.time() < time(15, 30):
             raise DomainValidationError(
                 "approve stop sells during NSE market hours (09:15–15:30 IST)"
@@ -313,12 +411,13 @@ class StopSellWorkflow:
         )
         stop = stops[decision["instrument_id"]]
         sessions = self.market.session_dates(
-            now.date() - timedelta(days=14), now.date() - timedelta(days=1), exchange="NSE"
+            now.date() - timedelta(days=21), completed_week_end(now.date()), exchange="NSE"
         )
         if (
             not sessions
-            or stop["risk_date"] != sessions[-1]
-            or (now.date() - date.fromisoformat(stop["risk_date"])).days > 7
+            or not stop["risk_date"]
+            or stop["risk_date"] < sessions[-1]
+            or (now.date() - date.fromisoformat(stop["risk_date"])).days > 10
         ):
             raise DomainValidationError(
                 "stop OHLC history is stale; refresh market data before selling"
@@ -327,35 +426,14 @@ class StopSellWorkflow:
         self.accounts.validate(broker_account)
         client = self.accounts.client(broker_account)
         price = self.live_price(client, decision["symbol"])
-        if price > Decimal(decision["stop_threshold"]):
+        if not weekly and price > Decimal(decision["hard_stop"]):
             raise DomainValidationError(
-                "live price recovered above the approved stop; no sell submitted"
+                "live price recovered above the approved hard stop; no sell submitted"
             )
-        holdings = client.holdings()
-        available = sum(
-            int(row.get("quantity", 0)) + int(row.get("t1_quantity", 0))
-            for row in holdings
-            if row.get("tradingsymbol") == decision["symbol"]
-            and row.get("exchange") == "NSE"
-            and row.get("product", "CNC") == "CNC"
-        )
-        # Today CNC positions are separate from settled delivery holdings.
-        available += sum(
-            int(row.get("quantity", 0))
-            for row in client.positions().get("net", [])
-            if row.get("tradingsymbol") == decision["symbol"]
-            and row.get("exchange") == "NSE"
-            and row.get("product") == "CNC"
-        )
-        outstanding = sum(
-            max(0, int(row.get("quantity", 0)) - int(row.get("filled_quantity", 0)))
-            for row in client.orders()
-            if row.get("tradingsymbol") == decision["symbol"]
-            and row.get("exchange") == "NSE"
-            and row.get("transaction_type") == "SELL"
-            and row.get("status") not in {"COMPLETE", "CANCELLED", "REJECTED"}
-        )
-        if available - outstanding < decision["units"]:
+        if (
+            self.uncommitted_shares(client, decision["instrument_id"], decision["symbol"])
+            < decision["units"]
+        ):
             raise DomainValidationError("Kite has fewer uncommitted shares than this sell action")
         return current
 
@@ -422,7 +500,16 @@ class StopSellWorkflow:
             raise DomainValidationError("this action has no submitted order")
         workflow = self.broker_workflow(proposal)
         order = workflow.get(row[0])
-        if order["status"] not in {"FILLED", "CANCELLED", "REJECTED"}:
+        missing_fills = (
+            order["status"] == "FILLED"
+            and workflow.repository.fill_quantity(row[0]) < order["quantity"]
+        )
+        if missing_fills or order["status"] not in {
+            "FILLED",
+            "CANCELLED",
+            "REJECTED",
+            "LOCAL_CREATED",
+        }:
             order = workflow.reconcile(row[0])
         if order["status"] == "FILLED":
             version = next(
@@ -447,16 +534,22 @@ class BackgroundStopMonitor:
         self._thread = None
 
     def tick(self):
-        now = india_now()
         for account in self.workflow.ledger.accounts():
-            if now.weekday() < 5 and time(9, 15) <= now.time() < time(15, 30):
-                self.workflow.check(account["account_id"])
+            self.workflow.check(account["account_id"])
         with sqlite_connection(self.workflow.orders.database, read_only=True) as connection:
             rows = connection.execute("""SELECT DISTINCT p.proposal_id FROM action_proposals p
                 JOIN broker_orders o ON o.proposal_id=p.proposal_id
                 WHERE p.strategy_id='portfolio_stop' AND o.status IN
-                ('SUBMITTED','PARTIALLY_FILLED','SUBMITTING','SUBMIT_UNKNOWN')""").fetchall()
+                ('SUBMITTED','PARTIALLY_FILLED','SUBMITTING','SUBMIT_UNKNOWN','FILLED')""").fetchall()
         for row in rows:
+            proposal = self.workflow.store.get(row[0])
+            order = self.workflow.readback(proposal)["broker_order"]
+            if order["status"] == "FILLED" and (
+                not order["broker_order_id"]
+                or self.workflow.orders.repository.fill_quantity(order["order_id"])
+                >= order["quantity"]
+            ):
+                continue
             try:
                 self.workflow.reconcile(row[0])
             except DomainValidationError as exc:

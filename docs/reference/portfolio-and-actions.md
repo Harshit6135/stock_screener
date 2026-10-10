@@ -167,8 +167,9 @@ The holdings dashboard reconstructs ATR stops from completed daily OHLC bars,
 including imported positions without a saved strategy risk projection. It uses
 the existing 14-session ATR calculation and the portfolio policy's 2× ATR distance.
 The initial estimate uses the weighted acquisition cost on the earliest remaining
-lot date and the preceding session's ATR. Each subsequent completed close can
-raise the trailing stop to close minus 2× ATR; it never lowers the stop. A saved
+lot date and the preceding session's ATR. Each subsequent completed weekly close
+can raise the trailing stop to close minus 2× ATR; it never lowers the stop. Daily
+ATR inputs remain daily, but midweek closes and live ticks do not ratchet stops. A saved
 strategy stop takes priority and can only rise. The hard stop is 3% below the
 trailing stop, matching the existing action rules.
 
@@ -176,28 +177,47 @@ The table includes the calculation date, ATR, stop status and rupee exposure fro
 the latest available price down to the trailing stop. A position already below
 its stop is flagged explicitly even though that remaining distance is zero.
 These are model estimates, not guaranteed loss limits or standing broker orders.
-Current-day OHLC is excluded; missing history and stale calculation dates remain
+The current week's OHLC cannot ratchet stops before Friday's close at 15:30 IST.
+Once the week has closed and its data is available, the last trading session's
+close is used, including a Thursday close when Friday is a holiday. Missing history and stale calculation dates remain
 visible. The earliest remaining lot date is an estimate of the position's entry,
 and incomplete pre-entry ATR history is disclosed in the row tooltip.
 
 ## Portfolio stop sells
 
-While the local app is running, its background monitor checks stops every 30
-seconds during market hours and reconciles submitted Kite fills. It never approves
-stop actions. Unsubmitted stop reviews expire when their account version or date
-changes; already submitted receipts stay visible even if the price recovers.
+While the local app is running, its background monitor checks every 30 seconds
+and reconciles submitted Kite fills. During market hours, only a fresh live price
+at or below the hard stop (97% of the trailing stop) creates an intraday sell.
+Crossing the normal trailing stop midweek does not create an immediate sell.
+The WebSocket's per-tick alerts also check only the hard stop.
 
-Refreshing Home or loading Actions checks held stocks against their trailing
-stop. A breach creates one independent `portfolio_stop` SELL review action per
-stock, with a hard-stop reason when price is also below the lower hard stop.
+At a completed weekly close, a close below the normal trailing stop creates a
+weekly sell review for the next week. This fixed decision survives Monday price
+recovery and subsequent daily refreshes. Stops ratchet only at weekly closes.
+Weekly orders can be approved and submitted from the next week's market open;
+the monitor never approves them. Hard-stop reviews expire on a new day; weekly
+reviews do not. Both become invalid if their portfolio baseline changes. Legacy
+unsubmitted reviews from the previous daily-stop schedule are retired on checking
+stops again. Submitted receipts remain available for reconciliation.
+
+Refreshing Home or loading Actions checks live hard stops and completed weekly
+normal-stop signals. A qualifying signal creates one independent `portfolio_stop`
+SELL review action per stock, labelled as a hard stop or a weekly sell.
 Actions displays these in **Current stop-loss actions**, independently of the
 strategy and action-date filters. **Check stops now** refreshes them. Expand
 **Prices and stop thresholds checked** to see each checked price, threshold,
 source/date and result; an empty queue is explained instead of implying that
 strategy generation is required. A failed stop check is shown separately and
 does not prevent loading existing strategy proposals.
-The detector uses a fresh account-specific Kite quote when available and otherwise
-labels the stored close and its date. Detection never submits an order.
+Intraday detection requires a fresh account-specific Kite quote. Stored prices
+are labelled for display and cannot create a new intraday hard-stop review.
+Weekly detection uses only the completed weekly close. Detection never submits an order.
+
+If Kite refuses order permission, the app displays the broker's error and keeps
+the order available for retry after correcting the portfolio Kite permissions.
+An older permission refusal labelled `SUBMIT_UNKNOWN` can be cleared with
+**Refresh Kite order**, which checks for a broker receipt before clearing it.
+Timeouts with an uncertain receipt still require reconciliation before retry.
 
 **Approve & sell on Kite** records approval and submits that exact quantity as a
 regular CNC market sell with automatic market protection. This approval-scoped
@@ -207,10 +227,27 @@ managed strategy accounts retain their explicit broker mapping.
 
 Before approval and again before placement, the workflow checks current market
 hours, account session, ledger version, held units, completed stop history, a
-fresh timestamped live quote still below the reviewed threshold, and broker shares
+fresh timestamped live quote, and broker shares
 after outstanding sells. Existing managed risk reservations also apply. No sell is
 placed when these checks fail. Unknown submission outcomes retain the order tag
 and require reconciliation instead of automatic resubmission.
+Hard-stop execution also rechecks that price remains at or below the hard stop.
+Weekly sell execution does not cancel the reviewed weekly decision because the
+live price recovered above either stop.
+
+Confirmed trade rows, including Kite's per-trade `average_price`, reduce the
+ledger holding quantity and credit sale proceeds. A broker `COMPLETE` response
+does not finalize local reconciliation until all ordered units have trade rows
+posted to the ledger. Missing trade rows are retried; older stop orders marked
+filled without ledger fills are also recovered. Repeated reconciliation never
+posts a trade twice. When the live feed sees a new ledger version, Home reloads
+holdings, cash, realised P&L, and the closed trade journal. Fully sold positions
+leave Current holdings and remain in the journal.
+
+Delivery holdings shown under BSE are matched to the NSE instrument by ISIN.
+Existing delivery sells on either exchange reduce available shares; same-day BSE
+buys do not fund NSE sells. Kite's display exchange does not restrict settled
+holdings to that exchange ([Zerodha explanation](https://support.zerodha.com/category/trading-and-markets/general-kite/kite-holdings/articles/default-exchange-on-kite)).
 
 **Refresh Kite order** reads Kite order status and actual trade rows. Partial fills
 are posted once to the ledger and journal; complete fills mark the action recorded.

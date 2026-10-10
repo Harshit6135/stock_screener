@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 
 def live_portfolio_ticker(ledger, market, quotes, stream, account_id):
+    version = next(row["version"] for row in ledger.accounts() if row["account_id"] == account_id)
     today = datetime.now(ZoneInfo("Asia/Kolkata")).date()
     projection = ledger.projection_at(account_id, today)
     positions = {}
@@ -28,7 +29,15 @@ def live_portfolio_ticker(ledger, market, quotes, stream, account_id):
         price = (
             Decimal(quote["price"]) if fresh else Decimal(str(latest["close"])) if latest else None
         )
-        previous = Decimal(str(prior["close"])) if prior else None
+        # Live day P&L needs the exchange's previous close for this quote.
+        # An arbitrary older stored candle can represent several days' movement.
+        previous = (
+            Decimal(quote["previous_close"])
+            if fresh and quote.get("previous_close") is not None
+            else Decimal(str(prior["close"]))
+            if not fresh and latest and str(latest["as_of_date"]) == today.isoformat() and prior
+            else None
+        )
         units, cost = position["units"], position["cost"]
         value = price * units if price is not None else None
         change = (price - previous) * units if price is not None and previous is not None else None
@@ -66,6 +75,7 @@ def live_portfolio_ticker(ledger, market, quotes, stream, account_id):
     state = stream.state() if stream else {"status": "UNAVAILABLE", "enabled": False}
     return {
         "account_id": account_id,
+        "ledger_version": version,
         "observed_on": today.isoformat(),
         "observed_at": max(observed) if observed else None,
         "cash": str(projection.cash.amount),

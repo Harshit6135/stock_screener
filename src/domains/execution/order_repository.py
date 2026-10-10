@@ -220,6 +220,26 @@ class BrokerOrderRepository:
                 connection, order_id, "SUBMIT_UNKNOWN", None, {"error": error_type}, timestamp
             )
 
+    def recover_permission_denial(self, order_id: str, timestamp: str) -> bool:
+        """Recover a legacy permission refusal after the broker reports no receipt."""
+        with sqlite_connection(self.database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            event = connection.execute(
+                "SELECT payload_json FROM broker_execution_events "
+                "WHERE order_id=? AND event_type='SUBMIT_UNKNOWN' ORDER BY event_id DESC LIMIT 1",
+                (order_id,),
+            ).fetchone()
+            if not event or json.loads(event[0]).get("error") != "PermissionException":
+                return False
+            changed = connection.execute(
+                "UPDATE broker_orders SET status='LOCAL_CREATED' "
+                "WHERE order_id=? AND status='SUBMIT_UNKNOWN' AND broker_order_id IS NULL",
+                (order_id,),
+            ).rowcount
+            if changed:
+                self._event(connection, order_id, "PERMISSION_DENIED", None, {}, timestamp)
+            return bool(changed)
+
     def mark_submitted(self, order_id: str, broker_order_id: str, timestamp: str) -> None:
         with sqlite_connection(self.database) as connection:
             connection.execute(
@@ -274,6 +294,16 @@ class BrokerOrderRepository:
                 ).fetchone()
                 is not None
             )
+
+    def fill_quantity(self, order_id: str) -> int:
+        """Count only confirmed trade quantities already posted to the ledger."""
+        with sqlite_connection(self.database, read_only=True) as connection:
+            rows = connection.execute(
+                "SELECT payload_json FROM broker_execution_events WHERE order_id=? "
+                "AND event_type IN ('BROKER_FILL','MANUAL_FILL')",
+                (order_id,),
+            ).fetchall()
+        return sum(int(json.loads(row[0])["quantity"]) for row in rows)
 
     def record_fill_event(
         self,

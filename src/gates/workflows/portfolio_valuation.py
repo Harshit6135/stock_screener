@@ -304,6 +304,7 @@ def portfolio_valuation(
             day_pnl_basis = "opening_import_requires_prior_session_basis"
     result = {
         "account_id": account_id,
+        "ledger_version": account["version"],
         "as_of_date": as_of.isoformat(),
         "cash": str(projection.cash.amount),
         "invested_cost": str(invested),

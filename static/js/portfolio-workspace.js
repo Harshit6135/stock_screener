@@ -1,5 +1,5 @@
 (() => {
-  let stream = null;
+  let stream = null, liveRefreshPending = null;
   let streamAccount = null, liveGeneration = 0, viewData = null, intradayRows = [], lastChartTime = null;
   let generation = 0;
   let momentumRanking = indexMomentumRanking({week: null, members: []});
@@ -340,6 +340,13 @@
     content.append(save, cancel); modal.showModal();
   }
 
+  function metricTone(id, value, lowerIsBetter = false) {
+    const node = $(id), number = value == null ? NaN : Number(value);
+    const valid = Number.isFinite(number);
+    node.classList.toggle("positive", valid && (lowerIsBetter ? number < 0 : number > 0));
+    node.classList.toggle("negative", valid && (lowerIsBetter ? number > 0 : number < 0));
+  }
+
   function render(data) {
     viewData = data;
     Screener.text($("equity"), fmt(data.equity));
@@ -362,13 +369,23 @@
     ].filter(Boolean).join(" ");
     Screener.text($("risk"), fmt(data.portfolio_risk));
     (data.tax_estimates || []).forEach((tax,index)=>{const key=index===0?"current":"previous";Screener.text($("tax-"+key+"-label"),`${tax.label} realised-gains tax`);Screener.text($("tax-"+key),fmt(tax.estimated_tax));Screener.text($("tax-"+key+"-detail"),`${tax.start_date} to ${tax.end_date} · Net short-term realised gains ${fmt(tax.short_term_gains)} · Net long-term realised gains ${fmt(tax.long_term_gains)} · Includes cess ${fmt(tax.cess)}`);});
+    for (const [id, value, lowerIsBetter] of [
+      ["xirr", data.xirr], ["realised-xirr", data.realised_xirr],
+      ["absolute-return", data.total_return], ["net-gain", data.net_gain],
+      ["capital-risk", data.capital_risk, true], ["risk", data.portfolio_risk, true],
+      ["recorded-charges", data.recorded_charges, true],
+      ["tax-current", data.tax_estimates?.[0]?.estimated_tax, true],
+      ["tax-previous", data.tax_estimates?.[1]?.estimated_tax, true],
+      ["stale-prices", data.stale_prices ?? 0, true]
+    ]) metricTone(id, value, lowerIsBetter);
     const riskDates = [...new Set(data.holdings.map(h => h.risk_date).filter(Boolean))].sort();
-    $("risk-note").textContent = `ATR(14), 2× ATR stop, 3% lower hard stop; stops ratchet upward on completed daily bars${riskDates.length ? ` through ${riskDates[riskDates.length - 1]}` : ""}. Portfolio risk sums max(purchase cost − trailing stop value, 0) for each lot. Capital risk retains negative values when stops protect gains.${data.breached_stop_holdings ? ` ${data.breached_stop_holdings} holdings are already below a stop; zero distance is not a safe position.` : ""} Breaches create sell actions below; Approve & sell on Kite submits the reviewed order.`;
+    $("risk-note").textContent = `ATR(14), 2× ATR stop, 3% lower hard stop; stops ratchet upward only at completed weekly closes${riskDates.length ? ` through ${riskDates[riskDates.length - 1]}` : ""}. Portfolio risk sums max(purchase cost − trailing stop value, 0) for each lot. Capital risk retains negative values when stops protect gains.${data.breached_stop_holdings ? ` ${data.breached_stop_holdings} holdings are already below a stop; zero distance is not a safe position.` : ""} Live checks trigger only hard stops. Normal stop sells are fixed at the weekly close for the next week, even if price recovers. Approve & sell on Kite submits the reviewed order.`;
     Screener.text($("stale-prices"), `${data.stale_prices ?? 0}`);
     $("price-freshness").textContent = data.holdings?.some(item => !item.fresh) ? "Some prices are from earlier sessions" : `Valued ${data.as_of_date}`;
     renderHoldings(data.holdings);
-    $("portfolio-alert").hidden = !data.breached_stop_holdings;
-    $("portfolio-alert-text").textContent = `${data.breached_stop_holdings || 0} holding(s) need a stop review.`;
+    const hardBreaches = data.holdings.filter(h => holdingValues(h).status === "below_hard_stop").length;
+    $("portfolio-alert").hidden = !hardBreaches;
+    $("portfolio-alert-text").textContent = `${hardBreaches} holding(s) need a hard-stop review.`;
     for (const id of ["xirr", "realised-xirr"]) $(id).classList.toggle("metric-long", $(id).textContent.length > 15);
 
   }
@@ -381,22 +398,23 @@
       $("stop-actions").replaceChildren(...result.proposals.map(proposal => {
         const decision = proposal.decisions[0], order = proposal.broker_order;
         const review = document.createElement("div");
-        function button(label, path) {
-          const node = document.createElement("button"); node.type = "button"; node.textContent = label;
-          node.onclick = async () => { node.disabled = true; try {
+        function button(label, path, disabled = false) {
+          const node = document.createElement("button"); node.type = "button"; node.textContent = label; node.disabled = disabled;
+          node.onclick = async () => { node.disabled = true; node.textContent = "Working…"; $("stop-actions-error").textContent = path.endsWith("approve-execute") ? "Checking the live price and Kite holdings before submitting…" : "Updating stop action…"; try {
             const result = await Screener.api(path, {method:"POST", ...(path.endsWith("approve-execute") ? {body:JSON.stringify({approved:true})} : {})});
             await refresh();
             if (result.order) $("stop-actions-error").textContent = `Kite order ${result.order.broker_order_id || result.order.order_id}: ${result.order.status}${result.order.status === "SUBMITTED" ? " — awaiting confirmed fills" : ""}.`;
-          } catch (error) { $("stop-actions-error").textContent = error.message; } finally { node.disabled = false; } };
+          } catch (error) { await stopActions(account, generation); $("stop-actions-error").textContent = error.message; } finally { node.disabled = false; node.textContent = label; } };
           review.append(node);
         }
         const id = encodeURIComponent(proposal.proposal_id);
+        const weekly = decision.stop_schedule === "weekly", notDue = weekly && proposal.action_date > today();
         if (["PENDING", "APPROVED"].includes(proposal.status) && (!order || order.status === "LOCAL_CREATED")) {
-          button(proposal.status === "APPROVED" ? "Submit approved sell on Kite" : "Approve & sell on Kite", `/api/actions/stops/${id}/approve-execute`);
+          button(notDue ? `Weekly sell due ${proposal.action_date}` : proposal.status === "APPROVED" ? "Submit approved sell on Kite" : weekly ? "Approve weekly sell on Kite" : "Approve hard-stop sell on Kite", `/api/actions/stops/${id}/approve-execute`, notDue);
           if (proposal.status === "PENDING") button("Reject", `/api/actions/proposals/${id}/reject`);
         }
         if (order && !["FILLED", "CANCELLED", "REJECTED", "LOCAL_CREATED"].includes(order.status)) button("Refresh Kite order", `/api/actions/stops/${id}/reconcile`);
-        return Screener.row([decision.symbol, decision.units, fmt(decision.stop_threshold), `${fmt(decision.execution_price)} (${decision.price_date})`, order?.status || proposal.status, review]);
+        return Screener.row([decision.symbol, decision.units, fmt(weekly ? decision.stop_threshold : decision.hard_stop), `${fmt(decision.execution_price)} (${decision.price_date})`, (order?.status || proposal.status) + (weekly ? ` (weekly sell ${proposal.action_date})` : " (hard stop)"), review]);
       }));
       if (!result.proposals.length) $("stop-actions").append(Screener.row(["No breached holdings", "", "", "", "", ""]));
     } catch (error) { if (token === generation) $("stop-actions-error").textContent = error.message; }
@@ -614,8 +632,8 @@
     set("value",fmt(v.value));set("gain",fmt(v.pnl),v.pnl==null?null:v.pnl>=0);
     set("gain-pct",v.gainPct==null?null:pct(v.gainPct),v.gainPct==null?null:v.gainPct>=0);
     set("day",fmt(v.day),v.day==null?null:v.day>=0);
-    const detail=row.querySelector("button");detail.classList.toggle("stop-breached",v.status.startsWith("below_"));
-    detail.textContent=v.status.startsWith("below_")?"Stop breached · Details":"Details";
+    const detail=row.querySelector("button");detail.classList.toggle("stop-breached",v.status === "below_hard_stop");
+    detail.textContent=v.status === "below_hard_stop"?"Stop breached · Details":"Details";
     detail.title=`${h.quote_time?new Date(h.quote_time).toLocaleString("en-IN",{timeZone:"Asia/Kolkata"}):h.price_date||"No quote"} · ${h.price_basis||"No price source"}`;
   }
   function renderHoldings(holdings) {
@@ -696,12 +714,20 @@
   function filterHoldings(){const q=$("holding-search").value.trim().toLowerCase();const rows=[...$("holdings").querySelectorAll("tr[data-instrument]")];rows.forEach(row=>row.hidden=!row.cells[0].textContent.toLowerCase().includes(q));$("holding-count").textContent=`${rows.filter(row=>!row.hidden).length} of ${rows.length} positions · scroll right for stops and quote details`;}
   function updateHoldingTotals(){const hs=viewData?.holdings||[],vals=hs.map(holdingValues);const sum=key=>vals.length&&vals.every(v=>v[key]!=null)?vals.reduce((n,v)=>n+v[key],0):null;$("holding-totals").replaceChildren(...[["Invested capital",hs.reduce((n,h)=>n+Number(h.cost),0)],["Market value",sum("value")],["Unrealised P&L",sum("pnl")],["Day P&L",sum("day")],["Capital risk",sum("risk")]].map(([label,value])=>{const node=document.createElement("span");node.textContent=`${label}: ${fmt(value)}`;return node;}));}
   function applyLive(data){if(data.account_id!==$("account").value||!viewData)return;
+    if (data.ledger_version != null && data.ledger_version !== viewData.ledger_version) {
+      if (!liveRefreshPending) liveRefreshPending = refresh().then(() => {
+        if (streamAccount === data.account_id && viewData?.ledger_version === data.ledger_version) applyLive(data);
+      }).catch(error => { $("home-error").textContent = error.message; }).finally(() => { liveRefreshPending = null; });
+      return;
+    }
     const capital=Number(viewData.net_contributed_capital);
     Screener.text($("absolute-return"),data.equity!=null&&capital>0?`${((Number(data.equity)-capital)/capital*100).toFixed(2)}%`:"Unavailable");
+    metricTone("absolute-return", data.equity != null && capital > 0 ? Number(data.equity) / capital - 1 : null);
     const quotes=new Map(data.holdings.map(h=>[h.instrument_id,h]));
     viewData.holdings.forEach(h=>{const q=quotes.get(h.instrument_id);if(!q)return;for(const field of ["price","price_date","quote_time","price_basis","freshness","fresh","previous_close"])h[field]=q[field];h.day_pnl=q.day_pnl==null?null:String(Number(q.day_pnl)*Number(h.units)/Number(q.units));h.market_value=h.price==null?null:String(Number(h.price)*Number(h.units));});
     $("holdings").querySelectorAll("tr[data-instrument]").forEach(row=>{const h=viewData.holdings[Number(row.dataset.holdingIndex)];if(h)updateHoldingRow(row,h);});
     sortHoldingRows();updateHoldingTotals();const risks=viewData.holdings.map(h=>holdingValues(h).risk);Screener.text($("risk"),risks.every(r=>r!=null)?fmt(risks.reduce((sum,r)=>sum+Math.max(0,r),0)):null);Screener.text($("equity"),fmt(data.equity));Screener.text($("unrealised"),fmt(data.unrealised_pnl));Screener.text($("day-pnl"),fmt(data.day_pnl));for(const [id,value] of [["unrealised",data.unrealised_pnl],["day-pnl",data.day_pnl]]){$(id).classList.toggle("positive",value!=null&&Number(value)>=0);$(id).classList.toggle("negative",value!=null&&Number(value)<0);}
+    metricTone("risk", risks.every(r => r != null) ? risks.reduce((sum, r) => sum + Math.max(0, r), 0) : null, true);
     const connected=data.stream?.matches_account&&data.stream?.status==="CONNECTED";
     $("live-status").textContent=connected?`Connected · ${data.fresh_count}/${data.holding_count} fresh quotes`:data.stream?.matches_account?`${data.stream.status.toLowerCase()} · waiting for fresh quotes`:"Feed unavailable for this account";
     $("last-live-quote").textContent=data.observed_at?`Latest quote ${new Date(data.observed_at).toLocaleTimeString("en-IN",{timeZone:"Asia/Kolkata",hour12:false})} IST`:"Waiting for a timestamped quote";
@@ -709,7 +735,7 @@
       lastChartTime=data.observed_at;
       recordIntradayPoint(data.observed_at,Number(data.day_pnl));
     }
-    const breached=viewData.holdings.filter(h=>holdingValues(h).status.startsWith("below_")).length;$("portfolio-alert").hidden=!breached;$("portfolio-alert-text").textContent=`${breached} position(s) need a stop review.`;
+    const breached=viewData.holdings.filter(h=>holdingValues(h).status === "below_hard_stop").length;$("portfolio-alert").hidden=!breached;$("portfolio-alert-text").textContent=`${breached} position(s) need a hard-stop review.`;
   }
   async function stopLive(stopBroker=true){++liveGeneration;stream?.close();stream=null;const account=streamAccount;streamAccount=null;$("live-toggle").textContent="Go live";$("live-status").textContent="Live feed off";if(stopBroker&&account){try{const state=await Screener.api("/api/market/intraday/stream");if(state.enabled&&state.account_id===account)await Screener.api("/api/market/intraday/live-stream",{method:"POST",body:JSON.stringify({action:"stop"})});}catch(error){$("home-error").textContent=error.message;}}}
   async function toggleLive(){if(stream){await stopLive();return;}const account=$("account").value;if(!account||!viewData?.holdings.length)return;if(viewData.account_id!==account){$("home-error").textContent="Wait for this account’s valuation to finish loading.";return;}

@@ -146,6 +146,58 @@ def test_policy_rejection_does_not_become_submit_unknown(tmp_path):
     assert orders.get(order["order_id"])["status"] == "LOCAL_CREATED"
 
 
+@pytest.mark.parametrize(
+    "reason, guidance",
+    [
+        ("Insufficient permission for that call", "reconnect the portfolio account"),
+        ("No IPs configured for this app", "Profile > IP Whitelist"),
+    ],
+)
+def test_permission_denial_is_retryable_and_exposes_broker_reason(tmp_path, reason, guidance):
+    from kiteconnect.exceptions import PermissionException
+
+    class DeniedBroker:
+        def submit_order(self, order):
+            raise PermissionException(reason)
+
+    database = tmp_path / "system.db"
+    ledger = Ledger(database)
+    ledger.open_account("paper", Money(100))
+    _seed_current_members(database)
+    orders = BrokerOrderWorkflow(database, ledger, DeniedBroker())
+    order = orders.create_intent(_intent())
+    with pytest.raises(DomainValidationError, match="Kite denied order permission") as error:
+        orders.submit(order["order_id"])
+    assert reason in str(error.value)
+    assert guidance in str(error.value)
+    assert orders.get(order["order_id"])["status"] == "LOCAL_CREATED"
+
+
+@pytest.mark.parametrize("error_type", ["PermissionException", "TimeoutError"])
+def test_legacy_permission_denial_recovery_never_retries_unknown_receipt(tmp_path, error_type):
+    class Broker(FakeBroker):
+        def find_order(self, order):
+            return None
+
+        def submit_order(self, order):
+            pytest.fail("reconciliation must never submit an order")
+
+    database = tmp_path / "system.db"
+    ledger = Ledger(database)
+    ledger.open_account("paper", Money(100))
+    orders = BrokerOrderWorkflow(database, ledger, Broker())
+    order = orders.create_intent(_intent())
+    orders.repository.mark_submit_unknown(
+        order["order_id"], error_type, "2026-10-09T04:00:00+00:00"
+    )
+    if error_type == "PermissionException":
+        assert orders.reconcile(order["order_id"])["status"] == "LOCAL_CREATED"
+    else:
+        with pytest.raises(DomainValidationError, match="do not resubmit"):
+            orders.reconcile(order["order_id"])
+        assert orders.get(order["order_id"])["status"] == "SUBMIT_UNKNOWN"
+
+
 def test_twap_basket_is_idempotent_and_submits_one_slice(tmp_path):
     database = tmp_path / "system.db"
     ledger = Ledger(database)

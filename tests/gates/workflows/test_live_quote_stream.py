@@ -59,9 +59,11 @@ def test_controller_connect_reconnect_stop_and_late_callback(tmp_path):
     assert ticker.credentials == ("fake-key", "fake-token")
     now = datetime.now(UTC)
     ticker.on_ticks(
-        ticker, [{"instrument_token": 42, "last_price": 100, "exchange_timestamp": now}]
+        ticker, [{"instrument_token": 42, "last_price": 100, "exchange_timestamp": now,
+                  "ohlc": {"close": 90}}]
     )
     assert store.execution_quote("ledger", "stock")["price"] == "100"
+    assert store.execution_quote("ledger", "stock")["previous_close"] == "90"
     assert lease.state()["last_heartbeat_at"]
     ticker.on_close(ticker, 1006, "disconnected")
     assert lease.state()["status"] == "ERROR"
@@ -77,6 +79,19 @@ def test_controller_connect_reconnect_stop_and_late_callback(tmp_path):
     assert store.read("ledger", "stock")["price"] == "100"
     assert lease.state()["status"] == "STOPPED"
     assert market.bars("stock", date(2026, 9, 29), date(2026, 9, 29)) == []
+
+
+def test_restart_clears_connected_lease_and_allows_explicit_start(tmp_path):
+    _, market, store, lease, stream, _ = stream_services(tmp_path)
+    stream.start("ledger", ["stock"])
+    assert lease.state()["status"] == "CONNECTED"
+    restarted = LiveQuoteStream(
+        stream.accounts, market, store, lease, stream.alerts, KiteStreamingProvider, Ticker
+    )
+    assert lease.state()["enabled"] == 0
+    assert lease.state()["status"] == "STOPPED"
+    assert restarted.start("ledger", ["stock"])["status"] == "CONNECTED"
+    restarted.stop()
 
 
 def test_missing_stop_projection_preserves_quotes(tmp_path):

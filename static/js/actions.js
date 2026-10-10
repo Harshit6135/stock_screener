@@ -3,8 +3,8 @@
   let request, generation = 0, generationPoll;
   const statusNames = {PENDING:"Awaiting review", APPROVED:"Approved", REJECTED:"Rejected", PROCESSED:"Recorded"};
   const strategyNames = new Map();
-  function actionButton(label, action, style = "secondary") {
-    const button = document.createElement("button"); button.textContent = label; button.className = style; button.type = "button";
+  function actionButton(label, action, style = "secondary", disabled = false) {
+    const button = document.createElement("button"); button.textContent = label; button.className = style; button.type = "button"; button.disabled = disabled;
     button.onclick = async () => { button.disabled = true; try { await action(); } catch (error) { $("actions-error").textContent = error.message; } finally { button.disabled = false; } };
     return button;
   }
@@ -53,16 +53,19 @@
       const state = document.createElement("span"); state.className = `status-chip status-${String(stateValue).toLowerCase()}`; state.textContent = statusNames[stateValue] || stateValue;
       const review = document.createElement("div"); review.className = "proposal-review-actions";
       if (proposal.strategy_id === "portfolio_stop") {
-        side.textContent = "SELL";
+        side.textContent = decision.stop_schedule === "weekly" ? "Weekly SELL" : "Hard-stop SELL";
         const order = proposal.broker_order;
         if (order) state.textContent = order.status;
         const id = encodeURIComponent(proposal.proposal_id);
+        const weekly = decision.stop_schedule === "weekly";
+        const today = new Date().toLocaleDateString("en-CA", {timeZone:"Asia/Kolkata"});
+        const notDue = weekly && proposal.action_date > today;
         if (["PENDING", "APPROVED"].includes(proposal.status) && (!order || order.status === "LOCAL_CREATED")) {
-          review.append(actionButton(proposal.status === "APPROVED" ? "Submit approved sell on Kite" : "Approve & sell on Kite", async () => {
+          review.append(actionButton(notDue ? `Weekly sell due ${proposal.action_date}` : proposal.status === "APPROVED" ? "Submit approved sell on Kite" : weekly ? "Approve weekly sell on Kite" : "Approve hard-stop sell on Kite", async () => {
             const result = await Screener.api(`/api/actions/stops/${id}/approve-execute`, {method:"POST",body:JSON.stringify({approved:true})});
             await load();
             $("generation-status").textContent = `Kite order ${result.order.broker_order_id || result.order.order_id}: ${result.order.status}. Confirmed fills update the portfolio journal.`;
-          }, ""));
+          }, "", notDue));
           if (proposal.status === "PENDING") review.append(actionButton("Reject", async () => { await Screener.api(`/api/actions/proposals/${id}/reject`, {method:"POST"}); await load(); }));
         }
         if (order && !["FILLED", "CANCELLED", "REJECTED", "LOCAL_CREATED"].includes(order.status)) review.append(actionButton("Refresh Kite order", async () => {
@@ -115,7 +118,7 @@
         if (token !== generation || account !== $("account").value) return;
         $("stop-proposals").replaceChildren(...(stops.proposals || []).flatMap(renderProposal));
         const money = value => value == null ? "—" : `₹${Number(value).toLocaleString("en-IN", {maximumFractionDigits:2})}`;
-        $("stop-checks").replaceChildren(...(stops.checks || []).map(check => Screener.row([check.symbol, money(check.price), money(check.stop_threshold), check.price_source ? `${check.price_source === "live_kite" ? "Live Kite" : "Stored close"} · ${check.price_date}` : "—", ({above_stop:"Above stop", breached:"Stop breached", review_exists:"Sell review exists", stop_unavailable:check.reason || "Stop unavailable"})[check.status] || check.status])));
+        $("stop-checks").replaceChildren(...(stops.checks || []).map(check => Screener.row([check.symbol, money(check.price), money(check.stop_threshold), check.price_source ? `${check.price_source === "live_kite" ? "Live Kite" : check.price_source === "weekly_close" ? "Weekly close" : "Stored close"} · ${check.price_date}` : "—", ({above_stop:"Above hard stop", live_unavailable:"Fresh live quote unavailable", breached:"Stop breached", review_exists:"Sell review exists", stop_unavailable:check.reason || "Stop unavailable"})[check.status] || check.status])));
         $("stop-check-note").textContent = stops.proposals?.length ? `${stops.proposals.length} stop sell reviews. Orders require your approval; confirmed fills update the portfolio.` : "No current stop breaches at the checked prices. Expand the checks below to see each price, threshold and source.";
         if (!stops.proposals?.length) { const row = document.createElement("tr"), cell = document.createElement("td"); cell.colSpan = 11; cell.className = "workflow-empty"; cell.textContent = "No stop sell action currently requires review."; row.append(cell); $("stop-proposals").append(row); }
       } catch (error) {

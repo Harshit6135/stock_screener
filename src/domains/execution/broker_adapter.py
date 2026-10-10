@@ -128,12 +128,22 @@ class KiteExecutionGateway:
             {
                 "trade_id": str(row["trade_id"]),
                 "quantity": int(row["quantity"]),
-                "price": str(row["fill_price"]),
-                "fill_date": str(row.get("exchange_timestamp") or row.get("order_timestamp"))[:10],
-                "executed_at": str(row.get("exchange_timestamp") or row.get("order_timestamp")),
+                "price": str(row.get("average_price") or row.get("fill_price")),
+                "fill_date": str(
+                    row.get("fill_timestamp")
+                    or row.get("exchange_timestamp")
+                    or row.get("order_timestamp")
+                )[:10],
+                "executed_at": str(
+                    row.get("fill_timestamp")
+                    or row.get("exchange_timestamp")
+                    or row.get("order_timestamp")
+                ),
             }
             for row in client.order_trades(broker_order_id)
-            if row.get("trade_id") and row.get("quantity") and row.get("fill_price")
+            if row.get("trade_id")
+            and row.get("quantity")
+            and (row.get("average_price") or row.get("fill_price"))
         ]
         return status
 

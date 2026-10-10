@@ -50,3 +50,5 @@ def test_intraday_stop_alert_is_immutable_and_does_not_create_fill(tmp_path):
     assert first["fills_created"] == 0
     assert len(ledger.events("paper")) == 1
     assert alerts.read("paper")[0]["alert_id"] == first["alerts"][0]["alert_id"]
+    payload["observations"][0]["price"] = "94"
+    assert alerts.ingest(payload)["alert_count"] == 0  # Below normal stop, above hard stop.

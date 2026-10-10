@@ -18,6 +18,9 @@ class LiveQuoteStream:
         self.provider = None
         self.market_auth = market_auth
         self._lock = RLock()
+        # A durable lease cannot retain a socket across process restarts.
+        if self.lease.state()["enabled"]:
+            self.lease.stop()
 
     def start(self, account_id, instrument_ids):
         if not isinstance(account_id, str) or not account_id.strip():
