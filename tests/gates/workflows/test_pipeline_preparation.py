@@ -48,6 +48,8 @@ def test_manual_preparation_runs_quality_before_indicators_and_reuses_history(
     market, publisher = setup_market(tmp_path)
     seed_snapshot(market, "pinned", DAY, [("IN0000000001", "STOCK")])
     records = [TrackedInstrument("stock", "IN0000000001", "STOCK", "NSE", "1", DAY)]
+    # A split can leave the previous ISIN under the same trading symbol.
+    records.append(TrackedInstrument("old-stock", "IN0000000002", "STOCK", "NSE", "", DAY))
     records += [
         TrackedInstrument(symbol, "INDEX:" + symbol, symbol, "NSE", str(i + 10), DAY)
         for i, symbol in enumerate(sorted(NSE_INDEX_SYMBOLS))

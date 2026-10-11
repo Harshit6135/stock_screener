@@ -125,7 +125,11 @@ class PipelinePreparation:
                 while cursor <= missing_end:
                     chunk_end = min(missing_end, cursor + timedelta(days=1999))
                     requests.setdefault((cursor, chunk_end), []).append(
-                        {"symbol": str(row["symbol"]), "exchange": str(row["exchange"])}
+                        {
+                            "instrument_id": instrument_id,
+                            "symbol": str(row["symbol"]),
+                            "exchange": str(row["exchange"]),
+                        }
                     )
                     cursor = chunk_end + timedelta(days=1)
         batches = []

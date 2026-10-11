@@ -29,6 +29,7 @@ from src.domains.portfolio_engine import (
 )
 from src.domains.strategies import feature_series, valid_bar
 from src.gates.repositories import MarketRepository
+from src.gates.workflows.portfolio_stops import latest_saved_stops, portfolio_stops
 from src.gates.workflows.positional_trend import PositionalTrendJobs
 from src.gates.workflows.research import ResearchJobs
 from src.platform_kernel import DomainValidationError, Money, QualityStatus, Quantity
@@ -957,20 +958,64 @@ class ActionJobs:
             item
             for item in self.risk_projection(request.account_id)
             if item.get("stop_model") == "ATR"
-            and str(item["action_date"]) < request.action_date.isoformat()
+            and (
+                str(item["action_date"]) < request.action_date.isoformat()
+                or item.get("projection_kind") == "held_position_atr_initialization"
+            )
         ]
-        previous_stops = (
-            {
-                str(item["instrument_id"]): Decimal(str(item["current_trailing_stop"]))
-                for item in previous_risk[0]["positions"]
+        saved = latest_saved_stops(previous_risk, request.market_date)
+        previous_stops = {instrument_id: row["stop"] for instrument_id, row in saved.items()}
+        missing = set(lots_by_instrument) - previous_stops.keys()
+        if missing:
+            estimates = portfolio_stops(
+                self.market, inputs.projection.open_lots, request.market_date, saved
+            )
+            for instrument_id in sorted(missing):
+                stop = estimates[instrument_id]["current_trailing_stop"]
+                if stop is None or not stop.is_finite() or stop <= 0:
+                    identity = self.market.instrument_by_id(instrument_id)
+                    symbol = identity["symbol"] if identity else instrument_id
+                    note = estimates[instrument_id]["risk_note"] or "Completed OHLC history is insufficient."
+                    raise DomainValidationError(f"Cannot initialize ATR stop for held stock {symbol}: {note}")
+                previous_stops[instrument_id] = stop
+            # Imported/manual holdings need an actual-position baseline before
+            # their first proposal. Use the dashboard's historical ATR rule.
+            baseline = {
+                "stop_model": "ATR",
+                "projection_kind": "held_position_atr_initialization",
+                "account_id": request.account_id,
+                "action_date": request.market_date.isoformat(),
+                "as_of_date": request.market_date.isoformat(),
+                "expected_ledger_version": inputs.account["version"],
+                "positions": [
+                    {
+                        "instrument_id": instrument_id,
+                        "units": units,
+                        "stop_model": "ATR",
+                        "current_trailing_stop": str(previous_stops[instrument_id]),
+                        "risk_basis": (
+                            estimates[instrument_id]["risk_basis"]
+                            if instrument_id in missing else "persisted_atr_projection"
+                        ),
+                        "risk_date": (
+                            estimates[instrument_id]["risk_date"]
+                            if instrument_id in missing else saved[instrument_id]["date"]
+                        ),
+                        "risk_note": estimates[instrument_id]["risk_note"] if instrument_id in missing else None,
+                    }
+                    for instrument_id, (units, _cost) in sorted(lots_by_instrument.items())
+                ],
             }
-            if previous_risk
-            else {}
-        )
-        for instrument_id in lots_by_instrument:
-            if instrument_id not in previous_stops:
-                raise DomainValidationError(
-                    "held stock requires a persisted ATR stop before generating actions"
+            baseline_id = hashlib.sha256(
+                json.dumps(baseline, sort_keys=True, default=str).encode()
+            ).hexdigest()
+            if not self.publisher.catalog.has(baseline_id):
+                self.publisher.publish_json(
+                    "actions/risk-projections",
+                    baseline_id,
+                    {"risk_projection_id": baseline_id, **baseline},
+                    upstream_ids=tuple(sorted(inputs.snapshot_ids)),
+                    quality=QualityStatus.PARTIAL,
                 )
         holdings = tuple(
             Holding(

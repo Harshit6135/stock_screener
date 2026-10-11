@@ -216,7 +216,12 @@ class MarketRefreshPlanner:
             ).hexdigest()
             fingerprint = f"market-bars-bulk:{snapshot['snapshot_id']}:{identity}:{start.isoformat()}:{end.isoformat()}"
             payload_items = [
-                {"symbol": item["symbol"], "exchange": item["exchange"]} for item in valid_items
+                {
+                    "instrument_id": item["instrument_id"],
+                    "symbol": item["symbol"],
+                    "exchange": item["exchange"],
+                }
+                for item in valid_items
             ]
             job = self.jobs.submit(
                 fingerprint,

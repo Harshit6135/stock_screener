@@ -88,6 +88,45 @@ def _payload(account_id="paper"):
     }
 
 
+@pytest.mark.parametrize("enough_history", [True, False])
+def test_first_held_position_proposal_persists_historical_atr_stop(tmp_path, enough_history):
+    services, instrument_id = _services(tmp_path)
+    services.ledger.open_account("paper", Money(1000))
+    services.ledger.record_fills(
+        "paper", "imported-buy", 0,
+        [Fill(instrument_id, date(2026, 9, 1), FillSide.BUY, Quantity(1), Money(100))],
+    )
+    if enough_history:
+        days = [date(2026, 8, 10) + timedelta(days=i) for i in range(26)]
+        services.market.upsert_bars(
+            instrument_id,
+            [NormalizedBar(instrument_id, day, 100, 105, 95, 100, 1000)
+             for day in days if day.weekday() < 5],
+            "held-atr-history",
+        )
+    # Future prices must not influence the initial stop.
+    services.market.upsert_bars(
+        instrument_id,
+        [NormalizedBar(instrument_id, date(2026, 9, 9), 500, 505, 495, 500, 1000)],
+        "future-held-bar",
+    )
+    before = services.ledger.events("paper")
+    command = _payload() | {"as_of_date": "2026-09-07", "action_date": "2026-09-08"}
+    if not enough_history:
+        with pytest.raises(DomainValidationError, match="Cannot initialize ATR stop.*ABC"):
+            services.actions.generate(command)
+        assert services.actions.risk_projection("paper") == []
+    else:
+        proposal = services.actions.generate(command)
+        baselines = [row for row in services.actions.risk_projection("paper")
+                     if row.get("projection_kind") == "held_position_atr_initialization"]
+        assert len(baselines) == 1
+        assert baselines[0]["as_of_date"] == "2026-09-07"
+        assert baselines[0]["positions"][0]["current_trailing_stop"] == "80.0"
+        assert services.actions.generate(command)["proposal_id"] == proposal["proposal_id"]
+    assert services.ledger.events("paper") == before
+
+
 @pytest.mark.parametrize(
     ("overrides", "can_buy", "policy_field"),
     [

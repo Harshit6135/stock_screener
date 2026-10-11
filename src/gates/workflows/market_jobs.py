@@ -494,10 +494,17 @@ class KiteMarketJobs:
         items = payload["items"]
         if not isinstance(items, list) or any(
             not isinstance(item, dict)
-            or set(item) - {"symbol", "exchange"}
+            or set(item) - {"symbol", "exchange", "instrument_id"}
             or not isinstance(item.get("symbol"), str)
             or not item["symbol"].strip()
             or item.get("exchange", "NSE") != "NSE"
+            or (
+                "instrument_id" in item
+                and (
+                    not isinstance(item["instrument_id"], str)
+                    or not item["instrument_id"].strip()
+                )
+            )
             for item in items
         ):
             raise DomainValidationError(
@@ -512,9 +519,23 @@ class KiteMarketJobs:
             raise DomainValidationError("bar fetch range must be at most 2000 calendar days")
 
         current_isins = self._current_history_isins()
+        resolved_items = []
         for item in items:
-            instrument = self.repository.instrument(item["symbol"], item.get("exchange", "NSE"))
+            if "instrument_id" in item:
+                instrument = self.repository.instrument_by_id(item["instrument_id"])
+                if instrument is None:
+                    raise DomainValidationError(
+                        f"history instrument was not found: {item['instrument_id']}"
+                    )
+                if (
+                    instrument["symbol"] != item["symbol"]
+                    or instrument["exchange"] != item.get("exchange", "NSE")
+                ):
+                    raise DomainValidationError("history instrument identity does not match symbol/exchange")
+            else:
+                instrument = self.repository.instrument(item["symbol"], item.get("exchange", "NSE"))
             self._history_context(instrument, start_date, end_date, current_isins=current_isins)
+            resolved_items.append((item, instrument))
 
         results: list[dict[str, Any]] = []
         total, processed, written_count = len(items), 0, 0
@@ -535,9 +556,8 @@ class KiteMarketJobs:
         if items:
             provider = KiteHistoricalBarsProvider(self._client())
 
-        def fetch(item):
+        def fetch(item, instrument):
             try:
-                instrument = self.repository.instrument(item["symbol"], item.get("exchange", "NSE"))
                 instrument_id = str(instrument["instrument_id"])
                 if self.repository.has_coverage(instrument_id, start_date, end_date, "kite"):
                     return {"skipped": True, "instrument_id": instrument_id}
@@ -671,15 +691,16 @@ class KiteMarketJobs:
         # Submit at most ten reads, replenishing only after a checkpoint. A
         # cancelled job never leaves the full universe queued at the provider.
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            remaining = iter(items)
+            remaining = iter(resolved_items)
             pending = {}
 
             def replenish():
                 while len(pending) < 10:
-                    item = next(remaining, None)
-                    if item is None:
+                    resolved = next(remaining, None)
+                    if resolved is None:
                         break
-                    pending[executor.submit(fetch, item)] = item
+                    item, instrument = resolved
+                    pending[executor.submit(fetch, item, instrument)] = item
 
             try:
                 replenish()
