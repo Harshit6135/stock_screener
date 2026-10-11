@@ -1,0 +1,23 @@
+from decimal import Decimal
+
+import pytest
+
+from src.platform_kernel import DomainValidationError, Money, Quantity
+
+
+def test_money_rejects_non_finite_amounts():
+    with pytest.raises(DomainValidationError, match="finite"):
+        Money(Decimal("NaN"))
+
+
+def test_quantity_requires_positive_integer_units():
+    for invalid_value in (0, -1, 1.5, True):
+        with pytest.raises(DomainValidationError, match="positive integer"):
+            Quantity(invalid_value)
+
+
+def test_money_normalises_numeric_input_to_decimal():
+    money = Money("123.45")
+
+    assert money.amount == Decimal("123.45")
+    assert money.currency == "INR"

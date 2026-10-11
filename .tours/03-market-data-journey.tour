@@ -1,0 +1,57 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "Market data journey",
+  "description": "Follow reference sync, universe construction, refresh planning, Kite history, and explicit coverage.",
+  "steps": [
+    {
+      "file": "src/application/kite_auth.py",
+      "line": 1,
+      "description": "Kite OAuth credentials and token handling enter here. Market data and portfolio execution use deliberately separate profiles." 
+    },
+    {
+      "file": "src/application/market_jobs.py",
+      "line": 64,
+      "description": "Instrument sync normalizes Kite reference rows and records provider-token observations. Token is mutable provider metadata, not the stable equity identity." 
+    },
+    {
+      "file": "src/application/market_jobs.py",
+      "line": 510,
+      "description": "The universe job combines NSE/BSE references, prefers NSE for duplicate ISINs, queries YFinance with rate-limit spacing, retains prior members, and adds newly eligible stocks." 
+    },
+    {
+      "file": "src/application/market_repository.py",
+      "line": 220,
+      "description": "Raw membership is not automatically active. The repository returns members only when completion state exists and its count matches exactly." 
+    },
+    {
+      "file": "src/application/market_repository.py",
+      "line": 257,
+      "description": "Successful universe publication atomically replaces membership and completion metadata. A failed scan leaves the previous completed universe active." 
+    },
+    {
+      "file": "src/application/market_refresh.py",
+      "line": 92,
+      "description": "Refresh planning combines the active universe, every open holding, and NIFTY 500. It reports missing identity/token records and creates bounded child jobs only for uncovered ranges." 
+    },
+    {
+      "file": "src/application/market_jobs.py",
+      "line": 418,
+      "description": "A Kite bar job validates its range, skips explicit completed coverage, normalizes returned bars, publishes source evidence, and records the requested range." 
+    },
+    {
+      "file": "src/application/market_repository.py",
+      "line": 507,
+      "description": "Coverage windows are provider facts. Even a successful zero-row pre-IPO request is recorded, preventing endless retries without inventing bars." 
+    },
+    {
+      "file": "src/application/market_repository.py",
+      "line": 536,
+      "description": "Coverage checks use the union of completed windows, not minimum/maximum bar dates, so internal gaps are not incorrectly accepted." 
+    },
+    {
+      "file": "src/application/market_web.py",
+      "line": 145,
+      "description": "The market refresh API only schedules durable work. Read coverage, bars, quotes, and job events to determine actual completion." 
+    }
+  ]
+}

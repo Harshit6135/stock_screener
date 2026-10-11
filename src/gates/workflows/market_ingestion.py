@@ -1,0 +1,85 @@
+"""Provider ingestion composition: raw evidence first, then normalized output."""
+
+import hashlib
+import json
+from collections.abc import Iterable
+from dataclasses import asdict
+from datetime import UTC, datetime
+
+from src.domains.artifacts import ArtifactPublisher
+from src.domains.market_data import NormalizedBar
+from src.platform_kernel import ArtifactManifest, DomainValidationError, QualityStatus
+from src.platform_kernel.security import sanitize_sensitive
+
+
+def ingest_market_bars(
+    publisher: ArtifactPublisher,
+    provider: str,
+    bars: Iterable[NormalizedBar],
+    *,
+    source_request: dict[str, object],
+    raw_payload: object | None = None,
+    provider_version: str = "unknown",
+    retrieved_at: datetime | None = None,
+    quality: QualityStatus = QualityStatus.COMPLETE,
+) -> tuple[ArtifactManifest, ArtifactManifest]:
+    """Persist redacted request evidence before the normalized immutable snapshot."""
+    if not provider.strip():
+        raise DomainValidationError("provider must be non-empty")
+    normalized = tuple(sorted(bars, key=lambda bar: (bar.instrument_id, bar.as_of_date)))
+    keys = [(bar.instrument_id, bar.as_of_date) for bar in normalized]
+    if not normalized or len(keys) != len(set(keys)):
+        raise DomainValidationError("provider returned no market bars")
+    # Publish through the recoverable application publisher rather than calling
+    # domain helpers directly, preserving catalog/file reconciliation.
+    from uuid import uuid4
+
+    raw_id = uuid4()
+    retrieved = retrieved_at or datetime.now(UTC)
+    if retrieved.tzinfo is None or retrieved.utcoffset() is None:
+        raise DomainValidationError("retrieved_at must be timezone-aware")
+    normalized_rows = [asdict(bar) for bar in normalized]
+    normalized_checksum = hashlib.sha256(
+        json.dumps(normalized_rows, default=str, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    evidence = raw_payload if raw_payload is not None else None
+    raw = publisher.publish_json(
+        f"market/raw/{provider}",
+        str(raw_id),
+        {
+            "snapshot_id": str(raw_id),
+            "provider": provider,
+            "provider_version": provider_version,
+            "retrieved_at": retrieved,
+            "request": sanitize_sensitive(source_request),
+            "response": sanitize_sensitive(evidence),
+            "response_checksum_sha256": normalized_checksum
+            if evidence is None
+            else hashlib.sha256(
+                json.dumps(
+                    sanitize_sensitive(evidence), default=str, sort_keys=True, separators=(",", ":")
+                ).encode()
+            ).hexdigest(),
+            "capture": "provider_raw" if raw_payload is not None else "normalized_fallback",
+            "record_count": len(normalized),
+        },
+        quality=quality,
+    )
+    normalized_id = uuid4()
+    normalized_manifest = publisher.publish_json(
+        f"market/normalized/{provider}",
+        str(normalized_id),
+        {
+            "snapshot_id": str(normalized_id),
+            "provider": provider,
+            "raw_snapshot_id": str(raw_id),
+            "bars_checksum_sha256": normalized_checksum,
+            "instrument_count": len({bar.instrument_id for bar in normalized}),
+            "first_date": normalized[0].as_of_date.isoformat(),
+            "last_date": normalized[-1].as_of_date.isoformat(),
+            "record_count": len(normalized),
+        },
+        upstream_ids=(raw.artifact_id,),
+        quality=quality,
+    )
+    return raw, normalized_manifest

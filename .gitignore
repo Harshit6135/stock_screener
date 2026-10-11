@@ -34,6 +34,7 @@ logs/*
 # Secrets (NEVER commit these)
 local_secrets.py
 access_token.txt
+portfolio_access_token.txt
 .env
 .env.local
 
@@ -52,3 +53,18 @@ htmlcov/
 
 # Cache
 .cache/
+.ruff_cache/
+
+DONOTUSE*/
+
+# SQLite sidecars and isolated phase acceptance fixtures
+*.db-shm
+*.db-wal
+/.phase-*/
+/.bulk-diagnosis/
+/.universe-repair-checks/
+/.corporate-final-checks/
+/.exit-session-checks/
+/.broker-exit-migration-tests/
+.pytest*
+.ruff_cache
